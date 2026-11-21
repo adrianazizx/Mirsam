@@ -1,0 +1,40 @@
+.inspector {
+  grid-area: inspector;
+  min-inline-size: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: var(--color-bg-surface);
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+
+.title {
+  margin-block-end: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.list dt {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.list dd {
+  margin-block-end: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.empty {
+  color: var(--color-text-muted);
+}

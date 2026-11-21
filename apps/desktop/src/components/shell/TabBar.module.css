@@ -1,0 +1,77 @@
+.bar {
+  grid-area: tabs;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  padding-inline: var(--space-2);
+  background: var(--color-bg-app);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  gap: var(--space-1);
+  flex: 1;
+  min-inline-size: 0;
+  padding-block-start: var(--space-1);
+  overflow: hidden;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 0;
+  max-inline-size: 240px;
+  block-size: calc(var(--size-tabbar) - var(--space-1));
+  padding-inline: var(--space-3);
+  border: var(--border-width) solid transparent;
+  border-block-end: 0;
+  border-start-start-radius: var(--radius-md);
+  border-start-end-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+  cursor: default;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+
+.tab[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.tab[data-selected] {
+  background: var(--color-bg-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  /* Cover the bar's bottom border so the tab reads as part of the page area. */
+  margin-block-end: calc(var(--border-width) * -1);
+  block-size: calc(var(--size-tabbar) - var(--space-1) + var(--border-width));
+}
+
+.tab[data-focus-visible] {
+  outline-offset: -2px;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.divider {
+  inline-size: var(--border-width);
+  block-size: var(--space-5);
+  margin-inline: var(--space-1);
+  background: var(--color-border);
+}

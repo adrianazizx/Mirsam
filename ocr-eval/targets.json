@@ -1,0 +1,7 @@
+{
+  "clean-arabic-300dpi": { "max_cer": 0.01, "max_wer": 0.03 },
+  "clean-english-300dpi": { "max_cer": 0.005 },
+  "mixed-arabic-english": { "max_cer": 0.02, "max_order_errors": 0 },
+  "degraded-arabic": { "max_cer": 0.05 },
+  "numbers-dates-ids": { "min_field_accuracy": 0.99 }
+}

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CI: "true"
+
+jobs:
+  licences:
+    name: Licence policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - name: THIRD_PARTY_LICENSES.md is current and every licence is allowed
+        run: node scripts/third-party-licenses.mjs --check
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev build-essential file qpdf
+      - name: System packages (macOS)
+        if: runner.os == 'macOS'
+        run: brew install qpdf
+      - name: System packages (Windows)
+        if: runner.os == 'Windows'
+        run: choco install qpdf --no-progress -y
+
+      # rust-toolchain.toml pins the version and components.
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Fetch PDFium (pinned, checksum-verified)
+        run: scripts/fetch-pdfium.sh
+
+      - name: Install UI dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+
+      - name: UI lint, typecheck, unit tests, build
+        working-directory: apps/desktop
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - name: Generate the fixture corpus
+        run: node fixtures/generate.mjs
+
+      - name: Rust format
+        run: cargo fmt --all --check
+      - name: Rust lint (release surface)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Rust lint (devtools surface)
+        run: cargo clippy --workspace --all-targets --locked --features safha-desktop/devtools -- -D warnings
+      - name: Rust tests
+        run: cargo test --workspace --locked
+
+  shell-selftest:
+    name: Desktop shell self-test (macOS)
+    runs-on: macos-latest
+    # Launches the real app and checks that PDFium output reaches the canvas in
+    # both directions. Not yet proven on hosted runners: see PROGRESS.md.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install qpdf
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: scripts/fetch-pdfium.sh
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - run: node fixtures/generate.mjs
+      - run: cargo build -p safha-desktop --features devtools --locked
+      - name: English, light
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/en en light
+      - name: Arabic, dark
+        run: scripts/selftest.sh fixtures/out/coretext/contract-two-column.pdf selftest-out/ar ar dark
+      - name: Check the reports
+        run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shell-selftest
+          path: selftest-out

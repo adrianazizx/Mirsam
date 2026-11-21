@@ -1,0 +1,46 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: default;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.button[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.button[data-pressed] {
+  background: var(--color-bg-pressed);
+  color: var(--color-text);
+}
+
+.button[data-disabled] {
+  opacity: 0.4;
+}
+
+.glyph,
+.mirrored {
+  display: inline-flex;
+}
+
+.glyph svg,
+.mirrored svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+:global([dir="rtl"]) .mirrored {
+  transform: scaleX(-1);
+}

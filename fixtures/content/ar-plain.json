@@ -1,0 +1,35 @@
+{
+  "id": "ar-plain",
+  "description": "Unvocalized Arabic prose in a Naskh face, with Arabic punctuation.",
+  "covers": [
+    "arabic",
+    "naskh",
+    "arabic-punctuation"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "تقرير عن حالة المشروع"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "يهدف هذا التقرير إلى عرض ما أُنجز خلال الربع الأول من العام، وبيان العقبات التي واجهت فريق العمل، واقتراح الخطوات اللازمة لمعالجتها في المرحلة المقبلة."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "اجتمعت اللجنة مرتين في الشهر، وناقشت الميزانية والجدول الزمني، ثم رفعت توصياتها إلى الإدارة العليا لاعتمادها قبل نهاية الشهر الجاري."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "هل اكتملت المراجعة؟ نعم؛ اكتملت في موعدها، ولم تُسجَّل أي ملاحظات جوهرية."
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "id": "mixed-inline",
+  "description": "Direction changes inside a line: numbers, Latin names, email, phone, dates, brackets and punctuation at the boundaries, Arabic-Indic digits, and Arabic inside English.",
+  "covers": [
+    "bidi",
+    "numbers",
+    "arabic-indic-digits",
+    "brackets",
+    "latin-in-arabic",
+    "arabic-in-latin"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "نص مختلط — Mixed text"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "اشتريت 3 أجهزة iPhone 15 Pro بسعر 4,500 ريال (شاملة الضريبة)."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "رقم الفاتورة INV-2026-00417 بتاريخ 12/03/2026، والمبلغ الإجمالي 13,500.75 ريال."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "للتواصل: support@example.com أو هاتف +966 11 234 5678 (من 9 ص إلى 5 م)."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "صدر القرار رقم ١٢٣٤ لسنة ٢٠٢٥ في ١٥ مادة."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "هل تستخدم برنامج Adobe Acrobat؟ نعم، الإصدار 2024 (64-bit)!"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "The Arabic word for page is صفحة (safha), and the plural is صفحات."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "Clause 4.2 refers to the “عقد الإيجار” dated 12 March 2026 (ref. SA-417)."
+    }
+  ]
+}

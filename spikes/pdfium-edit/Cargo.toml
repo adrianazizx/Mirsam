@@ -1,0 +1,23 @@
+[package]
+name = "spike-pdfium-edit"
+description = "M0 spike (throwaway): PDFium edit API vs. own content-stream writer for pre-shaped Arabic text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+safha-core = { workspace = true }
+pdfium-render = { workspace = true }
+# Shaping, bidi and subsetting (both routes once glyph IDs are placed), the Route B
+# writer / output inspector (lopdf), PNG output and result files. Licences: README.
+harfrust = "0.16"
+unicode-bidi = "0.3"
+subsetter = { version = "0.2", default-features = false }
+lopdf = { version = "0.47", default-features = false }
+png = "0.18"
+serde_json = { workspace = true }
+
+# Deliberately not inheriting the workspace lints: Route A needs `unsafe` for raw PDFium calls.
+[lints]

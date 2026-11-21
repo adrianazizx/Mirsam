@@ -1,0 +1,81 @@
+{
+  "app": {
+    "name": "Safha"
+  },
+  "tools": {
+    "label": "Tools",
+    "select": "Select",
+    "edit": "Edit",
+    "comment": "Comment",
+    "pages": "Pages",
+    "forms": "Forms",
+    "sign": "Sign",
+    "protect": "Protect",
+    "ocr": "OCR & Convert"
+  },
+  "tabs": {
+    "label": "Open documents"
+  },
+  "commands": {
+    "file": {
+      "open": "Open PDF…",
+      "close": "Close document"
+    },
+    "view": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "actualSize": "Actual size",
+      "fitWidth": "Fit width",
+      "nextPage": "Next page",
+      "previousPage": "Previous page"
+    },
+    "app": {
+      "toggleTheme": "Switch theme",
+      "toggleLanguage": "العربية",
+      "toggleGallery": "Design gallery"
+    }
+  },
+  "viewer": {
+    "emptyTitle": "Open a PDF to get started",
+    "emptyBody": "Your files stay on this device.",
+    "canvasLabel": "Page {{page}} of {{name}}",
+    "rendering": "Rendering page…"
+  },
+  "status": {
+    "pageOf": "Page {{page}} of {{count}}",
+    "zoom": "Zoom {{percent}}%"
+  },
+  "inspector": {
+    "title": "Document",
+    "empty": "No document open",
+    "name": "Name",
+    "pages": "Pages",
+    "pageSize": "Page size",
+    "pageSizeValue": "{{width}} × {{height}} mm"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "Follow system"
+  },
+  "errors": {
+    "dismiss": "Dismiss",
+    "password_required": "This PDF is password-protected. Opening protected files is not available yet.",
+    "invalid_pdf": "This file could not be read. It may be damaged, or it is not a PDF.",
+    "engine_unavailable": "The PDF engine could not start. Reinstalling Safha should fix this.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "gallery": {
+    "title": "Design gallery",
+    "colours": "Colours",
+    "type": "Typography",
+    "typeSample": "The quick brown fox — صفحة جديدة 123",
+    "buttons": "Buttons",
+    "primary": "Primary",
+    "secondary": "Secondary",
+    "ghost": "Ghost",
+    "disabled": "Disabled",
+    "iconButtons": "Icon buttons",
+    "spacing": "Spacing"
+  }
+}

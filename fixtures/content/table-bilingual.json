@@ -1,0 +1,48 @@
+{
+  "id": "table-bilingual",
+  "description": "A right-to-left table with Arabic, English, and numeric cells.",
+  "covers": [
+    "table",
+    "bidi",
+    "numbers"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "جدول المشتريات — Purchase table"
+    },
+    {
+      "kind": "table",
+      "dir": "rtl",
+      "font": "naskh",
+      "rows": [
+        [
+          "البند",
+          "Item",
+          "الكمية",
+          "السعر (ريال)"
+        ],
+        [
+          "ورق طباعة A4",
+          "A4 printing paper",
+          "10",
+          "185.00"
+        ],
+        [
+          "حبر طابعة",
+          "Printer ink",
+          "4",
+          "620.50"
+        ],
+        [
+          "الإجمالي",
+          "Total",
+          "14",
+          "805.50"
+        ]
+      ]
+    }
+  ]
+}

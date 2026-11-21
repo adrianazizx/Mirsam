@@ -1,0 +1,247 @@
+{
+  "reportedAfterMs": 25621,
+  "results": {
+    "burstOf12Tiles": {
+      "base64-json": {
+        "elapsedMs": 69,
+        "frames": 3,
+        "framesOver20Ms": 1,
+        "longestFrameMs": 36
+      },
+      "channel": {
+        "elapsedMs": 12,
+        "frames": 1,
+        "framesOver20Ms": 0,
+        "longestFrameMs": 16
+      },
+      "custom-protocol": {
+        "elapsedMs": 11,
+        "frames": 1,
+        "framesOver20Ms": 0,
+        "longestFrameMs": 16
+      },
+      "invoke-raw": {
+        "elapsedMs": 11,
+        "frames": 1,
+        "framesOver20Ms": 1,
+        "longestFrameMs": 22
+      },
+      "wasm-main-thread": {
+        "elapsedMs": 200,
+        "frames": 13,
+        "framesOver20Ms": 0,
+        "longestFrameMs": 17
+      }
+    },
+    "devicePixelRatio": 2,
+    "iterations": 25,
+    "megabytesSentPerTransport": 659.14,
+    "shellRssMegabytes": {
+      "after 3 s idle": 789.44,
+      "after base64-json": 789.44,
+      "after channel": 176.23,
+      "after custom-protocol": 176.11,
+      "after invoke-raw": 175.97,
+      "start": 163.95
+    },
+    "spike": "tile-transport",
+    "transports": {
+      "base64-json": {
+        "1024x1024": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 4.19,
+          "overheadMedianMs": 116.57,
+          "overheadP95Ms": 119.51,
+          "renderMedianMs": 1.52,
+          "totalMedianMs": 118,
+          "totalP95Ms": 121
+        },
+        "256x256": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 0.26,
+          "overheadMedianMs": 7.98,
+          "overheadP95Ms": 8.47,
+          "renderMedianMs": 0.55,
+          "totalMedianMs": 9,
+          "totalP95Ms": 9
+        },
+        "512x512": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 1.05,
+          "overheadMedianMs": 29.23,
+          "overheadP95Ms": 32.09,
+          "renderMedianMs": 0.84,
+          "totalMedianMs": 30,
+          "totalP95Ms": 33
+        },
+        "page 1785x2526": {
+          "mainThreadBlockMedianMs": 1,
+          "megabytes": 18.04,
+          "overheadMedianMs": 497.89,
+          "overheadP95Ms": 523.99,
+          "renderMedianMs": 4.1,
+          "totalMedianMs": 502,
+          "totalP95Ms": 528
+        }
+      },
+      "channel": {
+        "1024x1024": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 4.19,
+          "overheadMedianMs": 1.49,
+          "overheadP95Ms": 2.48,
+          "renderMedianMs": 1.53,
+          "totalMedianMs": 3,
+          "totalP95Ms": 4
+        },
+        "256x256": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 0.26,
+          "overheadMedianMs": 0.47,
+          "overheadP95Ms": 1.48,
+          "renderMedianMs": 0.54,
+          "totalMedianMs": 1,
+          "totalP95Ms": 2
+        },
+        "512x512": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 1.05,
+          "overheadMedianMs": 1.21,
+          "overheadP95Ms": 1.3,
+          "renderMedianMs": 0.71,
+          "totalMedianMs": 2,
+          "totalP95Ms": 2
+        },
+        "page 1785x2526": {
+          "mainThreadBlockMedianMs": 1,
+          "megabytes": 18.04,
+          "overheadMedianMs": 5.86,
+          "overheadP95Ms": 7.12,
+          "renderMedianMs": 4.06,
+          "totalMedianMs": 10,
+          "totalP95Ms": 11
+        }
+      },
+      "custom-protocol": {
+        "1024x1024": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 4.19,
+          "overheadMedianMs": 1.44,
+          "overheadP95Ms": 2.31,
+          "renderMedianMs": 1.58,
+          "totalMedianMs": 3,
+          "totalP95Ms": 4
+        },
+        "256x256": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 0.26,
+          "overheadMedianMs": 0.43,
+          "overheadP95Ms": 0.5,
+          "renderMedianMs": 0.55,
+          "totalMedianMs": 1,
+          "totalP95Ms": 1
+        },
+        "512x512": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 1.05,
+          "overheadMedianMs": 0.29,
+          "overheadP95Ms": 1.31,
+          "renderMedianMs": 0.73,
+          "totalMedianMs": 1,
+          "totalP95Ms": 2
+        },
+        "page 1785x2526": {
+          "mainThreadBlockMedianMs": 1,
+          "megabytes": 18.04,
+          "overheadMedianMs": 5.15,
+          "overheadP95Ms": 5.75,
+          "renderMedianMs": 4.26,
+          "totalMedianMs": 9,
+          "totalP95Ms": 10
+        }
+      },
+      "invoke-raw": {
+        "1024x1024": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 4.19,
+          "overheadMedianMs": 1.44,
+          "overheadP95Ms": 2.45,
+          "renderMedianMs": 1.58,
+          "totalMedianMs": 3,
+          "totalP95Ms": 4
+        },
+        "256x256": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 0.26,
+          "overheadMedianMs": 0.47,
+          "overheadP95Ms": 1.38,
+          "renderMedianMs": 0.55,
+          "totalMedianMs": 1,
+          "totalP95Ms": 2
+        },
+        "512x512": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 1.05,
+          "overheadMedianMs": 0.32,
+          "overheadP95Ms": 1.29,
+          "renderMedianMs": 0.74,
+          "totalMedianMs": 1,
+          "totalP95Ms": 2
+        },
+        "page 1785x2526": {
+          "mainThreadBlockMedianMs": 1,
+          "megabytes": 18.04,
+          "overheadMedianMs": 5.88,
+          "overheadP95Ms": 7,
+          "renderMedianMs": 4.08,
+          "totalMedianMs": 10,
+          "totalP95Ms": 11
+        }
+      }
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+    "visibility": "visible",
+    "wasm": {
+      "cases": {
+        "1024x1024": {
+          "mainThreadBlockMedianMs": 2,
+          "megabytes": 4.19,
+          "overheadMedianMs": 0,
+          "overheadP95Ms": 1,
+          "renderMedianMs": 1,
+          "totalMedianMs": 2,
+          "totalP95Ms": 2
+        },
+        "256x256": {
+          "mainThreadBlockMedianMs": 0,
+          "megabytes": 0.26,
+          "overheadMedianMs": 0,
+          "overheadP95Ms": 0,
+          "renderMedianMs": 0,
+          "totalMedianMs": 0,
+          "totalP95Ms": 1
+        },
+        "512x512": {
+          "mainThreadBlockMedianMs": 1,
+          "megabytes": 1.05,
+          "overheadMedianMs": 0,
+          "overheadP95Ms": 1,
+          "renderMedianMs": 0,
+          "totalMedianMs": 1,
+          "totalP95Ms": 1
+        },
+        "page 1785x2526": {
+          "mainThreadBlockMedianMs": 6,
+          "megabytes": 18.04,
+          "overheadMedianMs": 2,
+          "overheadP95Ms": 2,
+          "renderMedianMs": 4,
+          "totalMedianMs": 6,
+          "totalP95Ms": 7
+        }
+      },
+      "heapMegabytes": 22.61,
+      "initMs": 62
+    }
+  }
+}

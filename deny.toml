@@ -1,0 +1,49 @@
+# Licence and supply-chain policy (docs/SPEC.md section 10). Enforced in CI by
+# `cargo deny check`; npm packages are checked by scripts/third-party-licenses.mjs
+# against the same allowlist.
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licences only. Anything else — LGPL, "community"/non-commercial
+# terms, custom model licences — needs the project owner's explicit approval
+# before it is added here. GPL/AGPL are never acceptable under assumption D2.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    # Permissive attribution licences that the Rust and Unicode ecosystems make
+    # unavoidable (unicode-ident, ICU4X data; both are dependencies of Tauri).
+    "Unicode-3.0",
+    "CC0-1.0",
+    "0BSD",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Our own crates are unpublished and proprietary.
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+deny = [
+    # AGPL / GPL PDF engines must never enter the tree (spec section 10).
+    { crate = "mupdf", reason = "AGPL" },
+    { crate = "mupdf-sys", reason = "AGPL" },
+    { crate = "poppler", reason = "GPL" },
+    { crate = "poppler-rs", reason = "GPL" },
+]
+
+[advisories]
+yanked = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

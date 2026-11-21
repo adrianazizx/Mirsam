@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri", "spikes/pdfium-edit"]
+# Spikes are throwaway prototypes: built on demand, never part of the default build.
+default-members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.95"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[workspace.dependencies]
+safha-core = { path = "crates/safha-core" }
+# The pdfium_NNNN feature must match PDFIUM_BUILD in scripts/fetch-pdfium.sh.
+pdfium-render = { version = "=0.9.6", default-features = false, features = ["pdfium_8125", "thread_safe"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+
+# Dependencies (PDFium bindings, image codecs) are unusably slow unoptimized.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

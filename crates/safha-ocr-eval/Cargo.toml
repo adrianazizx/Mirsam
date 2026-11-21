@@ -1,0 +1,16 @@
+[package]
+name = "safha-ocr-eval"
+description = "Scores OCR output against the ocr-eval/ ground-truth set: CER, WER, field accuracy, reading order"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+unicode-normalization = "0.1.26"
+
+[lints]
+workspace = true

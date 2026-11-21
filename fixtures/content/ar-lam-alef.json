@@ -1,0 +1,41 @@
+{
+  "id": "ar-lam-alef",
+  "description": "Lam-alef ligatures in every variant (plain, hamza above/below, madda), with and without tashkeel.",
+  "covers": [
+    "arabic",
+    "lam-alef",
+    "ligatures"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "اللام ألف"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "لا بأس؛ لأن الأولاد الآن في الملعب، فلا داعي للقلق."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "السلام عليكم، أهلاً وسهلاً بكم في الإمارات."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "كلا، بلا شك: الملائكة، الألوان، الآلات، الإصلاح، ثلاثة، علامات."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "amiri",
+      "text": "لَا، لِأَنَّ الْأَوَّلَ يَدُلُّ عَلَى الْآخَرِ."
+    }
+  ]
+}

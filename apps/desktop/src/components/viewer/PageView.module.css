@@ -1,0 +1,23 @@
+.viewport {
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: var(--space-6);
+  overflow: auto;
+  /* Reserve the scrollbar so fit-width does not oscillate as it appears. */
+  scrollbar-gutter: stable;
+  /* The page is a physical object: its position never mirrors with the UI language. */
+  direction: ltr;
+}
+
+.sheet {
+  margin-inline: auto;
+  background: var(--color-page-paper);
+  box-shadow: var(--shadow-page);
+}
+
+.canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}

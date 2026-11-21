@@ -1,0 +1,51 @@
+.rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-block: var(--space-2);
+  background: var(--color-bg-surface);
+  border-inline-end: var(--border-width) solid var(--color-border);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: calc(var(--size-hit) + var(--space-1));
+  block-size: calc(var(--size-hit) + var(--space-1));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: default;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.tool svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+.tool[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.tool[data-pressed] {
+  background: var(--color-bg-pressed);
+}
+
+.tool[data-selected] {
+  background: var(--color-bg-selected);
+  color: var(--color-text-on-selected);
+}

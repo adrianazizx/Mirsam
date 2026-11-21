@@ -1,0 +1,35 @@
+{
+  "id": "ar-vocalized",
+  "description": "Fully vocalized Arabic (tashkeel on every word, shadda combinations).",
+  "covers": [
+    "arabic",
+    "tashkeel",
+    "mark-positioning"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "amiri",
+      "text": "نَصٌّ مَشْكُولٌ"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "amiri",
+      "text": "ذَهَبَ الْوَلَدُ إِلَى الْمَدْرَسَةِ صَبَاحًا، وَحَمَلَ مَعَهُ كِتَابًا جَدِيدًا وَقَلَمًا أَزْرَقَ."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "amiri",
+      "text": "قَالَ الْمُعَلِّمُ: إِنَّ الْعِلْمَ نُورٌ، وَإِنَّ الْقِرَاءَةَ مِفْتَاحُ الْمَعْرِفَةِ."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "amiri",
+      "text": "اللُّغَةُ الْعَرَبِيَّةُ غَنِيَّةٌ بِمُفْرَدَاتِهَا، دَقِيقَةٌ فِي مَعَانِيهَا."
+    }
+  ]
+}

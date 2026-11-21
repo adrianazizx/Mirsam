@@ -1,0 +1,35 @@
+{
+  "id": "en-paragraphs",
+  "description": "English baseline: f-ligature words, numbers, punctuation.",
+  "covers": [
+    "latin",
+    "ligatures",
+    "numbers"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "Quarterly Report"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "The office staff finished the final draft efficiently; the affluent client found it difficult to fault."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "Revenue rose 12.5% to $4,500,000 in Q1 2026, while costs fell by 3%."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "Questions? Email info@example.com or call +1 (555) 010-0199."
+    }
+  ]
+}

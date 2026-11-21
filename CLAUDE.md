@@ -1,0 +1,80 @@
+# Safha — PDF viewer & editor
+
+Desktop PDF viewer/editor (Tauri 2: Rust core + React UI) with first-class Arabic/RTL and
+quality-first OCR. "Safha" is a placeholder name.
+
+**Read `docs/SPEC.md` before any non-trivial work.** It is the source of truth for scope,
+priorities, quality bars, and licensing. `PROGRESS.md` says where we are; `docs/adr/` records
+why things are the way they are. Update `PROGRESS.md` at the end of every session.
+
+## Setup (once per machine)
+
+```bash
+scripts/dev-setup.sh                    # fetches PDFium; redirects build output if the checkout is cloud-synced
+(cd apps/desktop && pnpm install)
+node fixtures/generate.mjs              # PDF test corpus -> fixtures/out/ (needs Chrome, qpdf)
+```
+
+Needs: Rust (pinned in `rust-toolchain.toml`), Node 24 + pnpm 9, qpdf, Chrome. On this Mac
+rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
+
+## Commands
+
+| Task | Command (from repo root unless noted) |
+|---|---|
+| Run the app | `cd apps/desktop && pnpm tauri dev` (add `--features devtools` for self-test/spikes) |
+| UI only, mock backend | `cd apps/desktop && pnpm dev` → http://localhost:1420 |
+| Rust tests | `cargo test --workspace` |
+| Rust lint / format | `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --all` |
+| UI tests / types / lint | `cd apps/desktop && pnpm test` · `pnpm typecheck` · `pnpm lint` (`pnpm format` fixes) |
+| End-to-end shell check | `cargo build -p safha-desktop --features devtools && scripts/selftest.sh <pdf> <out> [en\|ar] [light\|dark]` then `node scripts/check-selftest.mjs <out> <ltr\|rtl>` |
+| Licence check | `cargo deny check licenses bans sources` · `node scripts/third-party-licenses.mjs [--check]` |
+| Render a page to PNG | `cargo run -p safha-core --example render_png -- in.pdf out.png [page] [scale]` |
+| Text-extraction baseline | `cargo run -p safha-core --example fixture_report` |
+| OCR eval set + score | `node ocr-eval/generate.mjs` · `cargo run -p safha-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir> --engine <name> --targets ocr-eval/targets.json` |
+
+A task is done when: code + tests pass, clippy/biome are clean, no performance budget regressed
+(spec §11), and it works in **both English (LTR) and Arabic (RTL)**.
+
+## Layout
+
+```
+crates/safha-core/       UI-independent engine (PDFium binding, documents, rendering). No Tauri here.
+crates/safha-ocr-eval/   OCR scorer: CER/WER, field accuracy, reading-order errors, gates
+apps/desktop/src-tauri/  Tauri shell: window + thin typed commands over safha-core
+apps/desktop/src/        React UI: backend/ (IPC + mock), state/, commands/, components/, i18n/, styles/
+fixtures/                content/*.json (ground truth) → generate.mjs → out/ (PDFs, not committed)
+ocr-eval/                evaluation set definition, targets, baselines; out/ is generated
+assets/fonts/            OFL fonts (fixtures now, bundled text-engine fonts later)
+spikes/                  throwaway prototypes behind ADRs; not in the default build
+scripts/                 setup, PDFium fetch, self-test, licence report
+third_party/pdfium/      downloaded binaries (git-ignored)
+```
+
+## Conventions
+
+- **Arabic/RTL is never a follow-up.** Any text-handling code is Unicode/bidi-correct in its first
+  version. CSS uses logical properties only (`margin-inline-start`, `inset-inline-end`, …) — never
+  `left`/`right`. Wrap user-supplied names in `<bdi>`. Directional icons set `mirrorInRtl`.
+- **Design tokens only.** No raw colours, sizes, or durations in components; add a token in
+  `src/styles/tokens.css` (and its contrast pair in `tokens.test.ts`).
+- **Every user action is a command** in `src/commands/registry.ts`; buttons and shortcuts call
+  `runCommand`. No ad-hoc handlers that bypass it.
+- **Every user-facing string** exists in both `en.json` and `ar.json` (a test enforces parity).
+- **The UI never touches the filesystem.** Files are opened by Rust commands; the UI gets ids and
+  file names, not paths. Do not add Tauri fs/shell permissions.
+- **Bitmaps cross IPC as raw bytes**, never base64/JSON (ADR 0004).
+- **Engine logic lives in `safha-core`**, so the CLI and tests reach it without a webview. The shell
+  crate only adapts.
+- Rust: `unsafe` is denied workspace-wide; no `unwrap()` outside tests; errors are typed
+  (`thiserror`) and reach the UI as a stable `code` that maps to a localized message.
+- Tests never skip silently: a missing fixture corpus is a failure with instructions.
+- **Licences** (spec §10): MIT/BSD/Apache-2.0/ISC/Zlib/MPL-2.0/OFL only. No GPL/AGPL (MuPDF,
+  Poppler, Ghostscript, iText). LGPL or custom model licences: ask first. Verify a dependency's
+  current version, maintenance, and licence before adding it.
+- Never commit copyrighted or confidential PDFs/scans. Fixtures are generated.
+- **OCR: accuracy beats speed** in every trade-off (spec §8). OCR jobs have no speed budget.
+- Spikes (`[SPIKE]` in the spec) get a throwaway prototype and an ADR with measurements before the
+  real implementation.
+- The pinned PDFium build (`scripts/fetch-pdfium.sh`) and `pdfium-render`'s `pdfium_NNNN` feature
+  must be bumped together.

@@ -1,0 +1,20 @@
+[package]
+name = "safha-core"
+description = "UI-independent PDF engine: document model, rendering, text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+pdfium-render = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+png = "0.18"
+serde_json = { workspace = true }

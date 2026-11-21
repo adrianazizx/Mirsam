@@ -1,0 +1,81 @@
+{
+  "app": {
+    "name": "صفحة"
+  },
+  "tools": {
+    "label": "الأدوات",
+    "select": "تحديد",
+    "edit": "تحرير",
+    "comment": "تعليق",
+    "pages": "الصفحات",
+    "forms": "النماذج",
+    "sign": "توقيع",
+    "protect": "حماية",
+    "ocr": "التعرّف الضوئي والتحويل"
+  },
+  "tabs": {
+    "label": "المستندات المفتوحة"
+  },
+  "commands": {
+    "file": {
+      "open": "فتح ملف PDF…",
+      "close": "إغلاق المستند"
+    },
+    "view": {
+      "zoomIn": "تكبير",
+      "zoomOut": "تصغير",
+      "actualSize": "الحجم الفعلي",
+      "fitWidth": "ملاءمة العرض",
+      "nextPage": "الصفحة التالية",
+      "previousPage": "الصفحة السابقة"
+    },
+    "app": {
+      "toggleTheme": "تبديل المظهر",
+      "toggleLanguage": "English",
+      "toggleGallery": "معرض التصميم"
+    }
+  },
+  "viewer": {
+    "emptyTitle": "افتح ملف PDF للبدء",
+    "emptyBody": "ملفاتك تبقى على هذا الجهاز.",
+    "canvasLabel": "الصفحة {{page}} من {{name}}",
+    "rendering": "جارٍ عرض الصفحة…"
+  },
+  "status": {
+    "pageOf": "الصفحة {{page}} من {{count}}",
+    "zoom": "التكبير {{percent}}%"
+  },
+  "inspector": {
+    "title": "المستند",
+    "empty": "لا يوجد مستند مفتوح",
+    "name": "الاسم",
+    "pages": "عدد الصفحات",
+    "pageSize": "مقاس الصفحة",
+    "pageSizeValue": "{{width}} × {{height}} مم"
+  },
+  "theme": {
+    "light": "فاتح",
+    "dark": "داكن",
+    "system": "حسب النظام"
+  },
+  "errors": {
+    "dismiss": "إغلاق",
+    "password_required": "هذا الملف محمي بكلمة مرور. فتح الملفات المحمية غير متاح بعد.",
+    "invalid_pdf": "تعذّرت قراءة هذا الملف. قد يكون تالفًا أو ليس ملف PDF.",
+    "engine_unavailable": "تعذّر تشغيل محرّك PDF. إعادة تثبيت «صفحة» ستحل المشكلة على الأرجح.",
+    "generic": "حدث خطأ ما. حاول مرة أخرى."
+  },
+  "gallery": {
+    "title": "معرض التصميم",
+    "colours": "الألوان",
+    "type": "الخطوط",
+    "typeSample": "صفحة جديدة — The quick brown fox 123",
+    "buttons": "الأزرار",
+    "primary": "أساسي",
+    "secondary": "ثانوي",
+    "ghost": "شفاف",
+    "disabled": "معطّل",
+    "iconButtons": "أزرار الأيقونات",
+    "spacing": "المسافات"
+  }
+}

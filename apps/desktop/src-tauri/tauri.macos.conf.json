@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "frameworks": ["../../../third_party/pdfium/mac-arm64/lib/libpdfium.dylib"]
+    }
+  }
+}

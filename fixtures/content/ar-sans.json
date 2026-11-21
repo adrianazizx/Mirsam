@@ -1,0 +1,28 @@
+{
+  "id": "ar-sans",
+  "description": "The same kind of prose in a Kufi-style sans face.",
+  "covers": [
+    "arabic",
+    "sans"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "sans",
+      "text": "إشعار للموظفين"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "sans",
+      "text": "نحيطكم علمًا بأن مواعيد العمل خلال الشهر القادم ستكون من الساعة الثامنة صباحًا حتى الثالثة عصرًا."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "sans",
+      "text": "يُرجى من جميع الموظفين تحديث بياناتهم الشخصية في نظام الموارد البشرية قبل نهاية الأسبوع."
+    }
+  ]
+}

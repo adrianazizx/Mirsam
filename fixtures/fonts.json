@@ -1,0 +1,7 @@
+{
+  "naskh": { "family": "Noto Naskh Arabic", "file": "NotoNaskhArabic-VF.ttf", "boldFile": "NotoNaskhArabic-VF.ttf" },
+  "amiri": { "family": "Amiri", "file": "Amiri-Regular.ttf", "boldFile": "Amiri-Bold.ttf" },
+  "sans": { "family": "IBM Plex Sans Arabic", "file": "IBMPlexSansArabic-Regular.ttf", "boldFile": "IBMPlexSansArabic-SemiBold.ttf" },
+  "kufi": { "family": "Noto Sans Arabic", "file": "NotoSansArabic-VF.ttf", "boldFile": "NotoSansArabic-VF.ttf" },
+  "latin": { "family": "IBM Plex Sans", "file": "IBMPlexSans-VF.ttf", "boldFile": "IBMPlexSans-VF.ttf" }
+}

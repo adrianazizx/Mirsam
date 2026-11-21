@@ -1,0 +1,87 @@
+{
+  "id": "contract-two-column",
+  "description": "Bilingual contract: English column on the left, Arabic column on the right, clause for clause.",
+  "covers": [
+    "columns",
+    "reading-order",
+    "bidi",
+    "numbers"
+  ],
+  "blocks": [
+    {
+      "kind": "columns",
+      "columns": [
+        {
+          "dir": "ltr",
+          "blocks": [
+            {
+              "kind": "heading",
+              "dir": "ltr",
+              "font": "latin",
+              "text": "Lease Agreement"
+            },
+            {
+              "kind": "paragraph",
+              "dir": "ltr",
+              "font": "latin",
+              "text": "This Lease Agreement is made on 12 March 2026 between the Landlord and the Tenant named below."
+            },
+            {
+              "kind": "paragraph",
+              "dir": "ltr",
+              "font": "latin",
+              "text": "1. Term. The lease runs for 12 months starting 1 April 2026."
+            },
+            {
+              "kind": "paragraph",
+              "dir": "ltr",
+              "font": "latin",
+              "text": "2. Rent. The Tenant shall pay SAR 4,500 per month, due on the first day of each month."
+            },
+            {
+              "kind": "paragraph",
+              "dir": "ltr",
+              "font": "latin",
+              "text": "3. Deposit. A refundable deposit of SAR 9,000 is payable on signing."
+            }
+          ]
+        },
+        {
+          "dir": "rtl",
+          "blocks": [
+            {
+              "kind": "heading",
+              "dir": "rtl",
+              "font": "naskh",
+              "text": "عقد إيجار"
+            },
+            {
+              "kind": "paragraph",
+              "dir": "rtl",
+              "font": "naskh",
+              "text": "أُبرم عقد الإيجار هذا بتاريخ 12 مارس 2026 بين المؤجر والمستأجر المذكورين أدناه."
+            },
+            {
+              "kind": "paragraph",
+              "dir": "rtl",
+              "font": "naskh",
+              "text": "1. المدة. مدة الإيجار 12 شهرًا تبدأ في 1 أبريل 2026."
+            },
+            {
+              "kind": "paragraph",
+              "dir": "rtl",
+              "font": "naskh",
+              "text": "2. الأجرة. يدفع المستأجر 4,500 ريال شهريًا، تُستحق في اليوم الأول من كل شهر."
+            },
+            {
+              "kind": "paragraph",
+              "dir": "rtl",
+              "font": "naskh",
+              "text": "3. التأمين. يُدفع عند التوقيع مبلغ تأمين مسترد قدره 9,000 ريال."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

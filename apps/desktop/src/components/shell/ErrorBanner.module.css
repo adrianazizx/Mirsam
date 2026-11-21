@@ -1,0 +1,16 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4) var(--space-2);
+  background: var(--color-bg-surface);
+  border-block-end: var(--border-width) solid var(--color-border);
+  border-inline-start: var(--space-1) solid var(--color-danger);
+}
+
+.message {
+  flex: 1;
+  user-select: text;
+  -webkit-user-select: text;
+}

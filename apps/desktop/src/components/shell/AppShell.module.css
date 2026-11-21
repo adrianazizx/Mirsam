@@ -1,0 +1,29 @@
+.shell {
+  display: grid;
+  grid-template-areas:
+    "tabs tabs tabs"
+    "rail main inspector"
+    "status status status";
+  grid-template-columns: var(--size-rail) minmax(0, 1fr) var(--size-inspector);
+  grid-template-rows: var(--size-tabbar) minmax(0, 1fr) var(--size-statusbar);
+  block-size: 100%;
+}
+
+.main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: var(--color-bg-canvas);
+}
+
+.panel {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+}
+
+.panel[data-focus-visible] {
+  outline-offset: -2px;
+}

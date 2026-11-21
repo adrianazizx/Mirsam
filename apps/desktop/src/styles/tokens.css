@@ -1,0 +1,139 @@
+/*
+ * Design tokens — the single source of truth for colour, spacing, radius,
+ * type, elevation, and motion (docs/SPEC.md section 4).
+ *
+ * Rules:
+ *   - Components reference tokens only; no raw colours, sizes, or durations.
+ *   - Direction-neutral by construction: nothing here encodes left or right.
+ *   - Every text/background pair below is checked for WCAG 2.1 AA contrast by
+ *     src/styles/tokens.test.ts. Add new pairs to that test when adding tokens.
+ */
+
+:root {
+  /* Spacing: 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+
+  /* Sizes */
+  --size-hit: 32px; /* minimum pointer target on desktop */
+  --size-icon: 18px;
+  --size-tabbar: 40px;
+  --size-rail: 48px;
+  --size-statusbar: 32px;
+  --size-inspector: 272px;
+  --border-width: 1px;
+  --focus-ring-width: 2px;
+
+  /* Typography */
+  --font-ui: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 20px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Motion: subtle and fast */
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-slow: 200ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layers */
+  --layer-overlay: 100;
+  --layer-tooltip: 200;
+}
+
+/* Light theme (default) */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg-app: #f3f4f6;
+  --color-bg-surface: #ffffff;
+  --color-bg-canvas: #e4e7eb;
+  --color-bg-hover: #e7eaee;
+  --color-bg-pressed: #d9dde3;
+  --color-bg-selected: #dff1f6;
+
+  --color-border: #d5d9df;
+  --color-border-strong: #8b949e;
+
+  --color-text: #1b1f24;
+  --color-text-muted: #57606a;
+  --color-text-on-selected: #0b5568;
+
+  --color-accent: #0e7490;
+  --color-accent-hover: #0b5f77;
+  --color-accent-pressed: #094d61;
+  --color-on-accent: #ffffff;
+
+  --color-danger: #b42318;
+  --color-focus-ring: #0e7490;
+
+  --color-page-paper: #ffffff;
+  --shadow-page: 0 1px 2px rgb(16 24 40 / 0.1), 0 4px 16px rgb(16 24 40 / 0.1);
+  --shadow-popover: 0 2px 4px rgb(16 24 40 / 0.08), 0 8px 24px rgb(16 24 40 / 0.14);
+
+  --color-tooltip-bg: #1b1f24;
+  --color-tooltip-text: #f3f4f6;
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg-app: #16181b;
+  --color-bg-surface: #1e2125;
+  --color-bg-canvas: #0e1012;
+  --color-bg-hover: #2a2e33;
+  --color-bg-pressed: #343940;
+  --color-bg-selected: #12343d;
+
+  --color-border: #30353b;
+  --color-border-strong: #6b747e;
+
+  --color-text: #e6e8eb;
+  --color-text-muted: #a0a8b2;
+  --color-text-on-selected: #8adcee;
+
+  --color-accent: #4dc4dc;
+  --color-accent-hover: #6fd2e6;
+  --color-accent-pressed: #8adcee;
+  --color-on-accent: #06242c;
+
+  --color-danger: #ff8a80;
+  --color-focus-ring: #4dc4dc;
+
+  --color-page-paper: #ffffff;
+  --shadow-page: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-popover: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+
+  --color-tooltip-bg: #e6e8eb;
+  --color-tooltip-text: #16181b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
+}
