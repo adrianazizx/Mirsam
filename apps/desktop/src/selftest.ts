@@ -533,6 +533,16 @@ export async function runSelftestIfRequested(): Promise<void> {
     }
     return;
   }
+  if (config.spike === "editor-surface") {
+    const { runEditorSurfaceSpike } = await import("./spikes/editorSurface");
+    try {
+      await backend.selftestReport(await runEditorSurfaceSpike(), null);
+    } catch (error) {
+      void backend.selftestLog(`editor-surface failed: ${String(error)}`);
+      await backend.selftestReport({ spike: "editor-surface", error: String(error) }, null);
+    }
+    return;
+  }
   if (config.spike === "scroll" && painted) {
     const { runScrollBenchmark } = await import("./benchmarks/scroll");
     await backend.selftestReport(await runScrollBenchmark(painted), null);

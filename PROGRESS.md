@@ -336,9 +336,12 @@ Plan, in order:
    own; encrypted files; undo.
 2. ~~**Add-new-text tool**~~ **done (ADR 0021):** the Edit tool places text; a strip sets font
    (Sans, Naskh), size, colour, alignment and direction.
-3. **[SPIKE] Editor surface:** our own caret, selection and IME drawing over the page vs. a
-   transparent `contenteditable` synchronized with the layout engine. Measure caret fidelity,
-   Arabic IME behaviour, and effort; ADR before in-place editing.
+3. ~~**[SPIKE] Editor surface**~~ **decided (ADR 0022): our own surface.** The engine's glyph
+   outlines are drawn on a canvas, with the caret taken from the engine's caret stops. A
+   hidden text field takes input, IME and clipboard, and serves accessibility.
+   `contenteditable` came within a pixel with the UI's own fonts, but it cannot draw a PDF's
+   embedded fonts, which in-place editing must reuse. Typing on our surface takes one frame
+   (17 ms) on WebKit. WebView2 and WebKitGTK are not measured yet.
 4. **Page analysis → edit model:** text objects with font, size, matrix and colour, then
    lines, then blocks; direction, alignment, spacing, lists.
 5. **In-place editing with reflow** inside a block's box: reuse the embedded font when it has
@@ -392,7 +395,10 @@ Plan, in order:
       - turned pages, unbalanced page content, inherited resources, encrypted files; undo; save.
       - Gap: not editable once added (in-place editing, step 5); each addition embeds its own
         subsets (font reuse comes with step 5); installed fonts come with the font picker.
-- [ ] In-place editing with reflow — **[SPIKE]** editor surface vs `contenteditable` overlay first
+- [ ] In-place editing with reflow. The editor-surface spike is done (ADR 0022: our own
+      surface). Still to do: re-run the spike on Windows and Linux, and check real input methods
+      by hand once the surface exists (macOS and Windows Arabic keyboards, press-and-hold,
+      emoji picker, dictation).
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -456,7 +462,14 @@ Plan, in order:
   reports such letters. The corpus is unchanged at 86/118.
 - **Self-test:** Arabic text placed with the Edit tool is painted, reads back as page text,
   and is undone, in English and Arabic.
-- **Tests:** 270 Rust and 155 UI tests pass on this Mac.
+- **Editor-surface spike (ADR 0022):** it ran in the real app's WebKit.
+  - `contenteditable` with the same fonts was within 1 px of the engine (worst 2.8 px), with
+    the same line breaks.
+  - Our own surface is exact by construction and typed in one frame (median 17 ms, p95 18 ms,
+    up to 416 Arabic characters), with 0.4–1.9 ms of engine time.
+  - Decision: our own surface, because only it can draw a PDF's embedded fonts.
+  - New in `typeset`: `caret_stops` and `glyph_outline`, the real editor's first pieces.
+- **Tests:** 273 Rust and 155 UI tests pass on this Mac.
 
 ### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
 

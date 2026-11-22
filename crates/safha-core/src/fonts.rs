@@ -71,3 +71,9 @@ pub(crate) fn for_text(family: FontFamily, text: &str) -> Result<Vec<NamedFont>>
         FontFamily::Naskh => vec![fonts.amiri.clone(), fonts.plex.clone(), fonts.plex_arabic.clone()],
     })
 }
+
+/// The faces to lay `text` out in `family`, the first tried first, each with
+/// the PostScript name it is embedded under.
+pub fn faces_for(family: FontFamily, text: &str) -> Result<Vec<(crate::typeset::FontFace, &'static str)>> {
+    Ok(for_text(family, text)?.into_iter().map(|font| (font.face, font.name)).collect())
+}

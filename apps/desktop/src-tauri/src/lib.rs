@@ -14,6 +14,8 @@ mod navigation;
 mod print_linux;
 mod recovery;
 #[cfg(feature = "devtools")]
+mod spike_editor;
+#[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
 mod viewer;
@@ -145,6 +147,7 @@ pub fn run() {
             diagnostics::selftest_config,
             diagnostics::selftest_report,
             spike_tiles::spike_tile_raw,
+            spike_editor::spike_editor_layout,
             spike_tiles::spike_tile_channel,
             spike_tiles::spike_tile_base64,
             spike_tiles::spike_pdf_bytes,
