@@ -35,7 +35,7 @@ use crate::fonts::{FontFamily, for_text};
 use crate::pdf::crypt::Crypt;
 use crate::pdf::image::{ImageLimits, image_to_embed, write_image};
 use crate::pdf::outline::draw_outlines;
-use crate::pdf::text::{draw_with_subsets, fonts_to_embed, write_font};
+use crate::pdf::text::{Paint, draw_with_subsets, fonts_to_embed, write_font};
 use crate::pdf::write::Update;
 use crate::pdf::{Dict, Object};
 use crate::text_edit::{WRAP_KEY, num, page_contents};
@@ -537,7 +537,8 @@ fn set_texts<'t>(
     let mut drawn = HashMap::new();
     for text in distinct {
         let laid = set(text)?;
-        let content = draw_with_subsets(text, &laid, &subsets, (0.0, 0.0), band.color, &prefix);
+        let paint = [Paint { range: 0..text.len(), color: band.color, slant: false }];
+        let content = draw_with_subsets(text, &laid, &subsets, (0.0, 0.0), &paint, &prefix)?;
         drawn.insert(text.clone(), Drawn { content, width: laid.width, height: laid.height });
     }
     Ok((drawn, names))

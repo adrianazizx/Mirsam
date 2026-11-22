@@ -35,3 +35,17 @@ in `PROGRESS.md`.
 **Embedded from Milestone 3 (ADR 0021).** Text added to pages embeds subsets of
 the same two Plex files (the Sans family) or of `Amiri-Regular.ttf` (the Naskh
 family), also compiled into the engine.
+
+**Embedded since ADRs 0023 and 0024.** A paragraph edited in place that needs a
+substitute font embeds subsets of the closest of five faces: the three files
+above, `NotoNaskhArabic-VF.ttf` (instanced at weight 400) and
+`NotoSansArabic-VF.ttf` (weight 400, width 100). Its bold runs use the same
+faces' bolds:
+- the variable fonts instanced at weight 700;
+- `Amiri-Bold.ttf`;
+- `IBMPlexSansArabic-SemiBold.ttf`.
+
+All of these are now compiled into the engine. Italic runs are drawn slanted
+from the upright faces and embedded under oblique names (`IBMPlexSans-Oblique`,
+…). The font programs are not changed, but the names are ours, so the Reserved
+Font Name question above applies to them too.

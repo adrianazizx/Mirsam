@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use common::manifest;
-use safha_core::block_edit::{BlockEdit, EditedBlock, TextBlock};
+use safha_core::block_edit::{BlockEdit, EditedBlock, FontSource, Mark, Refusal, TextBlock};
 use safha_core::fonts::FontFamily;
 use safha_core::save::save;
 use safha_core::text_edit::NewText;
@@ -116,6 +116,7 @@ fn edit_to(
         fingerprint: block.fingerprint,
         text: text.into(),
         family: None,
+        marks: None,
     };
     let (edited, update, outcome) = document.with_block_edit(&edit).unwrap_or_else(|e| panic!("{e}"));
     (edited, outcome, update)
@@ -426,6 +427,373 @@ fn text_drawn_with_kerning_and_line_operators_is_read_and_replaced_cleanly() {
     assert!(page_text(&edited, 0).contains("Goodbye") && !page_text(&edited, 0).contains("Hello"));
 }
 
+// ------------------------------------------------------------- styled runs
+
+/// A one-page file with Helvetica (F1), Helvetica-Bold (F2) and
+/// Helvetica-Oblique (F3), each with metrics.
+fn styled_pdf(content: &str) -> Vec<u8> {
+    let widths = |w: &str| vec![w; 95].join(" ");
+    let font = |name: &str, w: &str| {
+        format!(
+            "<< /Type /Font /Subtype /Type1 /BaseFont /{name} /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths [{}] >>",
+            widths(w)
+        )
+    };
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 400] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R /F3 7 0 R >> >> >>".into(),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        font("Helvetica", "556"),
+        font("Helvetica-Bold", "611"),
+        font("Helvetica-Oblique", "556"),
+    ];
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1)
+            .as_bytes(),
+    );
+    pdf
+}
+
+/// Two lines: "due" bold, "first" red, "without delay" italic.
+const STYLED: &str = "BT /F1 12 Tf 14 TL 50 300 Td (The rent is ) Tj /F2 12 Tf (due) Tj /F1 12 Tf ( on the ) Tj 1 0 0 rg (first) Tj 0 0 0 rg ( day of each) Tj T* (month, ) Tj /F3 12 Tf (without delay) Tj /F1 12 Tf (, by transfer.) Tj ET\n";
+
+/// A block's runs: (text, font, bold, italic, red).
+fn runs_of(block: &TextBlock) -> Vec<(String, String, bool, bool, bool)> {
+    let units: Vec<u16> = block.text.encode_utf16().collect();
+    block
+        .runs
+        .iter()
+        .map(|r| {
+            (
+                String::from_utf16_lossy(&units[r.start..r.end]),
+                r.font.clone(),
+                r.bold,
+                r.italic,
+                r.color[0] > 0.5,
+            )
+        })
+        .collect()
+}
+
+/// The run holding `needle`, as (font, bold, italic, red).
+fn run_with(block: &TextBlock, needle: &str) -> (String, bool, bool, bool) {
+    let runs = runs_of(block);
+    runs.iter()
+        .find(|(text, ..)| text.contains(needle))
+        .map(|(_, font, bold, italic, red)| (font.clone(), *bold, *italic, *red))
+        .unwrap_or_else(|| panic!("no run holds {needle:?}: {runs:#?}"))
+}
+
+#[test]
+fn a_paragraphs_bold_italic_and_coloured_words_are_read_as_runs() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    assert_eq!(block.text, "The rent is due on the first day of each month, without delay, by transfer.");
+    assert!(block.styled && block.lines == 2, "{block:?}");
+    let plain = |text: &str| (text.to_string(), "Helvetica".to_string(), false, false, false);
+    assert_eq!(
+        runs_of(&block),
+        vec![
+            plain("The rent is "),
+            ("due ".into(), "Helvetica-Bold".into(), true, false, false),
+            plain("on the "),
+            ("first ".into(), "Helvetica".into(), false, false, true),
+            plain("day of each month, "),
+            ("without delay".into(), "Helvetica-Oblique".into(), false, true, false),
+            plain(", by transfer."),
+        ]
+    );
+}
+
+#[test]
+fn editing_a_styled_paragraph_in_its_own_fonts_keeps_every_run() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    // Typed over the bold word, and after the italic one.
+    let new = block.text.replace("due", "payable").replace("delay", "delay or excuse");
+    let (edited, outcome, update) = edit_to(&document, &block, 0, &new);
+    assert_eq!(outcome.substituted, None, "each run in its own font");
+    assert!(!String::from_utf8_lossy(&update).contains("FontFile"), "no font was embedded");
+    let after = block_with(&edited, 0, "The rent is payable");
+    // Still one paragraph, though a line of it is now mostly italic.
+    assert_eq!(normalize(&after.text), normalize(&new));
+    assert_eq!(after.lines, 3);
+    assert_eq!(run_with(&after, "payable"), ("Helvetica-Bold".into(), true, false, false));
+    assert_eq!(run_with(&after, "first"), ("Helvetica".into(), false, false, true));
+    assert_eq!(run_with(&after, "or excuse"), ("Helvetica-Oblique".into(), false, true, false));
+    assert_eq!(run_with(&after, "transfer"), ("Helvetica".into(), false, false, false));
+    assert!(page_text(&edited, 0).contains(&normalize(&new)));
+    qpdf_check(&edited.bytes(), "styled-own.pdf");
+}
+
+#[test]
+fn a_substituted_paragraph_keeps_bold_italic_size_and_colour_and_keeps_them_on_the_next_edit() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let new = block.text.replace("first", "fifth");
+    let edit = BlockEdit {
+        page: 0,
+        index: block.index,
+        fingerprint: block.fingerprint,
+        text: new.clone(),
+        family: Some(FontFamily::Sans),
+        marks: None,
+    };
+    let (edited, _, outcome) = document.with_block_edit(&edit).expect("edits");
+    assert_eq!(outcome.substituted.as_ref().map(|s| s.font.as_str()), Some("IBMPlexSans"));
+    let after = block_with(&edited, 0, "The rent is due");
+    assert_eq!(normalize(&after.text), normalize(&new));
+    assert_eq!(run_with(&after, "due"), ("IBMPlexSans-Bold".into(), true, false, false));
+    assert_eq!(run_with(&after, "fifth"), ("IBMPlexSans".into(), false, false, true));
+    // No italic face is bundled: the run is slanted, under a name that says so.
+    assert_eq!(run_with(&after, "without delay"), ("IBMPlexSans-Oblique".into(), false, true, false));
+    assert!(page_text(&edited, 0).contains(&normalize(&new)));
+
+    // Edited again (by name now, the bundled faces themselves): nothing is lost.
+    let again_text = after.text.replace("transfer", "bank transfer");
+    let (again, ..) = edit_to(&edited, &after, 0, &again_text);
+    let third = block_with(&again, 0, "The rent is due");
+    assert_eq!(normalize(&third.text), normalize(&again_text));
+    assert_eq!(run_with(&third, "due"), ("IBMPlexSans-Bold".into(), true, false, false));
+    assert_eq!(run_with(&third, "fifth"), ("IBMPlexSans".into(), false, false, true));
+    assert_eq!(run_with(&third, "without delay"), ("IBMPlexSans-Oblique".into(), false, true, false));
+    qpdf_check(&again.bytes(), "styled-substitute.pdf");
+}
+
+#[test]
+fn arabic_typed_over_a_bold_word_is_set_in_a_bold_arabic_face() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let new = block.text.replace("due", "مستحق");
+    let (edited, outcome, _) = edit_to(&document, &block, 0, &new);
+    assert!(outcome.substituted.is_some(), "Arabic needs a bundled face");
+    let after = block_with(&edited, 0, "مستحق");
+    assert_eq!(normalize(&after.text), normalize(&new));
+    let (font, bold, ..) = run_with(&after, "مستحق");
+    assert!(bold && font.contains("Arabic"), "{font}");
+    let (font, bold, ..) = run_with(&after, "The rent is");
+    assert!(!bold, "{font}");
+    assert!(run_with(&after, "first").3, "still red");
+}
+
+/// The editor's marks for a paragraph as it reads: its runs' bold and italic.
+fn marks_of(block: &TextBlock) -> Vec<Mark> {
+    block.runs.iter().map(|r| Mark { start: r.start, end: r.end, bold: r.bold, italic: r.italic }).collect()
+}
+
+/// `marks` with `needle` (in `text`) set to `bold` and `italic`, as the editor's buttons would.
+fn styled_as(mut marks: Vec<Mark>, text: &str, needle: &str, bold: bool, italic: bool) -> Vec<Mark> {
+    let at = text.find(needle).expect("needle");
+    let start = text[..at].encode_utf16().count();
+    let end = start + needle.encode_utf16().count();
+    let mut out = Vec::new();
+    for m in marks.drain(..) {
+        if m.end <= start || m.start >= end {
+            out.push(m);
+            continue;
+        }
+        if m.start < start {
+            out.push(Mark { end: start, ..m });
+        }
+        if m.end > end {
+            out.push(Mark { start: end, ..m });
+        }
+    }
+    out.push(Mark { start, end, bold, italic });
+    out
+}
+
+fn edit_marked(
+    document: &Document,
+    block: &TextBlock,
+    text: &str,
+    marks: Vec<Mark>,
+) -> (Document, EditedBlock) {
+    let edit = BlockEdit {
+        page: 0,
+        index: block.index,
+        fingerprint: block.fingerprint,
+        text: text.into(),
+        family: None,
+        marks: Some(marks),
+    };
+    let (edited, _, outcome) = document.with_block_edit(&edit).unwrap_or_else(|e| panic!("{e}"));
+    (edited, outcome)
+}
+
+#[test]
+fn bold_and_italic_set_in_the_editor_use_the_pages_own_bold_and_italic() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let text = block.text.clone();
+    // "first" made bold (and stays red), "due" no longer bold, "rent" italic.
+    let marks = styled_as(marks_of(&block), &text, "first", true, false);
+    let marks = styled_as(marks, &text, "due", false, false);
+    let marks = styled_as(marks, &text, "rent", false, true);
+    let (edited, outcome) = edit_marked(&document, &block, &text, marks);
+    assert_eq!(outcome.substituted, None, "the page has Helvetica's bold and oblique");
+    let after = block_with(&edited, 0, "The rent is due");
+    assert_eq!(normalize(&after.text), normalize(&text));
+    assert_eq!(run_with(&after, "first"), ("Helvetica-Bold".into(), true, false, true));
+    assert_eq!(run_with(&after, "due"), ("Helvetica".into(), false, false, false));
+    assert_eq!(run_with(&after, "rent"), ("Helvetica-Oblique".into(), false, true, false));
+    assert_eq!(run_with(&after, "without delay"), ("Helvetica-Oblique".into(), false, true, false));
+    qpdf_check(&edited.bytes(), "marked-own.pdf");
+}
+
+#[test]
+fn bold_italic_the_page_lacks_sets_the_paragraph_in_bundled_faces() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let text = block.text.clone();
+    // No Helvetica-BoldOblique on the page.
+    let marks = styled_as(marks_of(&block), &text, "month", true, true);
+    let (edited, outcome) = edit_marked(&document, &block, &text, marks);
+    assert!(outcome.substituted.is_some());
+    let after = block_with(&edited, 0, "The rent is due");
+    assert_eq!(normalize(&after.text), normalize(&text));
+    let (font, bold, italic, _) = run_with(&after, "month");
+    assert!(bold && italic && font.ends_with("BoldOblique"), "{font}");
+    // The rest keeps its own look in the bundled faces.
+    let (_, bold, italic, red) = run_with(&after, "due");
+    assert!(bold && !italic && !red);
+    let (_, bold, italic, red) = run_with(&after, "first");
+    assert!(!bold && !italic && red);
+    assert!(run_with(&after, "without delay").2, "still italic");
+}
+
+// ------------------------------------------------------------------ tashkeel
+
+/// Chrome's vocalised Arabic: every paragraph reads back as the fixture's
+/// ground truth, with no spaces around marks and letters in order.
+#[test]
+fn vocalised_arabic_reads_as_written_with_no_gaps_around_its_marks() {
+    let manifest = manifest();
+    let fixture = manifest.fixture_or_unavailable("chrome/ar-vocalized").expect("a Chrome fixture");
+    let document = engine().open_file(&fixture.file(), None).expect("opens");
+    let blocks = document.text_blocks(0).expect("blocks");
+    let read: Vec<String> = blocks.iter().filter(|b| b.editable).map(|b| normalize(&b.text)).collect();
+    for expected in &fixture.expected {
+        assert!(read.contains(&normalize(&expected.text)), "{:?} not read; read: {read:#?}", expected.text);
+    }
+}
+
+/// Ink left in a block's box (with a margin) on page 0.
+fn ink_in(document: &Document, block: &TextBlock) -> usize {
+    let image = render(document, 0);
+    let area = (block.x - 1.0, block.y - 1.0, block.x + block.width + 1.0, block.y + block.height + 1.0);
+    changes_outside_and_ink_inside(&image, &image, area).1
+}
+
+#[test]
+fn a_vocalised_paragraph_removed_takes_its_marks_with_it() {
+    // Chrome draws each mark with its own operator.
+    let manifest = manifest();
+    let fixture = manifest.fixture_or_unavailable("chrome/ar-vocalized").expect("a Chrome fixture");
+    let document = engine().open_file(&fixture.file(), None).expect("opens");
+    let block = block_with(&document, 0, "ذَهَبَ");
+    assert!(ink_in(&document, &block) > 200);
+    let (edited, ..) = edit_to(&document, &block, 0, "");
+    assert_eq!(ink_in(&edited, &block), 0, "letters and marks all gone");
+
+    // So does this app: a mark is a glyph of its own in its own `Tj`.
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
+    let original = engine().open_bytes(bytes, None).expect("opens");
+    let vocalised = "بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ";
+    let document = add_text(&original, vocalised, FontFamily::Naskh, 300.0, 560.0);
+    let block = block_with(&document, 0, "بِسْمِ");
+    assert_eq!(normalize(&block.text), vocalised);
+    assert!(ink_in(&document, &block) > 200);
+    let (edited, ..) = edit_to(&document, &block, 0, "");
+    assert_eq!(ink_in(&edited, &block), 0, "its marks went with it");
+}
+
+// ----------------------------------------------------------- embedded fonts
+
+/// The `/BaseFont`s of fonts embedded by an update.
+fn embedded_names(update: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(update);
+    text.match_indices("/BaseFont /")
+        .map(|(at, m)| {
+            text[at + m.len()..]
+                .split(|c: char| c.is_whitespace() || c == '/' || c == '>')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn arabic_is_set_again_in_the_pdfs_own_embedded_font_when_it_has_the_forms() {
+    // Chrome embeds IBM Plex Sans Arabic as TrueType subsets: a cmap with the
+    // presentation forms it drew, no GSUB.
+    let (bytes, _) = fixture_everywhere("chrome/ar-sans");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let heading = block_with(&document, 0, "إشعار للموظفين");
+    let before = render(&document, 0);
+
+    // The same text again: its own program, its own glyphs.
+    let (same, outcome, update) = edit_to(&document, &heading, 0, &heading.text);
+    assert_eq!(outcome.source, FontSource::Embedded);
+    assert_eq!(outcome.substituted, None);
+    let names = embedded_names(&update);
+    assert!(names.iter().any(|n| n.ends_with("+IBMPlexSansArabic-SemiBold")), "{names:?}");
+    let after = block_with(&same, 0, "إشعار للموظفين");
+    assert_eq!(normalize(&after.text), normalize(&heading.text), "read back as letters, not forms");
+    assert!(page_text(&same, 0).contains("إشعار للموظفين"));
+    // Drawn as it was: the same ink, where it was.
+    let area =
+        (heading.x - 2.0, heading.y - 2.0, heading.x + heading.width + 2.0, heading.y + heading.height + 2.0);
+    let (outside, inside) = changes_outside_and_ink_inside(&before, &render(&same, 0), area);
+    let (_, ink_before) = changes_outside_and_ink_inside(&before, &before, area);
+    assert_eq!(outside, 0);
+    assert!(inside.abs_diff(ink_before) * 10 < ink_before, "{inside} vs {ink_before} dark pixels");
+
+    // A word taken away: the rest keeps its forms, in its own font.
+    let (shorter, outcome, _) = edit_to(&document, &heading, 0, "إشعار");
+    assert_eq!(outcome.source, FontSource::Embedded);
+    assert_eq!(normalize(&block_with(&shorter, 0, "إشعار").text), "إشعار");
+    qpdf_check(&same.bytes(), "embedded-arabic.pdf");
+}
+
+#[test]
+fn a_form_the_subset_lacks_or_marks_it_cannot_place_fall_back_to_bundled_faces() {
+    let (bytes, _) = fixture_everywhere("chrome/ar-sans");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let heading = block_with(&document, 0, "إشعار للموظفين");
+    // Beh standing alone: a form the heading never drew.
+    let (edited, outcome, _) = edit_to(&document, &heading, 0, "إشعار للموظفين ب");
+    assert_eq!(outcome.source, FontSource::Bundled);
+    assert!(outcome.substituted.is_some());
+    assert_eq!(normalize(&block_with(&edited, 0, "إشعار").text), "إشعار للموظفين ب");
+    // A paragraph with tashkeel: the subset has no GPOS to place the marks.
+    let marked = block_with(&document, 0, "رجى من جميع");
+    let (_, outcome, _) = edit_to(&document, &marked, 0, &marked.text.replace("نهاية", "آخر"));
+    assert_eq!(outcome.source, FontSource::Bundled);
+}
+
+#[test]
+fn latin_in_a_pages_own_codes_still_embeds_nothing() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let (_, outcome, update) = edit_to(&document, &block, 0, &block.text.replace("first", "second"));
+    assert_eq!(outcome.source, FontSource::Page);
+    assert!(embedded_names(&update).is_empty());
+}
+
 // ------------------------------------------------------------------ refusals
 
 #[test]
@@ -440,6 +808,7 @@ fn an_edit_of_text_that_changed_is_refused() {
         fingerprint: block.fingerprint ^ 1,
         text: "x".into(),
         family: None,
+        marks: None,
     };
     assert!(matches!(document.with_block_edit(&stale), Err(Error::InvalidEdit(_))));
     let missing = BlockEdit { index: 99, ..stale };
@@ -448,12 +817,37 @@ fn an_edit_of_text_that_changed_is_refused() {
 
 #[test]
 fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
+    // Encrypted: the content is not read, but where its text is, a press says why.
     let (bytes, password) = fixture_everywhere("qpdf/encrypted");
     let document = engine().open_bytes(bytes, password.as_deref()).expect("opens");
-    assert!(matches!(document.text_blocks(0), Err(Error::EditUnsupported(_))));
+    let blocks = document.text_blocks(0).expect("blocks");
+    assert!(!blocks.is_empty(), "the page's text is listed");
+    assert!(blocks.iter().all(|b| !b.editable && b.reason == Some(Refusal::Encrypted)));
+    let edit = BlockEdit { page: 0, index: 0, fingerprint: 0, text: "x".into(), family: None, marks: None };
+    assert!(document.with_block_edit(&edit).is_err());
+
+    // Chrome draws these fixtures' variable fonts as Type 3, which is not
+    // read: refused as one area per run of text, not one per glyph.
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let blocks = document.text_blocks(0).expect("blocks");
+    let fonts: Vec<&TextBlock> = blocks.iter().filter(|b| b.reason == Some(Refusal::Font)).collect();
+    assert!(!fonts.is_empty() && fonts.len() < 40, "{} areas", fonts.len());
+    let text = document.page_text(0).expect("text");
+    let view = document.view_transform(0).expect("view");
+    // Every line of the page's text lies in some refused area.
+    for line in text.blocks.iter().flat_map(|b| &b.lines) {
+        let shown = view.rect(line.bounds);
+        let (x, y) = (shown.x + shown.width / 2.0, shown.y + shown.height / 2.0);
+        assert!(
+            fonts.iter().any(|b| x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height),
+            "{:?} is in no refused area",
+            line.text
+        );
+    }
 
     // CoreText's Arabic draws dotless letters with the dots as separate shapes
-    // that carry no text: not read, so not offered.
+    // that carry no text: not read, so not offered, and said to need OCR.
     let Some((bytes, _)) = fixture("coretext/ar-plain") else { return };
     let document = engine().open_bytes(bytes, None).expect("opens");
     let blocks = document.text_blocks(0).expect("blocks");
@@ -462,4 +856,5 @@ fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
         "{:?}",
         blocks.iter().map(|b| &b.text).collect::<Vec<_>>()
     );
+    assert!(blocks.iter().any(|b| b.reason == Some(Refusal::Unreadable)));
 }
