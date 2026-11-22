@@ -1,0 +1,92 @@
+name: Fuzz
+
+# Fuzzes the open and parse path (fuzz/README.md): every target for a few
+# minutes, seeded from the fixture corpus. Weekly, on "Run workflow" (with a
+# longer time if wanted), and on pull requests that touch the readers or the
+# fuzz targets, which also keeps the targets compiling as safha-core changes.
+# A crash uploads its input; fix it in safha-core with a regression test.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per target
+        default: "600"
+  pull_request:
+    paths:
+      - ".github/workflows/fuzz.yml"
+      - "fuzz/**"
+      - "crates/safha-core/src/pdf/**"
+      - "crates/safha-core/src/catalog.rs"
+      - "crates/safha-core/src/edit.rs"
+      - "crates/safha-core/src/block_edit.rs"
+      - "crates/safha-core/src/annotate/**"
+      - "crates/safha-core/src/redact/**"
+      - "crates/safha-core/src/engine.rs"
+      - "crates/safha-core/src/document.rs"
+      - "crates/safha-core/src/text/**"
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz the open and parse path
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SECONDS_PER_TARGET: ${{ inputs.seconds || '120' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y qpdf
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # fuzz/rust-toolchain.toml pins the nightly.
+      - name: Nightly toolchain and cargo-fuzz
+        working-directory: fuzz
+        run: |
+          rustup toolchain install
+          cargo install cargo-fuzz --version 0.13.2 --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+          key: fuzz
+      - name: Fetch PDFium (the open target needs it)
+        run: scripts/fetch-pdfium.sh
+      - name: Generate the fixture corpus and seed the fuzz corpora
+        run: |
+          node fixtures/generate.mjs
+          node fuzz/seed.mjs
+      - name: The templates the targets build read in full
+        working-directory: fuzz
+        run: cargo test --lib --locked
+      - name: Build the targets
+        working-directory: fuzz
+        run: cargo fuzz build
+      - name: Fuzz
+        working-directory: fuzz
+        run: |
+          status=0
+          for target in file objects content cmap open; do
+            case "$target" in content|cmap) max_len=65536 ;; *) max_len=600000 ;; esac
+            # PDFium is not built with the sanitizer; its own allocations at
+            # exit are not leaks of ours.
+            leaks=1; [[ "$target" == open ]] && leaks=0
+            echo "::group::$target"
+            cargo fuzz run "$target" -- -max_total_time="$SECONDS_PER_TARGET" -max_len="$max_len" \
+              -timeout=20 -rss_limit_mb=4096 -dict=pdf.dict -detect_leaks="$leaks" -print_final_stats=1 \
+              || { status=1; echo "::error::fuzz target $target found a crash (see the artifact)"; }
+            echo "::endgroup::"
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
