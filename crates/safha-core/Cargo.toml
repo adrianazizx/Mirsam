@@ -34,8 +34,12 @@ icu_segmenter = { version = "2.4", default-features = false, features = ["compil
 icu_properties = "2.4"
 subsetter = "0.2.6"
 read-fonts = "0.47.0"
-# Image signatures (ADR 0045): PNG decoding. MIT OR Apache-2.0; already used by
-# the tests, and in the tree through Tauri.
+# OCR (ADR 0032): llama-server runs as a child process and is spoken to over
+# localhost HTTP. ureq without default features: blocking, plain HTTP, no TLS
+# (MIT OR Apache-2.0). Page images go to it as base64 PNGs.
+ureq = { version = "3.5.2", default-features = false }
+base64 = "0.23.1"
+# PNG: image signatures (ADR 0045) and OCR page images (ADR 0032).
 png = "0.18"
 serde_json = { workspace = true }
 
