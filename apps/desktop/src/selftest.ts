@@ -280,8 +280,17 @@ async function markupChecks(documentId: number) {
   return result;
 }
 
-/** More matching pixels than this means the thing looked for is on screen. */
-const ENOUGH = 50;
+/**
+ * Enough matching pixels for a small mark (a note's icon, a line of text) at
+ * the view's render scale (device pixels per point). A CI runner's small
+ * window at 1x draws a page at about 1 pixel per point, where a note's icon
+ * has a few dozen pure-yellow pixels; this Mac draws three times larger in
+ * each direction. Nothing matches before the mark is drawn, so a small floor
+ * still tells drawn from not drawn.
+ */
+function enoughAt(scale: number): number {
+  return Math.max(8, Math.round(8 * scale * scale));
+}
 
 /**
  * Page 0's on-screen pixels that `match` takes, once there are more than
@@ -293,7 +302,7 @@ const ENOUGH = 50;
 async function pixelsOnScreen(
   documentId: number,
   match: (r: number, g: number, b: number) => boolean,
-  enough = ENOUGH,
+  enough: number,
   timeoutMs = 15_000,
 ): Promise<number> {
   let count = 0;
@@ -342,6 +351,8 @@ async function recoveryFile(documentId: number, expected: boolean): Promise<bool
 
 async function notesAndInkChecks(documentId: number) {
   const viewer = getViewer(documentId);
+  const scale = viewer?.snapshot().scale ?? 1;
+  const enough = enoughAt(scale);
   const text = "راجع البند ٤ — check clause 4";
   // The note and the stroke go near the page's top: show it, so its tiles are on screen.
   if (viewer) {
@@ -353,8 +364,12 @@ async function notesAndInkChecks(documentId: number) {
   await runCommand("note.place", { page: 0, x: 24, y: 24 });
   await runCommand("note.save", { text });
   // The icon's yellow.
-  const notePixels = await pixelsOnScreen(documentId, (r, g, b) => r > 220 && g > 180 && b < 80);
-  const notePainted = notePixels > ENOUGH;
+  const notePixels = await pixelsOnScreen(
+    documentId,
+    (r, g, b) => r > 220 && g > 180 && b < 80,
+    enough,
+  );
+  const notePainted = notePixels > enough;
   const note = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "note");
 
   // A text box (ADR 0019): Arabic, shaped and drawn with embedded fonts.
@@ -368,9 +383,9 @@ async function notesAndInkChecks(documentId: number) {
   let boxPixels = 0;
   await waitFor(() => {
     boxPixels = countPixels(documentId, dark) - darkBefore;
-    return boxPixels > ENOUGH;
+    return boxPixels > enough;
   }, 15_000);
-  const boxPainted = boxPixels > ENOUGH;
+  const boxPainted = boxPixels > enough;
   const box = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "textBox");
 
   const stroke = [
@@ -380,8 +395,12 @@ async function notesAndInkChecks(documentId: number) {
   ];
   await runCommand("ink.add", { page: 0, strokes: [stroke] });
   // The pen's dark blue.
-  const inkPixels = await pixelsOnScreen(documentId, (r, g, b) => r < 70 && g < 110 && b > 110);
-  const inkPainted = inkPixels > ENOUGH;
+  const inkPixels = await pixelsOnScreen(
+    documentId,
+    (r, g, b) => r < 70 && g < 110 && b > 110,
+    enough,
+  );
+  const inkPainted = inkPixels > enough;
   const ink = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "ink");
 
   await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
@@ -389,6 +408,8 @@ async function notesAndInkChecks(documentId: number) {
   for (let i = 0; i < 4; i += 1) await runCommand("edit.undo");
   const cleared = (await backend.pageAnnotations(documentId, 0)).length === 0;
   return {
+    scale,
+    enough,
     noteMatches: note?.contents === text,
     boxMatches: box?.contents === boxText,
     boxPainted,

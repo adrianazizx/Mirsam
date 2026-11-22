@@ -86,11 +86,14 @@ if (nav) {
   check(notes !== undefined && notes !== null, "no notes-and-ink results");
   if (notes) {
     check(notes.noteMatches, "the note's Arabic text did not come back as written");
-    check(notes.notePainted && notes.notePixels > 50, `the note's icon was not painted (${notes.notePixels} px)`);
-    check(notes.inkPainted && notes.inkPixels > 50, `the stroke was not painted (${notes.inkPixels} px)`);
+    // Pixels enough for a small mark at the view's render scale (selftest.ts `enoughAt`).
+    const enough = notes.enough ?? 50;
+    const of = (px) => `${px} px, ${enough} needed at ${notes.scale?.toFixed(2)} px/pt`;
+    check(notes.notePainted && notes.notePixels > enough, `the note's icon was not painted (${of(notes.notePixels)})`);
+    check(notes.inkPainted && notes.inkPixels > enough, `the stroke was not painted (${of(notes.inkPixels)})`);
     check(notes.inkPoints === 3, `the stroke came back with ${notes.inkPoints} points`);
     check(notes.boxMatches, "the text box's Arabic text did not come back as written");
-    check(notes.boxPainted && notes.boxPixels > 50, `the text box was not painted (${notes.boxPixels} px)`);
+    check(notes.boxPainted && notes.boxPixels > enough, `the text box was not painted (${of(notes.boxPixels)})`);
     check(notes.erased, "the eraser did not remove the stroke");
     check(notes.cleared, "undo did not take the note, the text box, and the stroke away");
   }

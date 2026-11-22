@@ -380,6 +380,9 @@ parallel with M2 and merged by pull request at the owner's request.
   - Save-and-close no longer closes the tab when that Save As is cancelled.
 - **Self-test:** after a page is duplicated the document has a recovery file, and undo back to
   the file removes it (a devtools command, `selftest_has_recovery_file`).
+- **CI fix:** the macOS and Windows runners draw the page at under 1 pixel per point, where a
+  note's icon and a text box have 19–38 matching pixels. The fixed 50-pixel bar failed them.
+  The bar now follows the render scale (8 px per square px/pt, at least 8).
 - **Tests:** 247 Rust and 146 UI tests pass on this Mac. The self-test passes in English (LTR)
   and Arabic (RTL, dark), autosave included.
 
