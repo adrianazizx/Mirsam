@@ -55,6 +55,9 @@ pub struct EditOutcome {
     /// The pages changed (count, order, sizes, content); otherwise only their
     /// annotations did, and the same pages only need painting again.
     pages_changed: bool,
+    /// What the pages draw as text changed (pages changed, or text was
+    /// written into their content): text layers and search results are stale.
+    text_changed: bool,
 }
 
 impl EditOutcome {
@@ -65,6 +68,7 @@ impl EditOutcome {
             can_redo: history.can_redo(),
             modified: history.is_modified(),
             pages_changed: change == Change::Pages,
+            text_changed: change != Change::Annotations,
         }
     }
 }
@@ -83,6 +87,145 @@ pub async fn edit_pages(
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
     Ok(EditOutcome::new(page_count, &history, Change::Pages))
+}
+
+/// Text to write into a page's content (ADR 0021), as the UI sends it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewTextArg {
+    page: usize,
+    /// The box's top-left corner and width on the displayed page, in points.
+    x: f32,
+    y: f32,
+    width: f32,
+    text: String,
+    family: safha_core::fonts::FontFamily,
+    size: f32,
+    color: [f32; 3],
+    align: AlignArg,
+    direction: DirectionArg,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlignArg {
+    Start,
+    Center,
+    End,
+    Justify,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DirectionArg {
+    Auto,
+    Ltr,
+    Rtl,
+}
+
+impl From<NewTextArg> for safha_core::text_edit::NewText {
+    fn from(arg: NewTextArg) -> Self {
+        use safha_core::typeset::{Align, BaseDirection};
+        Self {
+            page: arg.page,
+            x: arg.x,
+            y: arg.y,
+            width: arg.width,
+            text: arg.text,
+            family: arg.family,
+            size: arg.size,
+            color: arg.color,
+            align: match arg.align {
+                AlignArg::Start => Align::Start,
+                AlignArg::Center => Align::Center,
+                AlignArg::End => Align::End,
+                AlignArg::Justify => Align::Justify,
+            },
+            direction: match arg.direction {
+                DirectionArg::Auto => BaseDirection::Auto,
+                DirectionArg::Ltr => BaseDirection::Ltr,
+                DirectionArg::Rtl => BaseDirection::Rtl,
+            },
+        }
+    }
+}
+
+/// Writes new text into a page's content (ADR 0021): one undo step.
+#[tauri::command]
+pub async fn add_text(
+    state: State<'_, AppState>,
+    document_id: u32,
+    text: NewTextArg,
+) -> CommandResult<EditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let (revision, update, _) = document.with_new_text(&text.into())?;
+    history.push_content(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(EditOutcome::new(page_count, &history, Change::Content))
+}
+
+/// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+#[tauri::command]
+pub async fn page_text_blocks(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+) -> CommandResult<Vec<safha_core::block_edit::TextBlock>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    Ok(document.text_blocks(page)?)
+}
+
+/// A paragraph's new text, as the UI sends it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockEditArg {
+    page: usize,
+    index: usize,
+    fingerprint: u32,
+    text: String,
+    /// A bundled family for the substitute; absent keeps the paragraph's own font if it can.
+    family: Option<safha_core::fonts::FontFamily>,
+}
+
+/// The document after a paragraph was edited in place, and what became of its font.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockEditOutcome {
+    #[serde(flatten)]
+    outcome: EditOutcome,
+    substituted: Option<safha_core::block_edit::Substitution>,
+    lines: usize,
+}
+
+/// Edits a paragraph of a page's text in place (ADR 0023): one undo step.
+#[tauri::command]
+pub async fn edit_text_block(
+    state: State<'_, AppState>,
+    document_id: u32,
+    edit: BlockEditArg,
+) -> CommandResult<BlockEditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let edit = safha_core::block_edit::BlockEdit {
+        page: edit.page,
+        index: edit.index,
+        fingerprint: edit.fingerprint,
+        text: edit.text,
+        family: edit.family,
+    };
+    let (revision, update, done) = document.with_block_edit(&edit)?;
+    history.push_content(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(BlockEditOutcome {
+        outcome: EditOutcome::new(page_count, &history, Change::Content),
+        substituted: done.substituted,
+        lines: done.lines,
+    })
 }
 
 /// Marked text on one page: the displayed-page rectangles of its runs.
@@ -890,6 +1033,19 @@ mod tests {
         let held = token(continue_insert(&state, pending, None).expect("asks"), false);
         state.forget_pending(held);
         assert!(state.take_insert(held).is_none());
+    }
+
+    #[test]
+    fn new_text_arrives_in_the_shape_the_ui_sends() {
+        let arg: NewTextArg = serde_json::from_str(
+            r#"{"page":0,"x":10,"y":20,"width":200,"text":"نص","family":"naskh","size":14,"color":[0,0,0.5],"align":"justify","direction":"rtl"}"#,
+        )
+        .expect("parses");
+        let text = safha_core::text_edit::NewText::from(arg);
+        assert_eq!(text.family, safha_core::fonts::FontFamily::Naskh);
+        assert_eq!(text.align, safha_core::typeset::Align::Justify);
+        assert_eq!(text.direction, safha_core::typeset::BaseDirection::Rtl);
+        assert_eq!((text.x, text.y, text.width, text.size), (10.0, 20.0, 200.0, 14.0));
     }
 
     #[test]

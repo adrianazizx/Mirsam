@@ -127,6 +127,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         const { activeTool, commentTool } = useAppStore.getState();
         if (activeTool === "select") return "select";
         if (activeTool === "protect") return "redact";
+        if (activeTool === "edit") return "text";
         return activeTool === "comment" ? commentTool : "none";
       },
       callbacks: {
@@ -142,6 +143,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
         onMarkArea: (page, rect) => void runCommand("redact.addArea", { page, rect }),
+        onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
+        onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
+        onBlockRefused: () => useAppStore.getState().setNotice({ key: "textNotEditable" }),
       },
     });
     viewerRef.current = viewer;

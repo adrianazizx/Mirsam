@@ -30,7 +30,7 @@ pub(crate) struct NamedFont {
 pub(crate) struct TextDrawing {
     /// `BT … ET` operators.
     pub(crate) content: Vec<u8>,
-    /// The fonts the operators use, as `/F0`, `/F1`, … in this order.
+    /// The fonts the operators use, as `/{prefix}0`, `/{prefix}1`, … in this order.
     pub(crate) fonts: Vec<FontToEmbed>,
 }
 
@@ -54,12 +54,14 @@ pub(crate) struct FontToEmbed {
 
 /// Draws `layout` (of `text`, made with `fonts`) with the top-left corner of
 /// its box at (`left`, `top`) in the content stream's space (y up), in `color`.
+/// The fonts' resource names are `prefix` and a number.
 pub(crate) fn draw_text(
     text: &str,
     layout: &TextLayout,
     fonts: &[NamedFont],
     (left, top): (f32, f32),
     color: [f32; 3],
+    prefix: &str,
 ) -> Result<TextDrawing> {
     let faces: Vec<FontFace> = fonts.iter().map(|font| font.face.clone()).collect();
     let subsets = subset_fonts(text, layout, &faces).map_err(|err| Error::Typeset(err.code()))?;
@@ -76,11 +78,20 @@ pub(crate) fn draw_text(
             else {
                 continue;
             };
-            let _ =
-                writeln!(content, "BT /F{resource} {} Tf {} {} {} rg", num(run.size), num(r), num(g), num(b));
+            let _ = writeln!(
+                content,
+                "BT /{prefix}{resource} {} Tf {} {} {} rg",
+                num(run.size),
+                num(r),
+                num(g),
+                num(b)
+            );
             for (i, glyph) in run.glyphs.iter().enumerate() {
                 let cluster = &run.clusters[glyph.cluster];
-                // A cluster drawn with several glyphs says what it stands for once.
+                // A cluster drawn with several glyphs says what it stands for
+                // once. (One glyph drawing several letters, a ligature, says it
+                // in the ToUnicode map: labelling it too misplaces its letters
+                // in PDFium's text inside form XObjects.)
                 let several = cluster.glyphs.len() > 1;
                 if several && i == cluster.glyphs.start {
                     let utf16: String =
@@ -110,7 +121,7 @@ pub(crate) fn draw_text(
             let upem = f32::from(font.face.units_per_em());
             let metrics = font.face.line_metrics();
             FontToEmbed {
-                resource: format!("F{resource}"),
+                resource: format!("{prefix}{resource}"),
                 base_font: format!("{}+{}", subset_tag(&subset.data), font.name),
                 widths: subset.glyphs.iter().map(|g| (g.cid, g.width)).collect(),
                 text: subset.glyphs.iter().filter_map(|g| Some((g.cid, g.text.clone()?))).collect(),

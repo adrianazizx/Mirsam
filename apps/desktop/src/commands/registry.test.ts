@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { backend } from "../backend";
-import { selectActiveDocument, useAppStore } from "../state/appStore";
+import { DEFAULT_TEXT_STYLE, selectActiveDocument, useAppStore } from "../state/appStore";
 import type { ViewerController } from "../viewer/controller";
 import { registerViewer, unregisterViewer } from "../viewer/registry";
 import {
@@ -135,6 +135,93 @@ describe("command registry", () => {
     } finally {
       save.mockRestore();
       saveAs.mockRestore();
+    }
+  });
+
+  it("places new page text with the Edit tool, in the chosen style", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    useAppStore.getState().setActiveTool("edit");
+    useAppStore.getState().updateSearch(1, { query: "old", status: "done" });
+    await runCommand("text.setStyle", { textStyle: { family: "naskh", size: 18 } });
+    await runCommand("text.setStyle", { textStyle: { align: "justify", direction: "rtl" } });
+    const addText = vi.spyOn(backend, "addText");
+    try {
+      await runCommand("text.place", { page: 2, x: 40, y: 80, width: 300 });
+      expect(useAppStore.getState().pendingNote).toMatchObject({ kind: "pageText", page: 2 });
+      await runCommand("note.save", { text: "تمت المراجعة — reviewed" });
+      expect(addText).toHaveBeenCalledWith(1, 2, 40, 80, 300, "تمت المراجعة — reviewed", {
+        family: "naskh",
+        size: 18,
+        color: [0, 0, 0],
+        align: "justify",
+        direction: "rtl",
+      });
+      const doc = selectActiveDocument(useAppStore.getState());
+      // The same pages, painted again; what search found is stale.
+      expect(doc).toMatchObject({ revision: 0, modified: true, canUndo: true });
+      expect(doc?.paint).toBeGreaterThan(0);
+      expect(doc?.search.query).toBe("");
+      // Nothing typed adds nothing.
+      await runCommand("text.place", { page: 0, x: 10, y: 10 });
+      await runCommand("note.save", { text: "  " });
+      expect(addText).toHaveBeenCalledTimes(1);
+    } finally {
+      addText.mockRestore();
+      useAppStore.getState().setTextStyle(DEFAULT_TEXT_STYLE);
+    }
+  });
+
+  it("edits a paragraph of the page's own text in place (ADR 0023)", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 3 });
+    useAppStore.getState().setActiveTool("edit");
+    const [block] = await backend.pageTextBlocks(1, 0);
+    expect(block).toMatchObject({ editable: true, fontReusable: true });
+    if (!block) return;
+    const edit = vi.spyOn(backend, "editTextBlock");
+    try {
+      await runCommand("text.editBlock", { page: 0, block });
+      expect(useAppStore.getState().pendingNote).toMatchObject({
+        kind: "block",
+        page: 0,
+        x: 72,
+        y: 120,
+        width: 300,
+        height: 36,
+      });
+
+      // Unchanged text is no edit.
+      await runCommand("note.save", { text: block.text });
+      expect(edit).not.toHaveBeenCalled();
+
+      await runCommand("text.editBlock", { page: 0, block });
+      await runCommand("note.save", { text: block.text.replace("one", "a single") });
+      expect(edit).toHaveBeenCalledWith(1, {
+        page: 0,
+        index: 0,
+        fingerprint: block.fingerprint,
+        text: block.text.replace("one", "a single"),
+      });
+      expect(useAppStore.getState().pendingNote).toBeNull();
+      expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+        modified: true,
+        canUndo: true,
+      });
+      // Latin text in the paragraph's own font: nothing was substituted.
+      expect(useAppStore.getState().notice).toBeNull();
+
+      // Arabic needs a bundled font: the user is told, and the family can be chosen.
+      const [next] = await backend.pageTextBlocks(1, 0);
+      if (!next) return;
+      await runCommand("text.editBlock", { page: 0, block: next });
+      await runCommand("note.save", { text: "فقرة جديدة", blockFamily: "naskh" });
+      expect(edit).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ text: "فقرة جديدة", family: "naskh" }),
+      );
+      expect(useAppStore.getState().notice).toMatchObject({ key: "fontSubstituted" });
+    } finally {
+      edit.mockRestore();
+      useAppStore.getState().setNotice(null);
     }
   });
 
