@@ -28,4 +28,4 @@ pub use normalize::{Profile, normalize};
 pub use report::{
     CategoryScore, GateFailure, Manifest, Regression, Report, Sample, Target, Targets, evaluate,
 };
-pub use score::{CellScore, Counts, FieldScore, OrderScore, SampleScore, score_sample};
+pub use score::{CellScore, Counts, FieldScore, OrderScore, SampleScore, score_best, score_sample};

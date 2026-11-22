@@ -132,6 +132,25 @@ pub fn score_sample(truth: &str, hypothesis: &str, fields: &[String], cells: &[V
     }
 }
 
+/// Scores the output against each acceptable truth (the reading orders a page
+/// allows) and keeps the closest one: fewest character errors, then the first
+/// listed. `truths` must not be empty.
+pub fn score_best(
+    truths: &[&str],
+    hypothesis: &str,
+    fields: &[String],
+    cells: &[Vec<String>],
+) -> SampleScore {
+    let mut best: Option<SampleScore> = None;
+    for truth in truths {
+        let score = score_sample(truth, hypothesis, fields, cells);
+        if best.as_ref().is_none_or(|b| score.cer.errors < b.cer.errors) {
+            best = Some(score);
+        }
+    }
+    best.unwrap_or_else(|| score_sample("", hypothesis, fields, cells))
+}
+
 /// True when `field` occurs in `text` as a whole value: not embedded in a longer
 /// run of letters or digits (so "4,500" does not match inside "14,500").
 fn contains_field(text: &str, field: &str) -> bool {
@@ -356,6 +375,23 @@ mod tests {
     fn a_page_without_a_table_has_no_cells() {
         assert_eq!(cells("").total, 9);
         assert_eq!(score("نص", "نص").cells, CellScore::default());
+    }
+
+    #[test]
+    fn either_column_order_is_accepted_when_the_page_allows_both() {
+        let english = "This Lease Agreement is made between the Landlord and the Tenant";
+        let arabic = "أُبرم عقد الإيجار هذا بين المؤجر والمستأجر المذكورين أدناه";
+        let english_first = format!("{english}\n{arabic}");
+        let arabic_first = format!("{arabic}\n{english}");
+        let truths = [english_first.as_str(), arabic_first.as_str()];
+        let result = score_best(&truths, &arabic_first, &[], &[]);
+        assert_eq!((result.cer.errors, result.order.total()), (0, 0));
+        // Interleaving the columns word by word fits neither order.
+        let english_words: Vec<&str> = english.split(' ').collect();
+        let arabic_words: Vec<&str> = arabic.split(' ').collect();
+        let interleaved: Vec<&str> =
+            english_words.iter().zip(&arabic_words).flat_map(|(e, a)| [*e, *a]).collect();
+        assert!(score_best(&truths, &interleaved.join(" "), &[], &[]).cer.errors > 0);
     }
 
     #[test]

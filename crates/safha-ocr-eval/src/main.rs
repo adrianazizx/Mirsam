@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use safha_ocr_eval::{Manifest, Report, Targets, evaluate, score_sample};
+use safha_ocr_eval::{Manifest, Report, Targets, evaluate, score_best};
 
 struct Args {
     manifest: PathBuf,
@@ -61,15 +61,18 @@ fn run() -> Result<bool, String> {
     let mut scores = Vec::with_capacity(manifest.samples.len());
     let mut missing = Vec::new();
     for sample in &manifest.samples {
-        let truth_path = set_dir.join(&sample.truth);
-        let truth =
-            std::fs::read_to_string(&truth_path).map_err(|err| format!("{}: {err}", truth_path.display()))?;
+        let mut truths = Vec::with_capacity(1 + sample.truth_alternatives.len());
+        for file in std::iter::once(&sample.truth).chain(&sample.truth_alternatives) {
+            let path = set_dir.join(file);
+            truths.push(std::fs::read_to_string(&path).map_err(|err| format!("{}: {err}", path.display()))?);
+        }
+        let truths: Vec<&str> = truths.iter().map(String::as_str).collect();
         let hypothesis =
             std::fs::read_to_string(args.hyp.join(format!("{}.txt", sample.id))).unwrap_or_else(|_| {
                 missing.push(sample.id.clone());
                 String::new()
             });
-        scores.push(score_sample(&truth, &hypothesis, &sample.fields, &sample.cells));
+        scores.push(score_best(&truths, &hypothesis, &sample.fields, &sample.cells));
     }
     let report = evaluate(&args.engine, &manifest, scores, missing);
 

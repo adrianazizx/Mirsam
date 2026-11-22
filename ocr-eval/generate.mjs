@@ -9,7 +9,8 @@
 // bilevel fax, photocopy shadow; and, since set v2, severe conditions built
 // from SVG filters: broken fax strokes, second-generation photocopies, faded
 // toner, warped phone-photo pages). Ground truth is the content's logical-order
-// text; table samples also list their cells, row by row in reading order. Real
+// text; table samples also list their cells, row by row in reading order, and
+// side-by-side bilingual columns accept either column first. Real
 // scans with human-verified truth live in ocr-eval/scans/ and are merged into
 // the same manifest.
 //
@@ -132,6 +133,21 @@ const VARIANTS = {
   },
 };
 
+/**
+ * Other reading orders that are just as right as `expectedBlocks`. Side-by-side
+ * columns in two languages have no single order: an Arabic reader finishes the
+ * Arabic column first, an English reader the English one. Either is correct as
+ * long as each column stays whole; interleaving them line by line is still wrong.
+ */
+function alternativeTruths(content) {
+  const bilingual = (block) => block.kind === "columns" && new Set(block.columns.map((c) => c.dir)).size > 1;
+  if (!content.blocks.some(bilingual)) return [];
+  const swapped = content.blocks.map((block) =>
+    bilingual(block) ? { ...block, columns: [...block.columns].reverse() } : block,
+  );
+  return [expectedBlocks({ ...content, blocks: swapped })];
+}
+
 const DEGRADED = ["lowres-150", "blur-200", "skew-noise-200", "fax-100", "shadow-200"];
 const SEVERE = ["fax-broken-100", "photocopy2-150", "faded-200", "warp-200"];
 
@@ -229,6 +245,11 @@ for (const spec of sampleSpecs()) {
     .map((block) => block.text)
     .join("\n");
   writeFileSync(path.join(OUT, "truth", `${id}.txt`), `${truth}\n`);
+  const alternatives = alternativeTruths(content).map((blocks, index) => {
+    const file = `truth/${id}.alt${index + 1}.txt`;
+    writeFileSync(path.join(OUT, file), `${blocks.map((block) => block.text).join("\n")}\n`);
+    return file;
+  });
 
   // Table cells, row by row in reading order, for cell-level scoring (ADR 0030).
   const cells = content.blocks.filter((block) => block.kind === "table").flatMap((block) => block.rows);
@@ -240,6 +261,7 @@ for (const spec of sampleSpecs()) {
     categories: spec.categories,
     fields: FIELDS[spec.content] ?? [],
     ...(cells.length > 0 ? { cells } : {}),
+    ...(alternatives.length > 0 ? { truth_alternatives: alternatives } : {}),
     source: "synthetic",
     content: spec.content,
     font: FONTS[spec.font].family,

@@ -20,6 +20,11 @@ pub struct Sample {
     pub image: String,
     /// Path of the ground-truth text, relative to the manifest.
     pub truth: String,
+    /// Other reading orders that are equally correct (e.g. side-by-side columns in
+    /// two languages, either one first). The sample is scored against whichever
+    /// truth fits the output best.
+    #[serde(default)]
+    pub truth_alternatives: Vec<String>,
     pub categories: Vec<String>,
     /// Values that must be recognized exactly (numbers, dates, IDs).
     #[serde(default)]
@@ -238,6 +243,7 @@ mod tests {
             id: id.into(),
             image: format!("images/{id}.png"),
             truth: format!("truth/{id}.txt"),
+            truth_alternatives: vec![],
             categories: categories.iter().map(|c| c.to_string()).collect(),
             fields: vec![],
             cells: vec![],

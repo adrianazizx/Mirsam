@@ -44,6 +44,10 @@ Set v2 added, without changing any v1 sample:
 - **Table cells.** Table samples list their cells (`cells` in the manifest, row by row in reading
   order). The scorer reports the share of cells read exactly and the number read but out of order,
   beside page CER, which cannot tell a misread table from a misordered one.
+- **Either column first** on side-by-side bilingual pages. An Arabic reader finishes the Arabic
+  column first and an English reader the English one; both orders are right as long as each column
+  stays whole. The manifest lists the swapped order as `truth_alternatives`, and the scorer keeps
+  whichever truth fits the output better. Interleaving the columns line by line still fails both.
 
 Still missing from the spec's list: real phone photos, stamps and letterheads, typewriter faces,
 handwriting, all of which need real images. The severe conditions are synthetic too.
