@@ -97,6 +97,8 @@ const PARAMS: Params = Params {
 /// glyphs it draws.
 pub fn analyze(glyphs: &[Glyph], spaces: &[SpaceMark]) -> PageText {
     let p = PARAMS;
+    let spaces = with_spaces_drawn_in_runs(glyphs, spaces);
+    let spaces = spaces.as_slice();
     let units = build_units(glyphs);
     if units.is_empty() {
         return PageText { blocks: Vec::new(), direction: Direction::Ltr, quality: TextQuality::NoText };
@@ -136,6 +138,24 @@ pub fn analyze(glyphs: &[Glyph], spaces: &[SpaceMark]) -> PageText {
     let ordered = order_blocks(blocks, direction);
 
     PageText { blocks: ordered.into_iter().map(finish_block).collect(), direction, quality }
+}
+
+/// Adds the space glyphs drawn inside a longer run to the page's space marks.
+///
+/// Chrome draws each word space as its own text object, which
+/// `glyphs::collect_space_marks` finds. Chrome on Linux sometimes draws the
+/// space in the same `Tj` as the glyph before it (`<00370001>`), wherever the
+/// space's offset equals that glyph's advance. PDFium reports such a space as
+/// a full-size character with a real advance, at the right place. The spaces
+/// it reports unreliably (ADR 0008) are the zero-width ones it attaches to
+/// standalone space objects, which this skips.
+fn with_spaces_drawn_in_runs(glyphs: &[Glyph], spaces: &[SpaceMark]) -> Vec<SpaceMark> {
+    let in_runs = glyphs.iter().filter(|g| g.ch == ' ' && g.size > 1.5 && g.right - g.left >= 0.1 * g.size);
+    spaces
+        .iter()
+        .copied()
+        .chain(in_runs.map(|g| SpaceMark { x: g.left, y: g.origin_y, size: g.size }))
+        .collect()
 }
 
 // ---------------------------------------------------------------- units
@@ -1268,6 +1288,19 @@ mod tests {
         // the left bracket as typed and the right one as drawn: both come out ")".
         let glyphs = line(&["!)abc)", "صوصن"], 700.0, 300.0, 4.0, 12.0, 0);
         assert_eq!(text(&glyphs), "نصوص (abc)!");
+    }
+
+    #[test]
+    fn a_space_drawn_in_the_same_run_as_a_letter_is_a_word_break() {
+        // A page that draws its spaces (Chrome): there, only drawn spaces break
+        // Arabic words. "بكم مرحبا" (visual: "ابحرم" then "مكب"), 0.3 em apart.
+        let mut glyphs = line(&["ابحرم", "مكب"], 700.0, 300.0, 3.5, 12.0, 0);
+        let marks = [SpaceMark { x: 100.0, y: 650.0, size: 12.0 }];
+        assert_eq!(analyze(&glyphs, &marks).blocks[0].lines[0].text, "بكممرحبا");
+        // Chrome on Linux draws that space in one `Tj` with the letter before it;
+        // PDFium reports it as a full-size space with a real advance.
+        glyphs.push(g(99, ' ', 330.0, 3.5, 700.0, 12.0));
+        assert_eq!(analyze(&glyphs, &marks).blocks[0].lines[0].text, "بكم مرحبا");
     }
 
     #[test]

@@ -16,12 +16,12 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
    and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
 3. **CI on pull request #1:**
-   - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows.
-   - **Red: the Linux tests.** Chrome on Linux lays out two Arabic fixtures differently from
-     Chrome on macOS: lam-alef extracts 4 of 5 blocks there, vocalized 2 of 4. This is the first
-     run to get that far; the next run uploads the Linux-made PDFs so the extractor can be fixed
-     for both.
-   - **Windows tests:** their last run was cancelled by a newer push.
+   - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
+     including printing through GTK on Linux.
+   - **The Linux tests** failed because Chrome on Linux draws some word spaces differently. The
+     extractor now handles both ways (ADR 0008); the fix is pushed and passes locally on the
+     Linux-made corpus. A green CI run is still to be seen.
+   - **The Windows tests** have not yet finished a run.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
@@ -67,8 +67,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — runs on GitHub. Everything is green on PR #1 except the Linux
-      tests: Linux Chrome makes two Arabic fixtures differently (owner item 3)
+- [~] CI on Windows/macOS/Linux — runs on GitHub. A fully green run on PR #1 is still to be seen
+      (owner item 3)
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -144,7 +144,7 @@ by anything found so far.
       - windows: New Window (Cmd/Ctrl+N) and Move Tab to New Window; a window's documents close
         with it; the session restores every window; settings follow across windows.
       Checked in the real app: the self-test opens a second window
-- [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 85/118 corpus blocks verbatim
+- [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 86/118 corpus blocks verbatim
       (was 46), 69/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for OCR;
       identical text on pages rotated 0/90/180/270°
 - [x] Selection and copy (ADR 0010) — selects visually, copies logically; word/line/page
@@ -174,7 +174,7 @@ by anything found so far.
       - Copy in the real app equals the extracted text (self-test).
       - The one miss is `(64-bit)` in an Arabic line, which is drawn exactly like `(bit-64)`.
       - Pages with a broken mapping are flagged for OCR (M4).
-      - Not met yet on fixtures made by Linux Chrome (owner item 3).
+      - The same holds for the fixtures Chrome makes on Linux (62/63; ADR 0008).
 
 Known extraction gap (floors in `crates/safha-core/tests/text.rs`): `(64-bit)` inside an Arabic
 line comes out `(bit-64)`. The two are drawn identically, and the same file's `INV-2026-00417`
@@ -198,7 +198,6 @@ Test status at the end of session 6:
 
 Remaining M1 work:
 
-- extraction on fixtures made by Linux Chrome (two Arabic files; owner item 3);
 - confirm printing on screen on macOS and Windows (owner item 13);
 - pinch-out frames (needs WebKit's own profiler);
 - the memory budget decision (owner item 12).
@@ -282,8 +281,10 @@ Remaining M1 work:
 - **Printing on Linux:** GTK's print dialog, with PDFium drawing each page (ADR 0013). CI
   exports four pages to a file and checks them.
 - **Pinch-out:** three hypotheses measured and rejected (ADR 0011).
-- **New on CI:** Linux Chrome makes two Arabic fixtures differently, so extraction there falls
-  below the macOS floors. Under investigation.
+- **Chrome on Linux** draws some word spaces inside another run. Handled now, so extraction on
+  Linux-made fixtures matches macOS (ADR 0008).
+- **Printing on Linux** verified in CI: four rotated pages exported in 203 ms, each on paper of
+  the right orientation.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 

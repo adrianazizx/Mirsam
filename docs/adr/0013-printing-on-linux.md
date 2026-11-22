@@ -60,4 +60,8 @@ Spec §5.9 lists "print with page scaling, booklet, selected pages" as P0. The w
   - The self-test prints `derived/rotated.pdf` (four pages, turned 0°, 90°, 180° and 270°) and
     checks that four pages come out.
   - It uploads small previews, rendered by our own `render_png`.
+  - First run (session 6), under Xvfb on Ubuntu:
+    - all four pages came out, in 203 ms;
+    - the pages turned 90° and 270° are on landscape paper and the others on portrait;
+    - the content is upright as displayed.
 - **Not verified:** the interactive dialog with a real printer. It needs a Linux desktop.

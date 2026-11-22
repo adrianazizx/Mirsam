@@ -145,9 +145,25 @@ PDFium reports and the page's content stream:
     PDFium makes one text object per `Tj`, so that boundary is lost. Reading it would mean
     parsing content streams ourselves for one producer. Not done.
 
-Results: 85 / 118 blocks verbatim on the whole corpus (was 83), and **69 / 70 on pages with a
-trustworthy mapping** (was 67). Every miss left is either the ambiguity above or on a page
-flagged for OCR.
+- **Chrome on Linux draws some word spaces inside another run.** Fixed.
+  - What was seen: the first Linux CI run made the same fixtures with Linux Chrome. Vocalized
+    Amiri lost five word spaces, all before `الْ`.
+  - Cause: Linux Chrome draws a space in the same `Tj` as the glyph before it (`<00370001>`)
+    wherever the space's offset equals that glyph's advance. Its float rounding makes this
+    happen where macOS Chrome's does not.
+  - Such a space is not a standalone space object, so it was not counted as a drawn space,
+    and on a page that draws its spaces only drawn spaces break Arabic words.
+  - Fix: PDFium reports such a space as a full-size character with a real advance, at exactly
+    where macOS Chrome's separate space object sits. Spaces like that now count as drawn
+    spaces too. The unreliable reports are the zero-width ones PDFium attaches to standalone
+    space objects, and those are still ignored.
+
+Results:
+- 86 / 118 blocks verbatim on the macOS corpus (was 83), and **69 / 70 on pages with a
+  trustworthy mapping** (was 67).
+- 62 / 63 on the Linux-made corpus, which has no CoreText fixtures.
+- Every miss left is either the ambiguity above or on a page flagged for OCR.
+- CI runs the floors and the search test against each platform's own Chrome output.
 
 ## Consequences
 
