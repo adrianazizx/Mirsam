@@ -58,6 +58,11 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 
     Linux uses GTK's print dialog, with each page drawn at the printer's resolution (ADR 0013).
     CI checks it by printing to a file; it has not been tried on a desktop with a real printer.
+14. **IBM Plex in users' PDFs.** Text boxes embed subsets of IBM Plex Sans and IBM Plex Sans
+    Arabic (ADR 0019). "Plex" is a Reserved Font Name under the OFL. Embedding a subset in a
+    document under the font's own name is common practice and is not redistributing a modified
+    font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
+    and Noto Sans Arabic (OFL, no reserved name) can replace them.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -224,8 +229,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 6. **Notes, text boxes, ink** (RTL-aware text entry):
    - ~~**Ink and sticky notes**~~ **done (ADR 0018):** the Comment tool's Note, Draw (with
      pressure), and Erase-ink modes; a note editor that follows the text's own direction.
-   - **Text boxes** next. Their appearance draws shaped text with an embedded font subset, so
-     they need the content-stream writer, built on M3's `typeset` (ADR 0020).
+   - ~~**Text boxes**~~ **done (ADR 0019):** shaped by M3's `typeset`, drawn with embedded
+     IBM Plex subsets by the new `pdf::text` writer. They stand upright on turned pages, and
+     their height fits the text.
 7. **Autosave and recovery.**
 8. **Comments panel** (P1, if time allows in M2).
 
@@ -234,7 +240,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
         delete; undo; English and Arabic; encrypted files.
       - Ink and sticky notes are done (ADR 0018): pressure, eraser, notes upright on turned
         pages, Arabic note text, edit and delete.
-      - Not yet: text boxes and callouts, choosing colours and widths, moving annotations.
+      - Text boxes are done (ADR 0019): Arabic, English and mixed text shaped with embedded
+        font subsets; they read back exactly once flattened; encrypted files work.
+      - Not yet: callouts, choosing fonts, sizes and colours, and moving annotations.
 - [ ] Comments panel
 - [~] Page organizer (reorder/rotate/delete/merge/split/extract):
       - The Pages tool shows a virtualized grid (React Aria `GridList` + `GridLayout`).
@@ -291,8 +299,9 @@ parallel with M2 and merged by pull request at the owner's request.
         the best few in full and instances variable fonts at the requested weight.
       - **Gap:** reusing the PDF's own embedded font when it has the glyphs (in-place-editing
         work).
-- [ ] **Own content-stream writer** (now the only backend). Waits for M2's
-      `safha_core::pdf` writer to merge. Must solve:
+- [~] **Own content-stream writer** (now the only backend). The text half exists:
+      `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
+      M2's text boxes. Writing into page content is still to do. Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
@@ -341,7 +350,7 @@ parallel with M2 and merged by pull request at the owner's request.
 
 ## Session log
 
-### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes)
+### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes, text boxes)
 
 - **CI on PR #2:** a slow macOS runner failed the scroll benchmark's timing. On CI every
   benchmark timing check now warns; only the app's own memory fails the run (ADR 0011). After
@@ -374,11 +383,19 @@ parallel with M2 and merged by pull request at the owner's request.
     on turned pages.
   - **The note editor's** text field takes its direction from the text (`dir="auto"`).
   - **The annotation module** is now a folder: markup, ink, notes.
-- **Not yet:** text boxes. They need the content-stream writer with shaped text and embedded
-  fonts.
-- **Tests:** 223 Rust and 141 UI tests pass on this Mac. The self-test passes in English (LTR)
-  and Arabic (RTL, dark): markup, an Arabic note, and a pressure stroke, each painted and
-  undone.
+- **Text boxes (ADR 0019):**
+  - **Shaped text:** M3's `typeset` lays out English, Arabic and mixed text. The new
+    `pdf::text` writer draws it with embedded IBM Plex subsets (the text half of the
+    content-stream writer).
+  - **Layout:** a box stands upright on turned pages; its height fits the text and grows
+    downward when the text changes; saving it empty removes it.
+  - **Tests:** each box is flattened with qpdf and read back by our extractor, exactly, in
+    logical order.
+  - **Extraction:** word-space markers are now read inside form XObjects too, which flattened
+    Arabic needed.
+- **Tests:** 238 Rust and 142 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark): markup, an Arabic note, an Arabic text box, and a pressure stroke,
+  each painted and undone.
 
 ### Rename to Mirsam — 2026-11-22
 

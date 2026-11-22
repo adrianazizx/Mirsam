@@ -9,8 +9,8 @@ import { CommandButton } from "../ui/CommandButton";
 import styles from "./NoteEditor.module.css";
 
 /**
- * Writes a sticky note's text (ADR 0018): a new note's, or the selected
- * note's. The text field takes its direction from what is typed (`dir="auto"`),
+ * Writes a sticky note's or a text box's text (ADRs 0018, 0019): a new one's,
+ * or the selected one's. The text field takes its direction from what is typed (`dir="auto"`),
  * so Arabic and English notes each read correctly in either UI language.
  *
  * Pressing anywhere outside it keeps what was written, as other editors do
@@ -21,12 +21,13 @@ export function NoteEditor({ documentId }: { documentId: number }) {
   const locale = useAppStore((state) => state.locale);
   const note = useAppStore((state) => {
     const selected = state.documents.find((open) => open.id === documentId)?.selectedAnnotation;
-    return selected?.kind === "note" ? selected : null;
+    return selected?.kind === "note" || selected?.kind === "textBox" ? selected : null;
   });
   const pending = useAppStore((state) =>
     state.pendingNote?.documentId === documentId ? state.pendingNote : null,
   );
   const initial = note?.contents ?? "";
+  const kind = pending?.kind ?? (note?.kind === "textBox" ? "textBox" : "note");
   const [text, setText] = useState(initial);
   const which = pending
     ? `new@${pending.page}:${pending.x}:${pending.y}`
@@ -59,7 +60,7 @@ export function NoteEditor({ documentId }: { documentId: number }) {
         ref={card}
         className={styles.card}
         role="dialog"
-        aria-label={t("note.label")}
+        aria-label={t(`${kind}.label`)}
         dir={directionOf(locale)}
         data-testid="note-editor"
       >
@@ -68,8 +69,8 @@ export function NoteEditor({ documentId }: { documentId: number }) {
           className={styles.text}
           value={text}
           dir="auto"
-          aria-label={t("note.text")}
-          placeholder={t("note.placeholder")}
+          aria-label={t(`${kind}.text`)}
+          placeholder={t(`${kind}.placeholder`)}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {

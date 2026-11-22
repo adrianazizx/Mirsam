@@ -150,6 +150,8 @@ export const tauriBackend: Backend = {
     invoke<EditOutcome>("add_ink", { documentId, page, strokes }),
   addNote: (documentId, page, x, y, contents) =>
     invoke<EditOutcome>("add_note", { documentId, page, x, y, contents }),
+  addTextBox: (documentId, page, x, y, width, contents) =>
+    invoke<EditOutcome>("add_text_box", { documentId, page, x, y, width, contents }),
   setAnnotationContents: (documentId, page, index, contents) =>
     invoke<EditOutcome>("set_annotation_contents", { documentId, page, index, contents }),
   removeAnnotations: (documentId, page, indices) =>

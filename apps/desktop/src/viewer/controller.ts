@@ -107,6 +107,8 @@ export interface ViewerCallbacks {
   onErase?(page: number, indices: number[]): void;
   /** A press placed a new note: its icon's top-left corner (Comment tool). */
   onPlaceNote?(page: number, x: number, y: number): void;
+  /** A press placed a new text box: its top-left corner and width (Comment tool). */
+  onPlaceTextBox?(page: number, x: number, y: number, width: number): void;
 }
 
 /** An annotation the reader selected by clicking it. */
@@ -125,10 +127,16 @@ export interface SelectedAnnotation {
  * What a press on a page does: select text and annotations; place a note,
  * draw, or erase (the Comment tool); or nothing (other tools).
  */
-export type ViewerMode = "select" | "note" | "pen" | "eraser" | "none";
+export type ViewerMode = "select" | "note" | "textBox" | "pen" | "eraser" | "none";
 
 /** A note's icon, in points (the engine's `NOTE_SIZE`). */
 export const NOTE_SIZE = 20;
+/** A new text box's width, in points, where the page has room (`TextBox::DEFAULT_WIDTH`). */
+export const TEXT_BOX_WIDTH = 240;
+/** The height a new, empty text box is shown with: one line of 12-point text. */
+const TEXT_BOX_LINE = 20;
+/** The narrowest a new text box is made. */
+const TEXT_BOX_MIN_WIDTH = 40;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -151,6 +159,8 @@ export interface ViewerClassNames {
   inkErasing: string;
   /** Where a new note's icon goes, while its text is written. */
   notePending: string;
+  /** Where a new text box goes, while its text is written. */
+  textBoxPending: string;
   /** Anchor element the note editor is rendered into. */
   noteEditor: string;
   /** Anchor element the selection toolbar is rendered into. */
@@ -380,7 +390,12 @@ export class ViewerController {
   /** The ink annotations the eraser has touched during this press. */
   private erasing: { pointerId: number; page: number; indices: Set<number> } | null = null;
   /** Where the note editor sits: a new note's icon, or the selected note. */
-  private noteAnchor: { page: number; rect: ViewRect; pending: boolean } | null = null;
+  private noteAnchor: {
+    page: number;
+    rect: ViewRect;
+    pending: boolean;
+    kind: "note" | "textBox";
+  } | null = null;
   /** Where the note editor is drawn: under the note's icon. */
   readonly noteEditorHost: HTMLDivElement;
   /** Where the selection toolbar is drawn: above the selection's first line. */
@@ -732,16 +747,21 @@ export class ViewerController {
   }
 
   /**
-   * Shows where a new note's icon goes (its top-left corner) while its text
-   * is written, and anchors the note editor there; null takes it away.
+   * Shows where a new note's icon or text box goes (its top-left corner)
+   * while its text is written, and anchors the editor there; null takes it
+   * away.
    */
-  showPendingNote(note: { page: number; x: number; y: number } | null): void {
+  showPendingNote(
+    note: { page: number; x: number; y: number; kind: "note" | "textBox"; width: number } | null,
+  ): void {
     const previous = this.noteAnchor;
     if (note) {
+      const height = note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE;
       this.noteAnchor = {
         page: note.page,
-        rect: { x: note.x, y: note.y, width: NOTE_SIZE, height: NOTE_SIZE },
+        rect: { x: note.x, y: note.y, width: note.width, height },
         pending: true,
+        kind: note.kind,
       };
     } else if (previous?.pending) {
       this.noteAnchor = null;
@@ -876,8 +896,13 @@ export class ViewerController {
     if (previous?.page === selected?.page && previous?.index === selected?.index) return;
     this.selectedAnnotation = selected;
     // A note opens its editor under the icon; a pending new note stays put.
-    if (selected?.kind === "note") {
-      this.noteAnchor = { page: selected.page, rect: selected.rect, pending: false };
+    if (selected?.kind === "note" || selected?.kind === "textBox") {
+      this.noteAnchor = {
+        page: selected.page,
+        rect: selected.rect,
+        pending: false,
+        kind: selected.kind === "textBox" ? "textBox" : "note",
+      };
     } else if (this.noteAnchor && !this.noteAnchor.pending) {
       this.noteAnchor = null;
     }
@@ -1090,8 +1115,8 @@ export class ViewerController {
     this.pressedPoint = clicks === 1 && !event.shiftKey ? point : null;
     void this.loadAnnotations(point.page);
     this.setSelectedAnnotation(null);
-    if (mode === "note") {
-      // A press places a note (or opens one) when it ends; it selects no text.
+    if (mode === "note" || mode === "textBox") {
+      // A press places a note or text box (or opens one) when it ends; it selects no text.
       this.setSelection(null);
       this.dragging = {
         pointerId: event.pointerId,
@@ -1197,13 +1222,20 @@ export class ViewerController {
     void this.loadAnnotations(pressed.page).then(() => {
       if (this.destroyed || press !== this.presses || this.selection !== null) return;
       const hit = this.annotationAt(pressed);
-      if (mode !== "note") {
+      const size = this.sizes?.[pressed.page];
+      if (mode !== "note" && mode !== "textBox") {
         if (hit) this.setSelectedAnnotation(hit);
-      } else if (hit?.kind === "note") {
+      } else if (hit?.kind === mode) {
         this.setSelectedAnnotation(hit);
+      } else if (mode === "textBox") {
+        // Its top-left corner at the press, as wide as the page allows.
+        if (!size) return;
+        const x = Math.max(0, Math.min(pressed.x, size.width - TEXT_BOX_MIN_WIDTH - 4));
+        const y = Math.max(0, Math.min(pressed.y, size.height - TEXT_BOX_LINE));
+        const width = Math.min(TEXT_BOX_WIDTH, size.width - x - 4);
+        this.callbacks.onPlaceTextBox?.(pressed.page, x, y, width);
       } else {
         // The icon centred on the press, kept on the page.
-        const size = this.sizes?.[pressed.page];
         if (!size) return;
         const half = NOTE_SIZE / 2;
         const { x, y } = clampToPage(
@@ -1305,9 +1337,10 @@ export class ViewerController {
     const host = this.selectionToolbarHost;
     let first = [...this.selectionRects.keys()].sort((a, b) => a - b)[0];
     let rects = first === undefined ? undefined : this.selectionRects.get(first);
-    // A note has its editor instead.
-    if (!rects?.length && this.selectedAnnotation && this.selectedAnnotation.kind !== "note") {
-      first = this.selectedAnnotation.page;
+    // A note or a text box has its editor instead.
+    const selected = this.selectedAnnotation;
+    if (!rects?.length && selected && selected.kind !== "note" && selected.kind !== "textBox") {
+      first = selected.page;
       rects = this.selectedAnnotationRects();
     }
     const box = first === undefined ? undefined : this.layout?.boxes[first];
@@ -1362,7 +1395,10 @@ export class ViewerController {
     }
     if (this.noteAnchor?.pending && this.noteAnchor.page === slot.page) {
       const element = document.createElement("div");
-      element.className = this.classNames.notePending;
+      element.className =
+        this.noteAnchor.kind === "textBox"
+          ? this.classNames.textBoxPending
+          : this.classNames.notePending;
       place(element, this.noteAnchor.rect);
       slot.overlay.append(element);
     }

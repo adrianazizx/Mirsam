@@ -183,10 +183,20 @@ impl Crypt {
         digest[..(self.key.len() + 5).min(16)].to_vec()
     }
 
+    /// A string of object `number` as written, decrypted (a string read from
+    /// the file, e.g. a `/DA` to parse).
+    pub(crate) fn decrypt_string(&self, number: u32, generation: u16, data: &[u8]) -> Option<Vec<u8>> {
+        self.reverse(self.strings, number, generation, data)
+    }
+
     /// The inverse of [`encrypt_stream`](Self::encrypt_stream), for tests.
     #[cfg(test)]
     fn decrypt_stream(&self, number: u32, generation: u16, data: &[u8]) -> Option<Vec<u8>> {
-        match self.streams {
+        self.reverse(self.streams, number, generation, data)
+    }
+
+    fn reverse(&self, method: Method, number: u32, generation: u16, data: &[u8]) -> Option<Vec<u8>> {
+        match method {
             Method::Identity => Some(data.to_vec()),
             Method::Rc4 => Some(rc4(&self.object_key(number, generation, false), data)),
             Method::AesV2 => aes_decrypt(&self.object_key(number, generation, true), data),
@@ -426,7 +436,6 @@ fn aes_encrypt(key: &[u8], data: &[u8]) -> Vec<u8> {
     out
 }
 
-#[cfg(test)]
 fn aes_decrypt(key: &[u8], data: &[u8]) -> Option<Vec<u8>> {
     if data.len() < 32 || !data.len().is_multiple_of(16) {
         return None;

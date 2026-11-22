@@ -79,6 +79,7 @@ impl Note {
             matrix: (rotate.rem_euclid(360) != 0).then_some([cos, sin, -sin + 0.0, cos, 0.0, 0.0]),
             resources: Dict::default(),
             content: out.0,
+            fonts: Vec::new(),
         })
     }
 }

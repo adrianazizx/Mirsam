@@ -358,8 +358,23 @@ function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
     strikeOut: "rgb(219 33 33)",
     ink: "rgb(13 56 153)",
     note: "rgb(255 219 0)",
+    textBox: "rgb(0 0 0)",
   };
-  for (const { kind, rects, strokes } of markup) {
+  for (const { kind, rects, strokes, contents } of markup) {
+    if (kind === "textBox") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = colours.textBox;
+      ctx.font = `400 12px ${FONT}`;
+      ctx.direction = /[\u0600-\u06FF]/.test(contents?.[0] ?? "") ? "rtl" : "ltr";
+      for (const rect of rects) {
+        ctx.textAlign = ctx.direction === "rtl" ? "right" : "left";
+        const x = ctx.direction === "rtl" ? rect.x + rect.width - 2 : rect.x + 2;
+        ctx.fillText(contents ?? "", x, rect.y + 14, rect.width - 4);
+      }
+      ctx.direction = "ltr";
+      ctx.textAlign = "start";
+      continue;
+    }
     if (kind === "ink" || kind === "note") {
       ctx.globalCompositeOperation = "source-over";
       ctx.strokeStyle = kind === "ink" ? colours.ink : "rgb(64 64 64)";
@@ -645,10 +660,26 @@ export const mockBackend: Backend = {
       withMarkup(documentId, page, (list) => [...list, note]),
     );
   },
+  addTextBox: async (documentId, page, x, y, width, contents) => {
+    if (contents.trim() === "") throw { code: "invalid_edit", detail: "a text box needs text" };
+    const lines = Math.max(1, Math.ceil((contents.length * 6) / Math.max(1, width - 4)));
+    const box: MockMarkup = {
+      kind: "textBox",
+      rects: [{ x, y, width, height: lines * 16 + 4 }],
+      contents,
+      strokes: [],
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, box]),
+    );
+  },
   setAnnotationContents: async (documentId, page, index, contents) => {
     const next = withMarkup(documentId, page, (list) => {
       const found = list[index];
-      if (found?.kind !== "note") throw { code: "invalid_edit", detail: "not a note" };
+      if (found?.kind !== "note" && found?.kind !== "textBox") {
+        throw { code: "invalid_edit", detail: "not a note or a text box" };
+      }
       return list.map((item, i) => (i === index ? { ...item, contents } : item));
     });
     return pushState(documentId, next);

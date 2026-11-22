@@ -102,6 +102,13 @@
   border-radius: var(--radius-sm);
 }
 
+/* Where a new text box goes while its text is written: its outline. */
+.textBoxPending {
+  position: absolute;
+  outline: var(--focus-ring-width) dashed var(--color-focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 /* Anchor of the note editor (positioned by the viewer, under the note's icon). */
 .noteEditor {
   position: absolute;
@@ -117,6 +124,10 @@
 
 [data-viewer-content][data-mode="eraser"] {
   cursor: cell;
+}
+
+[data-viewer-content][data-mode="textBox"] {
+  cursor: text;
 }
 
 /* An annotation selected by clicking it. */

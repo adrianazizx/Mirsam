@@ -308,6 +308,17 @@ async function notesAndInkChecks(documentId: number) {
   const notePixels = countPixels(documentId, (r, g, b) => r > 220 && g > 180 && b < 80);
   const note = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "note");
 
+  // A text box (ADR 0019): Arabic, shaped and drawn with embedded fonts.
+  const boxText = "تمت المراجعة والموافقة";
+  const dark = (r: number, g: number, b: number) => r < 90 && g < 90 && b < 90;
+  const darkBefore = countPixels(documentId, dark);
+  await runCommand("textBox.place", { page: 0, x: 60, y: 24, width: 200 });
+  repaint = painted();
+  await runCommand("note.save", { text: boxText });
+  const boxPainted = (await repaint) !== null;
+  const boxPixels = countPixels(documentId, dark) - darkBefore;
+  const box = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "textBox");
+
   repaint = painted();
   const stroke = [
     { x: 60, y: 60, pressure: 0.5 },
@@ -322,10 +333,13 @@ async function notesAndInkChecks(documentId: number) {
 
   await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
   const erased = !(await backend.pageAnnotations(documentId, 0)).some((a) => a.kind === "ink");
-  for (let i = 0; i < 3; i += 1) await runCommand("edit.undo");
+  for (let i = 0; i < 4; i += 1) await runCommand("edit.undo");
   const cleared = (await backend.pageAnnotations(documentId, 0)).length === 0;
   return {
     noteMatches: note?.contents === text,
+    boxMatches: box?.contents === boxText,
+    boxPainted,
+    boxPixels,
     notePainted,
     notePixels,
     inkPainted,

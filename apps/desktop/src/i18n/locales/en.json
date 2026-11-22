@@ -87,6 +87,7 @@
     },
     "comment": {
       "note": "Add note",
+      "textBox": "Add text box",
       "pen": "Draw",
       "eraser": "Erase ink"
     },
@@ -94,6 +95,9 @@
       "place": "Place a note",
       "save": "Save",
       "cancel": "Cancel"
+    },
+    "textBox": {
+      "place": "Place a text box"
     },
     "ink": {
       "add": "Add ink",
@@ -174,7 +178,8 @@
     "edit_unsupported": "This file's structure can't be edited yet. Viewing still works.",
     "invalid_edit": "That change can't be made to this document.",
     "save_failed": "The document could not be saved. The file on disk was not changed.",
-    "io_error": "The file could not be read or written. Check that its folder exists and can be written to."
+    "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
+    "text_failed": "The text could not be set."
   },
   "gallery": {
     "title": "Design gallery",
@@ -272,6 +277,11 @@
     "label": "Note",
     "text": "Note text",
     "placeholder": "Write a note…"
+  },
+  "textBox": {
+    "label": "Text box",
+    "text": "Text of the box",
+    "placeholder": "Type the text…"
   },
   "comment": {
     "tools": "Comment tools"

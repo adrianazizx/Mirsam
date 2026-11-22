@@ -132,6 +132,7 @@ impl Document {
                 PdfPageAnnotationType::Squiggly => AnnotationKind::Squiggly,
                 PdfPageAnnotationType::Ink => AnnotationKind::Ink,
                 PdfPageAnnotationType::Text => AnnotationKind::Note,
+                PdfPageAnnotationType::FreeText => AnnotationKind::TextBox,
                 _ => continue,
             };
             let rect =
@@ -154,7 +155,8 @@ impl Document {
                     bounds.top().value,
                 ));
             }
-            let contents = (kind == AnnotationKind::Note).then(|| annotation.contents().unwrap_or_default());
+            let contents = matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox)
+                .then(|| annotation.contents().unwrap_or_default());
             out.push(AnnotationInfo { index: position, kind, rects, contents, strokes: Vec::new() });
         }
         if out.iter().any(|info| info.kind == AnnotationKind::Ink) {

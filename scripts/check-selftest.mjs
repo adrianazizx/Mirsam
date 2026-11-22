@@ -89,8 +89,10 @@ if (nav) {
     check(notes.notePainted && notes.notePixels > 50, `the note's icon was not painted (${notes.notePixels} px)`);
     check(notes.inkPainted && notes.inkPixels > 50, `the stroke was not painted (${notes.inkPixels} px)`);
     check(notes.inkPoints === 3, `the stroke came back with ${notes.inkPoints} points`);
+    check(notes.boxMatches, "the text box's Arabic text did not come back as written");
+    check(notes.boxPainted && notes.boxPixels > 50, `the text box was not painted (${notes.boxPixels} px)`);
     check(notes.erased, "the eraser did not remove the stroke");
-    check(notes.cleared, "undo did not take the note and the stroke away");
+    check(notes.cleared, "undo did not take the note, the text box, and the stroke away");
   }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
@@ -138,7 +140,8 @@ if (nav) {
   if (nav.notesAndInk) {
     const n = nav.notesAndInk;
     console.log(
-      `  notes and ink: note ${n.notePixels} px, text kept ${n.noteMatches}; stroke ${n.inkPixels} px, ` +
+      `  notes, text boxes, ink: note ${n.notePixels} px, text kept ${n.noteMatches}; ` +
+        `text box ${n.boxPixels} px, text kept ${n.boxMatches}; stroke ${n.inkPixels} px, ` +
         `erased ${n.erased}, undone ${n.cleared}`,
     );
   }

@@ -23,7 +23,8 @@ number and says so.
 | [0015](0015-saving-and-unsaved-changes.md) | Saving (signed files incrementally, others rewritten in full by PDFium; validated; atomic rename); asking before closing a modified tab or window, or quitting | Accepted |
 | [0016](0016-pages-across-files.md) | Pages across files: extract, split, insert and merge through PDFium's page import; snapshot steps in the edit history | Accepted |
 | [0017](0017-markup-annotations.md) | Markup annotations (highlight, underline, strikethrough, squiggly) as incremental updates with appearance streams; encrypting new objects; repainting instead of rebuilding | Accepted |
-| [0018](0018-ink-and-notes.md) | Ink with pressure and an eraser, sticky notes (upright on turned pages, text in `/Contents`), the Comment tool and its note editor | Accepted; text boxes next |
+| [0018](0018-ink-and-notes.md) | Ink with pressure and an eraser, sticky notes (upright on turned pages, text in `/Contents`), the Comment tool and its note editor | Accepted |
+| [0019](0019-text-boxes-and-the-text-writer.md) | Text boxes drawn with shaped text and embedded font subsets (`pdf::text`, the text half of the content-stream writer); word spaces read inside form XObjects | Accepted |
 | [0020](0020-text-layout-engine.md) | Text layout engine `safha_core::typeset`: bidi + script + font itemization, harfrust shaping, UAX #14 breaking, per-line reordering; backend-neutral positioned glyph runs; font subsets (variable fonts instanced) and font matching | Accepted (M3 groundwork) |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),

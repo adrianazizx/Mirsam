@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 pub(crate) mod crypt;
+pub(crate) mod text;
 pub(crate) mod write;
 
 pub(crate) const MAX_DEPTH: usize = 64;

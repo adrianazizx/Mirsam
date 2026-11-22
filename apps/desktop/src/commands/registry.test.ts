@@ -273,7 +273,14 @@ describe("command registry", () => {
 
     // An empty new note is no note.
     await runCommand("note.place", { page: 3, x: 40, y: 60 });
-    expect(useAppStore.getState().pendingNote).toEqual({ documentId: 1, page: 3, x: 40, y: 60 });
+    expect(useAppStore.getState().pendingNote).toEqual({
+      documentId: 1,
+      kind: "note",
+      page: 3,
+      x: 40,
+      y: 60,
+      width: 20,
+    });
     await runCommand("note.save", { text: "  " });
     expect(useAppStore.getState().pendingNote).toBeNull();
     expect(await backend.pageAnnotations(1, 3)).toHaveLength(before);
@@ -313,6 +320,43 @@ describe("command registry", () => {
 
     for (let i = 0; i < 2; i += 1) await runCommand("edit.undo");
     expect(await backend.pageAnnotations(1, 3)).toHaveLength(before);
+    unregisterViewer(1, viewer);
+  });
+
+  it("writes text boxes: placed, saved, rewritten, and gone when emptied", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    const viewer = { clearSelection: vi.fn() } as unknown as ViewerController;
+    registerViewer(1, viewer);
+    await runCommand("comment.textBox");
+    expect(useAppStore.getState().commentTool).toBe("textBox");
+    const before = (await backend.pageAnnotations(1, 7)).length;
+
+    await runCommand("textBox.place", { page: 7, x: 50, y: 80, width: 200 });
+    expect(useAppStore.getState().pendingNote).toMatchObject({ kind: "textBox", width: 200 });
+    await runCommand("note.save", { text: "تمت المراجعة — Reviewed" });
+    const box = (await backend.pageAnnotations(1, 7)).at(-1);
+    expect(box).toMatchObject({ kind: "textBox", contents: "تمت المراجعة — Reviewed" });
+    expect(box?.rects[0]).toMatchObject({ x: 50, y: 80, width: 200 });
+
+    const select = (contents: string) =>
+      useAppStore.getState().updateDocument(1, {
+        selectedAnnotation: {
+          page: 7,
+          index: box?.index ?? 0,
+          kind: "textBox",
+          contents,
+          rect: box?.rects[0] ?? { x: 0, y: 0, width: 0, height: 0 },
+        },
+      });
+    select("تمت المراجعة — Reviewed");
+    await runCommand("note.save", { text: "Reviewed twice" });
+    expect((await backend.pageAnnotations(1, 7)).at(-1)?.contents).toBe("Reviewed twice");
+    // Emptied, it goes, in one step that undo takes back.
+    select("Reviewed twice");
+    await runCommand("note.save", { text: "  " });
+    expect(await backend.pageAnnotations(1, 7)).toHaveLength(before);
+    for (let i = 0; i < 3; i += 1) await runCommand("edit.undo");
+    expect(await backend.pageAnnotations(1, 7)).toHaveLength(before);
     unregisterViewer(1, viewer);
   });
 

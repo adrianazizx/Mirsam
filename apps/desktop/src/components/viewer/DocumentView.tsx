@@ -102,6 +102,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         inkPreview: styles.inkPreview ?? "",
         inkErasing: styles.inkErasing ?? "",
         notePending: styles.notePending ?? "",
+        textBoxPending: styles.textBoxPending ?? "",
         noteEditor: styles.noteEditor ?? "",
         selectionToolbar: styles.selectionToolbar ?? "",
       },
@@ -131,6 +132,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onInk: (page, strokes) => void runCommand("ink.add", { page, strokes }),
         onErase: (page, indices) => void runCommand("ink.erase", { page, indices }),
         onPlaceNote: (page, x, y) => void runCommand("note.place", { page, x, y }),
+        onPlaceTextBox: (page, x, y, width) =>
+          void runCommand("textBox.place", { page, x, y, width }),
       },
     });
     viewerRef.current = viewer;
@@ -221,10 +224,12 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       aria-label={t("viewer.pagesLabel", { name })}
       data-testid="viewer"
     >
-      {toolbarHost && (hasSelection || (selectedKind !== null && selectedKind !== "note"))
+      {toolbarHost &&
+      (hasSelection ||
+        (selectedKind !== null && selectedKind !== "note" && selectedKind !== "textBox"))
         ? createPortal(<SelectionToolbar documentId={id} />, toolbarHost)
         : null}
-      {noteHost && (pendingNote || selectedKind === "note")
+      {noteHost && (pendingNote || selectedKind === "note" || selectedKind === "textBox")
         ? createPortal(<NoteEditor documentId={id} />, noteHost)
         : null}
     </section>

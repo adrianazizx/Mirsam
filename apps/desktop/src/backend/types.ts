@@ -40,7 +40,7 @@ export interface MarkedPage {
 }
 
 /** The annotations the app writes and can change or remove (ADRs 0017, 0018). */
-export type AnnotationKind = MarkupKind | "ink" | "note";
+export type AnnotationKind = MarkupKind | "ink" | "note" | "textBox";
 
 /** An annotation on a page, for hit-testing, showing, and changing it. */
 export interface PageAnnotation {
@@ -390,7 +390,19 @@ export interface Backend {
     y: number,
     contents: string,
   ): Promise<EditOutcome>;
-  /** Replaces a note's text. */
+  /**
+   * Adds a text box (ADR 0019) whose top-left corner is displayed at (`x`,
+   * `y`), `width` points wide; its height fits the text.
+   */
+  addTextBox(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    width: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Replaces a note's or a text box's text. */
   setAnnotationContents(
     documentId: number,
     page: number,

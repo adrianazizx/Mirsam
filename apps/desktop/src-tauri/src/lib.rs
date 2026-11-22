@@ -37,6 +37,7 @@ macro_rules! product_commands {
             editing::add_markup,
             editing::add_ink,
             editing::add_note,
+            editing::add_text_box,
             editing::set_annotation_contents,
             editing::remove_annotations,
             editing::page_annotations,

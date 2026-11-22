@@ -92,14 +92,20 @@ export interface OpenDocument extends DocumentInfo {
 }
 
 /** The Comment tool's modes (ADR 0018). */
-export type CommentTool = "note" | "pen" | "eraser";
+export type CommentTool = "note" | "textBox" | "pen" | "eraser";
 
-/** Where a new note's icon goes: its top-left corner in displayed-page points. */
+/**
+ * A note or text box being written before it is added (ADRs 0018, 0019):
+ * where it goes (its top-left corner in displayed-page points) and how wide
+ * (a note's icon, or the text box).
+ */
 export interface PendingNote {
   documentId: number;
+  kind: "note" | "textBox";
   page: number;
   x: number;
   y: number;
+  width: number;
 }
 
 /** A close that waits for the user: something holds unsaved changes (ADR 0015). */

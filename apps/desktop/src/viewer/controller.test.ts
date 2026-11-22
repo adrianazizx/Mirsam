@@ -94,6 +94,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onInk: vi.fn(),
     onErase: vi.fn(),
     onPlaceNote: vi.fn(),
+    onPlaceTextBox: vi.fn(),
   };
   const viewer = new ViewerController({
     backend,
@@ -112,6 +113,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       inkPreview: "ink-preview",
       inkErasing: "ink-erasing",
       notePending: "note-pending",
+      textBoxPending: "text-box-pending",
       noteEditor: "note-editor",
       selectionToolbar: "selection-toolbar",
     },
@@ -421,11 +423,17 @@ describe("viewer controller", () => {
     // On empty page: the icon centred on the press.
     await click(150, 200);
     expect(callbacks.onPlaceNote).toHaveBeenCalledWith(0, 140, 190);
-    viewer.showPendingNote({ page: 0, x: 140, y: 190 });
+    viewer.showPendingNote({ page: 0, x: 140, y: 190, kind: "note", width: 20 });
     expect(container.querySelectorAll(".note-pending")).toHaveLength(1);
     expect(viewer.noteEditorHost.hidden).toBe(false);
     viewer.showPendingNote(null);
     expect(container.querySelectorAll(".note-pending")).toHaveLength(0);
+
+    // With the text box tool: the box's corner at the press, as wide as the page allows.
+    mode = "textBox";
+    await click(150, 250);
+    expect(callbacks.onPlaceTextBox).toHaveBeenCalledWith(0, 150, 250, 146);
+    mode = "note";
 
     // On a note: it opens, with its text.
     await click(255, 15);

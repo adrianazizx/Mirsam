@@ -1,6 +1,6 @@
 //! Annotations — markup (highlight, underline, strikethrough, squiggly),
-//! ink, and sticky notes — added, changed, and removed as incremental
-//! updates (ADRs 0017 and 0018), so undo covers them like page edits
+//! ink, sticky notes, and text boxes — added, changed, and removed as
+//! incremental updates (ADRs 0017–0019), so undo covers them like page edits
 //! (ADR 0014).
 //!
 //! Each is a standard annotation (ISO 32000-2, 12.5) with its own appearance
@@ -13,6 +13,7 @@
 mod ink;
 mod markup;
 mod note;
+mod text_box;
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,10 +23,12 @@ use serde::{Deserialize, Serialize};
 pub use ink::{Ink, InkPoint};
 pub use markup::{Markup, MarkupKind, Quad};
 pub use note::{NOTE_SIZE, Note};
+pub use text_box::{TEXT_BOX_PADDING, TextBox};
 
 use crate::edit::{Leaf, PageTree, Start, set};
 use crate::error::{Error, Result};
 use crate::pdf::crypt::Crypt;
+use crate::pdf::text::{FontToEmbed, write_font};
 use crate::pdf::write::Update;
 use crate::pdf::{Dict, File, Object};
 
@@ -40,6 +43,8 @@ pub enum AnnotationKind {
     Ink,
     /// A sticky note (`/Text`).
     Note,
+    /// Text on the page (`/FreeText`).
+    TextBox,
 }
 
 impl AnnotationKind {
@@ -47,6 +52,7 @@ impl AnnotationKind {
         match name {
             b"Ink" => Some(AnnotationKind::Ink),
             b"Text" => Some(AnnotationKind::Note),
+            b"FreeText" => Some(AnnotationKind::TextBox),
             other => MarkupKind::from_subtype(other).map(Self::from),
         }
     }
@@ -72,7 +78,7 @@ pub struct AnnotationInfo {
     /// Page-space rectangles it covers: one per quad for markup, else its
     /// `/Rect`.
     pub rects: Vec<crate::text::Rect>,
-    /// A note's text.
+    /// A note's or a text box's text.
     pub contents: Option<String>,
     /// An ink annotation's strokes, in page space (empty when unreadable).
     pub strokes: Vec<Vec<(f32, f32)>>,
@@ -93,7 +99,13 @@ pub enum AnnotationEdit {
         page: usize,
         note: Note,
     },
-    /// Replaces the text of the note at `index` of the page's `/Annots`.
+    AddTextBox {
+        page: usize,
+        text_box: TextBox,
+    },
+    /// Replaces the text of the note or text box at `index` of the page's
+    /// `/Annots`. A text box is set again and its height fitted to the text,
+    /// its displayed top edge kept.
     SetContents {
         page: usize,
         index: usize,
@@ -121,8 +133,13 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
     let leaf = |page: usize| {
         tree.leaves.get(page).ok_or(Error::PageOutOfRange { index: page, count: tree.leaves.len() })
     };
-    let mut writer =
-        Writer { file: &file, password, update: Update::new(bytes), next_number: &mut next_number };
+    let mut writer = Writer {
+        file: &file,
+        password,
+        crypt: None,
+        update: Update::new(bytes),
+        next_number: &mut next_number,
+    };
     match edit {
         AnnotationEdit::AddMarkup { page, markup } => {
             let leaf = leaf(*page)?;
@@ -139,6 +156,11 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
             let appearance = note.appearance(leaf.rotate)?;
             writer.add(leaf, b"Text", note.color, &appearance, note.entries())?;
         }
+        AnnotationEdit::AddTextBox { page, text_box } => {
+            let leaf = leaf(*page)?;
+            let appearance = text_box.appearance(leaf.rotate)?;
+            writer.add(leaf, b"FreeText", text_box.color, &appearance, text_box.entries())?;
+        }
         AnnotationEdit::SetContents { page, index, contents } => {
             let leaf = leaf(*page)?;
             check_contents(contents)?;
@@ -149,14 +171,49 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
             };
             let mut dict = resolve_dict(&file, target)
                 .ok_or(Error::EditUnsupported("this annotation cannot be read"))?;
-            if kind_of(&dict) != Some(AnnotationKind::Note) {
-                return Err(Error::InvalidEdit("only a note's text can be changed so far"));
+            match kind_of(&dict) {
+                Some(AnnotationKind::Note) => {}
+                Some(AnnotationKind::TextBox) => {
+                    // Set again from its `/DA` (size and colour) and `/Rect`.
+                    let da = match dict.get(b"DA") {
+                        Some(Object::Str(da)) => match writer.crypt()? {
+                            Some(crypt) => crypt.decrypt_string(number, generation, da).unwrap_or_default(),
+                            None => da.clone(),
+                        },
+                        _ => Vec::new(),
+                    };
+                    let (size, color) = text_box::parse_da(&da);
+                    let rect =
+                        rect_of(&file, &dict).ok_or(Error::EditUnsupported("this text box has no box"))?;
+                    let width = {
+                        let [l, b, r, t] = rect;
+                        if leaf.rotate.rem_euclid(180) == 90 { t - b } else { r - l }
+                    };
+                    let height = TextBox::height_for(contents, width, size)?;
+                    let text_box = TextBox {
+                        rect: text_box::resized(rect, leaf.rotate, height),
+                        contents: contents.clone(),
+                        size,
+                        color,
+                    };
+                    let appearance = text_box.appearance(leaf.rotate)?;
+                    let stream = writer.write_appearance(&appearance)?;
+                    let real = |value: f32| Object::Real(f64::from(value));
+                    set(&mut dict, b"Rect", Object::Array(text_box.rect.iter().map(|v| real(*v)).collect()));
+                    set(&mut dict, b"AP", Object::Dict(Dict(vec![(b"N".to_vec(), Object::Ref(stream, 0))])));
+                    for (key, value) in text_box.entries() {
+                        if key == b"Q" {
+                            set(&mut dict, &key, value);
+                        }
+                    }
+                }
+                _ => return Err(Error::InvalidEdit("only a note's or a text box's text can be changed")),
             }
             // The object keeps its number: strings already in it stay as
             // read; only the new ones are encrypted, under that number.
             let mut text = Object::Str(text_string(contents));
             let mut date = Object::Str(pdf_date(SystemTime::now()));
-            if let Some(crypt) = Crypt::of(&file, password)? {
+            if let Some(crypt) = writer.crypt()? {
                 crypt.encrypt_strings(number, generation, &mut text);
                 crypt.encrypt_strings(number, generation, &mut date);
             }
@@ -170,7 +227,8 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
             let target = annots.items.get(*index).cloned().ok_or(Error::InvalidEdit("no such annotation"))?;
             let dict = resolve_dict(&file, &target)
                 .ok_or(Error::EditUnsupported("this annotation cannot be read"))?;
-            kind_of(&dict).ok_or(Error::InvalidEdit("only markup, ink, and notes can be removed so far"))?;
+            kind_of(&dict)
+                .ok_or(Error::InvalidEdit("only markup, ink, notes, and text boxes can be removed so far"))?;
             // Its pop-up, and replies to it (with theirs), go with it.
             let mut doomed = vec![target.clone()];
             doomed.extend(popup(&dict));
@@ -245,6 +303,14 @@ fn number(object: &Object) -> Option<f32> {
     }
 }
 
+/// An annotation's `/Rect`, normalized (left, bottom, right, top).
+fn rect_of(file: &File<'_>, dict: &Dict) -> Option<[f32; 4]> {
+    let Object::Array(values) = file.resolve(dict.get(b"Rect")?)? else { return None };
+    let numbers: Vec<f32> = values.iter().filter_map(|v| number(&file.resolve(v)?)).collect();
+    let [x0, y0, x1, y1] = numbers.as_slice() else { return None };
+    Some([x0.min(*x1), y0.min(*y1), x0.max(*x1), y0.max(*y1)])
+}
+
 fn kind_of(dict: &Dict) -> Option<AnnotationKind> {
     dict.get(b"Subtype").and_then(Object::as_name).and_then(AnnotationKind::from_subtype)
 }
@@ -279,11 +345,52 @@ pub(crate) fn in_range((x, y): (f32, f32)) -> bool {
 struct Writer<'a, 'f> {
     file: &'a File<'f>,
     password: Option<&'a str>,
+    /// The file's security handler, once asked for (`None` before).
+    crypt: Option<Option<Crypt>>,
     update: Update,
     next_number: &'a mut u32,
 }
 
 impl Writer<'_, '_> {
+    /// The file's unlocked security handler, if it is encrypted.
+    fn crypt(&mut self) -> Result<Option<&Crypt>> {
+        if self.crypt.is_none() {
+            self.crypt = Some(Crypt::of(self.file, self.password)?);
+        }
+        Ok(self.crypt.as_ref().and_then(Option::as_ref))
+    }
+
+    fn take_number(&mut self) -> Result<u32> {
+        let number = *self.next_number;
+        *self.next_number = number.checked_add(1).ok_or(Error::EditUnsupported("it has too many objects"))?;
+        Ok(number)
+    }
+
+    /// Writes an appearance stream, with the fonts it draws text in; returns
+    /// its object number.
+    fn write_appearance(&mut self, appearance: &Appearance) -> Result<u32> {
+        self.crypt()?;
+        let mut fonts = Vec::new();
+        for font in &appearance.fonts {
+            let crypt = self.crypt.as_ref().and_then(Option::as_ref);
+            let number = write_font(&mut self.update, crypt, self.next_number, font)?;
+            fonts.push((font.resource.as_bytes().to_vec(), Object::Ref(number, 0)));
+        }
+        let stream = self.take_number()?;
+        let data = match self.crypt.as_ref().and_then(Option::as_ref) {
+            Some(crypt) => crypt.encrypt_stream(stream, 0, &appearance.content),
+            None => appearance.content.clone(),
+        };
+        let mut form = appearance.form();
+        if !fonts.is_empty()
+            && let Some((_, Object::Dict(resources))) = form.0.iter_mut().find(|(key, _)| key == b"Resources")
+        {
+            resources.0.push((b"Font".to_vec(), Object::Dict(Dict(fonts))));
+        }
+        self.update.stream(stream, 0, form, &data);
+        Ok(stream)
+    }
+
     /// Appends the appearance stream and the annotation, and adds the
     /// annotation to the page's `/Annots`. `entries` go after `/Rect`.
     fn add(
@@ -294,17 +401,8 @@ impl Writer<'_, '_> {
         appearance: &Appearance,
         entries: Vec<(Vec<u8>, Object)>,
     ) -> Result<()> {
-        let crypt = Crypt::of(self.file, self.password)?;
-        let too_many = || Error::EditUnsupported("it has too many objects");
-        let annotation = *self.next_number;
-        let stream = annotation.checked_add(1).ok_or_else(too_many)?;
-        *self.next_number = stream.checked_add(1).ok_or_else(too_many)?;
-
-        let data = match &crypt {
-            Some(crypt) => crypt.encrypt_stream(stream, 0, &appearance.content),
-            None => appearance.content.clone(),
-        };
-        self.update.stream(stream, 0, appearance.form(), &data);
+        let annotation = self.take_number()?;
+        let stream = self.write_appearance(appearance)?;
 
         let real = |value: f32| Object::Real(f64::from(value));
         let now = pdf_date(SystemTime::now());
@@ -325,7 +423,7 @@ impl Writer<'_, '_> {
             (b"AP".to_vec(), Object::Dict(Dict(vec![(b"N".to_vec(), Object::Ref(stream, 0))]))),
         ]);
         let mut dict = Object::Dict(Dict(dict));
-        if let Some(crypt) = &crypt {
+        if let Some(crypt) = self.crypt()? {
             crypt.encrypt_strings(annotation, 0, &mut dict);
         }
         self.update.object(annotation, 0, &dict);
@@ -387,12 +485,14 @@ pub(crate) struct Appearance {
     pub(crate) matrix: Option<[f32; 6]>,
     pub(crate) resources: Dict,
     pub(crate) content: Vec<u8>,
+    /// Fonts the content draws text in, embedded with it (`/Font` resources).
+    pub(crate) fonts: Vec<FontToEmbed>,
 }
 
 impl Appearance {
     /// Drawn in page space over `rect`.
     pub(crate) fn in_page_space(rect: [f32; 4], resources: Dict, content: Vec<u8>) -> Self {
-        Self { rect, bbox: rect, matrix: None, resources, content }
+        Self { rect, bbox: rect, matrix: None, resources, content, fonts: Vec::new() }
     }
 
     fn form(&self) -> Dict {

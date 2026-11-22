@@ -42,6 +42,11 @@ pub enum Error {
     #[error("invalid edit: {0}")]
     InvalidEdit(&'static str),
 
+    /// Text could not be laid out or its fonts embedded (a `typeset` error
+    /// code: `font_unreadable`, `shaping_failed`, `font_subset_failed`, …).
+    #[error("the text could not be set: {0}")]
+    Typeset(&'static str),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

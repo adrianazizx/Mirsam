@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::annotate::{AnnotationEdit, AnnotationKind, Ink, InkPoint, Markup, MarkupKind, Note, Quad};
+use safha_core::annotate::{
+    AnnotationEdit, AnnotationKind, Ink, InkPoint, Markup, MarkupKind, Note, Quad, TextBox,
+};
 use safha_core::edit::{Change, EditHistory, PageEdit};
 use safha_core::view::ViewRect;
 
@@ -179,7 +181,34 @@ pub async fn add_note(
     })
 }
 
-/// Replaces a note's text.
+/// Adds a text box (ADR 0019) whose top-left corner is displayed at (`x`,
+/// `y`), `width` points wide; its height is fitted to the text.
+#[tauri::command]
+pub async fn add_text_box(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    x: f32,
+    y: f32,
+    width: f32,
+    contents: String,
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |document| {
+        let view = document.view_transform(page)?;
+        let height = TextBox::height_for(&contents, width, TextBox::DEFAULT_SIZE)?;
+        Ok(vec![AnnotationEdit::AddTextBox {
+            page,
+            text_box: TextBox {
+                rect: TextBox::rect_at(x, y, width, height, &view),
+                contents,
+                size: TextBox::DEFAULT_SIZE,
+                color: TextBox::DEFAULT_COLOR,
+            },
+        }])
+    })
+}
+
+/// Replaces a note's or a text box's text (a text box is set again).
 #[tauri::command]
 pub async fn set_annotation_contents(
     state: State<'_, AppState>,

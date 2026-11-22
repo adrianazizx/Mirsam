@@ -8,6 +8,7 @@ import {
 } from "../backend";
 import {
   type AppState,
+  type CommentTool,
   type LeftPanel,
   type OpenDocument,
   type ReadingTheme,
@@ -15,6 +16,7 @@ import {
   useAppStore,
 } from "../state/appStore";
 import { stepZoom } from "../state/zoom";
+import { NOTE_SIZE, TEXT_BOX_WIDTH } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { getViewer } from "../viewer/registry";
 import { isMac } from "./platform";
@@ -78,9 +80,11 @@ export interface CommandArg {
   size?: number;
   /** `note.save`: the note's text. */
   text?: string;
-  /** `note.place`: the icon's top-left corner, in displayed-page points. */
+  /** `note.place`, `textBox.place`: the top-left corner, in displayed-page points. */
   x?: number;
   y?: number;
+  /** `textBox.place`: the box's width, in points. */
+  width?: number;
   /** `ink.add`: the pen's strokes, in displayed-page points. */
   strokes?: StrokePoint[][];
   /** `ink.erase`: the ink annotations touched, by index. */
@@ -121,6 +125,8 @@ export type CommandId =
   | "markup.squiggly"
   | "annotation.delete"
   | "comment.note"
+  | "comment.textBox"
+  | "textBox.place"
   | "comment.pen"
   | "comment.eraser"
   | "note.place"
@@ -188,7 +194,7 @@ const hasAnnotationSelected = (state: AppState) =>
 /** A note is being written: a new one, or the selected one. */
 const isWritingNote = (state: AppState) =>
   (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
-  selectActiveDocument(state)?.selectedAnnotation?.kind === "note";
+  ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
 const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
 const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
 
@@ -262,7 +268,7 @@ async function markSelection(kind: MarkupKind): Promise<void> {
 }
 
 /** Switches to the Comment tool in one of its modes (ADR 0018). */
-function chooseCommentTool(tool: "note" | "pen" | "eraser") {
+function chooseCommentTool(tool: CommentTool) {
   store().setActiveTool("comment");
   store().setCommentTool(tool);
 }
@@ -321,6 +327,7 @@ const KNOWN_ERRORS = [
   "io_error",
   "edit_unsupported",
   "invalid_edit",
+  "text_failed",
 ];
 
 function reportError(error: unknown) {
@@ -864,6 +871,7 @@ const COMMANDS: Command[] = [
     },
   },
   { id: "comment.note", isEnabled: hasDocument, run: () => chooseCommentTool("note") },
+  { id: "comment.textBox", isEnabled: hasDocument, run: () => chooseCommentTool("textBox") },
   { id: "comment.pen", isEnabled: hasDocument, run: () => chooseCommentTool("pen") },
   { id: "comment.eraser", isEnabled: hasDocument, run: () => chooseCommentTool("eraser") },
   {
@@ -875,7 +883,33 @@ const COMMANDS: Command[] = [
       const active = selectActiveDocument(store());
       if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
       getViewer(active.id)?.clearSelection();
-      store().setPendingNote({ documentId: active.id, page: arg.page, x: arg.x, y: arg.y });
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "note",
+        page: arg.page,
+        x: arg.x,
+        y: arg.y,
+        width: NOTE_SIZE,
+      });
+    },
+  },
+  {
+    // A press with the text box tool: the box is added once its text is saved.
+    id: "textBox.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      getViewer(active.id)?.clearSelection();
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "textBox",
+        page: arg.page,
+        x: arg.x,
+        y: arg.y,
+        width: arg.width ?? TEXT_BOX_WIDTH,
+      });
     },
   },
   {
@@ -889,17 +923,25 @@ const COMMANDS: Command[] = [
       const pending = store().pendingNote;
       if (pending && pending.documentId === active.id) {
         store().setPendingNote(null);
-        // An empty new note is no note.
+        // An empty new note or text box is none.
         if (text.trim() === "") return;
-        const outcome = await backend.addNote(active.id, pending.page, pending.x, pending.y, text);
+        const { page, x, y, width } = pending;
+        const outcome =
+          pending.kind === "textBox"
+            ? await backend.addTextBox(active.id, page, x, y, width, text)
+            : await backend.addNote(active.id, page, x, y, text);
         store().applyEdit(active.id, outcome);
         return;
       }
       const note = active.selectedAnnotation;
-      if (note?.kind !== "note") return;
+      if (note?.kind !== "note" && note?.kind !== "textBox") return;
       getViewer(active.id)?.clearSelection();
       if ((note.contents ?? "") === text) return;
-      const outcome = await backend.setAnnotationContents(active.id, note.page, note.index, text);
+      // A text box emptied of its text goes.
+      const outcome =
+        note.kind === "textBox" && text.trim() === ""
+          ? await backend.removeAnnotations(active.id, note.page, [note.index])
+          : await backend.setAnnotationContents(active.id, note.page, note.index, text);
       store().applyEdit(active.id, outcome);
     },
   },
