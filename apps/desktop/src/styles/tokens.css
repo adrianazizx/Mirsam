@@ -123,6 +123,9 @@
   --color-search-hit: rgb(250 204 21 / 0.45);
   --color-search-hit-active: rgb(234 88 12 / 0.5);
   --color-text-selection: rgb(14 116 144 / 0.3);
+  /* On the white page in either theme: an area marked for redaction. */
+  --color-redact-outline: #b42318;
+  --color-redact-fill: rgb(180 35 24 / 0.28);
   /* On the white page in either theme: the pen's ink and a note's icon, as the engine draws them. */
   --color-ink: #0d3899;
   --color-note: #ffdb00;
@@ -167,6 +170,8 @@
   --color-search-hit: rgb(250 204 21 / 0.45);
   --color-search-hit-active: rgb(234 88 12 / 0.5);
   --color-text-selection: rgb(77 196 220 / 0.35);
+  --color-redact-outline: #b42318;
+  --color-redact-fill: rgb(180 35 24 / 0.28);
   --color-ink: #0d3899;
   --color-note: #ffdb00;
   --color-search-mark-bg: #854d0e;

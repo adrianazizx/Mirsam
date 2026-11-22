@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 11).
+Last updated: 2026-11-22 (session 11, with session M5-a merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -63,6 +63,12 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     document under the font's own name is common practice and is not redistributing a modified
     font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
     and Noto Sans Arabic (OFL, no reserved name) can replace them.
+
+15. **A JPEG codec for redaction (M5, ADR 0042).** Redacting an area of a *scan* (a page that is one
+    JPEG) currently drops the whole image, because overwriting its pixels needs a JPEG decoder and
+    encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
+    `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
+    list). Which may we add? Until then the summary says how many images were removed whole.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -453,8 +459,15 @@ Plan, in order:
 - [ ] Fill & Sign on flat forms
 - [ ] Drawn/typed/image signatures
 - [ ] Encryption and permissions
-- [ ] True redaction with pattern search
-- [ ] Sanitize
+- [~] True redaction with pattern search (session M5-a, ADR 0042): text, image pixels, paths,
+      annotations and metadata mentions removed from the file and checked by extraction and render;
+      e-mail/phone/IBAN/ID/card presets and regex, Arabic-Indic digits normalised; mark by drag,
+      selection, or search; review, undo before apply, apply. **Gaps:** JPEG and other compressed
+      images are dropped whole (owner item 15); encrypted files are refused; vertical writing and
+      custom CMaps are only covered by the extraction check; the signed-file path and the drag in the
+      native shell are untested.
+- [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
+      rewritten in full so unlinked objects are gone (ADR 0042)
 - [ ] Form creation; certificate signatures (PAdES) — **[SPIKE]** crypto library first
 
 ## M6 — Edit everything else + convert
@@ -502,6 +515,36 @@ Plan, in order:
     extended to encrypted and Type 3 pages).
   - UI: 159 tests (a press on refused text; the substitute notice).
   - Real-app self-test: English (light) and Arabic (dark, two fixtures).
+
+### Session M5-a — 2026-11-22 (Milestone 5: true redaction, pattern search, sanitize; parallel to M3/M4)
+
+Branch `pomidor/m5-redaction-e527d5`, from `main` (M0–M2, M3 groundwork). Avoided `pdf::text`, `typeset`
+and OCR code, as asked; the redactor has its own content-stream tokenizer (`redact/content.rs`).
+
+- **ADR 0042** records the approach. In short: our own content-stream rewrite (PDFium never
+  regenerates content, ADR 0005's amendment); glyphs cut out by character code with exact `TJ` gap
+  compensation; image pixels overwritten in per-drawing copies; paths cut or dropped; annotations
+  removed; redacted text scrubbed out of all metadata strings and XMP; a black box drawn; the result
+  checked by extraction (`redaction_failed` if text is still readable under a mark); saving's full
+  rewrite drops the old objects.
+- **Engine (`safha_core::redact`):** `redaction_update`, `find_matches` + `Preset`,
+  `sanitize_update`; `Document::with_redactions` / `with_sanitized`. A new fixture,
+  `personal-data` (Arabic-Indic IDs and phones, e-mail, IBAN), was added to the corpus (26 files).
+- **Shell:** `find_redactions`, `apply_redactions`, `sanitize_document` (`redaction.rs`); the
+  `redaction_failed` error code.
+- **UI:** the Protect tool's panel in the inspector, the apply confirmation, a Redact button in the
+  selection toolbar, drag-to-mark and the marks' overlay in the viewer (`mode: "redact"`), 17 new
+  commands, English and Arabic strings, `--color-redact-*` tokens. Backend mock and types updated.
+- **Bugs the tests found:** inline images read by length did not advance the lexer; Chrome's
+  zero-advance Type 3 dots were missed until their `d1` boxes were read; the IBAN pattern swallowed
+  the next word; an image replaced in a copy stayed reachable through its old resource name; a
+  trailer without `/Info` does not hide it (readers merge trailers).
+- **Verified:** see ADR 0042. `cargo test -p safha-core` (18 redaction tests, including every text
+  block of every corpus fixture and sanitizing every corpus file), UI tests in both languages,
+  clippy and biome clean, the panel seen in the browser build in English and Arabic.
+- **Not done / not checked:** JPEG pixel editing (owner item 15), encrypted files, a signed file's
+  snapshot path, the native shell's drag on a real PDF, a native-speaker review of the new Arabic strings
+  (owner item 11), the autosave recovery file keeping pre-redaction bytes on disk until save.
 
 ### M4 side track — 2026-11-22 (OCR engine benchmark, branch `pomidor/m4-ocr-benchmark-f94419`)
 

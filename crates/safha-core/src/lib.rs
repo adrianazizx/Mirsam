@@ -8,9 +8,10 @@
 //! through a prioritized queue ([`render`]), extract text in logical order
 //! ([`text`]), search it ([`search`]), read the outline and page labels, map
 //! page space to the displayed page ([`view`]), edit pages ([`edit`]) and
-//! annotations ([`annotate`]) as incremental updates, save ([`save`]), keep
-//! local app state ([`store`]), lay out text for writing ([`typeset`]), and
-//! write it into pages ([`text_edit`]) in the bundled families ([`fonts`]).
+//! annotations ([`annotate`]) as incremental updates, redact and sanitize
+//! ([`redact`]), save ([`save`]), keep local app state ([`store`]), lay out
+//! text for writing ([`typeset`]), and write it into pages ([`text_edit`]) in
+//! the bundled families ([`fonts`]).
 
 pub mod annotate;
 mod bitmap;
@@ -25,6 +26,7 @@ pub mod fonts;
 pub mod outline;
 mod pdf;
 pub mod recovery;
+pub mod redact;
 pub mod render;
 pub mod save;
 pub mod search;
@@ -36,7 +38,7 @@ pub mod view;
 
 pub use bitmap::{BMP_HEADER_LEN, Bitmap};
 pub use document::LoadedPage;
-pub use document::{Document, PageSize, TileRequest};
+pub use document::{Document, PageSize, Redacted, RevisionStep, TileRequest};
 pub use engine::{Engine, PdfiumSource};
 pub use error::{Error, Result};
 pub use render::RenderService;

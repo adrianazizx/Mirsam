@@ -229,7 +229,7 @@ impl Utf16Offsets {
     }
 }
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> CommandResult<T> + Send + 'static,
 ) -> CommandResult<T> {
     tauri::async_runtime::spawn_blocking(work)

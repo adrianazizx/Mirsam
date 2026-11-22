@@ -7,6 +7,7 @@ import type {
   ParagraphBlock,
   RecentFile,
   RecoveryInfo,
+  SanitizeOptions,
   SaveOutcome,
   SearchHit,
   SearchOptions,
@@ -21,6 +22,7 @@ import {
   DEFAULT_COMMENT_FILTER,
   MAX_AUTHOR,
 } from "./comments";
+import { DEFAULT_SANITIZE, IDLE_REDACTION, type RedactionState } from "./redaction";
 import { clampZoom } from "./zoom";
 
 export const TOOLS = [
@@ -81,6 +83,8 @@ export interface OpenDocument extends DocumentInfo {
   /** The outline, or null until loaded. */
   outline: OutlineItem[] | null;
   search: SearchState;
+  /** Areas marked for redaction, and the search for more (ADR 0042). */
+  redaction: RedactionState;
   /** Whether text is selected in this document's page view. */
   hasSelection: boolean;
   /** The annotation selected (clicked) in the page view: markup, ink, or a note. */
@@ -218,6 +222,17 @@ export interface AppState {
   closePrompt: ClosePrompt | null;
   setClosePrompt(prompt: ClosePrompt | null): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
+  /** Changes a document's redaction state: a patch, or a function of the current state. */
+  updateRedaction(
+    id: number,
+    change: Partial<RedactionState> | ((current: RedactionState) => RedactionState),
+  ): void;
+  /** What sanitizing is set to take out (ADR 0042). */
+  sanitizeOptions: SanitizeOptions;
+  setSanitizeOptions(options: SanitizeOptions): void;
+  /** The apply-redactions confirmation is open. */
+  redactPrompt: boolean;
+  setRedactPrompt(open: boolean): void;
   pushUnlock(unlock: PendingUnlock): void;
   /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
   resolveUnlock(next: PendingUnlock | null): void;
@@ -441,6 +456,7 @@ export const useAppStore = create<AppState>((set, get) => {
         labels: null,
         outline: null,
         search: IDLE_SEARCH,
+        redaction: IDLE_REDACTION,
         hasSelection: false,
         selectedAnnotation: null,
         revision: 0,
@@ -518,6 +534,8 @@ export const useAppStore = create<AppState>((set, get) => {
                   labels: null,
                   outline: null,
                   search: IDLE_SEARCH,
+                  // Page numbers moved: marks on the old pages mean nothing now.
+                  redaction: IDLE_REDACTION,
                   hasSelection: false,
                   selectedAnnotation: null,
                   revision: open.revision + 1,
@@ -553,6 +571,29 @@ export const useAppStore = create<AppState>((set, get) => {
           open.id === id ? { ...open, name: outcome.name, modified: outcome.modified } : open,
         ),
       }));
+    },
+    updateRedaction(id, change) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id !== id
+            ? open
+            : {
+                ...open,
+                redaction:
+                  typeof change === "function"
+                    ? change(open.redaction)
+                    : { ...open.redaction, ...change },
+              },
+        ),
+      }));
+    },
+    sanitizeOptions: DEFAULT_SANITIZE,
+    setSanitizeOptions(sanitizeOptions) {
+      set({ sanitizeOptions });
+    },
+    redactPrompt: false,
+    setRedactPrompt(open) {
+      set({ redactPrompt: open });
     },
     updateSearch(id, patch) {
       set((state) => ({

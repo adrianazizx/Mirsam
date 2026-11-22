@@ -1,4 +1,12 @@
-import { Copy, Highlighter, LineSquiggle, Strikethrough, Trash2, Underline } from "lucide-react";
+import {
+  Copy,
+  EyeOff,
+  Highlighter,
+  LineSquiggle,
+  Strikethrough,
+  Trash2,
+  Underline,
+} from "lucide-react";
 import { Toolbar } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { directionOf } from "../../i18n";
@@ -8,7 +16,8 @@ import styles from "./SelectionToolbar.module.css";
 
 /**
  * The floating toolbar over selected text (spec section 4): copy, and mark
- * the text as standard PDF annotations (ADR 0017). Over a selected
+ * the text as standard PDF annotations (ADR 0017), or mark it for redaction
+ * (ADR 0042). Over a selected
  * annotation (markup or ink) it offers deleting it instead.
  */
 export function SelectionToolbar({ documentId }: { documentId: number }) {
@@ -46,6 +55,9 @@ export function SelectionToolbar({ documentId }: { documentId: number }) {
             </CommandButton>
             <CommandButton command="markup.squiggly" tooltipPlacement="top">
               <LineSquiggle />
+            </CommandButton>
+            <CommandButton command="redact.markSelection" tooltipPlacement="top">
+              <EyeOff />
             </CommandButton>
           </>
         )}

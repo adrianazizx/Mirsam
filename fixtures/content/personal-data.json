@@ -1,0 +1,50 @@
+{
+  "id": "personal-data",
+  "description": "Personal data in Arabic and English for redaction: IDs, phone numbers in both digit styles, e-mail addresses, an IBAN, and ordinary text that must survive.",
+  "covers": [
+    "arabic",
+    "arabic-indic-digits",
+    "email",
+    "phone",
+    "iban",
+    "redaction"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "بيانات العميل"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "رقم الهوية ١٠٢٣٤٥٦٧٨٩ والجوال ٠٥٥ ١٢٣ ٤٥٦٧ للتواصل."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "هذا نص عادي لا يجب حذفه من الصفحة."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "Contact Jane Roe on +966 55 123 4567 or jane.roe@example.com."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "IBAN SA03 8000 0000 6080 1016 7519 for the transfer."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "ltr",
+      "font": "latin",
+      "text": "This ordinary sentence must survive the redaction untouched."
+    }
+  ]
+}
