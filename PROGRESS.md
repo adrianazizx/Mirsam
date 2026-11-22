@@ -514,6 +514,9 @@ Plan, in order:
     the CPU time goes to reading the 2,420 image tokens.
   - **Decided by the owner:** the 4B is the default even without a GPU; the 0.8B is only for
     machines too small for the 4B.
+  - **Spec updated to match:** the §8 engine table (Nuqta 4B, the 0.8B as second reader,
+    PP-OCRv5 for word boxes only, platform OCR or Tesseract as the draft) and the §9
+    "OCR runtime" row (llama.cpp, plus ONNX Runtime for the detector).
 - **Word boxes spike** (ADR 0031):
   - **Ground truth:** Chrome's DOM word rectangles for the 26 geometry-preserving pages.
   - **Detector:** PP-OCRv5's server detector found every line.

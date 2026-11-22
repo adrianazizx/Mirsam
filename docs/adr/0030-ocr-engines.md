@@ -356,7 +356,8 @@ include the severe, vocalized and mixed conditions.
 
 This changes the spec's §8 engine table, which expected PP-OCRv5 as the classical "default on weak
 hardware and second opinion". The measurements put Nuqta in both roles. PP-OCRv5's detector,
-with its Arabic recogniser as a guide, provides the word boxes (ADR 0031).
+with its Arabic recogniser as a guide, provides the word boxes (ADR 0031). The spec's §8 engine
+table and its §9 "OCR runtime" row now say this (updated 2026-11-22, at the owner's request).
 
 ## Known limits
 

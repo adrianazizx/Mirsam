@@ -387,11 +387,12 @@ Consequences of "quality over speed":
 
 Build an `OcrEngine` trait with pluggable back-ends, then measure on real Arabic samples. The winner on accuracy becomes the default, regardless of speed, provided it can run on a typical laptop (even slowly).
 
-| Role | Candidates | Notes |
+| Role | Engine (measured in M4: ADR 0030 engines and runtime, ADR 0031 word boxes) | Notes |
 |---|---|---|
-| **Best quality (default where hardware allows)** | Arabic-tuned vision-language OCR models such as QARI-OCR or Baseer; other current document-OCR models found at build time | Heavy (multi-GB, built on the Qwen-VL family). Check licences, quantized variants, and CPU feasibility. These models output text without precise boxes, so pair them with a detector/aligner to get word positions. |
-| **Strong classical pipeline (default on weak hardware; second opinion in the ensemble)** | PaddleOCR PP-OCRv5 detection + the **Arabic** recognition model via ONNX Runtime (server-size models preferred over mobile ones) | As of late 2026 the newer PP-OCRv6 unified model does not include Arabic, so Arabic still uses the PP-OCRv5 Arabic model — re-check. Gives reliable boxes for alignment. |
-| **Quick pass / fallback** | Tesseract (`ara`, `eng`, best-quality traineddata) or the mobile PaddleOCR models | Used for the instant draft layer and as a third voter. |
+| **Best quality (the default on any machine that can hold it, with or without a GPU)** | **Nuqta-Arabic-OCR 4B** (Apache-2.0, Qwen3.5 base) through **llama.cpp**, Q8_0 GGUF | 0.89% CER on `ocr-eval/` set v2; Q8_0 writes the same text as the full-precision model. Runs on the CPU alone too, slowly (143 s per page on an M3 Max, 11 GiB peak); owner's decision, 2026-11-22: still the default there. Outputs text without boxes, so word positions come from the detector below. QARI-OCR (invents words) and Baseer (no released weights) were checked and not chosen. |
+| **Second reader in the ensemble; recogniser on low-memory machines** | **Nuqta-Arabic-OCR 0.8B**, same runtime | Re-reads low-confidence lines and every number, date and ID; the platform's own OCR (Apple Vision on macOS) is a third reader for fields. Used alone only where memory cannot hold the 4B (46 s per page on the CPU, 3 GiB); that memory threshold is still to be set from a typical Windows laptop. |
+| **Word boxes** | PaddleOCR **PP-OCRv5 server detector**, with the PP-OCRv5 **Arabic** recogniser as an alignment guide only; via ONNX Runtime (measured so far on PaddlePaddle) | The VLM's words are aligned to the detected lines and split at ink gaps in bidi order. PP-OCRv5 is not used as a recogniser (32% CER; drops Latin words inside Arabic lines). The newer PP-OCRv6 model has no Arabic as of late 2026 — re-check. |
+| **Quick pass / fallback** | The platform's built-in OCR where there is one (Apple Vision on macOS); elsewhere Tesseract (`ara+eng`, best-quality traineddata) | Used for the instant draft layer, marked as a draft until the quality pass replaces each page. |
 | **Cloud (optional, opt-in)** | Any provider via the AI provider interface | Only with explicit consent per document; offered when local hardware cannot run the best tier. |
 
 Also evaluate fine-tuning the chosen recognizer on our own data if the benchmark shows a consistent weakness (specific fonts, diacritics, low resolution).
@@ -452,7 +453,7 @@ The KITAB-Bench benchmark is a useful public reference for Arabic OCR and docume
 | Low-level PDF writing | `lopdf` or direct content-stream writing | **[SPIKE]**: confirm whether PDFium's edit API can place pre-shaped glyph IDs with custom fonts; if not, write text objects ourselves. |
 | Shaping / bidi / fonts | HarfBuzz-compatible Rust shaper (`rustybuzz` or `harfrust`), `unicode-bidi`, a font database crate, a font subsetter | Pick the actively maintained options. |
 | Repair / linearize / validate | `qpdf` (as a library or bundled tool) | Also used in tests to validate every saved file. |
-| OCR runtime | ONNX Runtime (`ort` crate) + optional Tesseract | Section 8. |
+| OCR runtime | llama.cpp for the vision-language recognisers (GGUF) + ONNX Runtime (`ort` crate) for the detector + optional Tesseract | Section 8; ADR 0030, ADR 0031. |
 | Crypto / signatures | Established Rust crypto crates; PAdES implementation | **[SPIKE]** — do not hand-roll cryptography. |
 | Storage | SQLite for recent files, per-file view state, settings | |
 
