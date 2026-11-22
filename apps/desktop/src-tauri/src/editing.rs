@@ -248,7 +248,7 @@ fn author(state: &AppState) -> Option<String> {
 }
 
 /// Applies annotation edits to a document as one undo step.
-fn edit_annotations(
+pub(crate) fn edit_annotations(
     state: &AppState,
     document_id: u32,
     edits: impl FnOnce(&safha_core::Document) -> safha_core::Result<Vec<AnnotationEdit>>,

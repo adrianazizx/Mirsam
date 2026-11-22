@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session M5-b: encryption and permissions, PAdES spike; on top of `main` after M3, M4 runtime and M5-a).
+Last updated: 2026-11-22 (session M5-c: form filling, Fill & Sign, signatures; merged with `main` after M5-b).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -488,9 +488,26 @@ Plan, in order:
 
 ## M5 — Forms, sign, protect
 
-- [ ] Form filling with shaped appearance streams
-- [ ] Fill & Sign on flat forms
-- [ ] Drawn/typed/image signatures
+- [~] Form filling with shaped appearance streams (session M5-c, ADR 0045):
+  - **Done:** text (single-line, multi-line, comb, password), check boxes, radio buttons, drop-downs,
+    and lists. Each widget gets our own appearance, with Arabic shaped and starting at the right.
+    `/V` is written, and `NeedAppearances` is turned off after every valued field is drawn.
+  - **Tested** in PDFium renders, after a save through PDFium, flattened by qpdf, and in an
+    encrypted file.
+  - **Gaps:**
+    - JavaScript format, calculate, and validate actions are not run; a date field is text.
+    - Fields are filled in the inspector, not on the page.
+    - Fields in encrypted object streams are not listed.
+- [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
+  click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
+  - Resized in 25% steps, with text keeping its size for later changes.
+  - **Gaps:** no drag to move or drag handles to resize; fixed colours and sizes.
+- [~] Drawn/typed/image signatures and initials (ADR 0045):
+  - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
+    kept as a soft mask) or JPEG, picked through the native dialog.
+  - **Kept** in the state store (schema 4), on this device only. **Placed** in proportion and
+    resizable.
+  - **Gap:** the image import and the image preview URL are untested in the real shell.
 - [x] Encryption and permissions (session M5-b, ADR 0043): set, change or remove passwords on save
       (AES-256 revision 6 by default, AES-128 for old readers), owner and user passwords, permission
       flags honoured by the command registry; Arabic passwords tested; `qpdf --check` and reopen pass.
@@ -525,6 +542,71 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session M5-c — 2026-11-22 (Milestone 5: form filling, Fill & Sign, signatures; parallel to M5 crypto and M6)
+
+Branch `pomidor/m5-forms-0522c7`, from `main` after PR #11. Left the OCR code and the
+encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11ba5`) alone; only used
+`pdf::crypt`'s existing API.
+
+- **ADR 0045** records the approach:
+  - Our parser reads and writes the form.
+  - Every widget's appearance is ours, shaped by `typeset` and written by `pdf::text`.
+  - `/Q 0` starts where the text's own direction starts.
+  - `NeedAppearances` is turned off once every valued field is drawn.
+  - Fill & Sign items are `/Stamp`s named `Mirsam*`, moved and resized through `/Rect` alone.
+  - Signatures are kept in the state store.
+- **Engine:**
+  - **`safha_core::forms`:** `read`, `form_update`, and `forms/appearance.rs`;
+    `Document::form` and `Document::with_form_edits`.
+  - **`annotate::fill`:** `FillText`, `Mark`, `SignatureStamp`, and `Signature` (drawn, typed,
+    image). `AnnotationEdit` gains `AddFillText`, `AddMark`, `AddSignature` and `SetRect`;
+    `SetContents` also takes fill text. `AnnotationKind` gains `FillText`, `Mark` and `Signature`.
+  - **`pdf::image`:** PNG decoding and JPEG pass-through as image XObjects with soft masks; the
+    annotation writer writes images.
+  - **`store`:** a `signatures` table (schema version 4).
+  - **Dependencies:** `png` (MIT OR Apache-2.0) moves from dev-dependencies to dependencies, and
+    `serde_json` joins them. Both were in the tree already, and `THIRD_PARTY_LICENSES.md` is
+    unchanged.
+- **Shell (`forms.rs`):**
+  - Commands: `form_fields`, `set_form_field`, `add_fill_text`, `add_fill_mark`,
+    `place_signature`, `set_annotation_rect`, `signatures`, `save_drawn_signature`,
+    `save_typed_signature`, `import_signature_image` (native dialog), and `delete_signature`.
+  - `safha://localhost/signature?id=N` serves kept images.
+  - A new error code, `store_unavailable`.
+- **UI:**
+  - The Forms tool's panel and the Sign tool's panel, in the inspector.
+  - The new-signature dialog (Draw, Type, Image).
+  - The viewer's `place` mode.
+  - Smaller and Larger in the selection toolbar.
+  - Fill text edited in the note editor.
+  - 21 commands, English and Arabic strings, and signature tokens (with an ink-on-paper contrast
+    pair).
+  - The mock backend has a sample form on the sample document's first page, and keeps signatures.
+- **Tests:**
+  - **Rust:** `tests/forms.rs` (9) runs on a hand-written AcroForm. It covers every kind of field,
+    Arabic and English, comb, `NeedAppearances`, encryption made with qpdf, and a save through
+    PDFium.
+  - `tests/fill_sign.rs` (4) uses the fixtures: render-in-place, `SetRect`, `SetContents`, turned
+    pages, encrypted files, flatten read-back, and save.
+  - Unit tests cover `fill`, `pdf::image`, `forms`, `forms/appearance`, and the store.
+  - **UI:** `commands/forms.test.tsx` (11, in English and Arabic, including the permission gates).
+  - `cargo test --workspace` (378 after the merge), clippy (with and without `devtools`), fmt,
+    `pnpm test` (190), `tsc`, Biome, `cargo deny`, and the licence report are all clean.
+- **Checked by eye:**
+  - Renders of a filled form and of Fill & Sign items (PDFium).
+  - The Forms and Sign panels and the signature dialog in the browser preview, against the mock,
+    in Arabic (RTL) and English (LTR).
+  - Not run in the native shell. The end-to-end self-test does not cover forms.
+- **Merged with `main` after M5-b** (encryption, PR #13):
+  - **Conflicts** were additions on both sides: registry error codes, store imports, locale keys,
+    `pdf` modules, and the ADR index.
+  - **Permissions:** the new commands follow M5-b's gates. `form.setValue` needs `fillForms`, and
+    the `fill.*` commands need `annotate`. The panels show why when they are off.
+  - **Schema:** this branch takes state-store schema version 4; M5-b did not change the schema.
+- **Merged with `main` again after the M4 pipeline** (PRs #12 and #15): `ocr` and `forms` both
+  added to `lib.rs`, both branches made `png` and `serde_json` normal dependencies, and the session
+  logs met at the top of this list.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 

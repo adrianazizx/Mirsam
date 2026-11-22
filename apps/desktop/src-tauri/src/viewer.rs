@@ -76,6 +76,30 @@ pub fn tile_protocol<R: tauri::Runtime>(
         document_response(ctx.app_handle(), request.uri(), responder);
         return;
     }
+    if request.uri().path().trim_matches('/') == "signature" {
+        let response =
+            match crate::forms::signature_image(&ctx.app_handle().state::<AppState>(), request.uri()) {
+                Some((kind, bytes)) => http::Response::builder()
+                    .header(http::header::CONTENT_TYPE, kind)
+                    .header(http::header::CACHE_CONTROL, "no-store")
+                    .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(bytes)
+                    .unwrap_or_else(|err| {
+                        error_response(
+                            http::StatusCode::INTERNAL_SERVER_ERROR,
+                            "engine_error",
+                            &err.to_string(),
+                        )
+                    }),
+                None => error_response(
+                    http::StatusCode::NOT_FOUND,
+                    "unknown_signature",
+                    "no such signature image",
+                ),
+            };
+        responder.respond(response);
+        return;
+    }
     let request = match parse_tile_request(request.uri()) {
         Ok(request) => request,
         Err(detail) => {
