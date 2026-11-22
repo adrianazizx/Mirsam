@@ -304,6 +304,16 @@ Plan, in order: every later slice edits documents, so the editing model and savi
   Linux-made fixtures matches macOS (ADR 0008).
 - **Printing on Linux** verified in CI: four rotated pages exported in 203 ms, each on paper of
   the right orientation.
+- **Milestone 1 closed** and merged to `main` (PR #1, every CI check green). The owner decided
+  that the memory budget covers the app's own process.
+- **Milestone 2 started** on `m2-organize`:
+  - **Editing model (ADR 0014):** each edit is an incremental update written by our own writer,
+    and undo is a stack of them.
+  - **Page edits** (rotate, delete, duplicate, insert blank) on the current page, with undo and
+    redo, in the core, the shell, and the UI.
+  - **Self-test:** checks an edit and its undo in the real app in both directions.
+  - **Tests:** 137 Rust and 124 UI tests pass on this Mac. The branch has no pull request yet,
+    so CI has not run on it.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 
