@@ -101,7 +101,11 @@
       "moveEarlier": "Move pages earlier",
       "moveLater": "Move pages later",
       "move": "Move pages",
-      "open": "Open page"
+      "open": "Open page",
+      "insertFromFile": "Insert pages from a file…",
+      "extract": "Extract pages to a new file…",
+      "split": "Split into files…",
+      "splitInto": "Split"
     }
   },
   "viewer": {
@@ -228,5 +232,16 @@
     "actions": "Page actions",
     "grid": "Pages of {{name}}",
     "selected": "Selected: {{count}}"
+  },
+  "notices": {
+    "extracted": "The pages were saved as {{name}}.",
+    "split": "The document was split into {{count}} files."
+  },
+  "split": {
+    "title": "Split into files",
+    "size": "Pages per file",
+    "help": "Each file gets this many pages, in order; the last one gets the rest.",
+    "confirm": "Choose a folder…",
+    "cancel": "Cancel"
   }
 }

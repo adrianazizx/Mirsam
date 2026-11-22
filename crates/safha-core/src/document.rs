@@ -79,6 +79,63 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
+    /// `pages` (in that order) as a PDF of their own, copied by PDFium with
+    /// everything they use (fonts, images, annotations). The new file has no
+    /// outline and no encryption: it is a fresh document (ADR 0016).
+    pub fn extract_pages(&self, pages: &[usize]) -> Result<Vec<u8>> {
+        if pages.is_empty() {
+            return Err(Error::InvalidEdit("no pages given"));
+        }
+        let mut out = self.engine.new_pdf()?;
+        for (position, &page) in pages.iter().enumerate() {
+            let index = self.page_index(page)?;
+            let at = PdfPageIndex::try_from(position).map_err(|_| Error::InvalidEdit("too many pages"))?;
+            out.pages_mut().copy_page_range_from_document(&self.inner, index..=index, at)?;
+        }
+        Ok(out.save_to_bytes()?)
+    }
+
+    /// The document in parts of at most `size` pages each, in order.
+    pub fn split_every(&self, size: usize) -> Result<Vec<Vec<u8>>> {
+        if size == 0 {
+            return Err(Error::InvalidEdit("parts need at least one page"));
+        }
+        let pages: Vec<usize> = (0..self.page_count()).collect();
+        pages.chunks(size).map(|part| self.extract_pages(part)).collect()
+    }
+
+    /// This document with every page of `others` inserted before page `at`
+    /// (`at` = page count appends), in order; and the new revision's bytes.
+    ///
+    /// PDFium copies the pages with everything they use, then rewrites the
+    /// whole file: copying objects across files is beyond the incremental
+    /// writer (ADR 0016). A signed document is refused, since a rewrite would
+    /// invalidate its signatures.
+    pub fn with_pages_from(&self, others: &[&Document], at: usize) -> Result<(Document, Arc<[u8]>)> {
+        if self.is_signed() {
+            return Err(Error::EditUnsupported(
+                "it is signed, and inserting pages from another file would invalidate its signatures",
+            ));
+        }
+        let count = self.page_count();
+        if at > count {
+            return Err(Error::PageOutOfRange { index: at, count });
+        }
+        let mut working = self.revision(self.bytes())?;
+        let mut position = PdfPageIndex::try_from(at).map_err(|_| Error::InvalidEdit("too many pages"))?;
+        for other in others {
+            let pages = PdfPageIndex::try_from(other.page_count())
+                .map_err(|_| Error::InvalidEdit("too many pages"))?;
+            if pages == 0 {
+                continue;
+            }
+            working.inner.pages_mut().copy_page_range_from_document(&other.inner, 0..=pages - 1, position)?;
+            position += pages;
+        }
+        let bytes: Arc<[u8]> = Arc::from(working.inner.save_to_bytes()?);
+        Ok((self.revision(Arc::clone(&bytes))?, bytes))
+    }
+
     /// Whether the document carries digital signatures, which only an
     /// incremental save keeps valid.
     pub fn is_signed(&self) -> bool {

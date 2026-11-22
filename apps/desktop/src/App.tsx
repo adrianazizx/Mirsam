@@ -9,6 +9,7 @@ import {
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
+import { SplitDialog } from "./components/pages/SplitDialog";
 import { AppShell } from "./components/shell/AppShell";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
 import { applyLocale, formatTag } from "./i18n";
@@ -178,6 +179,7 @@ export function App() {
     <I18nProvider locale={formatTag(locale)}>
       <AppShell />
       <UnsavedChangesDialog />
+      <SplitDialog />
     </I18nProvider>
   );
 }

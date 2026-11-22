@@ -341,6 +341,15 @@ export interface Backend {
   editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
   undoEdit(documentId: number): Promise<EditOutcome>;
   redoEdit(documentId: number): Promise<EditOutcome>;
+  /**
+   * Asks for PDFs and inserts their pages before page `at`, in order (ADR 0016);
+   * null if cancelled.
+   */
+  insertPagesFromFiles(documentId: number, at: number): Promise<EditOutcome | null>;
+  /** Asks where, and writes `pages` as a new PDF; its name, or null if cancelled. */
+  extractPages(documentId: number, pages: number[]): Promise<string | null>;
+  /** Asks for a folder and writes the document in parts of `size` pages; how many, or null. */
+  splitDocument(documentId: number, size: number): Promise<number | null>;
   /** Saves over the document's file (ADR 0015). */
   saveDocument(documentId: number): Promise<SaveOutcome>;
   /** Asks where to save, saves there, and the document becomes that file; null if cancelled. */

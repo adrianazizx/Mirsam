@@ -151,6 +151,12 @@ export const tauriBackend: Backend = {
   closeWindowDiscarding: () => invoke<void>("close_window_discarding"),
   quitDiscarding: () => invoke<void>("quit_discarding"),
   saveDocument: (documentId) => invoke<SaveOutcome>("save_document", { documentId }),
+  insertPagesFromFiles: (documentId, at) =>
+    invoke<EditOutcome | null>("insert_pages_from_files", { documentId, at }),
+  extractPages: (documentId, pages) =>
+    invoke<string | null>("extract_pages", { documentId, pages }),
+  splitDocument: (documentId, size) =>
+    invoke<number | null>("split_document", { documentId, size }),
   saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>

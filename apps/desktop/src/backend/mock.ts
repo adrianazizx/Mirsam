@@ -478,6 +478,18 @@ export const mockBackend: Backend = {
     if (history && history.at > 0) history.at -= 1;
     return outcome(documentId);
   },
+  // The mock "picks" a file whose pages are the sample's first three.
+  insertPagesFromFiles: async (documentId, at) => {
+    const history = edits.get(documentId) ?? { states: [pagesOf(documentId)], at: 0, saved: 0 };
+    const pages = pagesOf(documentId);
+    const next = [...pages.slice(0, at), 0, 1, 2, ...pages.slice(at)];
+    history.states = [...history.states.slice(0, history.at + 1), next];
+    history.at += 1;
+    edits.set(documentId, history);
+    return outcome(documentId);
+  },
+  extractPages: async () => "Extract.pdf",
+  splitDocument: async (documentId, size) => Math.ceil(pagesOf(documentId).length / size),
   saveDocument: async (documentId) => {
     const history = edits.get(documentId);
     if (history) history.saved = history.at;

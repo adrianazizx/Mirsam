@@ -183,6 +183,118 @@ fn save_to(state: &AppState, document_id: u32, path: PathBuf) -> CommandResult<S
     })
 }
 
+/// Asks for one or more PDFs and inserts all their pages before page `at`
+/// (`at` = page count appends), in the order picked: insert, or merge
+/// (ADR 0016). `None` when the user cancels.
+#[tauri::command]
+pub async fn insert_pages_from_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    document_id: u32,
+    at: usize,
+) -> CommandResult<Option<EditOutcome>> {
+    let picked = app.dialog().file().add_filter("PDF", &["pdf"]).blocking_pick_files();
+    let Some(paths) = picked else { return Ok(None) };
+    let paths: Vec<PathBuf> = paths.into_iter().filter_map(|file| file.into_path().ok()).collect();
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    let engine = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)?;
+    // A file that needs a password cannot be inserted yet; the error says so.
+    let others = paths.iter().map(|path| engine.open_file(path, None)).collect::<Result<Vec<_>, _>>()?;
+    let others: Vec<&safha_core::Document> = others.iter().collect();
+
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let (revision, bytes) = document.with_pages_from(&others, at)?;
+    history.push_snapshot(bytes);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(Some(EditOutcome::new(page_count, &history)))
+}
+
+/// Writes `pages` as a new PDF where the user chooses. Returns the new
+/// file's name, or `None` when the user cancels.
+#[tauri::command]
+pub async fn extract_pages(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    document_id: u32,
+    pages: Vec<usize>,
+) -> CommandResult<Option<String>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let bytes = document.extract_pages(&pages)?;
+    let current = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let stem = current.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut dialog =
+        app.dialog().file().add_filter("PDF", &["pdf"]).set_file_name(format!("{stem} (extract).pdf"));
+    if let Some(dir) = current.parent() {
+        dialog = dialog.set_directory(dir);
+    }
+    let Some(mut path) = dialog.blocking_save_file().and_then(|file| file.into_path().ok()) else {
+        return Ok(None);
+    };
+    if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
+        path.as_mut_os_string().push(".pdf");
+    }
+    write_new_pdf(&path, &bytes, pages.len())?;
+    Ok(Some(crate::state::display_name(&path)))
+}
+
+/// Splits the document into files of at most `size` pages, written into a
+/// folder the user chooses as `name (1).pdf`, `name (2).pdf`, … next to
+/// nothing they would overwrite. Returns how many files were written, or
+/// `None` when the user cancels.
+#[tauri::command]
+pub async fn split_document(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    document_id: u32,
+    size: usize,
+) -> CommandResult<Option<usize>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let parts = document.split_every(size)?;
+    let current = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let stem = current.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut dialog = app.dialog().file();
+    if let Some(dir) = current.parent() {
+        dialog = dialog.set_directory(dir);
+    }
+    let Some(folder) = dialog.blocking_pick_folder().and_then(|folder| folder.into_path().ok()) else {
+        return Ok(None);
+    };
+    let total = document.page_count();
+    for (index, part) in parts.iter().enumerate() {
+        let path = free_path(&folder, &format!("{stem} ({})", index + 1));
+        let expected = size.min(total - index * size);
+        write_new_pdf(&path, part, expected)?;
+    }
+    Ok(Some(parts.len()))
+}
+
+/// Validates a new PDF (it opens, with `pages` pages) and writes it atomically.
+fn write_new_pdf(path: &std::path::Path, bytes: &[u8], pages: usize) -> CommandResult<()> {
+    let engine = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)?;
+    let reopened = engine
+        .open_bytes(bytes.to_vec(), None)
+        .map_err(|_| CommandError::new("save_failed", "the new file would not open"))?;
+    if reopened.page_count() != pages {
+        return Err(CommandError::new("save_failed", "the new file would have the wrong number of pages"));
+    }
+    safha_core::save::write_atomically(path, bytes)?;
+    Ok(())
+}
+
+/// `folder/name.pdf`, or `folder/name 2.pdf`, … whichever does not exist yet.
+fn free_path(folder: &std::path::Path, name: &str) -> PathBuf {
+    let first = folder.join(format!("{name}.pdf"));
+    if !first.exists() {
+        return first;
+    }
+    (2..).map(|n| folder.join(format!("{name} {n}.pdf"))).find(|path| !path.exists()).unwrap_or(first)
+}
+
 /// Asks a window's UI to confirm closing it: it holds unsaved changes.
 pub const CLOSE_REQUESTED: &str = "close-requested";
 /// Asks a window's UI to confirm quitting: documents hold unsaved changes.

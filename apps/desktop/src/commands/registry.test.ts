@@ -169,6 +169,38 @@ describe("command registry", () => {
     expect(selectActiveDocument(useAppStore.getState())?.pageCount).toBe(before);
   });
 
+  it("inserts another file's pages, extracts, and splits", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    const before = (await backend.pageSizes(1)).length;
+    useAppStore.getState().updateDocument(1, { pageCount: before });
+    useAppStore.getState().setActiveTool("pages");
+    useAppStore.getState().setSelectedPages(1, [4]);
+
+    // The mock picks a three-page file; it goes in after the selection, selected.
+    await runCommand("pages.insertFromFile");
+    let doc = selectActiveDocument(useAppStore.getState());
+    expect(doc?.pageCount).toBe(before + 3);
+    expect(doc?.selectedPages).toEqual([5, 6, 7]);
+
+    await runCommand("pages.extract");
+    expect(useAppStore.getState().notice).toEqual({
+      key: "extracted",
+      values: { name: "Extract.pdf" },
+    });
+
+    await runCommand("pages.split");
+    expect(useAppStore.getState().splitPrompt).toBe(true);
+    await runCommand("pages.splitInto", { size: 100 });
+    expect(useAppStore.getState().splitPrompt).toBe(false);
+    expect(useAppStore.getState().notice).toEqual({
+      key: "split",
+      values: { count: String(Math.ceil((before + 3) / 100)) },
+    });
+    await runCommand("edit.undo");
+    doc = selectActiveDocument(useAppStore.getState());
+    expect(doc?.pageCount).toBe(before);
+  });
+
   it("keeps the last page: deleting needs two", () => {
     useAppStore.getState().addDocument({ id: 7, name: "one.pdf", pageCount: 1 });
     expect(isCommandEnabled("pages.delete")).toBe(false);

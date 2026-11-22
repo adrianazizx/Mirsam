@@ -214,7 +214,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 3. ~~**Safe save**~~ **done (ADR 0015):** Save and Save As (temp file → validate → atomic
    rename). The original is never written in place; signed files are saved incrementally. The
    app asks before a modified tab, window, or the app closes.
-4. **Merge, insert from another PDF, extract, split.**
+4. ~~**Merge, insert from another PDF, extract, split**~~ **done (ADR 0016):** PDFium's page
+   import; snapshot steps in the history; refuses signed targets and sources with passwords.
+   Splitting by size or by bookmarks comes later.
 5. **Markup** (highlight, underline, strikethrough, squiggly) from the text selection, as
    standard annotations with appearance streams.
 6. **Notes, text boxes, ink** (RTL-aware text entry).
@@ -228,7 +230,8 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       - Select pages with click, Shift and Cmd/Ctrl; drag to reorder; move earlier or later.
       - Rotate, delete, duplicate and insert act on the selection.
       - Both directions: the grid flows right to left in Arabic.
-      - Still to come: merging, extracting and splitting (slice 4).
+      - Insert pages from files (also merges), extract to a new file, and split into files of
+        N pages (ADR 0016).
       - Pointer dragging is untested: browser automation cannot start a native drag. The drop
         arithmetic is unit-tested, and the move commands are the keyboard path.
 - [x] Undo journal: undo and redo for page edits (`EditHistory`, ADR 0014); annotations will
@@ -330,7 +333,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
   - **`selftest.sh`** now refuses to run when port 1420 already serves a UI. It used to test
     another checkout's UI silently.
   - **Draft PR #2** is open with Auto-fix on.
-  - **Tests:** 142 Rust and 128 UI tests pass on this Mac.
+  - **Pages across files** (ADR 0016): insert pages from other PDFs (also merges), extract
+    pages to a new file, split into files of N pages. A notice says what was written.
+  - **Tests:** 147 Rust and 129 UI tests pass on this Mac.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 

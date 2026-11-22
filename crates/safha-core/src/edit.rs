@@ -194,35 +194,52 @@ pub fn page_edit_update(bytes: &[u8], edit: &PageEdit) -> Result<Vec<u8>> {
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
 }
 
-/// A document's edits as a stack of incremental updates (ADR 0014).
+/// A document's edits as a stack (ADR 0014, ADR 0016).
 ///
-/// Revision *n* is the file as opened followed by the first *n* updates, so
-/// undo and redo move along the stack and nothing is ever recomputed. Storage
-/// is the original bytes plus the updates, never a copy per revision.
+/// Most steps are incremental updates: revision *n* is the file as opened
+/// followed by the first *n* updates. An edit PDFium had to rewrite the file
+/// for (inserting pages from another file) is a snapshot of the whole new
+/// file instead, and the updates after it build on that. Undo and redo move
+/// along the stack; nothing is recomputed.
 #[derive(Debug, Clone)]
 pub struct EditHistory {
     base: Arc<[u8]>,
-    updates: Vec<Vec<u8>>,
-    /// `updates[..applied]` are in effect; the rest were undone.
+    steps: Vec<Step>,
+    /// `steps[..applied]` are in effect; the rest were undone.
     applied: usize,
     /// `applied` when the document was last saved; `None` once that revision
     /// can no longer be reached (an edit after undoing past it).
     saved: Option<usize>,
 }
 
+#[derive(Debug, Clone)]
+enum Step {
+    Update(Vec<u8>),
+    Snapshot(Arc<[u8]>),
+}
+
 impl EditHistory {
     pub fn new(base: Arc<[u8]>) -> Self {
-        Self { base, updates: Vec::new(), applied: 0, saved: Some(0) }
+        Self { base, steps: Vec::new(), applied: 0, saved: Some(0) }
     }
 
-    /// Records an update applied to the current revision. Undone updates are
-    /// forgotten: redo has nothing left after a new edit.
+    /// Records an update appended to the current revision.
     pub fn push(&mut self, update: Vec<u8>) {
-        self.updates.truncate(self.applied);
+        self.record(Step::Update(update));
+    }
+
+    /// Records a revision written out in full (`bytes` is the whole file).
+    pub fn push_snapshot(&mut self, bytes: Arc<[u8]>) {
+        self.record(Step::Snapshot(bytes));
+    }
+
+    /// Undone steps are forgotten: redo has nothing left after a new edit.
+    fn record(&mut self, step: Step) {
+        self.steps.truncate(self.applied);
         if self.saved.is_some_and(|saved| saved > self.applied) {
             self.saved = None;
         }
-        self.updates.push(update);
+        self.steps.push(step);
         self.applied += 1;
     }
 
@@ -234,7 +251,7 @@ impl EditHistory {
 
     /// Steps forward one undone edit.
     pub fn redo(&mut self) -> Option<Arc<[u8]>> {
-        if self.applied == self.updates.len() {
+        if self.applied == self.steps.len() {
             return None;
         }
         self.applied += 1;
@@ -246,7 +263,7 @@ impl EditHistory {
     }
 
     pub fn can_redo(&self) -> bool {
-        self.applied < self.updates.len()
+        self.applied < self.steps.len()
     }
 
     /// Whether the current revision differs from the last saved one.
@@ -258,15 +275,28 @@ impl EditHistory {
         self.saved = Some(self.applied);
     }
 
-    /// The current revision's bytes.
+    /// The current revision's bytes: the newest snapshot in effect (or the
+    /// file as opened) and the updates after it.
     pub fn current(&self) -> Arc<[u8]> {
-        if self.applied == 0 {
-            return Arc::clone(&self.base);
+        let applied = &self.steps[..self.applied];
+        let from = applied.iter().rposition(|step| matches!(step, Step::Snapshot(_)));
+        let start = match from.map(|i| &applied[i]) {
+            Some(Step::Snapshot(bytes)) => bytes,
+            _ => &self.base,
+        };
+        let updates: Vec<&Vec<u8>> = applied[from.map_or(0, |i| i + 1)..]
+            .iter()
+            .filter_map(|step| match step {
+                Step::Update(update) => Some(update),
+                Step::Snapshot(_) => None,
+            })
+            .collect();
+        if updates.is_empty() {
+            return Arc::clone(start);
         }
-        let extra: usize = self.updates[..self.applied].iter().map(Vec::len).sum();
-        let mut bytes = Vec::with_capacity(self.base.len() + extra);
-        bytes.extend_from_slice(&self.base);
-        for update in &self.updates[..self.applied] {
+        let mut bytes = Vec::with_capacity(start.len() + updates.iter().map(|u| u.len()).sum::<usize>());
+        bytes.extend_from_slice(start);
+        for update in updates {
             bytes.extend_from_slice(update);
         }
         Arc::from(bytes)
@@ -464,5 +494,17 @@ mod tests {
         assert!(history.is_modified() && !history.can_redo());
         assert_eq!(history.undo().as_deref(), Some(&b"base"[..]));
         assert_eq!(history.undo(), None);
+    }
+
+    #[test]
+    fn a_snapshot_starts_over_and_undo_goes_back_past_it() {
+        let mut history = EditHistory::new(Arc::from(&b"base"[..]));
+        history.push(b"+1".to_vec());
+        history.push_snapshot(Arc::from(&b"whole"[..]));
+        history.push(b"+2".to_vec());
+        assert_eq!(&*history.current(), b"whole+2");
+        assert_eq!(history.undo().as_deref(), Some(&b"whole"[..]));
+        assert_eq!(history.undo().as_deref(), Some(&b"base+1"[..]));
+        assert_eq!(history.redo().as_deref(), Some(&b"whole"[..]));
     }
 }

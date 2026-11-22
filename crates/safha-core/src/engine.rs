@@ -92,6 +92,12 @@ impl Engine {
         Ok(Document::new(inner, hints, bytes, password.map(str::to_owned), self))
     }
 
+    /// An empty PDF to copy pages into (extracting, splitting).
+    pub(crate) fn new_pdf(&'static self) -> Result<pdfium_render::prelude::PdfDocument<'static>> {
+        let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(self.pdfium.create_new_pdf()?)
+    }
+
     /// Reads `path` fully into memory and opens it.
     pub fn open_file(&'static self, path: &Path, password: Option<&str>) -> Result<Document> {
         self.open_bytes(std::fs::read(path)?, password)

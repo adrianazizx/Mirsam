@@ -65,6 +65,8 @@ export interface CommandArg {
   pages?: number[];
   /** `pages.move`: the index the first moved page takes in the result. */
   to?: number;
+  /** `pages.splitInto`: pages per file. */
+  size?: number;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -106,6 +108,10 @@ export type CommandId =
   | "pages.moveLater"
   | "pages.move"
   | "pages.open"
+  | "pages.insertFromFile"
+  | "pages.extract"
+  | "pages.split"
+  | "pages.splitInto"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -577,6 +583,58 @@ const COMMANDS: Command[] = [
         active.id,
         pages.map((_, i) => to + i),
       );
+    },
+  },
+  {
+    // Merging is inserting at the end; in the organizer, after the selection.
+    id: "pages.insertFromFile",
+    isEnabled: hasDocument,
+    async run() {
+      const state = store();
+      const active = selectActiveDocument(state);
+      if (!active) return;
+      const inOrganizer = state.activeTool === "pages" && active.selectedPages.length > 0;
+      const last = active.selectedPages[active.selectedPages.length - 1] ?? 0;
+      const at = inOrganizer ? last + 1 : active.pageCount;
+      const outcome = await backend.insertPagesFromFiles(active.id, at);
+      if (!outcome) return;
+      store().applyEdit(active.id, outcome);
+      const added = Math.max(0, outcome.pageCount - active.pageCount);
+      store().setSelectedPages(
+        active.id,
+        Array.from({ length: added }, (_, i) => at + i),
+      );
+    },
+  },
+  {
+    id: "pages.extract",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const name = await backend.extractPages(active.id, targetPages());
+      if (name) store().setNotice({ key: "extracted", values: { name } });
+    },
+  },
+  {
+    // Asks how many pages per file, then `pages.splitInto` writes them.
+    id: "pages.split",
+    isEnabled: (state) => (selectActiveDocument(state)?.pageCount ?? 0) > 1,
+    run() {
+      store().setSplitPrompt(true);
+    },
+  },
+  {
+    id: "pages.splitInto",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      store().setSplitPrompt(false);
+      const active = selectActiveDocument(store());
+      const size = arg?.size;
+      if (!active || size === undefined || !Number.isInteger(size) || size < 1) return;
+      const count = await backend.splitDocument(active.id, size);
+      if (count !== null) store().setNotice({ key: "split", values: { count: String(count) } });
     },
   },
   {

@@ -1,4 +1,15 @@
-import { ArrowLeft, ArrowRight, Copy, FilePlus2, RotateCcw, RotateCw, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Copy,
+  FileInput,
+  FileOutput,
+  FilePlus2,
+  RotateCcw,
+  RotateCw,
+  Scissors,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   GridLayout,
@@ -136,6 +147,16 @@ export function PageGrid({ documentId: id }: { documentId: number }) {
         </CommandButton>
         <CommandButton command="pages.delete">
           <Trash2 aria-hidden="true" />
+        </CommandButton>
+        <span className={styles.divider} aria-hidden="true" />
+        <CommandButton command="pages.insertFromFile">
+          <FileInput aria-hidden="true" />
+        </CommandButton>
+        <CommandButton command="pages.extract">
+          <FileOutput aria-hidden="true" />
+        </CommandButton>
+        <CommandButton command="pages.split">
+          <Scissors aria-hidden="true" />
         </CommandButton>
         <span className={styles.count} aria-live="polite">
           {selected.length > 0

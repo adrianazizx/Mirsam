@@ -152,6 +152,12 @@ export interface AppState {
   resolveUnlock(next: PendingUnlock | null): void;
   setRecents(recents: RecentFile[] | null): void;
   setError(code: string | null): void;
+  /** A message about something done elsewhere (a file written), under `notices.`. */
+  notice: { key: string; values?: Record<string, string> } | null;
+  setNotice(notice: { key: string; values?: Record<string, string> } | null): void;
+  /** The split dialog is open (asks how many pages per file). */
+  splitPrompt: boolean;
+  setSplitPrompt(open: boolean): void;
   setGalleryOpen(open: boolean): void;
   setPaletteOpen(open: boolean): void;
   /** Applies settings read from the shell's store at startup. */
@@ -291,6 +297,14 @@ export const useAppStore = create<AppState>((set, get) => {
     unlocks: [],
     recents: null,
     errorCode: null,
+    notice: null,
+    setNotice(notice) {
+      set({ notice });
+    },
+    splitPrompt: false,
+    setSplitPrompt(open) {
+      set({ splitPrompt: open });
+    },
     galleryOpen: false,
     paletteOpen: false,
 
