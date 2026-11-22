@@ -329,6 +329,50 @@ export interface DocumentInfo {
   /** Restored from a recovery file with unsaved changes (ADR 0040). */
   modified?: boolean;
   canUndo?: boolean;
+  /** How the file is protected and what the password it was opened with allows (ADR 0043). */
+  security?: SecurityInfo;
+}
+
+/** What a reader may do with a file opened with the user password. */
+export interface Permissions {
+  print: boolean;
+  printHighQuality: boolean;
+  modify: boolean;
+  copy: boolean;
+  annotate: boolean;
+  fillForms: boolean;
+  accessibility: boolean;
+  assemble: boolean;
+}
+
+export type Cipher = "aes256" | "aes128";
+
+/** What a saved file is protected with. Empty passwords: none to open / a random owner password. */
+export interface Protection {
+  cipher: Cipher;
+  userPassword: string;
+  ownerPassword: string;
+  permissions: Permissions;
+}
+
+/** What a save does to the file's protection (ADR 0043). */
+export type SecurityChange = { kind: "keep" } | { kind: "remove" } | ({ kind: "set" } & Protection);
+
+/** A document's protection, as opened. */
+export interface SecurityInfo {
+  encrypted: boolean;
+  cipher: "rc4" | "aes128" | "aes256" | null;
+  revision: number;
+  permissions: Permissions;
+  /** Opened with the owner password (or not encrypted): nothing is restricted. */
+  owner: boolean;
+}
+
+/** The document after it was saved with another protection. */
+export interface SecureOutcome {
+  name: string;
+  modified: boolean;
+  security: SecurityInfo;
 }
 
 /** Unsaved changes an earlier session left, kept in a recovery file (ADR 0040). */
@@ -778,6 +822,16 @@ export interface Backend {
   saveDocument(documentId: number): Promise<SaveOutcome>;
   /** Asks where to save, saves there, and the document becomes that file; null if cancelled. */
   saveDocumentAs(documentId: number): Promise<SaveOutcome | null>;
+  /**
+   * Saves with passwords and permissions set, changed or removed (ADR 0043),
+   * over the document's file or (`saveAs`) to a file picked; null if cancelled.
+   * Earlier edits are written in and undo starts over.
+   */
+  secureDocument(
+    documentId: number,
+    change: SecurityChange,
+    saveAs: boolean,
+  ): Promise<SecureOutcome | null>;
   /** Gives the document's tab to a new window; the caller drops its own tab. */
   moveToNewWindow(documentId: number): Promise<void>;
   /**

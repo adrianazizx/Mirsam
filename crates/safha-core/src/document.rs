@@ -720,6 +720,65 @@ impl Document {
         Ok(self.inner.save_to_bytes()?)
     }
 
+    /// How the document is protected, and what the password it was opened
+    /// with allows.
+    pub fn security(&self) -> crate::security::SecurityInfo {
+        use crate::pdf::{File, crypt::Crypt};
+        let Some(file) = File::new(&self.bytes) else { return crate::security::SecurityInfo::open() };
+        if file.trailer.get(b"Encrypt").is_none() {
+            return crate::security::SecurityInfo::open();
+        }
+        match Crypt::of(&file, self.password.as_deref()) {
+            Ok(Some(crypt)) => crate::security::SecurityInfo::of(&crypt),
+            // Opened by PDFium, but with a handler this editor cannot write.
+            _ => crate::security::SecurityInfo {
+                encrypted: true,
+                cipher: None,
+                revision: 0,
+                permissions: crate::security::Permissions::all(),
+                owner: false,
+            },
+        }
+    }
+
+    /// The document as PDF bytes with its protection changed (ADR 0043).
+    ///
+    /// Changing a signed file would break its signatures, and changing a
+    /// file's protection needs the owner password when it restricts anything.
+    pub fn to_pdf_bytes_secured(&self, change: &crate::security::SecurityChange) -> Result<Vec<u8>> {
+        use crate::security::SecurityChange;
+        let base = self.to_pdf_bytes()?;
+        let target = match change {
+            SecurityChange::Keep => return Ok(base),
+            SecurityChange::Remove => None,
+            SecurityChange::Set(protection) => Some(protection),
+        };
+        let info = self.security();
+        if info.encrypted && !info.owner && info.permissions != crate::security::Permissions::all() {
+            return Err(Error::NotPermitted);
+        }
+        if !info.encrypted && target.is_none() {
+            return Ok(base);
+        }
+        if self.is_signed() {
+            return Err(Error::EditUnsupported(
+                "it is signed, and changing its protection would break the signatures",
+            ));
+        }
+        crate::pdf::protect::rewrite(&base, self.password.as_deref(), target)
+    }
+
+    /// The password the document was opened with, if any.
+    pub(crate) fn password_in_use(&self) -> Option<String> {
+        self.password.clone()
+    }
+
+    /// The same file's bytes opened as a new document with another password
+    /// (after its protection changed).
+    pub fn reopen(&self, bytes: Arc<[u8]>, password: Option<&str>) -> Result<Document> {
+        self.engine.open_shared(bytes, password)
+    }
+
     /// The document outline (bookmarks), as a tree.
     pub fn outline(&self) -> Vec<crate::outline::OutlineItem> {
         crate::outline::read(&self.inner)

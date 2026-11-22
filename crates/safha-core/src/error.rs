@@ -18,6 +18,16 @@ pub enum Error {
     #[error("a password is required to open this document")]
     PasswordRequired,
 
+    /// A password the chosen cipher cannot store (AES-128 takes ASCII only),
+    /// or one with control characters.
+    #[error("that password cannot be used with this encryption")]
+    PasswordNotEncodable,
+
+    /// The file's permissions, with the password it was opened with, do not
+    /// allow changing its protection.
+    #[error("the owner password is needed to change this file's protection")]
+    NotPermitted,
+
     /// The bytes are not a PDF that PDFium can parse.
     #[error("the file is not a readable PDF")]
     InvalidPdf,

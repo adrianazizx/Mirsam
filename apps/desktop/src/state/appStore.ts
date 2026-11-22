@@ -12,6 +12,7 @@ import type {
   SaveOutcome,
   SearchHit,
   SearchOptions,
+  SecureOutcome,
   TextStyle,
 } from "../backend";
 import type { Locale } from "../i18n";
@@ -230,6 +231,11 @@ export interface AppState {
   applyEdit(id: number, outcome: EditOutcome): void;
   /** After Save or Save As: the name may change, and the document is no longer modified. */
   applySave(id: number, outcome: SaveOutcome): void;
+  /** After a save with another protection (ADR 0043): its new protection, and undo starts over. */
+  applySecured(id: number, outcome: SecureOutcome): void;
+  /** The protection dialog is open. */
+  securityPrompt: boolean;
+  setSecurityPrompt(open: boolean): void;
   setSelectedPages(id: number, pages: number[]): void;
   closePrompt: ClosePrompt | null;
   setClosePrompt(prompt: ClosePrompt | null): void;
@@ -605,6 +611,26 @@ export const useAppStore = create<AppState>((set, get) => {
           open.id === id ? { ...open, name: outcome.name, modified: outcome.modified } : open,
         ),
       }));
+    },
+    applySecured(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id
+            ? {
+                ...open,
+                name: outcome.name,
+                modified: outcome.modified,
+                security: outcome.security,
+                canUndo: false,
+                canRedo: false,
+              }
+            : open,
+        ),
+      }));
+    },
+    securityPrompt: false,
+    setSecurityPrompt(securityPrompt) {
+      set({ securityPrompt });
     },
     updateRedaction(id, change) {
       set((state) => ({

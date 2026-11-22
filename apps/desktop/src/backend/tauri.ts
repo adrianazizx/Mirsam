@@ -25,6 +25,7 @@ import {
   type SanitizeOutcome,
   type SaveOutcome,
   type SearchResults,
+  type SecureOutcome,
   type SelftestConfig,
   type Startup,
   type TextLayer,
@@ -200,6 +201,8 @@ export const tauriBackend: Backend = {
   splitDocument: (documentId, by) => invoke<number | null>("split_document", { documentId, by }),
   bookmarkParts: (documentId) => invoke<BookmarkPart[]>("bookmark_parts", { documentId }),
   saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
+  secureDocument: (documentId, change, saveAs) =>
+    invoke<SecureOutcome | null>("secure_document", { documentId, change, saveAs }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>
     listen<{ key: string; value: string }>("settings-changed", (event) =>

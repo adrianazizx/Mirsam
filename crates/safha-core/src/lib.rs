@@ -35,6 +35,7 @@ pub mod redact;
 pub mod render;
 pub mod save;
 pub mod search;
+pub mod security;
 pub mod stamp;
 pub mod store;
 pub mod text;

@@ -32,7 +32,9 @@ number and says so.
 | [0040](0040-autosave-and-recovery.md) | Autosave: each modified document's current bytes in a recovery file 2 s after its last change; restored at startup (undo back to the original when unchanged, Save As when it changed); encrypted ones ask for the password | Accepted |
 | [0041](0041-comments-panel.md) | Comments panel: threads read by our parser (`/IRT`, review states) with PDFium's text; replies and resolve as hidden-appearance annotations; authors only by the user's chosen name; filter, sort, go to | Accepted |
 | [0042](0042-true-redaction-and-sanitize.md) | True redaction by rewriting content streams (glyphs cut by code with exact gap compensation, image pixels, paths, annotations, metadata scrubbed), checked by extraction; Arabic-aware pattern presets; sanitize; marks in the UI until applied | Accepted; JPEG pixels and encrypted files open |
+| [0043](0043-encryption-and-permissions.md) | Encryption and permissions on save: one rewrite pass that decrypts and re-encrypts (AES-256 R6 default, AES-128 R4 for old readers), SASLprep-normalised Unicode passwords tried as typed and normalised, owner vs user, `/P` flags honoured by the command registry | Accepted |
+| [0044](0044-pades-signatures.md) | PAdES: RustCrypto `cms` + `x509-cert` + `x509-tsp` + `rsa` 0.10; prototype signs an incremental update (P-256, RSA, Arabic name, time-stamp) that Poppler/NSS and OpenSSL verify | Proposed (spike; Acrobat unchecked) |
 | [0050](0050-stamps-exports-and-compression.md) | Headers, footers, page numbers (Arabic-Indic digits, RTL placement) and watermarks as one-update stamps (one shared font set per band; text watermarks as outlines); page images through our own baseline JPEG encoder; text and Markdown in logical order; compression as our own full rewrite (unused objects, object streams, images reduced by drawn resolution) previewed before saving | Accepted; JPEG downsampling and rotated-text extraction open |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
-crypto/PAdES library (M5), Office → PDF (post-1.0).
+Office → PDF (post-1.0).
