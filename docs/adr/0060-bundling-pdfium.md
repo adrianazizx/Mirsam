@@ -75,15 +75,26 @@ minutes weekly, on demand, and on pull requests that touch the readers.
 
 ## Evidence
 
-Measured on an Apple-silicon MacBook (macOS 26) and on GitHub's hosted runners, 2026-11-22.
-Installers built with `--features devtools`; sizes in MiB (the budget is 60 MB = 57.2 MiB).
+Measured on an Apple-silicon MacBook (macOS 26) and on GitHub's hosted runners, 2026-11-22/23.
+Sizes in MiB; the budget is 60 MB = 57.2 MiB. CI builds include the self-test harness
+(`--features devtools`), which adds under 0.1 MiB (arm64 DMG: 10.6 MiB with or without it).
 
-| Target | Installer | Size | PDFium inside | Self-test (en + ar) |
+| Target | Installer | Size | PDFium inside | Installed app self-test (en + ar) |
 |---|---|---|---|---|
-| macOS arm64 | `.dmg` | 10.5 MiB (app 22.6 MiB) | arm64, pinned bytes | passes from the mounted DMG; PDFium loaded from its `Contents/Frameworks` |
+| macOS arm64 | `.dmg` (app 23.0 MiB) | 10.6 | arm64, pinned bytes | passes from the mounted DMG (Mac, CI) |
+| macOS x86_64 | `.dmg` (app 24.4 MiB) | 11.3 | x86_64, pinned bytes | passes under Rosetta, runs as x86_64 (CI) |
+| macOS universal | `.dmg` (app 47.3 MiB) | 21.9 | arm64 + x86_64, pinned bytes | passes as arm64 (Mac) and as x86_64 (CI) |
+| Windows x64 | NSIS `-setup.exe` | 9.1 | `pdfium.dll`, pinned bytes | passes, installed silently; loaded from the install directory (CI) |
+| Windows x64 | `.msi` | 12.1 | `pdfium.dll`, pinned bytes | passes, unpacked by an administrative install (CI) |
+| Linux x64 | `.deb`, `.rpm` | 11.7 each | `/usr/lib/Mirsam`, pinned bytes | built on Ubuntu 22.04, run on the latest Ubuntu (CI) |
+| Linux x64 | `.AppImage` | **85.7** | same build (build ID); linuxdeploy rewrites it | as above |
 
-Fuzzing, about 75 minutes of CPU per target on the MacBook (five targets, several hundred thousand
-executions in all), found **three crashes in safha-core**, all fixed with regression tests:
+Every installer except the AppImage is within budget. The AppImage carries WebKitGTK and GTK,
+which the other installers take from the system; whether to ship it at that size is left to the
+owner, and `bundle.mjs` reports it as a known exception rather than failing.
+
+Fuzzing on the MacBook (ten 15-minute runs across the five targets, about 570,000 executions)
+found **three crashes in safha-core**, all fixed with regression tests:
 
 1. `Parser::word` sliced out of bounds when a `/Prev`, `/XRefStm` or xref entry pointed past the
    end of the file. The catalog reader runs on every open, so a damaged file could crash opening it.
@@ -95,7 +106,8 @@ executions in all), found **three crashes in safha-core**, all fixed with regres
    gives the stable sort's exact result for a proper order (extraction over the fixture corpus is
    byte-identical before and after). Found seven times through `open`.
 
-No crash came from PDFium itself, and none from the content-stream or CMap readers.
+No crash came from PDFium itself, and none from the content-stream or CMap readers. The last
+round, with the fixes in, found nothing.
 
 ## Alternatives considered
 
@@ -122,6 +134,8 @@ No crash came from PDFium itself, and none from the content-stream or CMap reade
 - Renaming the product means renaming `LINUX_RESOURCE_DIR` with it (the bundle script says so).
 - CI bundles are test builds (self-test harness compiled in, unsigned); they are not uploaded as
   installers.
+- Tauri's DMG step (`bundle_dmg.sh`) occasionally fails with `hdiutil: couldn't unmount … Resource
+  busy` on a loaded machine; running the command again succeeds.
 - `libfuzzer-sys` is (MIT OR Apache-2.0) AND NCSA — NCSA is LLVM's BSD-style licence. It is a
   development tool in its own workspace and never ships.
 - Fork-mode fuzzing (`-fork=N`) breaks on paths with spaces, such as this OneDrive checkout; run the

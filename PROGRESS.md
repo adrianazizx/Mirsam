@@ -97,6 +97,11 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 18. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
     spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
     shipped, and not in the licence report. Say if that is not acceptable.
+19. **The Linux AppImage is 85.7 MiB, over the 60 MB installer budget** (spec §11), because it
+    carries WebKitGTK and GTK, which every other installer takes from the system. The deb and rpm
+    are 11.7 MiB. Ship the AppImage anyway (the budget then reads "excluding a bundled web
+    engine"), or ship deb and rpm only (and perhaps a Flatpak later, which shares the GNOME runtime)?
+    Until you decide, `scripts/bundle.mjs` reports it as a known exception instead of failing.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -636,6 +641,56 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### M7 packaging — 2026-11-22/23 (PDFium bundled everywhere, installers checked, fuzzing; branch `pomidor/m7-packaging-abe03e`, PR #17)
+
+- **Bundling (ADR 0060):** `node scripts/bundle.mjs [--target <triple>]` fetches the pinned PDFium
+  for the target and adds it through a `tauri build --config` overlay:
+  - macOS `Contents/Frameworks` (arm64, x86_64, and universal from a `lipo`'d dylib);
+  - Windows: `pdfium.dll` beside the exe, NSIS and MSI;
+  - Linux: `/usr/lib/Mirsam`, for deb, rpm and AppImage. The engine looks there now.
+- **Checks:** PDFium's notices ship in `licenses/pdfium/`. Every installer is opened and checked:
+  pinned bytes (an AppImage's by build ID), architectures, notices, and the 60 MB budget.
+- **Guard:** a bare `tauri build` refuses to bundle.
+- **Self-test of the installed app:** `scripts/bundle-selftest.sh <installer>` installs or unpacks
+  it and runs the end-to-end self-test in English and Arabic. The report names the PDFium library
+  the process loaded and its architecture; the check fails if that library is outside the bundle.
+- **CI (`bundle.yml`):**
+  - macOS arm64, x86_64 (under Rosetta) and universal (run both ways);
+  - Windows x64;
+  - Linux x64, built on Ubuntu 22.04 and self-tested on the latest Ubuntu.
+  It runs on every push to `main` and on pull requests that change packaging; it is not required.
+- **Installer sizes** (unsigned; the self-test harness adds under 0.1 MiB):
+
+  | Installer | Size | Installed app self-test |
+  |---|---|---|
+  | macOS arm64 `.dmg` | 10.6 MiB | passes (this Mac, CI) |
+  | macOS x86_64 `.dmg` | 11.3 MiB | passes under Rosetta (CI) |
+  | macOS universal `.dmg` | 21.9 MiB | passes as arm64 (this Mac); x86_64 in CI |
+  | Windows NSIS `-setup.exe` | 9.1 MiB | passes, installed silently (CI) |
+  | Windows `.msi` | 12.1 MiB | passes, unpacked (CI) |
+  | Linux `.deb` / `.rpm` | 11.7 MiB each | in CI |
+  | Linux `.AppImage` | 85.7 MiB, over budget (owner item 19) | in CI |
+
+- **Fuzzing (`fuzz/`):** five cargo-fuzz targets.
+  - `open`: PDFium plus the shell's first questions to a document.
+  - `file`: every PDFium-free reader, forms included.
+  - `objects`: fuzzed objects inside a correct xref table.
+  - `content`: one page's content stream.
+  - `cmap`: one ToUnicode CMap.
+
+  `fuzz/seed.mjs` seeds them from the fixtures. Ten 15-minute runs (about 570,000 executions) found
+  **three crashes in safha-core**, each fixed with a regression test:
+  - an offset past the end of the file sliced out of bounds (on every open, through the catalog
+    reader);
+  - a stream `/Length` referring to itself recursed until the stack overflowed;
+  - text extraction's tolerance comparison could be circular and panic the standard sort.
+
+  The last runs of all five targets, with the fixes, found nothing. `fuzz.yml` runs every target weekly and on pull
+  requests that touch the readers.
+- **CI:** the shell self-tests in `ci.yml` are real gates (no `continue-on-error`). Tests, clippy
+  and Biome are green on all three platforms.
+- **Not done:** code signing, notarization and auto-update (owner item 17).
 
 ### Session 16 — 2026-11-22 (Milestone 3's exit test)
 
