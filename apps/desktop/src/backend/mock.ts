@@ -1158,7 +1158,18 @@ export const mockBackend: Backend = {
         lines: 2,
         font: "IBMPlexSans-Regular",
         fontReusable: true,
-        flattened: false,
+        styled: false,
+        runs: [
+          {
+            start: 0,
+            end: text.length,
+            font: "IBMPlexSans-Regular",
+            bold: false,
+            italic: false,
+            size: 12,
+            color: [0, 0, 0],
+          },
+        ],
         editable: true,
         reason: null,
       } satisfies ParagraphBlock,
@@ -1178,8 +1189,15 @@ export const mockBackend: Backend = {
       ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
       textChanged: true,
       substituted:
-        arabic || edit.family ? { from: "IBMPlexSans-Regular", to: edit.family ?? "sans" } : null,
+        arabic || edit.family
+          ? {
+              from: "IBMPlexSans-Regular",
+              to: edit.family ?? "sans",
+              font: edit.family === "naskh" ? "Amiri-Regular" : "IBMPlexSansArabic",
+            }
+          : null,
       lines: Math.max(1, Math.ceil(edit.text.length / 50)),
+      source: arabic || edit.family ? "bundled" : "page",
     };
   },
   documentComments: async (documentId) => {

@@ -153,7 +153,10 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onMoveItem: (annotation, rect) => void runCommand("fill.move", { annotation, rect }),
         onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
         onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
-        onBlockRefused: () => useAppStore.getState().setNotice({ key: "textNotEditable" }),
+        onBlockRefused: (block) =>
+          useAppStore
+            .getState()
+            .setNotice({ key: `textNotEditable.${block.reason ?? "unsupported"}` }),
       },
     });
     viewerRef.current = viewer;

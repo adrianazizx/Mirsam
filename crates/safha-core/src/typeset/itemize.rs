@@ -46,10 +46,12 @@ pub(super) fn itemize(
         let abs = range.start + start;
         while span_index + 1 < spans.len() && spans[span_index].range.end <= abs {
             span_index += 1;
+            // A new span is a new style: a digit after a bold word is not bold.
+            previous_font = None;
         }
         let span = &spans[span_index];
         let neutral = cluster.chars().all(is_script_neutral);
-        let font = choose_font(cluster, span.font, neutral.then_some(previous_font).flatten(), fonts);
+        let font = choose_font(cluster, span, neutral.then_some(previous_font).flatten(), fonts);
         previous_font = Some(font);
 
         // A cluster can hold several levels only in degenerate input (marks
@@ -85,7 +87,7 @@ pub(super) fn itemize(
 /// previous cluster's font for spaces and punctuation it can draw (so they do
 /// not hop between fonts); else the first font in the set that has them all;
 /// else the span's font, which will draw .notdef.
-fn choose_font(cluster: &str, preferred: usize, previous: Option<usize>, fonts: &[FontFace]) -> usize {
+fn choose_font(cluster: &str, span: &Span, previous: Option<usize>, fonts: &[FontFace]) -> usize {
     let covers =
         |font: &FontFace| cluster.chars().filter(|c| !is_default_ignorable(*c)).all(|c| font.covers(c));
     if let Some(previous) = previous
@@ -93,8 +95,12 @@ fn choose_font(cluster: &str, preferred: usize, previous: Option<usize>, fonts: 
     {
         return previous;
     }
+    let preferred = span.font;
     if fonts.get(preferred).is_some_and(covers) {
         return preferred;
+    }
+    if let Some(&fallback) = span.fallbacks.iter().find(|&&i| fonts.get(i).is_some_and(covers)) {
+        return fallback;
     }
     fonts.iter().position(covers).unwrap_or(preferred)
 }
