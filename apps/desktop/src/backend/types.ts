@@ -250,6 +250,71 @@ export interface TextBlock {
 }
 
 /** A page's text in reading order with character boxes (safha_core::text). */
+/** Why a block of page text cannot be edited in place (ADR 0024). */
+export type BlockRefusal = "needsOcr" | "untraced" | "shared" | "turned";
+
+/** A block of a page's text as the Edit tool sees it. */
+export interface TextBlockInfo {
+  /** Its box on the displayed page. */
+  rect: ViewRect;
+  /** Why it cannot be edited in place; null when it can. */
+  refusal: BlockRefusal | null;
+}
+
+/** The font a block is set in while edited. */
+export interface BlockFont {
+  /** The PDF's font as it names it; empty when it has no name. */
+  original: string;
+  /** The font used (a PostScript name). */
+  used: string;
+  kind: "exact" | "sameFamily" | "substitute";
+}
+
+/**
+ * A block's text laid out by the engine as it will be written (ADR 0024).
+ * Offsets are UTF-16; lengths are points; x from the box's left edge, y down
+ * from its top.
+ */
+export interface BlockLayout {
+  /** The box's top on the displayed page. */
+  top: number;
+  height: number;
+  lines: {
+    top: number;
+    baseline: number;
+    height: number;
+    start: number;
+    end: number;
+    rtl: boolean;
+  }[];
+  /** `font` indexes the session's fonts; `y` is the glyph's baseline. */
+  glyphs: { font: number; id: number; x: number; y: number; size: number }[];
+  /** Each cluster's extent on its line, for selections. */
+  clusters: { line: number; start: number; end: number; left: number; right: number }[];
+  carets: { offset: number; line: number; x: number; split: boolean }[];
+  /** Glyph outlines the request did not say it holds: SVG paths in font units, y up. */
+  outlines: { font: number; id: number; unitsPerEm: number; path: string }[];
+}
+
+/** A text block opened for editing. */
+export interface BlockEditStart {
+  token: number;
+  text: string;
+  font: BlockFont;
+  /** The box's left edge and width on the displayed page. */
+  x: number;
+  width: number;
+  /** The original block's box. */
+  original: ViewRect;
+  size: number;
+  /** sRGB, 0–1. */
+  color: [number, number, number];
+  /** Its runs differ in size or colour: set as one, they take the first's. */
+  mixed: boolean;
+  rtl: boolean;
+  layout: BlockLayout;
+}
+
 export interface TextLayer {
   direction: Direction;
   /** "suspect": the page's character mapping looks broken (copy will be wrong; OCR would help). */
@@ -520,6 +585,15 @@ export interface Backend {
     text: string,
     style: TextStyle,
   ): Promise<EditOutcome>;
+  /** A page's text blocks, with why any cannot be edited in place (ADR 0024). */
+  textBlocks(documentId: number, page: number): Promise<TextBlockInfo[]>;
+  /** Opens block `block` of `page` for editing in place; fails with `edit_unsupported`. */
+  beginBlockEdit(documentId: number, page: number, block: number): Promise<BlockEditStart>;
+  /** `text` laid out in the open block; `known`: outlines held, as [font, glyph id]. */
+  layoutBlockEdit(token: number, text: string, known: [number, number][]): Promise<BlockLayout>;
+  /** Writes `text` in place of the block (one undo step); null when it is unchanged. */
+  commitBlockEdit(token: number, text: string): Promise<EditOutcome | null>;
+  cancelBlockEdit(token: number): Promise<void>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
   replyToComment(
     documentId: number,

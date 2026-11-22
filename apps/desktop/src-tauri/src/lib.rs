@@ -18,6 +18,7 @@ mod spike_editor;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
+mod text_editing;
 mod viewer;
 
 use std::path::PathBuf;
@@ -42,6 +43,11 @@ macro_rules! product_commands {
             editing::add_note,
             editing::add_text_box,
             editing::add_text,
+            text_editing::text_blocks,
+            text_editing::begin_block_edit,
+            text_editing::layout_block_edit,
+            text_editing::commit_block_edit,
+            text_editing::cancel_block_edit,
             editing::set_annotation_contents,
             editing::remove_annotations,
             editing::page_annotations,

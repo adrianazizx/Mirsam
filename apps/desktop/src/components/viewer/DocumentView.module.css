@@ -160,3 +160,45 @@
   filter: var(--filter-reading-night);
   box-shadow: none;
 }
+
+/* The in-place text editor (ADR 0024), inside the page's element: the mask
+   hides the original text, the canvas shows the engine's layout of the new. */
+.blockMask {
+  position: absolute;
+  z-index: var(--layer-page-overlay);
+  background: var(--color-page-paper);
+}
+
+.blockEditor {
+  position: absolute;
+  z-index: var(--layer-page-overlay);
+}
+
+.blockCanvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  cursor: text;
+}
+
+/* Takes the keyboard and IME input; drawn by the canvas, so never seen. It
+   follows the caret so an IME's candidate window opens beside it. */
+.blockField {
+  position: absolute;
+  inline-size: var(--size-hidden-field);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  overflow: hidden;
+  resize: none;
+  opacity: 0;
+  white-space: pre;
+  pointer-events: none;
+}
+
+/* Anchor of the editor's bar (positioned by the viewer, on the block's top edge). */
+.blockEditBar {
+  position: absolute;
+  z-index: var(--layer-selection-toolbar);
+  block-size: 0;
+}

@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 9).
+Last updated: 2026-11-22 (session 10).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -350,9 +350,20 @@ Plan, in order:
      fixture blocks, with no pixel changed outside them.
 
    Still to do: indentation, lists, and text inside forms.
-5. **In-place editing with reflow** inside a block's box: reuse the embedded font when it has
-   the glyphs, otherwise substitute for the whole paragraph (with an indicator); remove the
-   block's text objects and write the new ones, keeping z-order and clipping.
+5. ~~**In-place editing with reflow**~~ **done, with gaps (ADR 0024):**
+   - the Edit tool opens a block of the page's own text on our surface;
+   - its font is matched among the bundled faces by name, then by the widths it was drawn
+     with, and a substitute is flagged;
+   - a paragraph reflows in its box, and a single line grows along its line;
+   - written back as one undo step;
+   - blocks that cannot be edited safely say why.
+
+   Gaps:
+   - the PDF's own embedded font is not reused;
+   - installed fonts wait for embedding-permission checks;
+   - the paragraph takes one style (sizes and colours differing are flagged; bold words are
+     not);
+   - real input methods are unchecked by hand.
 6. **Exit test:** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
@@ -388,8 +399,9 @@ Plan, in order:
         work).
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
-      M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
-      block's existing text objects (for in-place editing) is still to do. Must solve:
+      M2's text boxes and, since session 9, written into page content (ADR 0021). Since
+      session 10 it also removes a block's text objects and replaces them (ADRs 0023, 0024).
+      Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
@@ -399,12 +411,22 @@ Plan, in order:
         start/centre/end/justify, direction auto/RTL/LTR;
       - written into the page's content: prints, extracts and searches as page text everywhere;
       - turned pages, unbalanced page content, inherited resources, encrypted files; undo; save.
-      - Gap: not editable once added (in-place editing, step 5); each addition embeds its own
-        subsets (font reuse comes with step 5); installed fonts come with the font picker.
-- [ ] In-place editing with reflow. The editor-surface spike is done (ADR 0022: our own
-      surface). Still to do: re-run the spike on Windows and Linux, and check real input methods
-      by hand once the surface exists (macOS and Windows Arabic keyboards, press-and-hold,
-      emoji picker, dictation).
+      - Added text is editable in place like the page's own (ADR 0024). Each addition still
+        embeds its own subsets; installed fonts come with the font picker.
+- [~] In-place editing with reflow (ADR 0024).
+      - **Done:**
+        - the Edit tool, an editing session in the shell, and our surface in the page;
+        - typing measured at a median of 17 ms per keystroke in the real webview;
+        - spec §7's four acceptance tests in `tests/in_place.rs`;
+        - the self-test, in English and Arabic.
+      - **Still to do:**
+        - reuse the PDF's embedded font;
+        - installed fonts, after reading `fsType`;
+        - styled runs (bold and italic words);
+        - pair brackets across a block's lines in extraction;
+        - re-run the spike on Windows and Linux;
+        - check real input methods by hand: macOS and Windows Arabic keyboards,
+          press-and-hold, the emoji picker, dictation.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -447,6 +469,32 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 10 — 2026-11-22 (Milestone 3: editing a page's own text in place)
+
+- **In-place editing (ADR 0024):**
+  - The Edit tool opens a block of the page's own text on our editor surface: engine glyphs on
+    a canvas over a paper-coloured mask, with a hidden field for typing and IME.
+  - The block is written back as one undo step.
+  - A press on a block that cannot be edited safely (broken mapping, untraced, shared, turned
+    page) says why, in both languages.
+- **Font matching for substitutes:**
+  - Candidates now include Noto Naskh Arabic and Noto Sans Arabic.
+  - Widths as drawn count, but only for letters that do not join: Arabic joined forms
+    drowned the signal.
+  - Chrome's unnamed fonts now match Noto Naskh Arabic exactly, so edited sentences keep
+    their line breaks.
+- **Single lines grow along their line** instead of wrapping into the next paragraph. The
+  self-test caught a heading's second line merging with the paragraph below it.
+- **Editing twice** drops the page's unused `MT…` fonts: one set of fonts after many edits.
+- **Self-test:**
+  - English UI: Chrome's mixed page, 17 ms per keystroke (median), read back, undone,
+    Escape.
+  - Arabic UI, dark: the page-labels fixture, 17 ms.
+  - The CoreText contract page correctly refuses every block (`needsOcr`).
+- **Tests:** 7 in-place acceptance tests, new shell and UI tests (geometry, the viewer's Edit
+  tool). The workspace's Rust tests and 163 UI tests pass on this Mac, with clippy and Biome
+  clean.
 
 ### Session 9 — 2026-11-22 (Milestone 3 started: text in page content, the add-text tool)
 

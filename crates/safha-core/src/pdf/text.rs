@@ -22,7 +22,8 @@ use crate::typeset::{FontFace, TextLayout, subset_fonts};
 #[derive(Debug, Clone)]
 pub(crate) struct NamedFont {
     pub(crate) face: FontFace,
-    pub(crate) name: &'static str,
+    /// The PostScript name, as `/BaseFont` (after the subset tag).
+    pub(crate) name: String,
 }
 
 /// Text ready for a content stream.

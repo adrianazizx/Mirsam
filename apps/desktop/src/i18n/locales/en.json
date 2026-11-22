@@ -115,7 +115,10 @@
     },
     "text": {
       "place": "Place new text",
-      "setStyle": "Set the text style"
+      "setStyle": "Set the text style",
+      "editBlock": "Edit this text",
+      "commitBlock": "Done",
+      "cancelBlock": "Cancel"
     },
     "ink": {
       "add": "Add ink",
@@ -198,7 +201,14 @@
     "save_failed": "The document could not be saved. The file on disk was not changed.",
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
     "text_failed": "The text could not be set.",
-    "no_bookmarks": "This document has no top-level bookmarks to split at."
+    "no_bookmarks": "This document has no top-level bookmarks to split at.",
+    "textRefused": {
+      "needsOcr": "This page's text can't be read reliably, so it can't be edited in place. Run OCR on it first.",
+      "untraced": "Part of this text is drawn in a way Mirsam can't edit yet.",
+      "shared": "This text is drawn together with other text, so it can't be edited on its own yet.",
+      "turned": "Text on a rotated page can't be edited in place yet."
+    },
+    "stale_edit": "The document changed while its text was being edited. Nothing was written; try again."
   },
   "gallery": {
     "title": "Design gallery",
@@ -326,6 +336,15 @@
     "label": "New text",
     "text": "Text to add to the page",
     "placeholder": "Type the text…"
+  },
+  "blockEdit": {
+    "label": "Editing page text",
+    "field": "Page text being edited",
+    "exact": "Set in <bdi>{{font}}</bdi>, the PDF's own font",
+    "sameFamily": "Set in <bdi>{{font}}</bdi>, another style of the PDF's font",
+    "substitute": "Set in <bdi>{{font}}</bdi>: <bdi>{{original}}</bdi> is not available",
+    "substituteUnnamed": "Set in <bdi>{{font}}</bdi>: the PDF's own font is not available",
+    "mixed": "Its sizes and colours become the first's"
   },
   "textStyle": {
     "family": "Font",

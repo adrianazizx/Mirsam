@@ -30,6 +30,7 @@ use crate::pdf::Object;
 use crate::pdf::content::{ShowOp, show_ops};
 use crate::pdf::crypt::Crypt;
 use crate::text::{Direction, PageText, Rect};
+use unicode_bidi::{BidiClass, bidi_class};
 
 /// A block's alignment, from the edges of its lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +91,10 @@ pub struct EditBlock {
     pub shared: bool,
     /// It was written by this app (`/MirsamText`, ADR 0021).
     pub written_here: bool,
+    /// Advance widths of its letters and digits that do not join, in
+    /// thousandths of an em, as drawn: what a substitute font should come
+    /// close to.
+    pub widths: Vec<(char, f32)>,
 }
 
 /// A text-showing operation of the page's content, as the edit model reports it.
@@ -113,6 +118,44 @@ pub struct PageAnalysis {
     pub ops: Vec<SourceOp>,
     /// The page's whole content could be read.
     pub complete: bool,
+    /// How far the page's character mapping can be trusted (ADR 0008): a
+    /// suspect page's text is not what it draws.
+    pub quality: crate::text::TextQuality,
+}
+
+/// Why a block cannot be edited in place (ADR 0024).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Refusal {
+    /// The page's text is not what it draws (a broken character mapping):
+    /// it needs OCR before it can be edited.
+    NeedsOcr,
+    /// Some of its characters were drawn by nothing the page's content
+    /// shows (a form, an unread filter).
+    Untraced,
+    /// It is drawn by operations that also draw other text.
+    Shared,
+    /// The page is displayed turned, so its lines are not lines on screen.
+    Turned,
+}
+
+impl PageAnalysis {
+    /// Why block `block` cannot be edited in place, if it cannot. `upright`:
+    /// the page is displayed unturned.
+    pub fn refusal(&self, block: usize, upright: bool) -> Option<Refusal> {
+        let edited = self.blocks.get(block)?;
+        if matches!(self.quality, crate::text::TextQuality::Suspect { .. }) {
+            Some(Refusal::NeedsOcr)
+        } else if edited.sources.is_empty() || edited.untraced > 0 {
+            Some(Refusal::Untraced)
+        } else if edited.shared {
+            Some(Refusal::Shared)
+        } else if !upright {
+            Some(Refusal::Turned)
+        } else {
+            None
+        }
+    }
 }
 
 /// What PDFium reports of one character.
@@ -370,6 +413,7 @@ pub(crate) fn build(
         let mut runs: Vec<StyledRun> = Vec::new();
         let mut sources = BTreeSet::new();
         let mut untraced = 0;
+        let mut widths: HashMap<char, (f32, u32)> = HashMap::new();
         for (n, line) in block.lines.iter().enumerate() {
             if n > 0 {
                 text.push('\n');
@@ -388,6 +432,25 @@ pub(crate) fn build(
             for span in &line.spans {
                 let range = offset + span.start..offset + span.end;
                 let whitespace = line.text.get(span.start..span.end).is_some_and(|t| t.trim().is_empty());
+                // A lone letter's box is its advance (PDFium's loose bounds).
+                // Not for right-to-left letters: an Arabic letter's width is
+                // that of its joined form, which no isolated advance matches.
+                if let (Some(rect), Some(style), Some(text)) = (
+                    span.rect,
+                    span.chars.first().and_then(|&c| style_of(c)),
+                    line.text.get(span.start..span.end),
+                ) {
+                    let mut letters = text.chars();
+                    if let (Some(c), None) = (letters.next(), letters.next())
+                        && c.is_alphanumeric()
+                        && !matches!(bidi_class(c), BidiClass::R | BidiClass::AL)
+                        && style.size > 0.0
+                    {
+                        let entry = widths.entry(c).or_insert((0.0, 0));
+                        entry.0 += rect.width() / style.size * 1000.0;
+                        entry.1 += 1;
+                    }
+                }
                 for &c in &span.chars {
                     match op_of(c) {
                         Some(op) => {
@@ -440,6 +503,12 @@ pub(crate) fn build(
             untraced,
             shared: false,
             written_here,
+            widths: {
+                let mut widths: Vec<(char, f32)> =
+                    widths.into_iter().map(|(c, (sum, count))| (c, sum / count as f32)).collect();
+                widths.sort_by_key(|(c, _)| *c);
+                widths
+            },
         });
     }
     // Operations that drew no character (glyphs without a Unicode mapping:
@@ -497,7 +566,7 @@ pub(crate) fn build(
             mirsam: op.mirsam,
         })
         .collect();
-    PageAnalysis { blocks, ops, complete }
+    PageAnalysis { blocks, ops, complete, quality: page_text.quality.clone() }
 }
 
 fn same_style(a: &RunStyle, b: &RunStyle) -> bool {

@@ -44,7 +44,7 @@ pub struct SpikeLine {
 pub struct SpikeRun {
     line: usize,
     /// The face's PostScript name (the UI maps it to its CSS family).
-    font: &'static str,
+    font: String,
     start: usize,
     end: usize,
     rtl: bool,
@@ -153,7 +153,7 @@ pub fn spike_editor_layout(request: SpikeRequest) -> CommandResult<SpikeLayout> 
         for run in &line.runs {
             runs.push(SpikeRun {
                 line: index,
-                font: named.get(run.font).map_or("", |(_, name)| name),
+                font: named.get(run.font).map_or_else(String::new, |(_, name)| name.clone()),
                 start: utf16(run.text_range.start),
                 end: utf16(run.text_range.end),
                 rtl: run.rtl,

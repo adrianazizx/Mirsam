@@ -87,6 +87,8 @@ pub struct AppState {
     locked_recoveries: Mutex<HashMap<u32, String>>,
     /// Inserts from files waiting for a password (ADR 0016), by token.
     pending_inserts: Mutex<HashMap<u32, crate::editing::PendingInsert>>,
+    /// Text blocks being edited in place (ADR 0024), by token.
+    block_edits: Mutex<HashMap<u32, crate::text_editing::BlockEdit>>,
     /// Recovery files from the last listing, by token (their keys).
     recoveries: Mutex<HashMap<u32, String>>,
     /// Bumped by each change to a document: an autosave writes only for the
@@ -127,6 +129,7 @@ impl AppState {
             locked: Mutex::new(HashMap::new()),
             locked_recoveries: Mutex::new(HashMap::new()),
             pending_inserts: Mutex::new(HashMap::new()),
+            block_edits: Mutex::new(HashMap::new()),
             recoveries: Mutex::new(HashMap::new()),
             autosave: Mutex::new(HashMap::new()),
             recovery: OnceLock::new(),
@@ -486,6 +489,7 @@ impl AppState {
     /// search index build in progress stopped.
     pub fn remove_document(&self, id: u32) -> bool {
         let Some(file) = lock(&self.documents).remove(&id) else { return false };
+        lock(&self.block_edits).retain(|_, edit| edit.document_id != id);
         file.index.cancel();
         // Closed: saved, or its changes discarded. Either way it has nothing to recover.
         lock(&self.autosave).remove(&id);
@@ -528,6 +532,28 @@ impl AppState {
 
     pub fn take_insert(&self, token: u32) -> Option<crate::editing::PendingInsert> {
         lock(&self.pending_inserts).remove(&token)
+    }
+
+    /// Holds a text edit in progress. One at a time: beginning another ends
+    /// any other on the same document.
+    pub fn hold_block_edit(&self, edit: crate::text_editing::BlockEdit) -> u32 {
+        let token = self.next_token();
+        let mut edits = lock(&self.block_edits);
+        edits.retain(|_, other| other.document_id != edit.document_id);
+        edits.insert(token, edit);
+        token
+    }
+
+    pub fn take_block_edit(&self, token: u32) -> Option<crate::text_editing::BlockEdit> {
+        lock(&self.block_edits).remove(&token)
+    }
+
+    pub fn with_block_edit<T>(
+        &self,
+        token: u32,
+        f: impl FnOnce(&crate::text_editing::BlockEdit) -> T,
+    ) -> Option<T> {
+        lock(&self.block_edits).get(&token).map(f)
     }
 
     /// Replaces the recent-file tokens with a fresh listing.

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bitmap::Bitmap;
 use crate::error::{Error, Result};
-use crate::view::ViewTransform;
+use crate::view::{ViewRect, ViewTransform};
 
 /// Upper bound on either side of a single rendered bitmap. Larger views are
 /// assembled from tiles; this guards against a hostile or buggy request
@@ -352,6 +352,46 @@ impl Document {
             out.extend(comments);
         }
         Ok(out)
+    }
+
+    /// An editor for block `block` of page `page` (ADR 0024): the block's
+    /// font matched among the bundled faces (and the installed ones, with
+    /// `installed`), its box and setting kept.
+    pub fn block_editor(
+        &self,
+        page: usize,
+        block: usize,
+        installed: bool,
+    ) -> Result<crate::text_edit::BlockEditor> {
+        let analysis = self.edit_blocks(page)?;
+        let view = self.view_transform(page)?;
+        let width = self.page_size(page)?.width;
+        crate::text_edit::BlockEditor::new(&analysis, page, block, &view, width, installed)
+    }
+
+    /// Page `page`'s text blocks as the edit tool sees them: each one's box
+    /// on the displayed page, and why it cannot be edited in place, if it
+    /// cannot (ADR 0024).
+    pub fn text_blocks(&self, page: usize) -> Result<Vec<(ViewRect, Option<crate::text_edit::Refusal>)>> {
+        let analysis = self.edit_blocks(page)?;
+        let view = self.view_transform(page)?;
+        Ok((0..analysis.blocks.len())
+            .map(|index| (view.rect(analysis.blocks[index].bounds), analysis.refusal(index, view.upright())))
+            .collect())
+    }
+
+    /// This document with the block `editor` edits set to `text` (removed
+    /// when `text` is blank), and the update that does it: one undo step.
+    pub fn with_replaced_block(
+        &self,
+        editor: &crate::text_edit::BlockEditor,
+        text: &str,
+    ) -> Result<(Document, Vec<u8>)> {
+        let view = self.view_transform(editor.page)?;
+        let update = editor.update(&self.bytes, self.password.as_deref(), &view, text)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
     }
 
     /// This document with the text-showing operations `ops` (from

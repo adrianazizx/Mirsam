@@ -4,6 +4,8 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   type AppInfo,
   type Backend,
+  type BlockEditStart,
+  type BlockLayout,
   type BookmarkPart,
   type DocumentComment,
   type EditOutcome,
@@ -21,6 +23,7 @@ import {
   type SearchResults,
   type SelftestConfig,
   type Startup,
+  type TextBlockInfo,
   type TextLayer,
 } from "./types";
 
@@ -193,6 +196,14 @@ export const tauriBackend: Backend = {
   addText: (documentId, page, x, y, width, text, style) =>
     invoke<EditOutcome>("add_text", { documentId, text: { page, x, y, width, text, ...style } }),
   documentComments: (documentId) => invoke<DocumentComment[]>("document_comments", { documentId }),
+  textBlocks: (documentId, page) => invoke<TextBlockInfo[]>("text_blocks", { documentId, page }),
+  beginBlockEdit: (documentId, page, block) =>
+    invoke<BlockEditStart>("begin_block_edit", { documentId, page, block }),
+  layoutBlockEdit: (token, text, known) =>
+    invoke<BlockLayout>("layout_block_edit", { token, text, known }),
+  commitBlockEdit: (token, text) =>
+    invoke<EditOutcome | null>("commit_block_edit", { token, text }),
+  cancelBlockEdit: (token) => invoke<void>("cancel_block_edit", { token }),
   replyToComment: (documentId, page, index, contents) =>
     invoke<EditOutcome>("reply_to_comment", { documentId, page, index, contents }),
   setCommentResolved: (documentId, page, index, resolved) =>

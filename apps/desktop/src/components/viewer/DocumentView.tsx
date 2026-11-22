@@ -10,6 +10,7 @@ import { useAppStore } from "../../state/appStore";
 import { ViewerController, type ViewerMode, type ViewerSpacing } from "../../viewer/controller";
 import { registerViewer, unregisterViewer } from "../../viewer/registry";
 import { NoteEditor } from "../comments/NoteEditor";
+import { BlockEditBar } from "../edit/BlockEditBar";
 import styles from "./DocumentView.module.css";
 import { SelectionToolbar } from "./SelectionToolbar";
 
@@ -45,6 +46,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const viewerRef = useRef<ViewerController | null>(null);
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
   const [noteHost, setNoteHost] = useState<HTMLElement | null>(null);
+  const [blockBarHost, setBlockBarHost] = useState<HTMLElement | null>(null);
+  const editingBlock = useAppStore((state) => state.blockEdit?.documentId === id);
   // The view settings only: page changes (reported by the viewer itself) do not re-render this.
   const { name, zoomMode, zoom, viewMode, pageOrder, hasSelection, selectedKind } = useAppStore(
     useShallow((state) => {
@@ -79,6 +82,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const pageLabel = useRef<(page: number) => string>(() => "");
   pageLabel.current = (page) =>
     t("viewer.canvasLabel", { page: formatNumber(page + 1, locale), name });
+  const blockEditorLabel = useRef<() => string>(() => "");
+  blockEditorLabel.current = () => t("blockEdit.field");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -105,6 +110,11 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         textBoxPending: styles.textBoxPending ?? "",
         noteEditor: styles.noteEditor ?? "",
         selectionToolbar: styles.selectionToolbar ?? "",
+        blockEditor: styles.blockEditor ?? "",
+        blockMask: styles.blockMask ?? "",
+        blockCanvas: styles.blockCanvas ?? "",
+        blockField: styles.blockField ?? "",
+        blockEditBar: styles.blockEditBar ?? "",
       },
       initial: {
         zoomMode: current.zoomMode,
@@ -117,6 +127,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       spacing: readSpacing(container),
       isMac,
       pageLabel: (page) => pageLabel.current(page),
+      blockEditorLabel: () => blockEditorLabel.current(),
       mode: (): ViewerMode => {
         const { activeTool, commentTool } = useAppStore.getState();
         if (activeTool === "select") return "select";
@@ -136,12 +147,22 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
         onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
+        onEditBlock: (page, block, refusal) =>
+          void runCommand("text.editBlock", { page, index: block, refusal }),
+        onBlockCommit: () => void runCommand("text.commitBlock"),
+        onBlockCancel: () => void runCommand("text.cancelBlock"),
+        onBlockFailed: (error) => {
+          console.error("text layout failed", error);
+          void runCommand("text.cancelBlock");
+          useAppStore.getState().setError("text_failed");
+        },
       },
     });
     viewerRef.current = viewer;
     registerViewer(id, viewer);
     setToolbarHost(viewer.selectionToolbarHost);
     setNoteHost(viewer.noteEditorHost);
+    setBlockBarHost(viewer.blockEditBarHost);
 
     // Remember where the reader is, a moment after they stop moving.
     let timer: number | null = null;
@@ -184,10 +205,13 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         save();
       }
       unregisterViewer(id, viewer);
+      // A rebuilt view (pages changed) has no editor: the engine's session goes too.
+      if (useAppStore.getState().blockEdit?.documentId === id) void runCommand("text.cancelBlock");
       viewer.destroy();
       viewerRef.current = null;
       setToolbarHost(null);
       setNoteHost(null);
+      setBlockBarHost(null);
     };
   }, [id, revision]);
 
@@ -233,6 +257,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         : null}
       {noteHost && (pendingNote || selectedKind === "note" || selectedKind === "textBox")
         ? createPortal(<NoteEditor documentId={id} />, noteHost)
+        : null}
+      {blockBarHost && editingBlock
+        ? createPortal(<BlockEditBar documentId={id} />, blockBarHost)
         : null}
     </section>
   );

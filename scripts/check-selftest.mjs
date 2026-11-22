@@ -115,6 +115,30 @@ if (nav) {
     check(added.readBack, "the added Arabic text did not read back as page text");
     check(added.undone, "undo did not take the added text away");
   }
+  // Editing in place (ADR 0024): the page's own text typed into and written back.
+  const inPlace = nav.inPlace;
+  check(inPlace !== undefined && inPlace !== null, "no in-place editing results");
+  if (inPlace && !inPlace.editable) {
+    // Not a skip: the page says why none of its text can be edited in place.
+    check(
+      inPlace.blocks > 0 && inPlace.refusals.length > 0,
+      `no block of page 0 was editable, and none said why (${inPlace.blocks} blocks)`,
+    );
+  } else if (inPlace) {
+    check(inPlace.opened, "the editor did not open on the page's text with its field focused");
+    check(inPlace.typed, "what was typed did not reach the editor's field");
+    check(inPlace.inked > 0, "the editor drew nothing");
+    check(inPlace.repainted, "the editor did not give way to the repainted page");
+    check(inPlace.readBack, "the edited text did not read back as the page's text");
+    check(inPlace.kept, "the rest of the edited block did not read back");
+    check(inPlace.undone, "undo did not restore the edited text");
+    check(inPlace.cancelled, "Escape did not close the editor");
+    // Spec section 11: 32 ms per keystroke (the median: single frames on CI runners vary).
+    check(
+      inPlace.latencyMedianMs <= 32,
+      `typing took ${inPlace.latencyMedianMs} ms per keystroke (median; budget 32 ms)`,
+    );
+  }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
   check(editing !== undefined && editing !== null, "no editing results");
@@ -173,6 +197,15 @@ if (nav) {
   if (nav.addedText) {
     const a = nav.addedText;
     console.log(`  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}`);
+  }
+  if (nav.inPlace) {
+    const p = nav.inPlace;
+    console.log(
+      p.editable
+        ? `  in place: ${p.font?.used} (${p.font?.kind}) ${p.rtl ? "rtl" : "ltr"}, ${p.keystrokes} keystrokes ` +
+            `median ${p.latencyMedianMs} ms p95 ${p.latencyP95Ms} ms, read back ${p.readBack}, undone ${p.undone}`
+        : `  in place: no editable block of ${p.blocks} (${p.refusals.join(", ")})`,
+    );
   }
   if (nav.editing) {
     const e = nav.editing;

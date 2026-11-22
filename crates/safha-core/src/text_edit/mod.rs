@@ -23,10 +23,12 @@
 //! decrypt under the page's number; such a page is refused.
 
 mod analyze;
+mod replace;
 
 use analyze::decoded_contents;
-pub use analyze::{BlockAlign, EditBlock, EditLine, PageAnalysis, RunStyle, SourceOp, StyledRun};
+pub use analyze::{BlockAlign, EditBlock, EditLine, PageAnalysis, Refusal, RunStyle, SourceOp, StyledRun};
 pub(crate) use analyze::{CharInfo, build as build_analysis, page_ops};
+pub use replace::{BlockEditor, BlockFont};
 
 use crate::edit::{PageTree, Start, contains_string, set};
 use crate::error::{Error, Result};
@@ -90,14 +92,26 @@ impl NewText {
 
     /// The text laid out in its box, and the fonts it uses.
     fn laid_out(&self) -> Result<(TextLayout, Vec<crate::pdf::text::NamedFont>)> {
+        self.laid_out_with(&Setting::default())
+    }
+
+    /// [`NewText::laid_out`], in `setting`'s fonts and line height when given
+    /// (in-place editing, ADR 0024).
+    pub(crate) fn laid_out_with(
+        &self,
+        setting: &Setting,
+    ) -> Result<(TextLayout, Vec<crate::pdf::text::NamedFont>)> {
         self.check()?;
-        let fonts = for_text(self.family, &self.text)?;
+        let fonts = match &setting.fonts {
+            Some(fonts) => fonts.clone(),
+            None => for_text(self.family, &self.text)?,
+        };
         let faces: Vec<FontFace> = fonts.iter().map(|font| font.face.clone()).collect();
         let style = ParagraphStyle {
             direction: self.direction,
             align: self.align,
             width: Some(self.width),
-            line_height: LineHeight::Normal,
+            line_height: setting.line_height,
         };
         let laid = layout(&self.text, &[Span::new(0..self.text.len(), 0, self.size)], &faces, &style)
             .map_err(|err| Error::Typeset(err.code()))?;
@@ -108,6 +122,14 @@ impl NewText {
     pub fn height(&self) -> Result<f32> {
         Ok(self.laid_out()?.0.height)
     }
+}
+
+/// How new text is set when not by its [`FontFamily`] and the fonts' own
+/// line height: what in-place editing keeps of the paragraph it replaces.
+#[derive(Default)]
+pub(crate) struct Setting {
+    pub(crate) fonts: Option<Vec<crate::pdf::text::NamedFont>>,
+    pub(crate) line_height: LineHeight,
 }
 
 /// Marks the streams that wrap a page's original content in `q … Q`.
@@ -122,7 +144,18 @@ pub fn add_text_update(
     view: &ViewTransform,
     text: &NewText,
 ) -> Result<Vec<u8>> {
-    let (laid, fonts) = text.laid_out()?;
+    add_text_update_with(bytes, password, view, text, &Setting::default())
+}
+
+/// [`add_text_update`], set as `setting` says.
+pub(crate) fn add_text_update_with(
+    bytes: &[u8],
+    password: Option<&str>,
+    view: &ViewTransform,
+    text: &NewText,
+    setting: &Setting,
+) -> Result<Vec<u8>> {
+    let (laid, fonts) = text.laid_out_with(setting)?;
     let Start { file, section, form, mut next_number } = Start::read(bytes)?;
     let tree = PageTree::read(&file)?;
     let leaf = tree
@@ -263,6 +296,29 @@ pub fn remove_text_update(
     }
     let mut dict = leaf.dict.clone();
     set(&mut dict, b"Contents", Object::Array(contents));
+    // Fonts this app added (`MT…`, see `free_prefix`) that nothing on the page
+    // draws with any more go, so editing a block twice leaves one set of
+    // fonts, not two. Fonts the page came with are left alone.
+    let (remaining, _) = crate::pdf::content::show_ops(&streams);
+    let used: std::collections::HashSet<Vec<u8>> = remaining.into_iter().map(|op| op.font).collect();
+    let resources = tree
+        .attribute(leaf, b"Resources")
+        .and_then(|value| file.resolve(&value))
+        .and_then(|value| value.as_dict().cloned());
+    if let Some(mut resources) = resources
+        && let Some(mut fonts) = resources
+            .get(b"Font")
+            .and_then(|value| file.resolve(value))
+            .and_then(|value| value.as_dict().cloned())
+    {
+        let before = fonts.0.len();
+        fonts.0.retain(|(name, _)| !name.starts_with(b"MT") || used.contains(name));
+        if fonts.0.len() != before && !(crypt.is_some() && contains_string(&Object::Dict(resources.clone())))
+        {
+            set(&mut resources, b"Font", Object::Dict(fonts));
+            set(&mut dict, b"Resources", Object::Dict(resources));
+        }
+    }
     update.object(leaf.number, leaf.generation, &Object::Dict(dict));
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
 }

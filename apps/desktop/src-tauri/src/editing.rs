@@ -61,7 +61,7 @@ pub struct EditOutcome {
 }
 
 impl EditOutcome {
-    fn new(page_count: usize, history: &EditHistory, change: Change) -> Self {
+    pub(crate) fn new(page_count: usize, history: &EditHistory, change: Change) -> Self {
         Self {
             page_count,
             can_undo: history.can_undo(),

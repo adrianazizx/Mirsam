@@ -1,4 +1,5 @@
 import {
+  type BlockRefusal,
   backend,
   type EditOutcome,
   isBackendError,
@@ -105,6 +106,8 @@ export interface CommandArg {
   sort?: CommentSort;
   /** `text.setStyle`: what to change in how new page text is set. */
   textStyle?: Partial<TextStyle>;
+  /** `text.editBlock`: why the block (`page`, `index`) cannot be edited in place, if it cannot. */
+  refusal?: BlockRefusal | null;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -195,6 +198,9 @@ export type CommandId =
   | "comments.setAuthor"
   | "text.place"
   | "text.setStyle"
+  | "text.editBlock"
+  | "text.commitBlock"
+  | "text.cancelBlock"
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
@@ -223,6 +229,8 @@ const hasAnnotationSelected = (state: AppState) =>
 const isWritingNote = (state: AppState) =>
   (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
   ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
+/** A block of page text is being edited in place (ADR 0024). */
+const isEditingBlock = (state: AppState) => state.blockEdit !== null;
 const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
 const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
 
@@ -357,6 +365,7 @@ const KNOWN_ERRORS = [
   "invalid_edit",
   "text_failed",
   "no_bookmarks",
+  "stale_edit",
 ];
 
 function reportError(error: unknown) {
@@ -1062,6 +1071,75 @@ const COMMANDS: Command[] = [
         y: arg.y,
         width: arg.width ?? TEXT_BOX_WIDTH,
       });
+    },
+  },
+  {
+    // The Edit tool: a press on the page's own text opens it for editing in place (ADR 0024).
+    id: "text.editBlock",
+    paletteHidden: true,
+    isEnabled: (state) => hasDocument(state) && !isEditingBlock(state),
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const viewer = active ? getViewer(active.id) : undefined;
+      if (!active || !viewer || arg?.page === undefined || arg.index === undefined) return;
+      if (arg.refusal) {
+        store().setError(`textRefused.${arg.refusal}`);
+        return;
+      }
+      store().setPendingNote(null);
+      const start = await backend.beginBlockEdit(active.id, arg.page, arg.index);
+      // The document or tool may have changed while the engine matched fonts.
+      if (selectActiveDocument(store())?.id !== active.id || store().activeTool !== "edit") {
+        await backend.cancelBlockEdit(start.token);
+        return;
+      }
+      store().setBlockEdit({
+        documentId: active.id,
+        page: arg.page,
+        token: start.token,
+        font: start.font,
+        mixed: start.mixed,
+      });
+      viewer.openBlockEditor(start, arg.page);
+    },
+  },
+  {
+    // Done (or a press outside the block, Cmd/Ctrl+Enter): the text goes into the page, one undo step.
+    id: "text.commitBlock",
+    paletteHidden: true,
+    isEnabled: isEditingBlock,
+    async run() {
+      const edit = store().blockEdit;
+      if (!edit) return;
+      store().setBlockEdit(null);
+      const viewer = getViewer(edit.documentId);
+      const text = viewer?.blockEditorText() ?? null;
+      if (text === null) {
+        await backend.cancelBlockEdit(edit.token);
+        return;
+      }
+      try {
+        const outcome = await backend.commitBlockEdit(edit.token, text);
+        // The editor stays drawn until the page shows the new text.
+        viewer?.closeBlockEditor(outcome !== null);
+        if (outcome) store().applyEdit(edit.documentId, outcome);
+      } catch (error) {
+        viewer?.closeBlockEditor(false);
+        throw error;
+      }
+    },
+  },
+  {
+    // Escape: the block is left as it was.
+    id: "text.cancelBlock",
+    paletteHidden: true,
+    isEnabled: isEditingBlock,
+    async run() {
+      const edit = store().blockEdit;
+      if (!edit) return;
+      store().setBlockEdit(null);
+      getViewer(edit.documentId)?.closeBlockEditor(false);
+      await backend.cancelBlockEdit(edit.token);
     },
   },
   {
