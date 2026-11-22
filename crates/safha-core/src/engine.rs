@@ -36,6 +36,9 @@ pub struct Engine {
 }
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
+/// Serializes the one-time load: `pdfium-render` refuses a second bind, and a
+/// thread refused while the winner was still storing its engine used to fail.
+static LOADING: Mutex<()> = Mutex::new(());
 
 impl Engine {
     /// Returns the process-wide engine, loading PDFium on first use.
@@ -45,12 +48,13 @@ impl Engine {
         if let Some(engine) = ENGINE.get() {
             return Ok(engine);
         }
-        // Two threads can race to this point; `pdfium-render` rejects the second
-        // bind, so the loser simply picks up the winner's engine.
-        match Self::load(source) {
-            Ok(engine) => Ok(ENGINE.get_or_init(|| engine)),
-            Err(err) => ENGINE.get().ok_or(err),
+        let _loading = LOADING.lock().unwrap_or_else(PoisonError::into_inner);
+        // Another thread may have loaded it while this one waited.
+        if let Some(engine) = ENGINE.get() {
+            return Ok(engine);
         }
+        let engine = Self::load(source)?;
+        Ok(ENGINE.get_or_init(|| engine))
     }
 
     fn load(source: &PdfiumSource) -> Result<Engine> {
