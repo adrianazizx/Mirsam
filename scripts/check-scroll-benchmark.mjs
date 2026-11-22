@@ -21,10 +21,10 @@
 // screen the whole time; a run without real animation frames fails as invalid.
 //
 // --ci: for hosted CI runners, which are virtual machines without a real GPU
-// running a debug build. Frame timing and the shell + webview total (whose
-// budget is an open owner decision, PROGRESS.md item 12) are reported as
-// warnings there; blank time, jump-to-preview time, and the shell's own memory
-// still fail the run. The frame budgets are enforced on real hardware.
+// running a debug build. Their timing swings run to run (a jump-to-preview of
+// 22 ms in one run and 697 ms in the next, with the whole runner slow), so
+// every timing check and the visible-window check only warn there; the
+// shell's memory still fails the run. All of it is enforced on real hardware.
 //
 // Usage: node scripts/check-scroll-benchmark.mjs <out-dir> [--ci]
 
@@ -95,6 +95,7 @@ check(
   `the window was not on screen (visibility ${r.visibility}, ${summary.fallbackFrames} timer-driven frames, ` +
     `${r.skipped.length} phases skipped): ` +
     "frame and blank-time numbers are invalid; rerun with the screen unlocked and the window visible",
+  true,
 );
 if (valid) {
   // A p95 over a short idle phase (~20 frames) is its second-slowest frame;
@@ -112,11 +113,12 @@ if (valid) {
     `${summary.droppedFrames} of ${summary.frames} frames dropped (over ${BUDGET.droppedFrameMs} ms, ${(share * 100).toFixed(1)}%)`,
     true,
   );
-  check(summary.maxBlankMs <= BUDGET.blankMs, `a page stayed blank for ${summary.maxBlankMs} ms`);
+  check(summary.maxBlankMs <= BUDGET.blankMs, `a page stayed blank for ${summary.maxBlankMs} ms`, true);
 }
 check(
   randomAccess.maxPreviewMs !== null && randomAccess.maxPreviewMs + FRAME_MS <= BUDGET.blankMs,
   `a jumped-to page stayed blank for ${randomAccess.maxPreviewMs} ms (+ one frame)`,
+  true,
 );
 const shellPeak = Math.max(
   memory.afterJumps.shellRssMb ?? 0,

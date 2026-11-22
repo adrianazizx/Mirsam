@@ -164,8 +164,10 @@ The macOS runner's debug build passes the hard budgets but not the frame ones (p
 shell + webview 646 MB). Since a virtual machine without a GPU says little about a laptop, CI runs
 the benchmark with `--ci`:
 
-- **Warnings only:** frame timing, and the shell + webview total (owner question 12).
-- **Still fail the run:** blank time, jump-to-preview, and the shell's own memory.
+- **Warnings only:** every timing check (frames, blank time, jump-to-preview), the
+  visible-window check, and the shell + webview total. One run measured a jump-to-preview of
+  697 ms on a slow runner, against 21–22 ms in the others.
+- **Still fails the run:** the shell's own memory.
 
 ### Pinch-out: three hypotheses tested, none confirmed
 

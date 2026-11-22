@@ -164,8 +164,8 @@ jobs:
         run: scripts/selftest.sh fixtures/out/coretext/contract-two-column.pdf selftest-out/ar ar dark
       - name: Check the reports
         run: node scripts/check-selftest.mjs selftest-out/en ltr --ci && node scripts/check-selftest.mjs selftest-out/ar rtl --ci
-      # Frame timing on a virtual machine says little about real hardware, so
-      # those budgets only warn here; blank time and the shell's memory fail.
+      # Timing on a virtual machine says little about real hardware, so the
+      # time budgets only warn here; the shell's memory still fails the run.
       - name: Scroll and zoom budgets, 1,000-page document (spec section 11)
         run: scripts/scroll-benchmark.sh selftest-out/scroll debug --ci
       - uses: actions/upload-artifact@v4

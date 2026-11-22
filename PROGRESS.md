@@ -318,8 +318,10 @@ every one of their files conflict. Do it in one change once those branches have 
 update CLAUDE.md, the spec header and the README note when it is done.
 
 CI on this PR hit a Windows runner measuring 1,133 ms for the first page (main measures about
-200 ms), so it carries the CI half of `m2-organize`'s 353d2a6 unchanged: `check-selftest.mjs --ci`
-turns the first-page time budget into a warning on hosted runners.
+200 ms), so it carries `m2-organize`'s CI timing changes unchanged (the CI half of 353d2a6, and 65ba020):
+with `--ci`, the self-test's first-page budget and every scroll-benchmark timing check warn on
+hosted runners; behaviour checks and the shell's memory still fail the run. Identical hunks, so
+`m2-organize` still merges cleanly.
 
 ### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
 
