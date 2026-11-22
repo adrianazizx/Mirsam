@@ -33,6 +33,7 @@ use crate::edit::{PageTree, Start, contains_string, set};
 use crate::error::{Error, Result};
 use crate::fonts::{FontFamily, for_text};
 use crate::pdf::crypt::Crypt;
+use crate::pdf::image::{ImageLimits, image_to_embed, write_image};
 use crate::pdf::outline::draw_outlines;
 use crate::pdf::text::{draw_with_subsets, fonts_to_embed, write_font};
 use crate::pdf::write::Update;
@@ -45,8 +46,13 @@ use crate::view::ViewTransform;
 
 /// The longest text in one slot or watermark, in characters.
 pub const MAX_STAMP_TEXT: usize = 500;
-/// The largest image a watermark takes, in pixels.
-const MAX_IMAGE_PIXELS: u64 = 40_000_000;
+/// How large an image a watermark takes: 40 million pixels, any shape.
+const WATERMARK_IMAGE: ImageLimits = ImageLimits {
+    max_side: u32::MAX,
+    max_pixels: 40_000_000,
+    too_large: "the image is too large",
+    unreadable: "the image is not a PNG or JPEG file that can be read",
+};
 
 /// The digits numbers are written in (spec §6: Western or Arabic-Indic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -238,16 +244,6 @@ type PageDrawing = (usize, Vec<u8>, Vec<FontRef>, bool);
 /// A font's resource name and object number.
 type FontRef = (String, u32);
 
-/// Writes a stream object (number, dictionary, data, whether to compress).
-type StreamWriter<'a> = dyn Fn(&mut Update, u32, Dict, &[u8], bool) + 'a;
-
-/// An image XObject written into the update.
-struct Image {
-    number: u32,
-    width: u32,
-    height: u32,
-}
-
 /// Builds the update. Each target's `view` and size come from the document.
 pub(crate) fn stamp_update(
     bytes: &[u8],
@@ -325,7 +321,8 @@ pub(crate) fn stamp_update(
 
     // What each page draws: (content, fonts used, whether behind the page).
     let mut pages: Vec<PageDrawing> = Vec::new();
-    let mut image: Option<Image> = None;
+    // The watermark image's object number.
+    let mut image: Option<u32> = None;
     let mut state: Option<u32> = None;
     match &stamp.kind {
         StampKind::Band(band) => {
@@ -419,10 +416,11 @@ pub(crate) fn stamp_update(
                     }
                 }
                 Mark::Image { data, width } => {
-                    let written = write_image(data, &mut update, &mut next_number, &write_stream)?;
+                    let embed = image_to_embed(data, &image_name, &WATERMARK_IMAGE)?;
+                    let number = write_image(&mut update, crypt.as_ref(), &mut next_number, &embed)?;
                     for target in targets {
                         let w = target.width * width;
-                        let h = w * written.height as f32 / written.width as f32;
+                        let h = w * embed.height as f32 / embed.width as f32;
                         let matrix = local_to_page(&target.view, around_centre(target, w, h))?;
                         let content = format!(
                             "{head}q /{state_name} gs {} cm {} 0 0 {} 0 {} cm /{image_name} Do Q\nEMC\n",
@@ -433,7 +431,7 @@ pub(crate) fn stamp_update(
                         );
                         pages.push((target.index, content.into_bytes(), Vec::new(), watermark.behind));
                     }
-                    image = Some(written);
+                    image = Some(number);
                 }
             }
         }
@@ -449,9 +447,9 @@ pub(crate) fn stamp_update(
             }
             set(&mut resources, b"Font", Object::Dict(names));
         }
-        if let Some(image) = &image {
+        if let Some(image) = image {
             let mut names = sub(&resources, b"XObject");
-            set(&mut names, image_name.as_bytes(), Object::Ref(image.number, 0));
+            set(&mut names, image_name.as_bytes(), Object::Ref(image, 0));
             set(&mut resources, b"XObject", Object::Dict(names));
         }
         if let Some(state) = state {
@@ -543,91 +541,6 @@ fn set_texts<'t>(
         drawn.insert(text.clone(), Drawn { content, width: laid.width, height: laid.height });
     }
     Ok((drawn, names))
-}
-
-/// Writes a PNG or JPEG as an image XObject (a PNG's alpha as its soft mask).
-fn write_image(
-    data: &[u8],
-    update: &mut Update,
-    next: &mut u32,
-    write_stream: &StreamWriter<'_>,
-) -> Result<Image> {
-    let unreadable = || Error::InvalidEdit("the image is not a PNG or JPEG file that can be read");
-    let mut take = || -> Result<u32> {
-        let number = *next;
-        *next = number.checked_add(1).ok_or(Error::EditUnsupported("it has too many objects"))?;
-        Ok(number)
-    };
-    let name = |n: &[u8]| Object::Name(n.to_vec());
-    let image_dict = |width: u32, height: u32, space: &[u8]| {
-        Dict(vec![
-            (b"Type".to_vec(), name(b"XObject")),
-            (b"Subtype".to_vec(), name(b"Image")),
-            (b"Width".to_vec(), Object::Int(i64::from(width))),
-            (b"Height".to_vec(), Object::Int(i64::from(height))),
-            (b"ColorSpace".to_vec(), name(space)),
-            (b"BitsPerComponent".to_vec(), Object::Int(8)),
-        ])
-    };
-    let too_big = |width: u32, height: u32| u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS;
-
-    if let Some((width, height, components)) = crate::jpeg::frame(data) {
-        if too_big(width, height) {
-            return Err(Error::InvalidEdit("the image is too large"));
-        }
-        let number = take()?;
-        let space: &[u8] = if components == 1 { b"DeviceGray" } else { b"DeviceRGB" };
-        let mut dict = image_dict(width, height, space);
-        dict.0.push((b"Filter".to_vec(), name(b"DCTDecode")));
-        write_stream(update, number, dict, data, false);
-        return Ok(Image { number, width, height });
-    }
-
-    let mut decoder = png::Decoder::new_with_limits(
-        std::io::Cursor::new(data),
-        png::Limits { bytes: usize::try_from(MAX_IMAGE_PIXELS * 4).unwrap_or(usize::MAX) },
-    );
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().map_err(|_| unreadable())?;
-    let mut buffer = vec![0u8; reader.output_buffer_size().ok_or_else(unreadable)?];
-    let info = reader.next_frame(&mut buffer).map_err(|_| unreadable())?;
-    let (width, height) = (info.width, info.height);
-    if too_big(width, height) || info.bit_depth != png::BitDepth::Eight {
-        return Err(Error::InvalidEdit("the image is too large"));
-    }
-    let channels = match info.color_type {
-        png::ColorType::Grayscale => 1,
-        png::ColorType::GrayscaleAlpha => 2,
-        png::ColorType::Rgb => 3,
-        png::ColorType::Rgba => 4,
-        png::ColorType::Indexed => return Err(unreadable()),
-    };
-    let (color_channels, has_alpha) = match channels {
-        1 => (1, false),
-        2 => (1, true),
-        3 => (3, false),
-        _ => (3, true),
-    };
-    let mut color = Vec::with_capacity(width as usize * height as usize * color_channels);
-    let mut alpha = Vec::new();
-    for row in buffer.chunks(info.line_size).take(height as usize) {
-        for pixel in row.chunks(channels).take(width as usize) {
-            color.extend_from_slice(&pixel[..color_channels]);
-            if has_alpha {
-                alpha.push(pixel[channels - 1]);
-            }
-        }
-    }
-    let number = take()?;
-    let space: &[u8] = if color_channels == 1 { b"DeviceGray" } else { b"DeviceRGB" };
-    let mut dict = image_dict(width, height, space);
-    if has_alpha && alpha.iter().any(|&a| a != 255) {
-        let mask = take()?;
-        write_stream(update, mask, image_dict(width, height, b"DeviceGray"), &alpha, true);
-        dict.0.push((b"SMask".to_vec(), Object::Ref(mask, 0)));
-    }
-    write_stream(update, number, dict, &color, true);
-    Ok(Image { number, width, height })
 }
 
 /// The `cm` matrix for a local space whose points `map` sends to the

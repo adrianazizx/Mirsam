@@ -578,6 +578,7 @@ Stayed out of OCR, forms/signatures and encryption code, as asked.
   - `pdf::text::draw_text` split into `draw_with_subsets` + `fonts_to_embed` (same output).
   - `png` is a normal dependency (OCR page images and image signatures use it too). M5-c's
     `pdf::image` and this branch's watermark image writer overlap: a follow-up can merge them.
+  - Merged on 2026-11-23 (branch `pomidor/dreamy-tereshkova-743393`): watermarks write images through `pdf::image`, each caller passing its own `ImageLimits`; JPEG sizes come from `jpeg::frame`, so image signatures now also refuse 12-bit, arithmetic-coded and lossless JPEGs.
   - `examples/m6_report.rs`: stamping and compression timings and sizes for any PDFs.
 - **Shell (`output.rs`):** `stamp_pages`, `pick_watermark_image` (the image is read here; the UI gets
   its name), `export_page_images` (one file, or a folder for several, never overwriting),

@@ -134,7 +134,8 @@ page's `/Rotate`, and changed text keeps its displayed top-left corner.
 - **Typed**: text set at 36 pt, in Naskh (Amiri, the default) or Sans. The appearance is shaped text
   with embedded subsets.
 - **Image**: a PNG or JPEG's bytes, at most 8 MB and 4,096 px a side.
-  - A JPEG goes in as it is (`/DCTDecode`). CMYK JPEGs are refused: they disagree on inversion.
+  - A JPEG goes in as it is (`/DCTDecode`), read only as far as its frame header (`jpeg::frame`:
+    baseline or progressive, 8-bit, gray or RGB). CMYK JPEGs are refused: they disagree on inversion.
   - A PNG is decoded with the `png` crate (MIT OR Apache-2.0, already in the tree). It is written as
     8-bit samples under `/FlateDecode`, with alpha as an `/SMask`, so a signature with a transparent
     ground leaves the page showing through.
