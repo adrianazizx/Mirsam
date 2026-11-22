@@ -71,18 +71,66 @@ export interface ParagraphBlock {
   font: string;
   /** The paragraph's own font can set new Latin text. */
   fontReusable: boolean;
-  /** More than one font, size or colour was found; editing sets it in one. */
-  flattened: boolean;
+  /**
+   * It holds more than one style (font, size, colour): editing keeps them,
+   * and typed text takes the style of the text before it (ADR 0024).
+   */
+  styled: boolean;
+  /** Its styled runs, covering `text` in logical order. */
+  runs: StyledRun[];
   editable: boolean;
-  /** Why it is not editable (English, for logs). */
-  reason: string | null;
+  /** Why it is not editable: what a press on it says. */
+  reason: BlockRefusal | null;
+}
+
+/**
+ * Why text cannot be edited in place (ADR 0023): shared with other text,
+ * unreadable (needs OCR), a font that cannot be read (Type 3), rotated, in an
+ * encrypted file, or drawn in a way the editor does not follow yet. Text that
+ * is not a paragraph is listed after the paragraphs, as refused areas.
+ */
+export type BlockRefusal =
+  | "shared"
+  | "unreadable"
+  | "font"
+  | "rotated"
+  | "encrypted"
+  | "unsupported";
+
+/** Bold and italic set on a stretch of a paragraph's new text: UTF-16 offsets. */
+export interface BlockMark {
+  start: number;
+  end: number;
+  bold: boolean;
+  italic: boolean;
+}
+
+/** A stretch of a paragraph's text in one style. */
+export interface StyledRun {
+  /** UTF-16 offsets into the paragraph's text. */
+  start: number;
+  end: number;
+  /** The PDF's font name. */
+  font: string;
+  bold: boolean;
+  italic: boolean;
+  size: number;
+  color: [number, number, number];
 }
 
 /** A paragraph edited in place: the usual outcome, and what became of its font. */
 export interface BlockEditOutcome extends EditOutcome {
-  /** Set in a substitute family: the original font's name, and the family. */
-  substituted: { from: string; to: "sans" | "naskh" } | null;
+  /**
+   * Set in a substitute: the original font's name (empty when it has none),
+   * the family, and the bundled face chosen (a PostScript name).
+   */
+  substituted: { from: string; to: "sans" | "naskh"; font: string } | null;
   lines: number;
+  /**
+   * What the new text is set in: the page's own fonts by their codes, their
+   * embedded programs laid out again (ADR 0026), or bundled faces.
+   */
+  source: "page" | "embedded" | "bundled" | "none";
 }
 
 /** The four text-markup annotations (ADR 0017). */
@@ -165,8 +213,98 @@ export interface SanitizeOutcome {
   report: SanitizeReport;
 }
 
-/** The annotations the app writes and can change or remove (ADRs 0017, 0018). */
-export type AnnotationKind = MarkupKind | "ink" | "note" | "textBox";
+/**
+ * The annotations the app writes and can change or remove (ADRs 0017, 0018);
+ * `fillText`, `mark`, and `signature` are Fill & Sign items (ADR 0045), not comments.
+ */
+export type AnnotationKind =
+  | MarkupKind
+  | "ink"
+  | "note"
+  | "textBox"
+  | "fillText"
+  | "mark"
+  | "signature";
+
+/** The Fill & Sign items (ADR 0045). */
+export const FILL_KINDS: readonly AnnotationKind[] = ["fillText", "mark", "signature"];
+
+/** What a Fill & Sign mark draws. */
+export type MarkKind = "check" | "cross" | "dot";
+
+/** A form field's kind (ADR 0045). */
+export type FieldKind =
+  | "text"
+  | "checkbox"
+  | "radio"
+  | "combo"
+  | "list"
+  | "pushButton"
+  | "signature";
+
+/** A choice of a drop-down or list; a state of a check box or radio button. */
+export interface FieldOption {
+  /** What is stored. */
+  value: string;
+  /** What is shown. */
+  label: string;
+}
+
+/** One place a field is shown. */
+export interface FieldWidget {
+  page: number | null;
+  /** Its box on the displayed page, when it is on one. */
+  view: ViewRect | null;
+  onState: string | null;
+}
+
+/** A form field to fill in (ADR 0045). */
+export interface FormField {
+  /** What `setFormField` takes. */
+  id: number;
+  /** Fully qualified, e.g. `applicant.name`. */
+  name: string;
+  kind: FieldKind;
+  /**
+   * Its value: one text for a text field or drop-down; the chosen values of
+   * a list; the "on" state of a checked box or chosen radio button (empty: off).
+   */
+  values: string[];
+  options: FieldOption[];
+  readOnly: boolean;
+  required: boolean;
+  multiline: boolean;
+  password: boolean;
+  comb: boolean;
+  maxLen: number | null;
+  multiSelect: boolean;
+  editable: boolean;
+  widgets: FieldWidget[];
+}
+
+/** A document's form. */
+export interface FormInfo {
+  fields: FormField[];
+  /** It also has an XFA form, which is not supported (spec section 5.5). */
+  xfa: boolean;
+  /** It asked viewers to draw its fields; the first fill draws them all. */
+  needAppearances: boolean;
+}
+
+/** A kept signature or initials (ADR 0045). */
+export interface SignatureInfo {
+  id: number;
+  initials: boolean;
+  kind: "drawn" | "typed" | "image";
+  /** Width over height. */
+  aspect: number;
+  /** A drawn one's strokes, `[x, y]` with y down, and its pen width. */
+  strokes: [number, number][][];
+  pen: number;
+  /** A typed one's text and family. */
+  text: string | null;
+  family: "sans" | "naskh" | null;
+}
 
 /** An annotation on a page, for hit-testing, showing, and changing it. */
 export interface PageAnnotation {
@@ -260,6 +398,50 @@ export interface DocumentInfo {
   /** Restored from a recovery file with unsaved changes (ADR 0040). */
   modified?: boolean;
   canUndo?: boolean;
+  /** How the file is protected and what the password it was opened with allows (ADR 0043). */
+  security?: SecurityInfo;
+}
+
+/** What a reader may do with a file opened with the user password. */
+export interface Permissions {
+  print: boolean;
+  printHighQuality: boolean;
+  modify: boolean;
+  copy: boolean;
+  annotate: boolean;
+  fillForms: boolean;
+  accessibility: boolean;
+  assemble: boolean;
+}
+
+export type Cipher = "aes256" | "aes128";
+
+/** What a saved file is protected with. Empty passwords: none to open / a random owner password. */
+export interface Protection {
+  cipher: Cipher;
+  userPassword: string;
+  ownerPassword: string;
+  permissions: Permissions;
+}
+
+/** What a save does to the file's protection (ADR 0043). */
+export type SecurityChange = { kind: "keep" } | { kind: "remove" } | ({ kind: "set" } & Protection);
+
+/** A document's protection, as opened. */
+export interface SecurityInfo {
+  encrypted: boolean;
+  cipher: "rc4" | "aes128" | "aes256" | null;
+  revision: number;
+  permissions: Permissions;
+  /** Opened with the owner password (or not encrypted): nothing is restricted. */
+  owner: boolean;
+}
+
+/** The document after it was saved with another protection. */
+export interface SecureOutcome {
+  name: string;
+  modified: boolean;
+  security: SecurityInfo;
 }
 
 /** Unsaved changes an earlier session left, kept in a recovery file (ADR 0040). */
@@ -665,6 +847,8 @@ export interface Backend {
       fingerprint: number;
       text: string;
       family?: "sans" | "naskh";
+      /** Bold and italic as the editor set them (ADR 0025); absent keeps each character's own. */
+      marks?: BlockMark[];
     },
   ): Promise<BlockEditOutcome>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
@@ -681,6 +865,64 @@ export interface Backend {
     index: number,
     resolved: boolean,
   ): Promise<EditOutcome>;
+  /** The document's form fields (ADR 0045). */
+  formFields(documentId: number): Promise<FormInfo>;
+  /** Fills in a field (values as `FormField.values`): one undo step. */
+  setFormField(documentId: number, field: number, values: string[]): Promise<EditOutcome>;
+  /** Places Fill & Sign text, its top-left corner displayed at (`x`, `y`). */
+  addFillText(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    contents: string,
+    size?: number,
+  ): Promise<EditOutcome>;
+  /** Places a tick, cross, or dot, its top-left corner displayed at (`x`, `y`). */
+  addFillMark(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    kind: MarkKind,
+    size?: number,
+  ): Promise<EditOutcome>;
+  /** Places a kept signature `width` points wide, its top-left corner displayed at (`x`, `y`). */
+  placeSignature(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    width: number,
+    signature: number,
+  ): Promise<EditOutcome>;
+  /** Moves or resizes a Fill & Sign item to a box on the displayed page. */
+  setAnnotationRect(
+    documentId: number,
+    page: number,
+    index: number,
+    rect: ViewRect,
+  ): Promise<EditOutcome>;
+  /** The kept signatures and initials, newest first. */
+  signatures(): Promise<SignatureInfo[]>;
+  /** Keeps a drawn signature (points in the pad's pixels, y down). */
+  saveDrawnSignature(
+    initials: boolean,
+    strokes: StrokePoint[][],
+    width: number,
+  ): Promise<SignatureInfo>;
+  /** Keeps a typed signature. */
+  saveTypedSignature(
+    initials: boolean,
+    text: string,
+    family: "sans" | "naskh",
+  ): Promise<SignatureInfo>;
+  /** Asks for a PNG or JPEG and keeps it; null if cancelled. */
+  importSignatureImage(initials: boolean): Promise<SignatureInfo | null>;
+  /** Forgets a kept signature. */
+  deleteSignature(id: number): Promise<void>;
+  /** Where the webview loads a kept image signature from. */
+  signatureImageUrl(id: number): string;
   /** Removes annotations of one page (with their pop-ups and replies) in one undo step. */
   removeAnnotations(documentId: number, page: number, indices: number[]): Promise<EditOutcome>;
   /** The page's annotations of the kinds the app writes. */
@@ -702,6 +944,16 @@ export interface Backend {
   saveDocument(documentId: number): Promise<SaveOutcome>;
   /** Asks where to save, saves there, and the document becomes that file; null if cancelled. */
   saveDocumentAs(documentId: number): Promise<SaveOutcome | null>;
+  /**
+   * Saves with passwords and permissions set, changed or removed (ADR 0043),
+   * over the document's file or (`saveAs`) to a file picked; null if cancelled.
+   * Earlier edits are written in and undo starts over.
+   */
+  secureDocument(
+    documentId: number,
+    change: SecurityChange,
+    saveAs: boolean,
+  ): Promise<SecureOutcome | null>;
   /** Gives the document's tab to a new window; the caller drops its own tab. */
   moveToNewWindow(documentId: number): Promise<void>;
   /**

@@ -110,6 +110,8 @@ export interface ViewerCallbacks {
   onPlaceNote?(page: number, x: number, y: number): void;
   /** A press placed a new text box: its top-left corner and width (Comment tool). */
   onPlaceTextBox?(page: number, x: number, y: number, width: number): void;
+  /** The Sign tool placed something (ADR 0045): the press, in displayed-page points. */
+  onPlace?(page: number, x: number, y: number): void;
   /** A drag marked an area (Protect tool): the box on the displayed page. */
   onMarkArea?(page: number, rect: ViewRect): void;
   /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
@@ -135,7 +137,8 @@ export interface SelectedAnnotation {
 /**
  * What a press on a page does: select text and annotations; place a note,
  * draw, or erase (the Comment tool); mark an area to redact (the Protect
- * tool, ADR 0042); or nothing (other tools).
+ * tool, ADR 0042); place Fill & Sign items (the Sign tool, ADR 0045); or
+ * nothing (other tools).
  */
 export type ViewerMode =
   | "select"
@@ -145,7 +148,11 @@ export type ViewerMode =
   | "pen"
   | "eraser"
   | "redact"
+  | "place"
   | "none";
+
+/** Fill & Sign items, which a press with the Sign tool selects rather than places over. */
+const FILL_ITEMS: readonly string[] = ["fillText", "mark", "signature"];
 
 /** A note's icon, in points (the engine's `NOTE_SIZE`). */
 export const NOTE_SIZE = 20;
@@ -581,7 +588,18 @@ export class ViewerController {
     this.layers.clear();
     this.layerRequests.clear();
     this.setSelection(null);
+    const keep = this.keepAfterRefresh;
+    this.keepAfterRefresh = null;
+    if (keep) this.setSelectedAnnotation(keep);
     this.update();
+  }
+
+  /**
+   * Selects `annotation` again once the next revision is shown: an item just
+   * resized stays selected, to resize again (ADR 0045).
+   */
+  reselectAfterRefresh(annotation: SelectedAnnotation): void {
+    this.keepAfterRefresh = annotation;
   }
 
   /** Applies zoom and view-mode changes from the store. */
@@ -807,6 +825,9 @@ export class ViewerController {
    * Scrolls an annotation into view, a little below the top, and selects it
    * as a click on it would (the comments panel, ADR 0041).
    */
+  /** What `refresh` selects again (`reselectAfterRefresh`). */
+  private keepAfterRefresh: SelectedAnnotation | null = null;
+
   showAnnotation(annotation: SelectedAnnotation): void {
     const height = this.sizes?.[annotation.page]?.height ?? 0;
     const above = 24;
@@ -838,7 +859,7 @@ export class ViewerController {
       page: number;
       x: number;
       y: number;
-      kind: "note" | "textBox" | "pageText" | "block";
+      kind: "note" | "textBox" | "pageText" | "block" | "fillText";
       width: number;
       height?: number;
     } | null,
@@ -988,12 +1009,16 @@ export class ViewerController {
     if (previous?.page === selected?.page && previous?.index === selected?.index) return;
     this.selectedAnnotation = selected;
     // A note opens its editor under the icon; a pending new note stays put.
-    if (selected?.kind === "note" || selected?.kind === "textBox") {
+    if (
+      selected?.kind === "note" ||
+      selected?.kind === "textBox" ||
+      selected?.kind === "fillText"
+    ) {
       this.noteAnchor = {
         page: selected.page,
         rect: selected.rect,
         pending: false,
-        kind: selected.kind === "textBox" ? "textBox" : "note",
+        kind: selected.kind === "note" ? "note" : "textBox",
       };
     } else if (this.noteAnchor && !this.noteAnchor.pending) {
       this.noteAnchor = null;
@@ -1214,8 +1239,8 @@ export class ViewerController {
     this.pressedPoint = clicks === 1 && !event.shiftKey ? point : null;
     void this.loadAnnotations(point.page);
     this.setSelectedAnnotation(null);
-    if (mode === "note" || mode === "textBox" || mode === "text") {
-      // A press places a note, a text box, or new text (or opens one) when it ends; it selects no text.
+    if (mode === "note" || mode === "textBox" || mode === "text" || mode === "place") {
+      // A press places a note, a text box, new text, or a Fill & Sign item (or opens one) when it ends; it selects no text.
       this.setSelection(null);
       this.dragging = {
         pointerId: event.pointerId,
@@ -1347,7 +1372,11 @@ export class ViewerController {
       if (this.destroyed || press !== this.presses || this.selection !== null) return;
       const hit = this.annotationAt(pressed);
       const size = this.sizes?.[pressed.page];
-      if (mode !== "note" && mode !== "textBox" && mode !== "text") {
+      if (mode === "place") {
+        // On an item placed before, the press selects it; elsewhere it places another.
+        if (hit && FILL_ITEMS.includes(hit.kind)) this.setSelectedAnnotation(hit);
+        else this.callbacks.onPlace?.(pressed.page, pressed.x, pressed.y);
+      } else if (mode !== "note" && mode !== "textBox" && mode !== "text") {
         if (hit) this.setSelectedAnnotation(hit);
       } else if (hit?.kind === mode) {
         this.setSelectedAnnotation(hit);
@@ -1491,7 +1520,13 @@ export class ViewerController {
     let rects = first === undefined ? undefined : this.selectionRects.get(first);
     // A note or a text box has its editor instead.
     const selected = this.selectedAnnotation;
-    if (!rects?.length && selected && selected.kind !== "note" && selected.kind !== "textBox") {
+    if (
+      !rects?.length &&
+      selected &&
+      selected.kind !== "note" &&
+      selected.kind !== "textBox" &&
+      selected.kind !== "fillText"
+    ) {
       first = selected.page;
       rects = this.selectedAnnotationRects();
     }

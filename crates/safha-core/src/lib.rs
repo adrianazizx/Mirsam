@@ -8,10 +8,10 @@
 //! through a prioritized queue ([`render`]), extract text in logical order
 //! ([`text`]), search it ([`search`]), read the outline and page labels, map
 //! page space to the displayed page ([`view`]), edit pages ([`edit`]) and
-//! annotations ([`annotate`]) as incremental updates, redact and sanitize
+//! annotations ([`annotate`]) and form fields ([`forms`]) as incremental updates, redact and sanitize
 //! ([`redact`]), save ([`save`]), keep local app state ([`store`]), lay out
 //! text for writing ([`typeset`]), and write it into pages ([`text_edit`]) in
-//! the bundled families ([`fonts`]).
+//! the bundled families ([`fonts`]), and recognise page images ([`ocr`]).
 
 pub mod annotate;
 mod bitmap;
@@ -23,6 +23,8 @@ pub mod edit;
 mod engine;
 mod error;
 pub mod fonts;
+pub mod forms;
+pub mod ocr;
 pub mod outline;
 mod pdf;
 pub mod recovery;
@@ -30,6 +32,7 @@ pub mod redact;
 pub mod render;
 pub mod save;
 pub mod search;
+pub mod security;
 pub mod store;
 pub mod text;
 pub mod text_edit;

@@ -75,3 +75,60 @@
   padding-block: var(--space-1);
   padding-inline: var(--space-2);
 }
+
+/* A paragraph's rich field (ADR 0025): wraps like the textarea it replaces. */
+.styled {
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.styled:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-muted);
+}
+
+.formatting {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.format {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  padding: 0 var(--space-1);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.format[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.format[data-selected] {
+  background: var(--color-bg-selected);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-selected);
+}
+
+.format[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}
+
+.glyph {
+  display: inline-flex;
+}
+
+.glyph svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}

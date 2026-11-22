@@ -130,6 +130,7 @@ impl TextBox {
             resources: Dict::default(),
             content: drawing.content,
             fonts: drawing.fonts,
+            images: Vec::new(),
         })
     }
 }

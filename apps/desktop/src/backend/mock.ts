@@ -5,6 +5,8 @@ import type {
   DocumentComment,
   DocumentInfo,
   EditOutcome,
+  FormField,
+  FormInfo,
   KeptRequest,
   Lane,
   OpenOutcome,
@@ -20,6 +22,7 @@ import type {
   RenderedPage,
   SearchHit,
   SearchOptions,
+  SignatureInfo,
   TextLayer,
   TextLine,
   TileRequest,
@@ -42,6 +45,16 @@ const A4_LANDSCAPE: PageSize = { width: A4.height, height: A4.width };
 
 const SAMPLE: DocumentInfo = { id: 1, name: "عقد إيجار — Lease Agreement.pdf", pageCount: 240 };
 /** A recent file that is password-protected; its password is "1234". */
+const ALL_PERMISSIONS = {
+  print: true,
+  printHighQuality: true,
+  modify: true,
+  copy: true,
+  annotate: true,
+  fillForms: true,
+  accessibility: true,
+  assemble: true,
+};
 const LOCKED: DocumentInfo = { id: 2, name: "سري — Confidential.pdf", pageCount: 12 };
 const LOCKED_PASSWORD = "1234";
 
@@ -213,7 +226,125 @@ interface MockState {
   pages: number[];
   markup: Map<number, MockMarkup[]>;
   change: "pages" | "annotations";
+  /** Form field values by field id (ADR 0045); carried into later states. */
+  form?: Map<number, string[]>;
 }
+
+/** The sample document's form, on its first page (ADR 0045). */
+const MOCK_FIELDS: FormField[] = (() => {
+  const field = (
+    id: number,
+    name: string,
+    kind: FormField["kind"],
+    view: ViewRect,
+    extra: Partial<FormField> = {},
+  ): FormField => ({
+    id,
+    name,
+    kind,
+    values: [],
+    options: [],
+    readOnly: false,
+    required: false,
+    multiline: false,
+    password: false,
+    comb: false,
+    maxLen: null,
+    multiSelect: false,
+    editable: false,
+    widgets: [{ page: 0, view, onState: null }],
+    ...extra,
+  });
+  return [
+    field(
+      101,
+      "tenant.name",
+      "text",
+      { x: 300, y: 200, width: 220, height: 22 },
+      { required: true },
+    ),
+    field(
+      102,
+      "tenant.address",
+      "text",
+      { x: 300, y: 230, width: 220, height: 60 },
+      { multiline: true },
+    ),
+    field(
+      103,
+      "nationalId",
+      "text",
+      { x: 300, y: 300, width: 220, height: 22 },
+      { comb: true, maxLen: 10 },
+    ),
+    field(
+      104,
+      "agree",
+      "checkbox",
+      { x: 300, y: 330, width: 14, height: 14 },
+      {
+        options: [{ value: "Yes", label: "Yes" }],
+        widgets: [{ page: 0, view: { x: 300, y: 330, width: 14, height: 14 }, onState: "Yes" }],
+      },
+    ),
+    field(
+      105,
+      "payment",
+      "radio",
+      { x: 300, y: 360, width: 14, height: 14 },
+      {
+        options: [
+          { value: "cash", label: "نقدًا" },
+          { value: "transfer", label: "تحويل بنكي" },
+        ],
+        widgets: [
+          { page: 0, view: { x: 300, y: 360, width: 14, height: 14 }, onState: "cash" },
+          { page: 0, view: { x: 360, y: 360, width: 14, height: 14 }, onState: "transfer" },
+        ],
+      },
+    ),
+    field(
+      106,
+      "city",
+      "combo",
+      { x: 300, y: 390, width: 160, height: 22 },
+      {
+        options: [
+          { value: "ruh", label: "الرياض" },
+          { value: "jed", label: "جدة" },
+          { value: "dmm", label: "Dammam" },
+        ],
+      },
+    ),
+    field(
+      107,
+      "languages",
+      "list",
+      { x: 300, y: 420, width: 160, height: 50 },
+      {
+        multiSelect: true,
+        options: [
+          { value: "ar", label: "العربية" },
+          { value: "en", label: "English" },
+        ],
+      },
+    ),
+    field(
+      108,
+      "contractNo",
+      "text",
+      { x: 300, y: 480, width: 160, height: 22 },
+      {
+        readOnly: true,
+        values: ["٢٠٢٦/٤٧"],
+      },
+    ),
+  ];
+})();
+
+/** Kept signatures, newest first (the app keeps them in its state store). */
+let mockSignatures: SignatureInfo[] = [];
+let nextSignatureId = 1;
 
 /** Each edited mock document's revisions, with undo and redo. */
 const edits = new Map<number, { states: MockState[]; at: number; saved: number }>();
@@ -234,6 +365,7 @@ const MOCK_BLOCK_TEXT = "The mock page has one paragraph of text that the Edit t
 const mockBlockTexts = new Map<number, string>();
 
 function pushState(documentId: number, next: MockState): EditOutcome {
+  next.form ??= stateOf(documentId).form;
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
   history.at += 1;
@@ -435,11 +567,29 @@ function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
     ink: "rgb(13 56 153)",
     note: "rgb(255 219 0)",
     textBox: "rgb(0 0 0)",
+    fillText: "rgb(0 0 0)",
+    mark: "rgb(0 0 0)",
+    signature: "rgb(15 33 115)",
   };
   for (const { kind, rects, strokes, contents } of markup) {
-    if (kind === "textBox") {
+    if (kind === "mark" || kind === "signature") {
+      // A tick across the box: the mock has no appearance streams to draw.
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = colours.textBox;
+      ctx.strokeStyle = colours[kind];
+      ctx.lineWidth = kind === "mark" ? 1.6 : 2;
+      ctx.lineCap = "round";
+      for (const rect of rects) {
+        ctx.beginPath();
+        ctx.moveTo(rect.x + rect.width * 0.15, rect.y + rect.height * 0.5);
+        ctx.lineTo(rect.x + rect.width * 0.4, rect.y + rect.height * 0.75);
+        ctx.lineTo(rect.x + rect.width * 0.85, rect.y + rect.height * 0.2);
+        ctx.stroke();
+      }
+      continue;
+    }
+    if (kind === "textBox" || kind === "fillText") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = colours[kind];
       ctx.font = `400 12px ${FONT}`;
       ctx.direction = /[\u0600-\u06FF]/.test(contents?.[0] ?? "") ? "rtl" : "ltr";
       for (const rect of rects) {
@@ -846,6 +996,126 @@ export const mockBackend: Backend = {
     });
     return pushState(documentId, next);
   },
+  formFields: async (documentId) => {
+    if (documentId !== SAMPLE.id) return { fields: [], xfa: false, needAppearances: false };
+    const values = stateOf(documentId).form;
+    const fields = MOCK_FIELDS.map((field) => ({
+      ...field,
+      values: values?.get(field.id) ?? field.values,
+    }));
+    return { fields, xfa: false, needAppearances: false } satisfies FormInfo;
+  },
+  setFormField: async (documentId, id, values) => {
+    const field = documentId === SAMPLE.id ? MOCK_FIELDS.find((f) => f.id === id) : undefined;
+    if (!field) throw { code: "invalid_edit", detail: "no such form field" };
+    if (field.readOnly) throw { code: "invalid_edit", detail: "this field is read-only" };
+    const choices = field.options.map((option) => option.value);
+    const chooses = field.kind !== "text" && !(field.kind === "combo" && field.editable);
+    if (chooses && values.some((value) => value !== "" && !choices.includes(value))) {
+      throw { code: "invalid_edit", detail: "not one of the field's choices" };
+    }
+    if (field.maxLen !== null && [...(values[0] ?? "")].length > field.maxLen) {
+      throw { code: "invalid_edit", detail: "too long" };
+    }
+    const state = stateOf(documentId);
+    const form = new Map(state.form);
+    form.set(id, values);
+    return pushState(documentId, { ...state, form, change: "annotations" });
+  },
+  addFillText: async (documentId, page, x, y, contents, size = 11) => {
+    if (contents.trim() === "") throw { code: "invalid_edit", detail: "fill text needs some text" };
+    const lines = contents.split("\n");
+    const width = Math.max(...lines.map((line) => line.length)) * size * 0.55 + 2;
+    const item: MockMarkup = {
+      kind: "fillText",
+      rects: [{ x, y, width, height: lines.length * size * 1.3 + 2 }],
+      contents,
+      strokes: [],
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, item]),
+    );
+  },
+  addFillMark: async (documentId, page, x, y, _kind, size = 14) => {
+    const item: MockMarkup = {
+      kind: "mark",
+      rects: [{ x, y, width: size, height: size }],
+      contents: null,
+      strokes: [],
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, item]),
+    );
+  },
+  placeSignature: async (documentId, page, x, y, width, id) => {
+    const signature = mockSignatures.find((kept) => kept.id === id);
+    if (!signature) throw { code: "invalid_edit", detail: "no such signature" };
+    const item: MockMarkup = {
+      kind: "signature",
+      rects: [{ x, y, width, height: width / signature.aspect }],
+      contents: signature.text,
+      strokes: [],
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, item]),
+    );
+  },
+  setAnnotationRect: async (documentId, page, index, rect) => {
+    const next = withMarkup(documentId, page, (list) => {
+      const found = list[index];
+      if (!found || !["fillText", "mark", "signature"].includes(found.kind)) {
+        throw { code: "invalid_edit", detail: "only Fill & Sign items are moved or resized" };
+      }
+      return list.map((item, i) => (i === index ? { ...item, rects: [rect] } : item));
+    });
+    return pushState(documentId, next);
+  },
+  signatures: async () => mockSignatures,
+  saveDrawnSignature: async (initials, strokes, width) => {
+    const points = strokes.flat();
+    if (points.length === 0)
+      throw { code: "invalid_edit", detail: "a drawn signature needs strokes" };
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const w = Math.max(...xs) - Math.min(...xs) + width * 2;
+    const h = Math.max(...ys) - Math.min(...ys) + width * 2;
+    const kept: SignatureInfo = {
+      id: nextSignatureId++,
+      initials,
+      kind: "drawn",
+      aspect: w / Math.max(1, h),
+      strokes: strokes.map((stroke) => stroke.map((p): [number, number] => [p.x, p.y])),
+      pen: width,
+      text: null,
+      family: null,
+    };
+    mockSignatures = [kept, ...mockSignatures];
+    return kept;
+  },
+  saveTypedSignature: async (initials, text, family) => {
+    if (text.trim() === "") throw { code: "invalid_edit", detail: "a typed signature needs text" };
+    const kept: SignatureInfo = {
+      id: nextSignatureId++,
+      initials,
+      kind: "typed",
+      aspect: Math.max(1, text.trim().length * 0.5),
+      strokes: [],
+      pen: 0,
+      text: text.trim(),
+      family,
+    };
+    mockSignatures = [kept, ...mockSignatures];
+    return kept;
+  },
+  // No file dialog in a browser.
+  importSignatureImage: async () => null,
+  deleteSignature: async (id) => {
+    mockSignatures = mockSignatures.filter((kept) => kept.id !== id);
+  },
+  signatureImageUrl: (id) => `/mock-signature-${id}.png`,
   pageAnnotations: async (documentId, page) => {
     const state = stateOf(documentId);
     const original = state.pages[page];
@@ -888,7 +1158,18 @@ export const mockBackend: Backend = {
         lines: 2,
         font: "IBMPlexSans-Regular",
         fontReusable: true,
-        flattened: false,
+        styled: false,
+        runs: [
+          {
+            start: 0,
+            end: text.length,
+            font: "IBMPlexSans-Regular",
+            bold: false,
+            italic: false,
+            size: 12,
+            color: [0, 0, 0],
+          },
+        ],
         editable: true,
         reason: null,
       } satisfies ParagraphBlock,
@@ -908,8 +1189,15 @@ export const mockBackend: Backend = {
       ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
       textChanged: true,
       substituted:
-        arabic || edit.family ? { from: "IBMPlexSans-Regular", to: edit.family ?? "sans" } : null,
+        arabic || edit.family
+          ? {
+              from: "IBMPlexSans-Regular",
+              to: edit.family ?? "sans",
+              font: edit.family === "naskh" ? "Amiri-Regular" : "IBMPlexSansArabic",
+            }
+          : null,
       lines: Math.max(1, Math.ceil(edit.text.length / 50)),
+      source: arabic || edit.family ? "bundled" : "page",
     };
   },
   documentComments: async (documentId) => {
@@ -1044,6 +1332,26 @@ export const mockBackend: Backend = {
   // One window in the browser.
   newWindow: async () => {},
   printDocument: async () => {},
+  secureDocument: async (documentId, change) => ({
+    name: documentId === LOCKED.id ? LOCKED.name : SAMPLE.name,
+    modified: false,
+    security:
+      change.kind === "set"
+        ? {
+            encrypted: true,
+            cipher: change.cipher,
+            revision: change.cipher === "aes256" ? 6 : 4,
+            permissions: change.permissions,
+            owner: true,
+          }
+        : {
+            encrypted: false,
+            cipher: null,
+            revision: 0,
+            permissions: ALL_PERMISSIONS,
+            owner: true,
+          },
+  }),
   moveToNewWindow: async () => {},
   onSettingChanged: async () => () => {},
   onDocumentsArrived: async () => () => {},

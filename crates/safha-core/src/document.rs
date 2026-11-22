@@ -196,6 +196,36 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
+    /// The document's form fields (ADR 0045), each widget with its box on
+    /// the displayed page.
+    pub fn form(&self) -> Result<crate::forms::FormInfo> {
+        let mut info = crate::forms::read(&self.bytes, self.password.as_deref())?;
+        let mut views = std::collections::HashMap::new();
+        for widget in info.fields.iter_mut().flat_map(|field| field.widgets.iter_mut()) {
+            let Some(page) = widget.page else { continue };
+            let view = views.entry(page).or_insert_with(|| self.view_transform(page).ok());
+            let [left, bottom, right, top] = widget.rect;
+            widget.view = view.map(|view| view.rect(crate::text::Rect { left, bottom, right, top }));
+        }
+        Ok(info)
+    }
+
+    /// This document with form fields filled in (ADR 0045), in order, and
+    /// the one update that does it.
+    pub fn with_form_edits(&self, edits: &[crate::forms::FormEdit]) -> Result<(Document, Vec<u8>)> {
+        if edits.is_empty() {
+            return Err(Error::InvalidEdit("no form edits given"));
+        }
+        let mut bytes = self.bytes.to_vec();
+        let start = bytes.len();
+        for edit in edits {
+            let update = crate::forms::form_update(&bytes, self.password.as_deref(), edit)?;
+            bytes.extend_from_slice(&update);
+        }
+        let update = bytes[start..].to_vec();
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
     /// This document with `marks` redacted (ADR 0042). The content under
     /// each mark is removed from the file, not covered, and the result is
     /// checked: the text PDFium reads from the new revision must hold nothing
@@ -277,10 +307,31 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, height))
     }
 
-    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023),
+    /// then where its text cannot be edited and why. When the page's content
+    /// cannot be read at all (an encrypted file, a filter the editor does
+    /// not follow), every block of its text as PDFium reads it is refused.
     pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
+        use crate::block_edit::{Refusal, refused_page, text_blocks};
         let view = self.view_transform(page)?;
-        crate::block_edit::text_blocks(&self.bytes, &view, page)
+        match text_blocks(&self.bytes, &view, page) {
+            Err(Error::EditUnsupported(_)) => {
+                let reason = if crate::block_edit::encrypted(&self.bytes)? {
+                    Refusal::Encrypted
+                } else {
+                    Refusal::Unsupported
+                };
+                let text = self.page_text(page)?;
+                Ok(refused_page(
+                    text.blocks.iter().map(|block| {
+                        let shown = view.rect(block.bounds);
+                        [shown.x, shown.x + shown.width, shown.y, shown.y + shown.height]
+                    }),
+                    reason,
+                ))
+            }
+            other => other,
+        }
     }
 
     /// This document with one paragraph of its page's text edited in place
@@ -309,14 +360,25 @@ impl Document {
         let page = self.page(index)?;
         let annotations = page.annotations();
         let mut out = Vec::new();
+        let mut fills = None;
         // By index, not by iterator: the iterator stops at the first entry
         // PDFium cannot read, and the index is the annotation's position in
         // `/Annots`, which changing or removing it needs.
         for position in 0..annotations.len() {
             let Ok(annotation) = annotations.get(position) else { continue };
-            let Some(kind) = annotation_kind(&annotation) else { continue };
-            let contents = matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox)
-                .then(|| annotation.contents().unwrap_or_default());
+            let kind = match annotation_kind(&annotation) {
+                Some(kind) => kind,
+                // Ours are told apart by their `/Name`, which PDFium does not read.
+                None if annotation.annotation_type() == PdfPageAnnotationType::Stamp => {
+                    let fills = fills.get_or_insert_with(|| crate::annotate::fill_kinds(&self.bytes, index));
+                    let Some(kind) = fills.get(&position) else { continue };
+                    *kind
+                }
+                None => continue,
+            };
+            let contents =
+                matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox | AnnotationKind::FillText)
+                    .then(|| annotation.contents().unwrap_or_default());
             out.push(AnnotationInfo {
                 index: position,
                 kind,
@@ -672,6 +734,65 @@ impl Document {
     /// The document as PDF bytes, as PDFium would save it (with any edits).
     pub fn to_pdf_bytes(&self) -> Result<Vec<u8>> {
         Ok(self.inner.save_to_bytes()?)
+    }
+
+    /// How the document is protected, and what the password it was opened
+    /// with allows.
+    pub fn security(&self) -> crate::security::SecurityInfo {
+        use crate::pdf::{File, crypt::Crypt};
+        let Some(file) = File::new(&self.bytes) else { return crate::security::SecurityInfo::open() };
+        if file.trailer.get(b"Encrypt").is_none() {
+            return crate::security::SecurityInfo::open();
+        }
+        match Crypt::of(&file, self.password.as_deref()) {
+            Ok(Some(crypt)) => crate::security::SecurityInfo::of(&crypt),
+            // Opened by PDFium, but with a handler this editor cannot write.
+            _ => crate::security::SecurityInfo {
+                encrypted: true,
+                cipher: None,
+                revision: 0,
+                permissions: crate::security::Permissions::all(),
+                owner: false,
+            },
+        }
+    }
+
+    /// The document as PDF bytes with its protection changed (ADR 0043).
+    ///
+    /// Changing a signed file would break its signatures, and changing a
+    /// file's protection needs the owner password when it restricts anything.
+    pub fn to_pdf_bytes_secured(&self, change: &crate::security::SecurityChange) -> Result<Vec<u8>> {
+        use crate::security::SecurityChange;
+        let base = self.to_pdf_bytes()?;
+        let target = match change {
+            SecurityChange::Keep => return Ok(base),
+            SecurityChange::Remove => None,
+            SecurityChange::Set(protection) => Some(protection),
+        };
+        let info = self.security();
+        if info.encrypted && !info.owner && info.permissions != crate::security::Permissions::all() {
+            return Err(Error::NotPermitted);
+        }
+        if !info.encrypted && target.is_none() {
+            return Ok(base);
+        }
+        if self.is_signed() {
+            return Err(Error::EditUnsupported(
+                "it is signed, and changing its protection would break the signatures",
+            ));
+        }
+        crate::pdf::protect::rewrite(&base, self.password.as_deref(), target)
+    }
+
+    /// The password the document was opened with, if any.
+    pub(crate) fn password_in_use(&self) -> Option<String> {
+        self.password.clone()
+    }
+
+    /// The same file's bytes opened as a new document with another password
+    /// (after its protection changed).
+    pub fn reopen(&self, bytes: Arc<[u8]>, password: Option<&str>) -> Result<Document> {
+        self.engine.open_shared(bytes, password)
     }
 
     /// The document outline (bookmarks), as a tree.

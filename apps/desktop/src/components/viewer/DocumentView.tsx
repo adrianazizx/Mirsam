@@ -27,6 +27,9 @@ function readSpacing(element: HTMLElement): ViewerSpacing {
   };
 }
 
+/** Annotations whose text the note editor changes, instead of the selection toolbar. */
+const EDITED_IN_PLACE = ["note", "textBox", "fillText"] as const;
+
 /** The remembered position is written this long after the reader stops moving. */
 const SAVE_DELAY_MS = 800;
 /** Documents whose page labels were asked for (once per open). */
@@ -125,8 +128,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       isMac,
       pageLabel: (page) => pageLabel.current(page),
       mode: (): ViewerMode => {
-        const { activeTool, commentTool } = useAppStore.getState();
-        if (activeTool === "select") return "select";
+        const { activeTool, commentTool, fillTool } = useAppStore.getState();
+        if (activeTool === "select" || activeTool === "forms") return "select";
+        if (activeTool === "sign") return fillTool ? "place" : "select";
         if (activeTool === "protect") return "redact";
         if (activeTool === "edit") return "text";
         return activeTool === "comment" ? commentTool : "none";
@@ -144,9 +148,13 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
         onMarkArea: (page, rect) => void runCommand("redact.addArea", { page, rect }),
+        onPlace: (page, x, y) => void runCommand("fill.place", { page, x, y }),
         onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
         onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
-        onBlockRefused: () => useAppStore.getState().setNotice({ key: "textNotEditable" }),
+        onBlockRefused: (block) =>
+          useAppStore
+            .getState()
+            .setNotice({ key: `textNotEditable.${block.reason ?? "unsupported"}` }),
       },
     });
     viewerRef.current = viewer;
@@ -244,10 +252,11 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
     >
       {toolbarHost &&
       (hasSelection ||
-        (selectedKind !== null && selectedKind !== "note" && selectedKind !== "textBox"))
+        (selectedKind !== null && !(EDITED_IN_PLACE as readonly string[]).includes(selectedKind)))
         ? createPortal(<SelectionToolbar documentId={id} />, toolbarHost)
         : null}
-      {noteHost && (pendingNote || selectedKind === "note" || selectedKind === "textBox")
+      {noteHost &&
+      (pendingNote || (EDITED_IN_PLACE as readonly string[]).includes(selectedKind ?? ""))
         ? createPortal(<NoteEditor documentId={id} />, noteHost)
         : null}
     </section>

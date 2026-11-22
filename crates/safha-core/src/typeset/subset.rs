@@ -61,7 +61,8 @@ pub fn subset_fonts(
         for cluster in &run.clusters {
             let single = cluster.glyphs.len() == 1;
             for glyph in &run.glyphs[cluster.glyphs.clone()] {
-                let meaning = single.then(|| text[cluster.text.clone()].to_string());
+                // The letters, though the font drew presentation forms (ADR 0026).
+                let meaning = single.then(|| super::logical_text(&text[cluster.text.clone()]));
                 match glyphs.iter_mut().find(|(id, _)| *id == glyph.id) {
                     Some((_, existing)) => {
                         if existing.is_none() {

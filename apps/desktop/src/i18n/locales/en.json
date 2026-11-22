@@ -114,7 +114,9 @@
       "place": "Place a text box"
     },
     "text": {
-      "editBlock": "Edit a paragraph of page text"
+      "editBlock": "Edit a paragraph of page text",
+      "bold": "Bold",
+      "italic": "Italic"
     },
     "ink": {
       "add": "Add ink",
@@ -171,6 +173,44 @@
     "sanitize": {
       "setOption": "Choose what to sanitize",
       "run": "Sanitize document"
+    },
+    "security": {
+      "open": "Password and permissions…",
+      "apply": "Save with this protection",
+      "cancel": "Cancel protection changes"
+    },
+    "forms": {
+      "openTool": "Fill in form fields"
+    },
+    "form": {
+      "setValue": "Fill in a field"
+    },
+    "sign": {
+      "openTool": "Fill & Sign"
+    },
+    "fill": {
+      "select": "Select placed items",
+      "text": "Place text",
+      "date": "Place today's date",
+      "check": "Place a tick",
+      "cross": "Place a cross",
+      "dot": "Place a dot",
+      "signature": "Place a signature",
+      "place": "Place on the page",
+      "larger": "Larger",
+      "smaller": "Smaller"
+    },
+    "signatures": {
+      "load": "Load signatures"
+    },
+    "signature": {
+      "new": "New signature…",
+      "newInitials": "New initials…",
+      "cancel": "Cancel",
+      "saveDrawn": "Keep the drawn signature",
+      "saveTyped": "Keep the typed signature",
+      "importImage": "Choose an image…",
+      "delete": "Delete this signature"
     }
   },
   "viewer": {
@@ -219,7 +259,10 @@
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
     "text_failed": "The text could not be set.",
     "no_bookmarks": "This document has no top-level bookmarks to split at.",
-    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed."
+    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed.",
+    "password_not_encodable": "That password can't be used with this encryption. Use AES-256 for passwords with other letters.",
+    "not_permitted": "This file's owner password is needed to change its protection.",
+    "store_unavailable": "Mirsam's local storage is unavailable, so signatures cannot be kept."
   },
   "gallery": {
     "title": "Design gallery",
@@ -318,7 +361,15 @@
     "extracted": "The pages were saved as {{name}}.",
     "split": "The document was split into {{count}} files.",
     "fontSubstituted": "Font substituted: {{from}} → {{to}}.",
-    "textNotEditable": "This text cannot be edited here."
+    "fontSubstitutedUnnamed": "Font substituted: set in {{to}}.",
+    "textNotEditable": {
+      "shared": "This text is drawn together with other text, so it can't be edited on its own yet.",
+      "unreadable": "This text can't be read reliably, so it can't be edited. Run OCR on it first.",
+      "font": "This text's font can't be read for editing yet.",
+      "rotated": "Rotated text can't be edited yet.",
+      "encrypted": "Text in encrypted files can't be edited yet.",
+      "unsupported": "This text is drawn in a way that can't be edited yet."
+    }
   },
   "split": {
     "title": "Split into files",
@@ -486,6 +537,48 @@
       "hidden": "Hidden items"
     }
   },
+  "securityDialog": {
+    "title": "Password and permissions",
+    "currentOpen": "This file has no password and no restrictions.",
+    "currentProtected": "This file is protected with {{cipher}}.",
+    "cipherName": {
+      "rc4": "RC4 (an older cipher)",
+      "aes128": "AES-128",
+      "aes256": "AES-256",
+      "unknown": "a kind of protection Mirsam can't write"
+    },
+    "needsOwner": "You opened this file with its user password. Its owner password is needed to change or remove its protection: close it and open it again with the owner password.",
+    "mode": "What to do",
+    "modeSet": "Protect with a password or permissions",
+    "modeRemove": "Remove the password and permissions",
+    "cipher": "Encryption",
+    "aes256": "AES-256 (recommended)",
+    "aes128": "AES-128 (for older readers; ASCII passwords only)",
+    "userPassword": "Password to open the file (optional)",
+    "confirmPassword": "Type the password again",
+    "ownerPassword": "Owner password (optional)",
+    "ownerHint": "The owner password lifts the permissions below. Leave it empty and nobody can lift them.",
+    "permissions": "Allow readers to",
+    "allow": {
+      "print": "Print",
+      "printHighQuality": "Print at full quality",
+      "copy": "Copy text and images",
+      "modify": "Edit content",
+      "annotate": "Add comments and markup",
+      "fillForms": "Fill in forms",
+      "assemble": "Insert, delete and rotate pages"
+    },
+    "problem": {
+      "mismatch": "The two passwords are not the same.",
+      "nothing": "Set a password or turn off a permission.",
+      "ascii": "AES-128 takes only English letters, digits and symbols. Choose AES-256 for other passwords.",
+      "control": "Passwords can't contain control characters."
+    },
+    "saveNote": "Saving rewrites the file with this protection and clears undo. Passwords can't be recovered if you forget them.",
+    "save": "Save with this protection",
+    "saveAs": "Save as…",
+    "cancel": "Cancel"
+  },
   "redactDialog": {
     "title": "Apply redactions?",
     "body": "This removes the marked content from the document: the text, image pixels, drawings, and annotations under {{marks}} marked areas, and any mention of the marked text in its metadata. A black box covers each area. You can undo this until you save; once saved, it cannot be undone.",
@@ -498,7 +591,70 @@
     "placeholder": "Type the text…",
     "ownFont": "Set in the paragraph's own font ({{font}}) where it has the letters.",
     "substituted": "Font substituted: the paragraph is set in a bundled font instead of {{font}}.",
-    "flattened": "This paragraph mixes fonts, sizes or colours; editing sets it in one.",
-    "familyAuto": "Automatic"
+    "styled": "Its bold, italic, sizes and colours are kept; text you type takes the style of the text before it.",
+    "familyAuto": "Automatic",
+    "formatting": "Formatting"
+  },
+  "forms": {
+    "loading": "Reading the form…",
+    "unreadable": "This document's form fields cannot be read.",
+    "none": "This document has no form fields to fill in. Use Fill & Sign to type, tick, and sign anywhere on its pages.",
+    "useFillAndSign": "Use Fill & Sign",
+    "count": "Fields: {{n}}",
+    "xfa": "This document also has an XFA form, which Mirsam does not support. Readers that use XFA may not show what you fill in here.",
+    "needAppearances": "Mirsam draws every field itself when you first fill one, so Arabic shows correctly in every reader.",
+    "page": "Page {{page}}",
+    "noPage": "Not on a page",
+    "required": "(required)",
+    "noChoice": "—",
+    "notPermitted": "This file's permissions do not allow filling in its form. Its owner password lifts that."
+  },
+  "sign": {
+    "fillHeading": "Fill",
+    "tools": "What a click on the page places",
+    "hint": {
+      "select": "Click an item you placed to select it.",
+      "text": "Click on the page where the text goes.",
+      "date": "Click on the page where today's date goes.",
+      "check": "Click each box to tick.",
+      "cross": "Click each box to cross.",
+      "dot": "Click each place to mark with a dot.",
+      "signature": "Click on the page where the signature goes."
+    },
+    "selectedHeading": "Selected item",
+    "signatures": "Signatures",
+    "initials": "Initials",
+    "noSignatures": "No signatures yet.",
+    "noInitials": "No initials yet.",
+    "loading": "Loading…",
+    "place": "Place this {{kind}}",
+    "kind": {
+      "drawn": "drawn signature",
+      "typed": "typed signature",
+      "image": "signature image"
+    },
+    "keptLocally": "Signatures are kept on this device only.",
+    "notPermitted": "This file's permissions do not allow adding to its pages. Its owner password lifts that."
+  },
+  "signature": {
+    "title": "New signature",
+    "titleInitials": "New initials",
+    "how": "How to make it",
+    "draw": "Draw",
+    "type": "Type",
+    "image": "Image",
+    "pad": "Signature pad",
+    "drawHint": "Sign with the mouse, a pen, or a finger.",
+    "typedName": "Your name",
+    "typedInitials": "Your initials",
+    "imageHint": "A PNG or JPEG of your signature. A PNG with a transparent background looks best.",
+    "save": "Keep",
+    "clear": "Clear",
+    "cancel": "Cancel"
+  },
+  "fillText": {
+    "label": "Fill & Sign text",
+    "text": "Text",
+    "placeholder": "Type the text…"
   }
 }

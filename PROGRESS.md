@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (viewer and shell side track: pinch-out within budget, one running copy).
+Last updated: 2026-11-23 (viewer and shell side track: pinch-out within budget, one running copy; merged with `main` after session 16).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -44,6 +44,16 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     ToUnicode conventions. Acrobat Reader and pdf.js are untested — testing Acrobat needs it
     installed. The spec's §7 acceptance test on "another viewer" needs rewording once that is
     measured (ADR 0005).
+
+    **Measured at M3's exit (session 16, `docs/demos/m3.md`).** For text this app writes:
+    - **PDFKit (Preview):** copies Arabic, including ligatures and mixed sentences, exactly.
+    - **PDFium (Chrome) and Poppler:** reverse ligatures' letters ("الموظفني"), and PDFium
+      reverses Latin runs inside Arabic. Both do worse on Chrome's own files.
+    - **`/ActualText` on ligatures:** fixed some of PDFium's words and reversed others; Poppler
+      ignored it.
+
+    The decision is still yours: which viewer's convention to follow, or whether to accept
+    this.
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
 12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
@@ -69,6 +79,15 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
+16. **M3's exit, by hand** (`docs/demos/m3.md`):
+    - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
+      cannot be driven here);
+    - type into the paragraph editor with real input methods: macOS and Windows Arabic
+      keyboards, press-and-hold, the emoji picker, dictation.
+
+    Also, when this Mac is idle, re-run the scroll and zoom benchmark. At M3's exit it ran under
+    a load average of 85 (another session's OCR benchmark and builds), and its numbers are not
+    evidence.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -333,7 +352,10 @@ M2 closed in session 8 at the owner's go-ahead, with these items carried forward
 - ~~**Autosave:** a single running copy is not enforced.~~ Done 2026-11-23 (ADR 0046).
 - **From M1:** printing on screen (owner item 13). ~~Extreme pinch-out~~ done 2026-11-23.
 
-## M3 — Text engine — started in session 9 on branch `m3-text` (groundwork merged to `main` ahead of M2)
+## M3 — Text engine — done; closed on `m3-text` (PR #8) with the open items below
+
+Closed in session 16 at the owner's go-ahead, with the exit test's gaps stated rather than
+waited on. Demo script: `docs/demos/m3.md`.
 
 The groundwork that did not depend on M2 was built on branch `pomidor/m3-text-engine-3c22b6`
 in parallel with M2 and merged by pull request at the owner's request. M3 proper started in
@@ -358,7 +380,7 @@ Plan, in order:
    has codes for, otherwise the whole paragraph in a bundled family with a "Font substituted"
    note and a Sans/Naskh choice; unused fonts of our own drop out. The Edit tool opens a
    paragraph when pressed.
-6. **Exit test:** spec §7's four acceptance tests.
+6. ~~**Exit test**~~ **done with stated gaps (session 16):** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
       `spikes/pdfium-regenerate/`).
@@ -394,7 +416,7 @@ Plan, in order:
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
       M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
-      block's existing text objects (for in-place editing) is still to do. Must solve:
+      block's existing text objects is done (`block_edit`, by byte range, ADR 0023). Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
@@ -417,7 +439,64 @@ Plan, in order:
       - Gaps (ADR 0023 "Honest limits"): bold/italic, indents and tabs, mixed styles flatten,
         no kerning in reused fonts, forms/encrypted/Type 3, installed-font substitutes, the
         editor field does not yet sit over the paragraph in its own width and size.
-- [ ] Exit test: all acceptance tests in spec §7
+      - Session 11 (ADR 0023 amendment):
+        - a press on text that cannot be edited says why, in English and Arabic: shared, needs
+          OCR, an unreadable font (Type 3), rotated, encrypted, or unsupported;
+        - such text is listed as refused areas, so no new text lands on top of it;
+        - the automatic substitute is the closest of five bundled faces (Noto Naskh Arabic and
+          Noto Sans Arabic added), by name, serif flag, and the font's own `/Widths`.
+      - Session 12 (ADR 0024): **styled runs.**
+        - Bold, italic, sizes and colours inside a paragraph are kept through edits.
+        - Typed text takes the style before it; typing over a word keeps its style.
+        - Each run is written in its own font when it can be, else in a bundled face at its
+          weight (bold faces added), slanted for italic.
+        - Still to do: weights other than regular and bold.
+      - Session 13 (ADR 0025): **bold and italic while editing.**
+        - The paragraph field is the browser's own rich-text editing, held to bold and italic.
+        - `text.bold` and `text.italic` (Cmd/Ctrl+B and I, and B and I buttons) run its own
+          commands, so its undo covers them.
+        - The edit carries marks, served by the page's own bold and italic fonts of the same
+          family, or by bundled faces.
+        - Not yet settable from the editor: underline, size, colour.
+      - Session 14 (ADR 0026): **the PDF's own embedded fonts.**
+        - An edited paragraph is set in its fonts' embedded TrueType or OpenType programs
+          when they have the glyphs, between reusing codes and bundled faces.
+        - Arabic from Chrome's subsets (no `GSUB`) works through presentation forms.
+        - `fsType` is respected.
+        - Still to do: Type 1 and bare CFF programs.
+      - Session 15 (ADR 0023 amendment): **tashkeel.**
+        - Chrome's vocalised Arabic and this app's own read in place exactly: no stray spaces,
+          letters in order, marks on their letters.
+        - A vocalised paragraph's marks go with it when it is edited or removed.
+- [~] **Exit test: all acceptance tests in spec §7** (session 16, `tests/m3_exit.rs`,
+      `docs/demos/m3.md`).
+      - **All four pass:** typo, Arabic insert, mixed sentence, round trip. Checked against
+        PDFium's, Poppler's and PDFKit's rendering and text, where installed.
+      - **Gaps:**
+        - Acrobat Reader is a check by hand;
+        - copying Arabic ligatures and mixed lines is exact in PDFKit and in this app, but not
+          in PDFium (Chrome) or Poppler (owner item 10, measured);
+        - the scroll benchmark is to be re-run on an idle machine (owner item 16).
+      - **Typing** in the paragraph field takes 17–18 ms a keystroke (median), within the 32 ms
+        budget.
+
+M3 closed in session 16 at the owner's go-ahead, with these items carried forward:
+
+- **The exit test by hand** (owner item 16): Acrobat Reader, real input methods, and the scroll
+  and zoom benchmark on an idle machine.
+- **Copying our Arabic in Chrome and Poppler** (owner item 10): they reverse ligatures' letters
+  and print mixed lines in visual order, in Chrome's own files too.
+- **Editing:**
+  - underline, sizes and colours are not settable from the editor;
+  - only regular and bold weights;
+  - indents, lists and tab stops are not kept;
+  - reused fonts lose kerning;
+  - a paragraph that grows can overlap the text below it;
+  - direction is decided by the majority of letters.
+- **Fonts:** Type 1 and bare CFF programs are not re-set; installed fonts are not offered as
+  substitutes (comes with the font picker).
+- **Not edited:** text in forms, encrypted files, Type 3 and CMap-encoded fonts. Each is refused
+  with its reason.
 
 ## M4 — OCR (quality-first)
 
@@ -439,9 +518,9 @@ Plan, in order:
     - Synthetic set only.
     - Acrobat and ABBYY not measured.
     - CPU speed measured on an M3 Max only, not on a typical Windows laptop.
-  - **Gates the best engine still fails, unchanged through llama.cpp:** mixed Arabic/English
-    (2.07% CER against 2%) and numbers (93.6% against 99%; 97.0% without "64-bit"). They need the
-    pipeline's logical-order and digit-check steps.
+  - **Gates:** the 4B alone fails two, mixed Arabic/English (2.07% CER against 2%) and numbers
+    (93.6% against 99%). Through the reconcile pipeline (ADR 0033) **all five pass**: mixed
+    1.52%, numbers 99.4%. Numbers pass by one field.
 - [x] `ocr-eval` set v2 (47 samples):
   - Severe scans (a new tracked category) and an Arabic form.
   - Table-cell scoring.
@@ -458,10 +537,33 @@ Plan, in order:
     - Vocalized Amiri is weak (IoU-x 0.21–0.70).
     - No truth yet for skewed or warped pages.
     - The detector costs 4–10 s per page on PaddlePaddle's CPU backend (ONNX Runtime not tried).
-- [ ] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
-      verification with no silent invention
+- [~] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
+      verification with no silent invention. In slices:
+  - [x] **1. Recognition from Rust** (ADR 0032): `safha_core::ocr`.
+    - The `OcrEngine` trait, and `NuqtaEngine` over `llama-server` run as a child process.
+    - A Pillow-exact resize, and word confidence from token probabilities.
+    - Examples `ocr_eval` and `ocr_page`.
+    - **Result:** over the eval set, byte-identical text to the benchmark on all 47 pages (0.89%
+      CER), at 8.3 s per page on Metal and 141 s on the CPU.
+  - [ ] **2. Word boxes in Rust:** the PP-OCRv5 detector through ONNX Runtime, and ADR 0031's
+        alignment.
+  - [x] **3. Reconcile and verify** (ADR 0033): `QualityReader`.
+    - **Assessment:** skew and specks.
+    - **Deskewed line strips,** found without a detector.
+    - **Order fix:** number–unit compounds ("bit-64" → "64-bit") in Arabic lines.
+    - **Re-reads:** every number and every word under 0.95 is re-read: by the 0.8B (page and
+      strips), by the 4B (the strips holding targets), and optionally by the platform OCR for
+      numbers.
+    - **Reconcile:** a word is corrected only when the re-reads agree; otherwise it is flagged.
+    - **Results:** 7 corrections, none wrong. CER 0.60%. All five gates pass.
+    - **Cost:** 24.9 s per page on Metal.
+    - **Still open:** omitted lines ("Lease Agreement") wait for slice 2's detector. CPU-only
+      cost is not measured.
+  - [ ] **4. Assembly into the text layer** in logical order (spec §6.3).
 - [ ] Background jobs with draft-then-quality results; survives restart
-- [ ] Word-level confidence, pages-needing-review list
+- [~] Word-level confidence, pages-needing-review list. The engine side is done (ADR 0033):
+      each word has a probability and a status, and `review_list` gives the pages needing
+      review. The UI is not built yet.
 - [ ] Searchable-PDF output in logical order
 - [ ] Model download manager; hardware acceleration
 - [ ] Benchmark gate in CI
@@ -469,10 +571,29 @@ Plan, in order:
 
 ## M5 — Forms, sign, protect
 
-- [ ] Form filling with shaped appearance streams
-- [ ] Fill & Sign on flat forms
-- [ ] Drawn/typed/image signatures
-- [ ] Encryption and permissions
+- [~] Form filling with shaped appearance streams (session M5-c, ADR 0045):
+  - **Done:** text (single-line, multi-line, comb, password), check boxes, radio buttons, drop-downs,
+    and lists. Each widget gets our own appearance, with Arabic shaped and starting at the right.
+    `/V` is written, and `NeedAppearances` is turned off after every valued field is drawn.
+  - **Tested** in PDFium renders, after a save through PDFium, flattened by qpdf, and in an
+    encrypted file.
+  - **Gaps:**
+    - JavaScript format, calculate, and validate actions are not run; a date field is text.
+    - Fields are filled in the inspector, not on the page.
+    - Fields in encrypted object streams are not listed.
+- [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
+  click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
+  - Resized in 25% steps, with text keeping its size for later changes.
+  - **Gaps:** no drag to move or drag handles to resize; fixed colours and sizes.
+- [~] Drawn/typed/image signatures and initials (ADR 0045):
+  - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
+    kept as a soft mask) or JPEG, picked through the native dialog.
+  - **Kept** in the state store (schema 4), on this device only. **Placed** in proportion and
+    resizable.
+  - **Gap:** the image import and the image preview URL are untested in the real shell.
+- [x] Encryption and permissions (session M5-b, ADR 0043): set, change or remove passwords on save
+      (AES-256 revision 6 by default, AES-128 for old readers), owner and user passwords, permission
+      flags honoured by the command registry; Arabic passwords tested; `qpdf --check` and reopen pass.
 - [~] True redaction with pattern search (session M5-a, ADR 0042): text, image pixels, paths,
       annotations and metadata mentions removed from the file and checked by extraction and render;
       e-mail/phone/IBAN/ID/card presets and regex, Arabic-Indic digits normalised; mark by drag,
@@ -482,7 +603,10 @@ Plan, in order:
       native shell are untested.
 - [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
       rewritten in full so unlinked objects are gone (ADR 0042)
-- [ ] Form creation; certificate signatures (PAdES) — **[SPIKE]** crypto library first
+- [ ] Form creation
+- [~] Certificate signatures (PAdES) — **[SPIKE] done (ADR 0044, `spikes/pades`)**: RustCrypto stack
+      recommended; a prototype signs an incremental update that Poppler/NSS and OpenSSL verify. The
+      feature itself (`safha_core::sign`, key import, signing UI, revocation) is not built.
 
 ## M6 — Edit everything else + convert
 
@@ -556,6 +680,290 @@ Test status at the end of this track (this Mac):
   - the shell self-test passes in English (light) and Arabic (dark);
   - `scripts/instance-selftest.sh` passes;
   - the zoom gestures in Arabic (dark): pinch-out p95 18 ms, nothing dropped, no blank page.
+- **After merging `main` (session 16):**
+  - 454 Rust tests and 201 UI tests pass, and clippy is clean both ways.
+  - The full benchmark passes at load 25: pinch-out p95 17 ms, nothing dropped; pinch-in p95
+    17 ms; 0.4% of all frames dropped; the app's memory 326 MB.
+  - `scripts/instance-selftest.sh` passes.
+### Session 16 — 2026-11-22 (Milestone 3's exit test)
+
+- **`tests/m3_exit.rs`:** spec §7's four acceptance tests, each clause checked against every
+  viewer installed.
+  - PDFium's rendering and text (Chrome's engine) everywhere.
+  - Poppler (`pdftoppm`/`pdftotext`) where installed.
+  - PDFKit (`sips`, and `tests/support/pdfkit_text.swift`) on macOS.
+  - What cannot run says so.
+- **Results:** all four pass.
+  - **Typo:** no other paragraph moves; three engines draw the saved page identically outside
+    the paragraph; all read the fix.
+  - **Arabic insert:** a re-set word is drawn as Chrome drew it (width and ink within 5%); the
+    paragraph re-wraps right to left; PDFKit copies it exactly.
+  - **Mixed sentence:** in order in this app and PDFKit.
+  - **Round trip:** English, Arabic and an embedded-font heading, with no drift or duplicate
+    fonts.
+- **Measured:** PDFium and Poppler reverse ligatures' letters and mixed runs, in Chrome's own
+  files too. `/ActualText` on ligatures helped some words and broke others, so it was not
+  kept. Owner item 10 is updated.
+- **Self-test:** typing in the paragraph field is 17–18 ms a keystroke at the median (spec §11:
+  32 ms).
+- **Benchmark:** the scroll benchmark ran under a load average of 85 and is to be re-run (owner
+  item 16).
+- **Demo script:** `docs/demos/m3.md`.
+- **Milestone 3 closed** at the owner's go-ahead, with the gaps above carried forward rather than
+  the benchmark re-run first. `main` (M5-b: encryption and permissions) was merged in first.
+
+### Session 15 — 2026-11-22 (Milestone 3: tashkeel in paragraphs edited in place)
+
+- **Found:**
+  - Chrome gives a cluster's text to a zero-width mark glyph off the line and none to the
+    letter. The result was stray spaces, swapped letters, and lost letters.
+  - This app's own marks below the line formed lines of their own and attached to the wrong
+    letters.
+  - **No mark's operator was part of its paragraph:** edits left marks on the page.
+- **Fixed in `blocks`:**
+  - carriers take their letter's box and baseline;
+  - marks find their letter by drawing order (direction-aware) and take its baseline;
+  - every mark's operator belongs to its paragraph.
+- **Measured:** 33 of 126 fixture paragraphs read exactly, up from 26. Chrome's vocalised
+  page and this app's tashkeel (Amiri, Plex Sans Arabic) are exact.
+- **Tests:** three unit tests, and two integration tests (vocalised ground truth, and no
+  leftover ink after removing a vocalised paragraph, in Chrome's text and this app's).
+
+### Session 14 — 2026-11-22 (Milestone 3: the PDF's own embedded fonts, ADR 0026)
+
+- **What producers embed:** the fixtures' subsets were inspected.
+  - Chrome: TrueType with a `cmap` of presentation forms and ligatures, but no `GSUB`/`GPOS`.
+  - CoreText: a Mac Roman `cmap` only.
+  - harfrust has no Arabic fallback, so it gave `.notdef`.
+- **`typeset::presentation_forms_in`:**
+  - joined forms from ICU's joining types;
+  - lam-alef;
+  - Unicode's optional ligatures when the font has them;
+  - letters kept where a subset maps the isolated form by the letter.
+  - `logical_text` folds forms back for `/ToUnicode` and `/ActualText`.
+- **A new font source between page codes and bundled faces:**
+  - a paragraph is laid out in its fonts' embedded programs and re-embedded under their names;
+  - this needs the glyphs, `GPOS` for marks, and an `fsType` that allows it;
+  - `EditedBlock::source` reports it, through the shell to the UI.
+- **Plumbing:**
+  - `FontFace::has_table` and `embedding_permissions`;
+  - `FontInfo` keeps the program's place;
+  - `NamedFont` names can be a PDF's own.
+- **Tests:**
+  - Rust: unit tests for forms, ligatures and permissions; integration tests for Chrome's
+    Arabic heading re-set and shortened in its own program, a missing form and tashkeel
+    falling back, and Latin still embedding nothing.
+  - UI tests unchanged.
+
+### Session 13 — 2026-11-22 (Milestone 3: bold and italic commands in the paragraph editor, ADR 0025)
+
+- **The field:**
+  - The paragraph editor's field is a `contenteditable` held to text, line breaks, bold and
+    italic.
+  - Enter is a line break, pasted text is plain, and drops are refused.
+  - `richText` fills it from runs and reads it back (inline styles and WebKit's un-bold
+    included).
+- **Commands:**
+  - `text.bold` and `text.italic` (Cmd/Ctrl+B, Cmd/Ctrl+I) run the browser's own `bold` and
+    `italic`, so undo covers them.
+  - B and I toggle buttons keep the field's focus and show the selection's state.
+- **Engine:**
+  - `BlockEdit::marks` sets each character's bold and italic.
+  - A run that needs another style takes the page's font of the same family that has it
+    (Helvetica-Bold), else the paragraph is set in bundled faces.
+  - A style-only change is an edit.
+- **Tests:**
+  - Rust: own-font marks, bundled bold-italic, family key, UTF-16 marks.
+  - UI: rich text, the editor's buttons and marks in English and Arabic, registry gating and
+    style-only saves.
+  - Real-app self-test: an Arabic word made bold in the field with WebKit's command and read
+    back as a bold run (English light; Arabic dark on two fixtures).
+
+### Session 12 — 2026-11-22 (Milestone 3: styled runs in edited paragraphs, ADR 0024)
+
+- **Reading:**
+  - Every character of a paragraph keeps its font, size and colour through the
+    visual-to-logical reorder.
+  - The UI gets the runs (UTF-16 offsets, font, bold, italic, size, colour) and a `styled`
+    flag.
+  - Lines group into a paragraph when they share any font, not only the dominant one: a mostly
+    italic line no longer splits a paragraph.
+- **Editing:**
+  - The field's plain text is mapped onto the old runs by a character LCS.
+  - Kept characters keep their style; typing over a word takes its style; other typing takes
+    the style before it (after it at the start).
+- **Writing:**
+  - When every run's own font has codes for its text: each run in its font, with font and
+    colour switching inside the line, and justification at spaces.
+  - Otherwise, the closest bundled face per original font at the run's weight:
+    - bold faces added (Plex Sans and the Noto VFs at 700, Amiri Bold, Plex Sans Arabic
+      SemiBold);
+    - per-span fallbacks of the same weight in `typeset`;
+    - spans no longer carry a font across a style boundary;
+    - italic slanted 12° under an oblique name, so it reads back italic.
+- **Tests:**
+  - Unit tests for runs and restyling.
+  - Four integration tests on a Helvetica / Bold / Oblique page with a red word: runs read;
+    own-font edit; substituted edit kept over a second edit; Arabic over a bold word in a
+    bold Arabic face.
+  - A UI test of the styled note in English and Arabic.
+
+### Session 11 — 2026-11-22 (Milestone 3: main's in-place editor kept; reasons and closer substitutes ported)
+
+- **Two implementations met.**
+  - PR #8 (`m3-text`) and PR #9 (merged into `main`) each built M3's editor-surface spike,
+    page analysis and in-place editing, with opposite surface decisions: our own canvas, or a
+    native text field.
+  - At the owner's choice, `m3-text` merged `main` keeping main's tree whole (`4b7926c`); the
+    branch's own three commits stay in history only.
+  - What main lacked was then ported onto its design.
+- **Refusal reasons:**
+  - `block_edit::Refusal` replaces English strings: shared, unreadable (needs OCR), font,
+    rotated, encrypted, unsupported.
+  - Text that is not a paragraph (Type 3 fonts, rotated text, all text of encrypted pages) is
+    listed as refused areas after the paragraphs.
+  - A press there shows the reason, in English and Arabic, instead of placing new text on top.
+    On Chrome's Type 3 fixtures every line is covered.
+- **Closer substitutes:**
+  - Noto Naskh Arabic and Noto Sans Arabic are bundled.
+  - With the Plex and Amiri faces, they are ranked by `match_font`: coverage, name, serif
+    flag, and the font's `/Widths` for letters that do not join.
+  - The notice names the face, isolated from the sentence's direction.
+  - Sans and Naskh stay as the user's override.
+- **Tests:**
+  - Rust: 306 tests (new unit tests for width matching and area joining, and the refusal test
+    extended to encrypted and Type 3 pages).
+  - UI: 159 tests (a press on refused text; the substitute notice).
+  - Real-app self-test: English (light) and Arabic (dark, two fixtures).
+
+### Session M5-c — 2026-11-22 (Milestone 5: form filling, Fill & Sign, signatures; parallel to M5 crypto and M6)
+
+Branch `pomidor/m5-forms-0522c7`, from `main` after PR #11. Left the OCR code and the
+encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11ba5`) alone; only used
+`pdf::crypt`'s existing API.
+
+- **ADR 0045** records the approach:
+  - Our parser reads and writes the form.
+  - Every widget's appearance is ours, shaped by `typeset` and written by `pdf::text`.
+  - `/Q 0` starts where the text's own direction starts.
+  - `NeedAppearances` is turned off once every valued field is drawn.
+  - Fill & Sign items are `/Stamp`s named `Mirsam*`, moved and resized through `/Rect` alone.
+  - Signatures are kept in the state store.
+- **Engine:**
+  - **`safha_core::forms`:** `read`, `form_update`, and `forms/appearance.rs`;
+    `Document::form` and `Document::with_form_edits`.
+  - **`annotate::fill`:** `FillText`, `Mark`, `SignatureStamp`, and `Signature` (drawn, typed,
+    image). `AnnotationEdit` gains `AddFillText`, `AddMark`, `AddSignature` and `SetRect`;
+    `SetContents` also takes fill text. `AnnotationKind` gains `FillText`, `Mark` and `Signature`.
+  - **`pdf::image`:** PNG decoding and JPEG pass-through as image XObjects with soft masks; the
+    annotation writer writes images.
+  - **`store`:** a `signatures` table (schema version 4).
+  - **Dependencies:** `png` (MIT OR Apache-2.0) moves from dev-dependencies to dependencies, and
+    `serde_json` joins them. Both were in the tree already, and `THIRD_PARTY_LICENSES.md` is
+    unchanged.
+- **Shell (`forms.rs`):**
+  - Commands: `form_fields`, `set_form_field`, `add_fill_text`, `add_fill_mark`,
+    `place_signature`, `set_annotation_rect`, `signatures`, `save_drawn_signature`,
+    `save_typed_signature`, `import_signature_image` (native dialog), and `delete_signature`.
+  - `safha://localhost/signature?id=N` serves kept images.
+  - A new error code, `store_unavailable`.
+- **UI:**
+  - The Forms tool's panel and the Sign tool's panel, in the inspector.
+  - The new-signature dialog (Draw, Type, Image).
+  - The viewer's `place` mode.
+  - Smaller and Larger in the selection toolbar.
+  - Fill text edited in the note editor.
+  - 21 commands, English and Arabic strings, and signature tokens (with an ink-on-paper contrast
+    pair).
+  - The mock backend has a sample form on the sample document's first page, and keeps signatures.
+- **Tests:**
+  - **Rust:** `tests/forms.rs` (9) runs on a hand-written AcroForm. It covers every kind of field,
+    Arabic and English, comb, `NeedAppearances`, encryption made with qpdf, and a save through
+    PDFium.
+  - `tests/fill_sign.rs` (4) uses the fixtures: render-in-place, `SetRect`, `SetContents`, turned
+    pages, encrypted files, flatten read-back, and save.
+  - Unit tests cover `fill`, `pdf::image`, `forms`, `forms/appearance`, and the store.
+  - **UI:** `commands/forms.test.tsx` (11, in English and Arabic, including the permission gates).
+  - `cargo test --workspace` (378 after the merge), clippy (with and without `devtools`), fmt,
+    `pnpm test` (190), `tsc`, Biome, `cargo deny`, and the licence report are all clean.
+- **Checked by eye:**
+  - Renders of a filled form and of Fill & Sign items (PDFium).
+  - The Forms and Sign panels and the signature dialog in the browser preview, against the mock,
+    in Arabic (RTL) and English (LTR).
+  - Not run in the native shell. The end-to-end self-test does not cover forms.
+- **Merged with `main` after M5-b** (encryption, PR #13):
+  - **Conflicts** were additions on both sides: registry error codes, store imports, locale keys,
+    `pdf` modules, and the ADR index.
+  - **Permissions:** the new commands follow M5-b's gates. `form.setValue` needs `fillForms`, and
+    the `fill.*` commands need `annotate`. The panels show why when they are off.
+  - **Schema:** this branch takes state-store schema version 4; M5-b did not change the schema.
+- **Merged with `main` again after the M4 pipeline** (PRs #12 and #15): `ocr` and `forms` both
+  added to `lib.rs`, both branches made `png` and `serde_json` normal dependencies, and the session
+  logs met at the top of this list.
+
+### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
+
+- **The failures, broken down:** the 4B misses 11 of 171 fields.
+  - **6 are order:** "64-bit" is drawn "bit-64" in an Arabic line, and the image can't tell
+    which.
+  - **5 are misread digits** on degraded pages.
+  - **Voting doesn't fix them:** a plain vote (0.8B + Apple Vision) reaches only 94.2%.
+- **Spike** (`spikes/ocr-engines/reconcile_lines.py`, `reconcile_sim.py`):
+  - Line strips read at full resolution by both models fix most digit misreads.
+  - The fax and form digits don't settle under enlargement or binarisation.
+- **`safha_core::ocr`** (ADR 0033):
+  - `layout`: assessment, deskew, line strips.
+  - `order`: the unit-word fix.
+  - `reconcile`: words with statuses; corrections only when re-reads agree.
+  - `pipeline`: `QualityReader`, `PageResult`, `review_list`.
+  - `command`: an external program as the third reader. `apple-vision.swift` gets an `--image`
+    mode.
+  - The `ocr_eval` example gets `--pipeline [--vision] [--reread-all-strips]`.
+- **Measured through Rust on set v2** (Metal):
+  - **All five gates pass:** mixed 1.52% (0 order errors), numbers 99.4% (170 of 171), CER
+    0.60% (was 0.89%), table cells 100%, no regressions.
+  - **Corrections:** 7, all fixes.
+  - **The one field still wrong** (the 100 dpi fax's ١٢٣٤) is flagged.
+  - **Flags:** 36 words uncertain, 31 of them right (1.2% false alarms). 12 of 47 pages need a
+    decision.
+  - **Speed:** 24.9 s per page, 10 requests per page on average. CPU-only speed not measured.
+- **The numbers margin is one field.** The photocopied form's employee number was corrected in
+  Rust but only flagged in the spike. ADR 0033 lists what would widen the margin: re-reading the
+  number's own crop (needs word boxes), a digit-strong third reader, and real scans.
+- **Tests:**
+  - `cargo test --workspace` passes: 373 tests, plus 1 ignored (the real-model test). That
+    includes 17 new OCR unit tests (35 in all) for layout, order, reconcile, pipeline and
+    command.
+  - `clippy -D warnings` (with and without `devtools`), `fmt --check` and biome are clean.
+
+### M4 pipeline slice 1 — 2026-11-22 (recognition from Rust; branch `pomidor/m4-pipeline`)
+
+- **`safha_core::ocr`** (ADR 0032, accepted):
+  - **`OcrEngine` and `NuqtaEngine`.** `llama-server` runs as a child process: loopback only,
+    a per-run API key, stopped on drop, typed error codes.
+  - **`OcrImage`.** PNG in and out, and a Lanczos resize that matches Pillow bit for bit, so
+    the model sees the benchmark's pixels.
+  - **Text and confidence.** Markup removal as in the benchmark, and word confidence from
+    llama-server's token probabilities, across UTF-8 characters split between tokens.
+- **Measured through Rust** (`examples/ocr_eval.rs`):
+  - Nuqta 4B Q8_0 wrote byte-identical text to the benchmark's llama.cpp run on all 47 pages:
+    0.89% CER, no regression.
+  - 8.3 s per page on Metal, and 141 s on the CPU over 4 pages (same text).
+  - `examples/ocr_page.rs` reads rendered PDF pages: English, Arabic, and a rotated page.
+- **Finding for slice 3:** letting Nuqta 0.8B and Apple Vision outvote the 4B on digit words only
+  lifts fields from 93.6% to 94.2%, and on a fax page it swapped one wrong number for another. So
+  reconcile must re-read and flag, not vote.
+- **Dependencies:** `ureq` 3.5.2 without TLS, plus `ureq-proto` and `utf8-zero` (all MIT OR
+  Apache-2.0). `base64` 0.23 and `png` 0.18 were already in the tree. `cargo deny` and the licence
+  report pass.
+- **Tests:**
+  - `cargo test --workspace` passes: 350 tests, plus 1 ignored (the real-model test,
+    `tests/ocr.rs`, which passes with `--ignored` locally).
+  - 18 new unit tests.
+  - `clippy -D warnings` and `fmt --check` are clean.
+  - No UI changes; no command reaches the UI yet.
+- **Setup note:** this worktree's `target/` had been created as a real directory inside OneDrive.
+  `scripts/dev-setup.sh` now redirects it to the cache.
 
 ### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
 
@@ -597,6 +1005,44 @@ Test status at the end of this track (this Mac):
   - **Real scans (item 9).** Box truth for skewed and warped pages too.
 - **Tests:** no Rust or UI code changed. The scorer runs in this session used `safha-ocr-eval`
   as it was.
+
+### Session M5-b — 2026-11-22 (Milestone 5: encryption and permissions; PAdES spike)
+
+Branch `pomidor/m5-crypto-e11ba5`, from `main`. Stayed out of OCR, forms/Fill & Sign and exports.
+
+- **Encryption and permissions** (ADR 0043). `pdf::protect::rewrite` takes PDFium's full rewrite,
+  decrypts every object with the document's password, unpacks object streams, and writes it again
+  encrypted for the new settings (or plain): AES-256 revision 6 (random file key wrapped by user and
+  owner passwords, `/Perms`) and AES-128 revision 4. `safha_core::security` has `Permissions` (the `/P`
+  flags), `Protection`, `SecurityChange` (keep, remove, set) and `SecurityInfo` (cipher, revision,
+  flags, owner or user); `Document::security()` and `save::save_secured`.
+- **Unicode passwords:** R6 stores SASLprep-style normalised UTF-8 (NFKC, spaces, mapped-to-nothing),
+  read as typed then normalised, and `Engine::open_shared` retries PDFium with the normalised form.
+  AES-128 takes ASCII only (`password_not_encodable`). Tested with Arabic passwords (presentation forms
+  vs letters) and a decomposed accent.
+- **Rules:** changing protection needs the owner password when `/P` restricts anything (`not_permitted`);
+  a signed file is refused; undo starts over after the save (new bytes).
+- **UI:** commands `security.open|apply|cancel` (palette: "Password and permissions…"), a dialog with
+  mode, cipher, passwords, seven permission switches, Save and Save as…; the form lives only in the
+  dialog. `PERMISSION_GATES` in the registry disables Print, Copy, page edits, text edits, redaction and
+  markup for a file opened with its user password. English and Arabic strings.
+- **Tests:** seven integration tests (`tests/security.rs`: qpdf `--check` and `--show-encryption` for
+  both ciphers, user and owner passwords, owner-only files, Arabic, unlocking an encrypted fixture,
+  object streams, identical render), unit tests for the keys and normalisation, 7 UI tests.
+  Protection adds 4–5 % to a file; 21 ms for 1,000 pages (release).
+- **PAdES spike** (ADR 0044, `spikes/pades`, `make-test-pki.sh`): RustCrypto `cms` 0.3.0-rc.2 +
+  `x509-cert` + `x509-tsp` + `rsa` 0.10 + `p256` sign an incremental update (P-256, RSA-2048, an Arabic
+  subject, an RFC 3161 time-stamp). **Poppler `pdfsig`: valid and trusted; OpenSSL `cms -verify -cades` and
+  `ts -verify`: OK**; a flipped byte is caught; our engine opens it as signed and a later edit keeps it
+  valid. CMS 1.3–2.9 KB, signing 0.2–9 ms. Recommendation: build on this stack; B-B, then B-T, then B-LT.
+- **Not done / not checked:** Adobe Acrobat (not installed; ask someone to open the spike's PDFs), the
+  signing feature and UI, revocation, key import (`.p12`, keychain, smart cards); public-key security
+  handlers, RC4 writing, `/Perms` verification; the dialog was exercised with component tests, not
+  clicked through in the running app.
+- **For the owner:** two used crates are release candidates (`cms`, `x509-tsp`), pinned with `=`;
+  OK to build the signing feature on them until their stable releases?
+- Setup note: a fresh worktree has no PDFium or fixture corpus; symlink `third_party/pdfium` and
+  `fixtures/out` from the main checkout (both are git-ignored).
 
 ### Session M5-a — 2026-11-22 (Milestone 5: true redaction, pattern search, sanitize; parallel to M3/M4)
 

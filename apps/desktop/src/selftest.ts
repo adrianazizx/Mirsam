@@ -380,6 +380,7 @@ async function addedTextChecks(documentId: number) {
   const edited = "أضيف هذا النص الجديد إلى الصفحة";
   let blockEdited = false;
   let blockReadBack = false;
+  let bold = { applied: false, saved: false, readBack: false, typingMedianMs: -1, typingP95Ms: -1 };
   if (block) {
     await runCommand("text.editBlock", { page: 0, block });
     await runCommand("note.save", { text: edited });
@@ -389,6 +390,8 @@ async function addedTextChecks(documentId: number) {
       blockReadBack = (await pageText()).replace(/\s+/gu, " ").includes(edited);
       if (!blockReadBack) await new Promise((resolve) => setTimeout(resolve, 200));
     }
+    if (blockReadBack) bold = await boldFromTheEditor(documentId, edited, "الجديد");
+    if (bold.saved) await runCommand("edit.undo");
     await runCommand("edit.undo");
   }
   const blockFound = block !== undefined && block.text.replace(/\s+/gu, " ") === text && block.rtl;
@@ -404,7 +407,89 @@ async function addedTextChecks(documentId: number) {
     blockFound,
     blockEdited,
     blockReadBack,
+    boldApplied: bold.applied,
+    boldReadBack: bold.readBack,
+    typingMedianMs: bold.typingMedianMs,
+    typingP95Ms: bold.typingP95Ms,
   };
+}
+
+/**
+ * Bold from the paragraph editor (ADR 0025), in the real webview: `word` of
+ * the paragraph holding `text` is selected in the editor's field, made bold by
+ * the browser's own command (`text.bold`), saved with Cmd+Enter, and read back
+ * from the page as a bold run.
+ */
+async function boldFromTheEditor(documentId: number, text: string, word: string) {
+  const result = {
+    applied: false,
+    saved: false,
+    readBack: false,
+    typingMedianMs: -1,
+    typingP95Ms: -1,
+  };
+  const holds = (candidate: { text: string }) =>
+    candidate.text.replace(/\s+/gu, " ").includes(text);
+  const block = (await backend.pageTextBlocks(documentId, 0)).find(holds);
+  if (!block) return result;
+  await runCommand("text.editBlock", { page: 0, block });
+  let field: HTMLElement | null = null;
+  await waitFor(() => {
+    field = document.querySelector<HTMLElement>('[data-testid="block-field"]');
+    return field?.textContent?.includes(word) ?? false;
+  }, 5_000);
+  const editor = field as HTMLElement | null;
+  if (!editor) return result;
+  editor.focus();
+  // Typing latency (spec section 11: 32 ms a keystroke): each character to
+  // the frame that shows it, typed at the end and taken away again.
+  const end = document.createRange();
+  end.selectNodeContents(editor);
+  end.collapse(false);
+  document.getSelection()?.removeAllRanges();
+  document.getSelection()?.addRange(end);
+  const latencies: number[] = [];
+  for (const char of " تجربة") {
+    const started = performance.now();
+    document.execCommand("insertText", false, char);
+    await nextFrame();
+    latencies.push(performance.now() - started);
+  }
+  for (let i = 0; i < latencies.length; i += 1) document.execCommand("delete");
+  const sorted = [...latencies].sort((a, b) => a - b);
+  const pick = (q: number) =>
+    Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0);
+  result.typingMedianMs = pick(0.5);
+  result.typingP95Ms = pick(0.95);
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const at = node.textContent?.indexOf(word) ?? -1;
+    if (at < 0) continue;
+    const range = document.createRange();
+    range.setStart(node, at);
+    range.setEnd(node, at + word.length);
+    document.getSelection()?.removeAllRanges();
+    document.getSelection()?.addRange(range);
+    break;
+  }
+  await runCommand("text.bold");
+  const bolded = [...editor.querySelectorAll<HTMLElement>("b, strong, [style*='font-weight']")];
+  result.applied = bolded.some((element) => element.textContent?.includes(word));
+  editor.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }),
+  );
+  result.saved = await waitFor(() => useAppStore.getState().pendingNote === null, 5_000);
+  const until = performance.now() + 15_000;
+  while (result.saved && !result.readBack && performance.now() < until) {
+    const after = (await backend.pageTextBlocks(documentId, 0)).find(holds);
+    const at = after ? after.text.indexOf(word) : -1;
+    result.readBack =
+      after !== undefined &&
+      at >= 0 &&
+      after.runs.some((run) => run.bold && run.start <= at && run.end >= at + word.length);
+    if (!result.readBack) await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return result;
 }
 
 async function notesAndInkChecks(documentId: number) {

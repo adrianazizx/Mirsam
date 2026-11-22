@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri", "spikes/pdfium-edit", "spikes/pdfium-regenerate", "spikes/editor-surface"]
+members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri", "spikes/pdfium-edit", "spikes/pdfium-regenerate", "spikes/editor-surface", "spikes/pades"]
 # Spikes are throwaway prototypes: built on demand, never part of the default build.
 default-members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri"]
 
