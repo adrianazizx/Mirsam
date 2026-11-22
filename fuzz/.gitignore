@@ -4,3 +4,6 @@
 /corpus
 /artifacts
 /coverage
+# Resolved from the repository's Cargo.lock at build time (cp ../Cargo.lock .):
+# a copy kept here would go stale with every dependency change in safha-core.
+/Cargo.lock

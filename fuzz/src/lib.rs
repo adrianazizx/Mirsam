@@ -3,7 +3,8 @@
 //! Every target ends in [`exercise`]: the readers safha-core runs on a file's
 //! own bytes, without PDFium — the catalog reader, the page tree and the page
 //! edits written over it, the content-stream interpreter behind text blocks
-//! and redaction, the font and ToUnicode readers, sanitizing, and ink strokes.
+//! and redaction, the font and ToUnicode readers, form fields (and filling
+//! them in), decryption, sanitizing, and ink strokes.
 //! A panic, an arithmetic overflow, a hang or a stack overflow in any of them
 //! is a finding; an `Err` is the expected answer to a damaged file.
 //!
@@ -13,6 +14,7 @@
 //! ToUnicode CMap (`cmap`).
 
 use safha_core::edit::PageEdit;
+use safha_core::forms::FormEdit;
 use safha_core::redact::{Mark, SanitizeOptions};
 use safha_core::text::Rect;
 use safha_core::view::ViewTransform;
@@ -31,6 +33,17 @@ pub fn exercise(bytes: &[u8]) {
             let edited = [bytes, &update].concat();
             let _ = safha_core::catalog::catalog_hints(&edited);
             let _ = safha_core::block_edit::text_blocks(&edited, &view, 0);
+        }
+    }
+    // Forms are read with the document's password, if any; the fixtures' is
+    // `safha-test` (fixtures/generate.mjs), so encrypted seeds decrypt.
+    for password in [None, Some("safha-test")] {
+        let Ok(form) = safha_core::forms::read(bytes, password) else { continue };
+        for field in form.fields.iter().take(4) {
+            for values in [vec!["\u{0627}\u{0644} 12 ab".to_string()], Vec::new()] {
+                let edit = FormEdit { field: field.id, values };
+                let _ = safha_core::forms::form_update(bytes, password, &edit);
+            }
         }
     }
     let _ = safha_core::redact::sanitize_update(bytes, SanitizeOptions::default());

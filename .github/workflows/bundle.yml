@@ -57,15 +57,14 @@ jobs:
           - { os: macos-latest, target: universal-apple-darwin, run-as: arm64 x86_64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
           # The oldest supported Ubuntu: a deb or AppImage built here runs on
-          # newer distributions, not the other way round.
+          # newer distributions, not the other way round. Its qpdf is too old
+          # for the fixture generator, so the packages are self-tested on the
+          # latest Ubuntu instead (bundle-linux-selftest below).
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
     defaults:
       run:
         shell: bash
     env:
-      # WebKitGTK in a virtual machine: no GPU, no DMA-BUF.
-      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-      LIBGL_ALWAYS_SOFTWARE: "1"
       # linuxdeploy (AppImage bundling) is itself an AppImage; runners have no FUSE.
       APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
@@ -77,12 +76,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev build-essential file patchelf \
-            qpdf xvfb rpm2cpio cpio
-      - name: Virtual display (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          Xvfb :99 -screen 0 1600x1200x24 &
-          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+            rpm2cpio cpio
       - name: System packages (macOS)
         if: runner.os == 'macOS'
         run: brew install qpdf
@@ -116,12 +110,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: apps/desktop
       - name: Generate the fixture corpus
+        if: runner.os != 'Linux'
         run: node fixtures/generate.mjs
 
       - name: Build and check the installers
         run: node scripts/bundle.mjs --target "${{ matrix.target }}" --features devtools
 
       - name: Self-test each installer
+        if: runner.os != 'Linux'
         env:
           TARGET: ${{ matrix.target }}
           RUN_AS: ${{ matrix.run-as }}
@@ -150,6 +146,16 @@ jobs:
             const rows = r.artifacts.map((a) => `| ${a.kind} | ${a.file.split("/").pop()} | ${a.mib} MiB | ${a.withinBudget === undefined ? "–" : a.withinBudget ? "yes" : "**no**"} | ${a.pdfium ?? "–"} |`);
             console.log([`### ${r.target}`, "", "| Kind | File | Size | Within 60 MB | PDFium |", "|---|---|---|---|---|", ...rows].join("\n"));
           ' "$report" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the Linux packages for their self-test
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            target/${{ matrix.target }}/release/bundle/deb/*.deb
+            target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -157,4 +163,56 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/bundle/bundle-report.json
             selftest-out
+          if-no-files-found: ignore
+
+  bundle-linux-selftest:
+    name: Bundle self-test (Linux packages on the latest Ubuntu)
+    needs: bundle
+    # The matrix may fail elsewhere (macOS, Windows); the Linux packages
+    # still deserve their test if they were built.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      # WebKitGTK in a virtual machine: no GPU, no DMA-BUF.
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (the WebKitGTK runtime only)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 \
+            qpdf xvfb rpm2cpio cpio
+      - name: Virtual display
+        run: |
+          Xvfb :99 -screen 0 1600x1200x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Generate the fixture corpus
+        run: node fixtures/generate.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: packages
+      - name: Self-test each package
+        run: |
+          shopt -s nullglob globstar
+          installers=(packages/**/*.deb packages/**/*.rpm packages/**/*.AppImage)
+          [[ ${#installers[@]} -gt 0 ]] || { echo "no packages downloaded" >&2; exit 1; }
+          for installer in "${installers[@]}"; do
+            name="$(basename "$installer")"
+            echo "::group::$name"
+            scripts/bundle-selftest.sh "$installer" "selftest-out/$name"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bundle-linux-selftest
+          path: selftest-out
           if-no-files-found: ignore

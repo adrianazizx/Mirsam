@@ -6,8 +6,8 @@ for everything Mirsam does with a file's bytes before and after PDFium reads the
 
 | Target | The fuzzer controls | What runs |
 |---|---|---|
-| `open` | a whole file | `Engine::open_bytes` (PDFium, after our own catalog reader), then what the shell asks of a new document: page sizes, outline, labels, comments; and of its first two pages: text in reading order, annotations, text blocks, a small render |
-| `file` | a whole file | every PDFium-free reader in safha-core (`safha_fuzz::exercise`): catalog hints, the page tree and each page edit (then the edited file read back), text blocks, ink strokes, sanitize, redaction |
+| `open` | a whole file | `Engine::open_bytes` (PDFium, after our own catalog reader), then what the shell asks of a new document: page sizes, outline, labels, comments, form fields; and of its first two pages: text in reading order, annotations, text blocks, a small render |
+| `file` | a whole file | every PDFium-free reader in safha-core (`safha_fuzz::exercise`): catalog hints, the page tree and each page edit (then the edited file read back), text blocks, ink strokes, form fields and filling them in (decrypting with the fixtures' password), sanitize, redaction |
 | `objects` | the objects of a file, separated by `endobj`; the harness writes a correct xref table around them | the same readers, without the fuzzer having to guess byte offsets: page trees, inheritance, resources, streams and filters |
 | `content` | one page's content stream, on a page with real resources (simple and composite fonts, a form, an image, a hidden layer) | the content tokenizers and interpreters behind text blocks, redaction and sanitizing |
 | `cmap` | a composite font's ToUnicode CMap | the font and CMap readers, through text extraction, redaction and scrubbing |
@@ -30,6 +30,7 @@ needs it):
 ```bash
 node fixtures/generate.mjs   # the fixture corpus, if not generated yet
 node fuzz/seed.mjs           # seeds fuzz/corpus/<target> from it (needs qpdf)
+cp Cargo.lock fuzz/          # the app's dependency versions (fuzz/Cargo.lock is not committed)
 cd fuzz
 cargo fuzz run file -- -max_total_time=600 -max_len=600000 -dict=pdf.dict -timeout=20
 ```

@@ -1,6 +1,6 @@
 //! The app's open path: PDFium loads the bytes (after safha-core's own catalog
 //! reader), then what the shell asks of a newly opened document — page sizes,
-//! outline, labels, comments — and of its first pages: text in reading order,
+//! outline, labels, comments, form fields — and of its first pages: text in reading order,
 //! annotations, text blocks, a small render.
 //!
 //! Needs the PDFium library: `scripts/fetch-pdfium.sh` (found through the
@@ -25,6 +25,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = document.page_sizes();
         let _ = document.page_labels();
         let _ = document.comments();
+        let _ = document.form();
     }
     for index in 0..count.min(2) {
         let _ = document.page_text_view(index);

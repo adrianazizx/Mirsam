@@ -63,9 +63,13 @@ jobs:
         run: |
           node fixtures/generate.mjs
           node fuzz/seed.mjs
+      # The fuzz crate is its own workspace: start from the repository's
+      # versions, adding only the fuzzing crates.
+      - name: Dependencies as locked for the app
+        run: cp Cargo.lock fuzz/Cargo.lock
       - name: The templates the targets build read in full
         working-directory: fuzz
-        run: cargo test --lib --locked
+        run: cargo test --lib
       - name: Build the targets
         working-directory: fuzz
         run: cargo fuzz build
