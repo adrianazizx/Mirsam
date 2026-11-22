@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 14, with session M5-a and the M4 runtime side track merged from `main`).
+Last updated: 2026-11-22 (session 15, with session M5-a and the M4 runtime side track merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -437,8 +437,11 @@ Plan, in order:
           when they have the glyphs, between reusing codes and bundled faces.
         - Arabic from Chrome's subsets (no `GSUB`) works through presentation forms.
         - `fsType` is respected.
-        - Still to do: Type 1 and bare CFF programs, and the tashkeel spacing in `blocks`'
-          reading of Chrome's Arabic.
+        - Still to do: Type 1 and bare CFF programs.
+      - Session 15 (ADR 0023 amendment): **tashkeel.**
+        - Chrome's vocalised Arabic and this app's own read in place exactly: no stray spaces,
+          letters in order, marks on their letters.
+        - A vocalised paragraph's marks go with it when it is edited or removed.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -523,6 +526,23 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 15 — 2026-11-22 (Milestone 3: tashkeel in paragraphs edited in place)
+
+- **Found:**
+  - Chrome gives a cluster's text to a zero-width mark glyph off the line and none to the
+    letter. The result was stray spaces, swapped letters, and lost letters.
+  - This app's own marks below the line formed lines of their own and attached to the wrong
+    letters.
+  - **No mark's operator was part of its paragraph:** edits left marks on the page.
+- **Fixed in `blocks`:**
+  - carriers take their letter's box and baseline;
+  - marks find their letter by drawing order (direction-aware) and take its baseline;
+  - every mark's operator belongs to its paragraph.
+- **Measured:** 33 of 126 fixture paragraphs read exactly, up from 26. Chrome's vocalised
+  page and this app's tashkeel (Amiri, Plex Sans Arabic) are exact.
+- **Tests:** three unit tests, and two integration tests (vocalised ground truth, and no
+  leftover ink after removing a vocalised paragraph, in Chrome's text and this app's).
 
 ### Session 14 — 2026-11-22 (Milestone 3: the PDF's own embedded fonts, ADR 0026)
 

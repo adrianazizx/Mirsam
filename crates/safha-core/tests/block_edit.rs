@@ -674,6 +674,52 @@ fn bold_italic_the_page_lacks_sets_the_paragraph_in_bundled_faces() {
     assert!(run_with(&after, "without delay").2, "still italic");
 }
 
+// ------------------------------------------------------------------ tashkeel
+
+/// Chrome's vocalised Arabic: every paragraph reads back as the fixture's
+/// ground truth, with no spaces around marks and letters in order.
+#[test]
+fn vocalised_arabic_reads_as_written_with_no_gaps_around_its_marks() {
+    let manifest = manifest();
+    let fixture = manifest.fixture_or_unavailable("chrome/ar-vocalized").expect("a Chrome fixture");
+    let document = engine().open_file(&fixture.file(), None).expect("opens");
+    let blocks = document.text_blocks(0).expect("blocks");
+    let read: Vec<String> = blocks.iter().filter(|b| b.editable).map(|b| normalize(&b.text)).collect();
+    for expected in &fixture.expected {
+        assert!(read.contains(&normalize(&expected.text)), "{:?} not read; read: {read:#?}", expected.text);
+    }
+}
+
+/// Ink left in a block's box (with a margin) on page 0.
+fn ink_in(document: &Document, block: &TextBlock) -> usize {
+    let image = render(document, 0);
+    let area = (block.x - 1.0, block.y - 1.0, block.x + block.width + 1.0, block.y + block.height + 1.0);
+    changes_outside_and_ink_inside(&image, &image, area).1
+}
+
+#[test]
+fn a_vocalised_paragraph_removed_takes_its_marks_with_it() {
+    // Chrome draws each mark with its own operator.
+    let manifest = manifest();
+    let fixture = manifest.fixture_or_unavailable("chrome/ar-vocalized").expect("a Chrome fixture");
+    let document = engine().open_file(&fixture.file(), None).expect("opens");
+    let block = block_with(&document, 0, "ذَهَبَ");
+    assert!(ink_in(&document, &block) > 200);
+    let (edited, ..) = edit_to(&document, &block, 0, "");
+    assert_eq!(ink_in(&edited, &block), 0, "letters and marks all gone");
+
+    // So does this app: a mark is a glyph of its own in its own `Tj`.
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
+    let original = engine().open_bytes(bytes, None).expect("opens");
+    let vocalised = "بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ";
+    let document = add_text(&original, vocalised, FontFamily::Naskh, 300.0, 560.0);
+    let block = block_with(&document, 0, "بِسْمِ");
+    assert_eq!(normalize(&block.text), vocalised);
+    assert!(ink_in(&document, &block) > 200);
+    let (edited, ..) = edit_to(&document, &block, 0, "");
+    assert_eq!(ink_in(&edited, &block), 0, "its marks went with it");
+}
+
 // ----------------------------------------------------------- embedded fonts
 
 /// The `/BaseFont`s of fonts embedded by an update.
