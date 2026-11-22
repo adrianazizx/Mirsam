@@ -121,6 +121,7 @@
     "engine_unavailable": "The PDF engine could not start. Reinstalling Safha should fix this.",
     "generic": "Something went wrong. Please try again.",
     "file_missing": "That file has been moved or deleted.",
+    "print_failed": "The document could not be printed. Check the printer and try again.",
     "searchInvalid": "That search cannot be run. Check the regular expression.",
     "searchFailed": "The search could not be completed."
   },

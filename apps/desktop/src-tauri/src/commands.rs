@@ -215,26 +215,52 @@ pub async fn move_to_new_window(
     create_window(&app, &label)
 }
 
-/// Prints a document: a window shows it with the platform's own PDF viewer
-/// (WebKit on macOS, WebView2 on Windows), and prints once it has loaded, so
-/// the system print panel prints the PDF itself, at full vector quality.
-/// SPIKE (ADR 0012): verifying what each platform does with it.
+/// Prints a document with the platform's own print dialog.
+///
+/// On Linux, GTK's dialog, with PDFium drawing each page (ADR 0013). Elsewhere
+/// a window shows the PDF in the platform's own viewer (WebKit on macOS,
+/// WebView2 on Windows) and prints it once loaded, so the system print panel
+/// prints the PDF itself at full vector quality (ADR 0012; not yet seen on
+/// screen).
 #[tauri::command]
 pub async fn print_document(
     app: AppHandle,
+    window: WebviewWindow,
     state: State<'_, AppState>,
     document_id: u32,
 ) -> CommandResult<()> {
     let name = state.path_of(document_id).map(|path| display_name(&path)).unwrap_or_default();
-    if state.document(document_id).is_none() {
-        return Err(CommandError::unknown_document(document_id));
-    }
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    print_with_platform(&app, &window, &state, document_id, document, name).await
+}
+
+#[cfg(target_os = "linux")]
+async fn print_with_platform(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    _state: &AppState,
+    _document_id: u32,
+    document: std::sync::Arc<Document>,
+    name: String,
+) -> CommandResult<()> {
+    crate::print_linux::print(app, window.label(), document, name).await
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn print_with_platform(
+    app: &AppHandle,
+    _window: &WebviewWindow,
+    state: &AppState,
+    document_id: u32,
+    _document: std::sync::Arc<Document>,
+    name: String,
+) -> CommandResult<()> {
     let label = format!("print-{}", state.next_token());
     let base = if cfg!(windows) { "http://safha.localhost" } else { "safha://localhost" };
     let url = format!("{base}/document?doc={document_id}")
         .parse::<tauri::Url>()
         .map_err(|err| CommandError::new("window_error", err.to_string()))?;
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::CustomProtocol(url))
+    tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::CustomProtocol(url))
         .title(name)
         .inner_size(900.0, 1100.0)
         .on_page_load(|window, payload| {

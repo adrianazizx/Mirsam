@@ -161,7 +161,7 @@ function setReadingTheme(theme: ReadingTheme) {
 }
 
 /** Error codes with their own message under `errors.`; anything else is "generic". */
-const KNOWN_ERRORS = ["invalid_pdf", "engine_unavailable", "file_missing"];
+const KNOWN_ERRORS = ["invalid_pdf", "engine_unavailable", "file_missing", "print_failed"];
 
 function reportError(error: unknown) {
   const code = isBackendError(error) && KNOWN_ERRORS.includes(error.code) ? error.code : "generic";

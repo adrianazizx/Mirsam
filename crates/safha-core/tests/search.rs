@@ -28,6 +28,55 @@ fn hits(document: &Document, query: &str, options: SearchOptions) -> Vec<String>
         .collect()
 }
 
+/// Words that no search can find, because extraction cannot recover them
+/// (ADR 0008): `(64-bit)` in an Arabic line is drawn exactly like `(bit-64)`.
+const UNFINDABLE: &[(&str, &str)] = &[("chrome/mixed-inline", "64-bit")];
+
+/// The search half of the Milestone 1 exit test: on every fixture whose text
+/// layer is trustworthy, every word of the ground truth is found on its page,
+/// typed as written (with its tashkeel, hamza, and digits).
+#[test]
+fn every_word_of_every_trustworthy_fixture_is_found() {
+    let manifest = manifest();
+    let engine = Engine::global(&PdfiumSource::Auto).expect("PDFium is available");
+    let mut missing = Vec::new();
+    let mut checked = 0;
+    for fixture in manifest.fixtures.iter().filter(|f| !f.expected.is_empty()) {
+        let document = engine.open_file(&fixture.file(), fixture.password.as_deref()).expect("opens");
+        let page = document.page_text(0).expect("extracts");
+        if page.quality != safha_core::text::TextQuality::Good {
+            continue;
+        }
+        let name = fixture.name();
+        for block in &fixture.expected {
+            for word in block.text.split_whitespace() {
+                let word = word.trim_matches(|c: char| !(c.is_alphanumeric() || is_mark(c)));
+                if word.chars().filter(|c| c.is_alphanumeric()).count() < 2
+                    || UNFINDABLE.contains(&(name.as_str(), word))
+                {
+                    continue;
+                }
+                checked += 1;
+                let query = Query::new(word, SearchOptions::default()).expect("valid");
+                if query.find_on_page(&page).is_empty() {
+                    missing.push(format!("{name}: {word}"));
+                }
+            }
+        }
+    }
+    assert!(checked > 300, "only {checked} words checked: is the corpus complete?");
+    assert!(
+        missing.is_empty(),
+        "{} of {checked} words not found:\n  {}",
+        missing.len(),
+        missing.join("\n  ")
+    );
+}
+
+fn is_mark(c: char) -> bool {
+    matches!(c, '\u{064B}'..='\u{065F}' | '\u{0670}')
+}
+
 #[test]
 fn finds_arabic_without_typing_hamza_or_tashkeel() {
     let plain = open("chrome/ar-sans");

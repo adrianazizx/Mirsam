@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { backend } from "../backend";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
 import { commandForEvent, isCommandEnabled, runCommand, shortcutLabel } from "./registry";
 
@@ -26,6 +27,18 @@ describe("command registry", () => {
     expect(shortcutLabel("file.open", false)).toBe("Ctrl+O");
     expect(shortcutLabel("view.zoomIn", false)).toBe("Ctrl++");
     expect(shortcutLabel("app.toggleTheme")).toBeNull();
+  });
+
+  it("shows its own message when printing fails", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 2 });
+    const print = vi
+      .spyOn(backend, "printDocument")
+      .mockRejectedValue({ code: "print_failed", detail: "no printer" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await runCommand("file.print");
+    expect(print).toHaveBeenCalledWith(1);
+    expect(useAppStore.getState().errorCode).toBe("print_failed");
+    vi.restoreAllMocks();
   });
 
   it("disables document commands until a document is open", async () => {

@@ -34,6 +34,13 @@ impl Bitmap {
         &self.bgra
     }
 
+    /// The pixels as stored, without a copy (a print page at 600 dpi is
+    /// 140 MB). Rows are `width * 4` bytes; this is also cairo's `ARGB32`
+    /// layout on little-endian machines.
+    pub fn into_bgra(self) -> Vec<u8> {
+        self.bgra
+    }
+
     /// A copy with each pixel's bytes in R, G, B, A order (web `ImageData`, PNG).
     pub fn to_rgba(&self) -> Vec<u8> {
         let mut rgba = self.bgra.clone();

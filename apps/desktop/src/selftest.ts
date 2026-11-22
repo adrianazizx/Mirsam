@@ -190,19 +190,23 @@ export async function runSelftestIfRequested(): Promise<void> {
     return;
   }
   if (config.spike === "print" && painted) {
-    // Spike (ADR 0012): print through the platform's PDF viewer. The harness
-    // takes screenshots while this waits.
-    const { invoke } = await import("@tauri-apps/api/core");
+    // Print the open document. On Linux the shell resolves once GTK has
+    // finished (with SAFHA_PRINT_EXPORT, into a PDF file the harness checks;
+    // ADR 0013). On macOS and Windows it resolves once the print window opens,
+    // so the harness waits for screenshots (ADR 0012).
     const started = performance.now();
     let error: string | null = null;
     try {
-      await invoke("print_document", { documentId: painted.documentId });
+      await backend.printDocument(painted.documentId);
     } catch (caught) {
       error = JSON.stringify(caught);
     }
-    void backend.selftestLog(`print_document returned after ${performance.now() - started} ms`);
-    await new Promise((resolve) => window.setTimeout(resolve, 12_000));
-    await backend.selftestReport({ spike: "print", error }, null);
+    const printMs = Math.round(performance.now() - started);
+    void backend.selftestLog(`print_document returned after ${printMs} ms`);
+    if (!navigator.userAgent.includes("Linux")) {
+      await new Promise((resolve) => window.setTimeout(resolve, 12_000));
+    }
+    await backend.selftestReport({ spike: "print", error, printMs }, null);
     return;
   }
   if (config.spike?.startsWith("tile-memory:") && painted) {

@@ -9,6 +9,8 @@ mod commands;
 mod diagnostics;
 mod error;
 mod navigation;
+#[cfg(target_os = "linux")]
+mod print_linux;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;

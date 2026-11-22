@@ -205,6 +205,25 @@ jobs:
         run: scripts/selftest.sh fixtures/out/chrome/contract-two-column.pdf selftest-out/ar ar dark
       - name: Check the reports
         run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+      # GTK's print path, exported to a file instead of the dialog (ADR 0013):
+      # four pages turned 0, 90, 180 and 270 degrees must all come out.
+      - name: Print through GTK to a file (Linux)
+        if: runner.os == 'Linux'
+        env:
+          SAFHA_SELFTEST_SPIKE: print
+        run: |
+          SAFHA_PRINT_EXPORT="$PWD/selftest-out/print/printed.pdf" \
+            scripts/selftest.sh fixtures/out/derived/rotated.pdf selftest-out/print en light
+          cat selftest-out/print/report.json
+          node -e 'const r = require("./selftest-out/print/report.json").results; if (r.error) { console.error(r.error); process.exit(1); }'
+          pages="$(qpdf --show-npages selftest-out/print/printed.pdf)"
+          echo "printed $pages pages, $(wc -c < selftest-out/print/printed.pdf) bytes"
+          test "$pages" = 4
+          # Small previews of what was printed, for the uploaded artifact.
+          for page in 0 1 2 3; do
+            cargo run -q -p safha-core --example render_png -- \
+              selftest-out/print/printed.pdf "selftest-out/print/page-$page.png" "$page" 0.4
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:

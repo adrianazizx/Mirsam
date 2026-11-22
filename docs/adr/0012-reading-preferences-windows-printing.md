@@ -97,7 +97,7 @@ API.
   - that `print()` prints every page rather than the visible part;
   - encrypted documents: PDFium's save keeps the encryption, so the viewer may ask for the
     password again;
-  - Linux: WebKitGTK has no PDF viewer and needs another path.
+  - Linux: WebKitGTK has no PDF viewer. Linux prints through GTK instead (ADR 0013).
 
 ## Consequences
 
