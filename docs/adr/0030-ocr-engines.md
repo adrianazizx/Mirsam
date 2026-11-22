@@ -234,11 +234,99 @@ five wrong digits on degraded pages (below).
    Arabic-only configuration wrecks English (79.6% CER on the English page). As a quick draft layer
    for search it would put a third of the Arabic words wrong.
 
+## Follow-up: Nuqta through a shippable runtime (llama.cpp, GGUF)
+
+Measured later the same day (branch `pomidor/m4-runtime-8c1840`). The app will not ship Python, so
+both Nuqta models were re-run through llama.cpp, the runtime their authors publish builds for.
+Harness: `spikes/ocr-engines/run_llamacpp.py`.
+
+**Runtime and files (checked 2026-11-22):**
+
+| | Version | Licence | Size |
+|---|---|---|---|
+| llama.cpp (`llama-server`, Metal and CPU backends) | 1.0.0, build 12359 (commit `b1b770d`), Homebrew bottle | MIT (ggml authors; its bundled cpp-httplib and nlohmann/json are MIT too) | 21 MiB installed |
+| `SalahALHaismawi/Nuqta-Arabic-OCR-4B-GGUF` (revision `f4fdd78`, 2026-10-27) | `Q8_0`, `Q4_K_M`, vision encoder `mmproj-f16` | Apache-2.0 (LICENSE file in the repo) | 4.5 / 2.7 GiB + 0.63 GiB |
+| `SalahALHaismawi/Nuqta-Arabic-OCR-0.8B-GGUF` (revision `4f72054`, 2026-10-27) | `Q8_0`, `Q4_K_M`, `mmproj-f16` | Apache-2.0 | 0.81 / 0.52 GiB + 0.19 GiB |
+
+These are the model authors' own conversions of the same weights, so no custom model licence is
+involved. MLX was not measured: llama.cpp also runs on Windows and Linux, and at Q8_0 it already
+reproduces the reference exactly (below), so MLX has nothing left to win on accuracy.
+
+**Settings:** the model cards' own. Same prompt and the same 2.4 MP input as the Transformers
+runs; `-c 8192 --image-max-tokens 4096`, temperature 0, one request per page to a server loaded
+once. The CPU runs use `-ngl 0 --no-mmproj-offload` (no GPU at all, vision encoder included) and
+llama.cpp's default 10 threads.
+
+**Accuracy (set v2, 47 pages, Metal).** Reports: `ocr-eval/baselines/nuqta-*-llamacpp.set-v2.json`.
+
+| Category | n | 0.8B bf16 (Transformers) | 0.8B Q8_0 | 0.8B Q4_K_M | 4B bf16 (Transformers) | 4B Q8_0 | 4B Q4_K_M |
+|---|---|---|---|---|---|---|---|
+| Clean Arabic, 300 dpi (gated) | 4 | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 0.08% |
+| Other typefaces | 4 | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% |
+| Diacritized | 3 | 0.12% | 0.12% | 0.12% | 0.00% | 0.00% | 0.00% |
+| Degraded Arabic (gated) | 11 | 0.03% | 0.03% | 0.03% | 0.00% | 0.00% | 0.00% |
+| Severe scans | 12 | 1.84% | 1.84% | 2.38% | 1.59% | 1.59% | 1.56% |
+| Mixed Arabic/English (gated) | 4 | 5.56% | 5.56% | 5.69% | 2.07% | 2.07% | 2.07% |
+| Degraded mixed | 4 | 5.86% | 5.75% | 10.09% | 1.52% | 1.52% | 3.19% |
+| Numbers, dates, IDs | 14 | 4.36% | 4.32% | 5.83% | 1.38% | 1.38% | 1.95% |
+| Tables and forms | 5 | 0.92% | 0.92% | 0.84% | 0.31% | 0.31% | 0.31% |
+| Clean English (gated) | 1 | 0.40% | 0.40% | 0.40% | 0.00% | 0.00% | 0.00% |
+| **All pages** | 47 | 2.02% | **2.01%** | 2.68% | 0.89% | **0.89%** | 1.09% |
+| Fields exact (171) | | 95.3% | 95.3% | 94.7% | 93.6% | 93.6% | 93.6% |
+| Reading-order errors | | 6 | 6 | 8 | 0 | 0 | 0 |
+| Pages with the same text as bf16 | | – | 46 / 47 | 36 / 47 | – | **47 / 47** | 40 / 47 |
+
+- **Q8_0 loses nothing.** The 4B at Q8_0 writes byte-for-byte the text the bf16 model wrote on
+  all 47 pages. The 0.8B at Q8_0 differs on one page and scores the same.
+- **Q4_K_M costs accuracy where it matters most:** degraded mixed lines (1.52% → 3.19% for the
+  4B, 5.9% → 10.1% for the 0.8B) and digits (1.38% → 1.95%). Ship Q8_0.
+- **CPU and Metal agree** on 20 of the 24 pages run on both, and on all 4 for the 4B at Q8_0.
+  The four that differ are mixed or photocopied pages. The 4B Q4_K_M's one difference is an en
+  dash for an em dash.
+- **Q8_0 is no slower than Q4_K_M on the CPU** (143 s against 148 s for the 4B), so Q8_0 is the
+  build everywhere.
+
+**The two failing gates do not move.** The runtime reproduces the reference, so the 4B still
+misses mixed Arabic/English (2.07% against 2%) and numbers (93.6% of fields against 99%; 97.0%
+without "64-bit"). Both need the pipeline steps in Consequences 3, not a different runtime.
+
+**Speed and memory.** This Mac (M3 Max, 14 cores) had other sessions' builds running, so these
+are noisy. Peak RSS is `llama-server`'s; on Apple silicon it includes the Metal buffers.
+
+| Model | Backend | Pages timed | Seconds per page | Peak RSS | Weights + encoder |
+|---|---|---|---|---|---|
+| 0.8B Q8_0 | Metal | 47 | 2.7 | 3.8 GiB | 1.0 GiB |
+| 0.8B Q4_K_M | Metal | 47 | 2.2 | 4.9 GiB | 0.7 GiB |
+| 4B Q8_0 | Metal | 47 | 8.4 | 14.2 GiB | 5.1 GiB |
+| 4B Q4_K_M | Metal | 47 | 7.6 | 9.9 GiB | 3.3 GiB |
+| 0.8B Q8_0 | CPU only | 8 | **46** | 3.1 GiB | 1.0 GiB |
+| 0.8B Q4_K_M | CPU only | 8 | 50 | 2.6 GiB | 0.7 GiB |
+| 4B Q8_0 | CPU only | 4 | **143** | 11.1 GiB | 5.1 GiB |
+| 4B Q4_K_M | CPU only | 4 | 148 | 7.6 GiB | 3.3 GiB |
+
+(Through Transformers the 0.8B took 677 s for one page on the CPU and 2.9 s on Metal; the 4B took
+10.2 s on Metal.) The CPU pages are every 6th (0.8B) or 12th (4B) page of the set, so they
+include the severe, vocalized and mixed conditions.
+
+- **On the CPU, reading the image is the cost.** A page is 2,420 image tokens. Encoding and
+  prefilling them takes 95–97% of the time: 44–49 s for the 0.8B, 128–147 s for the 4B. Writing
+  the ~130 output tokens takes 2–5 s. A smaller input would be faster, but its accuracy was not
+  measured, and accuracy comes first.
+- **Usable as a background job.** At 46 s per page the 0.8B reads a 10-page document in about 8
+  minutes on this CPU, and the 4B in about 25. Slower laptop CPUs will take two to four times as
+  long. Spec §8 sets no speed target for quality mode and asks for the most accurate engine that
+  runs "even slowly".
+
 ## Decision
 
 - **Primary recogniser: Nuqta-Arabic-OCR 4B.** Use the "as written" plain-text prompt and the
   card's 2.4 MP input size. It is the default wherever the hardware can run it, which is the
   spec's best-quality tier.
+- **Runtime: llama.cpp with the authors' Q8_0 GGUF builds** (follow-up above). Q8_0 reproduces
+  the bf16 text exactly; Q4_K_M is not shipped. How the app drives llama.cpp (a bundled
+  `llama-server` beside the app, or a Rust binding crate) is an integration choice for the
+  pipeline task. Either way its licence is checked then, and the workspace's `unsafe` ban
+  stays in our crates.
 - **Ensemble partner: Nuqta-Arabic-OCR 0.8B,** for two kinds of re-reading:
   - **Lines.** It re-reads every line holding a word under the primary's confidence threshold
     (start at 0.95; finding 3).
@@ -251,12 +339,15 @@ five wrong digits on degraded pages (below).
   have flagged all five wrong digit fields; without the third reader, four, since both Nuqta models
   wrote ١٣٣٤ on the photocopy. Where the platform has no OCR, the third reader is still open. The ensemble is there to catch errors, not to vote the
   text into shape.
-- **Weak-hardware default: Nuqta 0.8B alone.** It runs correctly without a GPU: the same text as on Metal for the page
-  tried. But through Transformers on the CPU it took 677 s for one 300 dpi page (2.9 s on Metal).
-  Transformers falls back to an unoptimized implementation of Qwen3.5's linear-attention layers
-  there. The 4B was not timed on the CPU. This default holds only if a native runtime (llama.cpp,
-  for which GGUF builds exist) brings CPU-only speed into a usable range. That is the first thing
-  to measure next. Until then a CPU-only machine has only the Tesseract draft.
+- **Machines without a usable GPU: Nuqta 4B on the CPU** (decided by the owner, 2026-11-22).
+  Through llama.cpp the 4B runs on the CPU alone, and the spec puts the most accurate engine
+  first if it runs even slowly. On this CPU it takes 143 s per page (Q8_0, 11 GiB peak memory).
+  Through Transformers the 0.8B took 677 s per page on the CPU, because Transformers falls back
+  to an unoptimized implementation of Qwen3.5's linear-attention layers there.
+  - **Nuqta 0.8B alone** (Q8_0, 46 s per page on the CPU, 3 GiB) is only for machines whose
+    memory cannot hold the 4B.
+  - **Still open:** that memory threshold. It is set once the 4B is timed on a typical Windows
+    laptop.
 - **Quick draft pass (searchable within moments):** the platform's built-in OCR where there is one
   (Apple Vision on macOS: 0.27 s per page, 9.5% CER). Elsewhere it is Tesseract `ara+eng`, marked
   as a draft and replaced page by page. Windows' built-in OCR is not measured yet.
@@ -264,8 +355,9 @@ five wrong digits on degraded pages (below).
   PP-OCRv5 Arabic as a recogniser (finding 7), Baseer (no weights for documents).
 
 This changes the spec's §8 engine table, which expected PP-OCRv5 as the classical "default on weak
-hardware and second opinion". The measurements put Nuqta 0.8B in both roles. PP-OCRv5's detector
-may still provide word boxes (below).
+hardware and second opinion". The measurements put Nuqta in both roles. PP-OCRv5's detector,
+with its Arabic recogniser as a guide, provides the word boxes (ADR 0031). The spec's §8 engine
+table and its §9 "OCR runtime" row now say this (updated 2026-11-22, at the owner's request).
 
 ## Known limits
 
@@ -277,25 +369,22 @@ may still provide word boxes (below).
 - **Small set.** 47 pages and 171 fields, so one page moves a category by several points.
 - **Commercial editors not measured.** Acrobat and ABBYY FineReader need the owner. Apple Vision is
   the only commercial OCR measured.
-- **Accuracy was measured in Python, bf16 on Metal.** The app will not ship Transformers. Quantized
-  builds (the GGUF builds for llama.cpp, or MLX) must be re-measured on this set before the
-  pipeline relies on them.
-- **No word boxes.** Nuqta outputs text without positions. The spec's text layer needs word boxes,
-  so a detector and an alignment step are still to be chosen and measured. PP-OCRv5's server detector
-  (Apache-2.0, 84 MiB) is the obvious first candidate; it was not measured on its own here.
+- **Runtime measured on macOS only.** llama.cpp at Q8_0 reproduces the bf16 text on Metal. CPU
+  runs cover 24 pages on an M3 Max; a typical Windows or Linux laptop CPU, and llama.cpp's other
+  GPU backends (Vulkan, CUDA), are not measured.
+- **Word boxes** come from a separate detector and an alignment step: ADR 0031.
 - **Model risk.** Nuqta is a month old, from a three-person team. The weights are Apache-2.0, so
   they can be pinned and mirrored. Before shipping, check what its training data was and under
   which terms.
-- **Timings** come from one Mac with other builds running. CPU-only speed was measured on one
-  page through Transformers only. PP-OCRv5's numbers are PaddlePaddle's
+- **Timings** come from one Mac with other builds running. PP-OCRv5's numbers are PaddlePaddle's
   CPU backend on macOS, not ONNX Runtime (spec §8's plan).
 
 ## Consequences / what M4 does next
 
-1. Re-measure Nuqta 4B and 0.8B through the runtime the app would ship (GGUF via llama.cpp, or
-   MLX on macOS) at full and 8-bit precision. Accuracy must not drop. Any new download goes to the
-   owner first.
-2. Word boxes: a detector plus alignment for VLM text, measured on the same set.
+1. ~~Re-measure Nuqta through a shippable runtime.~~ Done (follow-up above): llama.cpp Q8_0
+   matches bf16. The owner made the 4B the default on CPU-only machines too. Next: time it on a
+   typical Windows laptop and set the memory threshold below which the 0.8B is used instead.
+2. ~~Word boxes.~~ Spiked and measured: ADR 0031.
 3. Fix in the pipeline, not the engine: logical order for left-to-right runs inside right-to-left
    lines ("bit-64"), and the digit check above. Then re-check the mixed and numbers gates.
 4. The owner: real scans (item 9), and if possible Acrobat Pro or ABBYY on `ocr-eval/out/images/`
