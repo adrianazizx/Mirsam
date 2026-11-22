@@ -1,8 +1,10 @@
 import {
   type BlockMark,
   backend,
+  type CompressOptions,
   type EditOutcome,
   FILL_KINDS,
+  type ImageFormat,
   isBackendError,
   type MarkupKind,
   type OpenOutcome,
@@ -15,7 +17,9 @@ import {
   type SanitizeOptions,
   type SecurityChange,
   type SplitBy,
+  type StampArg,
   type StrokePoint,
+  type TextFormat,
   type TextStyle,
   type ViewRect,
 } from "../backend";
@@ -27,6 +31,7 @@ import {
   type FillTool,
   type LeftPanel,
   type OpenDocument,
+  type OutputDialog,
   type ReadingTheme,
   selectActiveDocument,
   useAppStore,
@@ -142,6 +147,15 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /** `output.stamp`: the header, footer, page numbers, or watermark (`pages` above). */
+  stamp?: StampArg;
+  /** `output.exportImages`: resolution and format (`pages` above). */
+  dpi?: number;
+  imageFormat?: ImageFormat;
+  /** `output.exportText` (`pages` above). */
+  textFormat?: TextFormat;
+  /** `output.compress`. */
+  compress?: CompressOptions;
   /** `note.save` of a paragraph: bold and italic as its field set them (ADR 0025). */
   blockMarks?: BlockMark[];
   /** `form.setValue`: the field (its id) and its new value (as `FormField.values`). */
@@ -280,6 +294,19 @@ export type CommandId =
   | "pages.extract"
   | "pages.split"
   | "pages.splitInto"
+  | "pages.headerFooter"
+  | "pages.pageNumbers"
+  | "pages.watermark"
+  | "file.exportImages"
+  | "file.exportText"
+  | "file.compress"
+  | "output.stamp"
+  | "output.pickImage"
+  | "output.exportImages"
+  | "output.exportText"
+  | "output.compress"
+  | "output.saveCompressed"
+  | "output.cancel"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -330,6 +357,11 @@ export type CommandId =
 
 const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
+/** An open document that is not encrypted. */
+const isUnencrypted = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  return active !== null && !active.security?.encrypted;
+};
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
 const hasAnnotationSelected = (state: AppState) =>
@@ -383,6 +415,11 @@ export function targetPages(state: AppState = store()): number[] {
   if (!active) return [];
   if (state.activeTool === "pages" && active.selectedPages.length > 0) return active.selectedPages;
   return [active.page];
+}
+
+/** Opens an output dialog (ADR 0050). */
+function openOutput(dialog: OutputDialog): void {
+  store().setOutputDialog(dialog);
 }
 
 /**
@@ -574,6 +611,9 @@ const KNOWN_ERRORS = [
   "text_failed",
   "no_bookmarks",
   "redaction_failed",
+  "no_image",
+  "image_unreadable",
+  "compress_stale",
   "store_unavailable",
   "password_not_encodable",
   "not_permitted",
@@ -1056,6 +1096,103 @@ const DECLARED: Command[] = [
       const count = await backend.splitDocument(active.id, split);
       if (count !== null) store().setNotice({ key: "split", values: { count: String(count) } });
     },
+  },
+  // Output (ADR 0050): each opens its dialog; the dialog runs `output.*` with what was chosen.
+  ...(
+    [
+      ["pages.headerFooter", "headerFooter"],
+      ["pages.pageNumbers", "pageNumbers"],
+      ["pages.watermark", "watermark"],
+      ["file.exportImages", "exportImages"],
+      ["file.exportText", "exportText"],
+      ["file.compress", "compress"],
+    ] as const
+  ).map(
+    ([id, dialog]): Command => ({
+      id,
+      // Compression rewrites the file, which this app does not do to an encrypted one (ADR 0050).
+      isEnabled: id === "file.compress" ? isUnencrypted : hasDocument,
+      run: () => openOutput(dialog),
+    }),
+  ),
+  {
+    id: "output.stamp",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.stamp || !arg.pages || arg.pages.length === 0) return;
+      const outcome = await backend.stampPages(active.id, arg.pages, arg.stamp);
+      store().setOutputDialog(null);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "output.pickImage",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run() {
+      const name = await backend.pickWatermarkImage();
+      if (name) store().setWatermarkImage(name);
+    },
+  },
+  {
+    id: "output.exportImages",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.pages || arg.pages.length === 0 || !arg.imageFormat || !arg.dpi) return;
+      const count = await backend.exportPageImages(active.id, arg.pages, arg.dpi, arg.imageFormat);
+      if (count === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "exportedImages", values: { count: String(count) } });
+    },
+  },
+  {
+    id: "output.exportText",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.pages || arg.pages.length === 0 || !arg.textFormat) return;
+      const name = await backend.exportText(active.id, arg.pages, arg.textFormat);
+      if (name === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "exportedText", values: { name } });
+    },
+  },
+  {
+    // Compresses in memory and shows the sizes; nothing is written yet.
+    id: "output.compress",
+    paletteHidden: true,
+    isEnabled: isUnencrypted,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.compress) return;
+      store().setCompressed(null);
+      const report = await backend.compressDocument(active.id, arg.compress);
+      store().setCompressed({ documentId: active.id, report });
+    },
+  },
+  {
+    id: "output.saveCompressed",
+    paletteHidden: true,
+    isEnabled: (state) =>
+      state.compressed !== null && state.compressed.documentId === state.activeDocumentId,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const name = await backend.saveCompressed(active.id);
+      if (name === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "compressedSaved", values: { name } });
+    },
+  },
+  {
+    id: "output.cancel",
+    paletteHidden: true,
+    run: () => store().setOutputDialog(null),
   },
   {
     // Opens a page from the organizer in the page view.
@@ -2232,6 +2369,15 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "comment.textBox": "annotate",
   "comment.pen": "annotate",
   "annotation.delete": "annotate",
+  // Output (ADR 0050): stamps change pages; exports take their content out.
+  "pages.headerFooter": "modify",
+  "pages.pageNumbers": "modify",
+  "pages.watermark": "modify",
+  "output.stamp": "modify",
+  "file.exportImages": "copy",
+  "output.exportImages": "copy",
+  "file.exportText": "copy",
+  "output.exportText": "copy",
   // Form filling and Fill & Sign (ADR 0045).
   "form.setValue": "fillForms",
   "fill.text": "annotate",
