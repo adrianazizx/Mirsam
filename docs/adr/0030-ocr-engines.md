@@ -286,7 +286,7 @@ llama.cpp's default 10 threads.
 - **Q8_0 is no slower than Q4_K_M on the CPU** (143 s against 148 s for the 4B), so Q8_0 is the
   build everywhere.
 
-**The two failing gates do not move.** The runtime reproduces the reference, so the 4B still
+**The two failing gates do not move here** (ADR 0033 later passes both, in the pipeline). The runtime reproduces the reference, so the 4B still
 misses mixed Arabic/English (2.07% against 2%) and numbers (93.6% of fields against 99%; 97.0%
 without "64-bit"). Both need the pipeline steps in Consequences 3, not a different runtime.
 
@@ -385,8 +385,10 @@ table and its §9 "OCR runtime" row now say this (updated 2026-11-22, at the own
    matches bf16. The owner made the 4B the default on CPU-only machines too. Next: time it on a
    typical Windows laptop and set the memory threshold below which the 0.8B is used instead.
 2. ~~Word boxes.~~ Spiked and measured: ADR 0031.
-3. Fix in the pipeline, not the engine: logical order for left-to-right runs inside right-to-left
-   lines ("bit-64"), and the digit check above. Then re-check the mixed and numbers gates.
+3. ~~Fix in the pipeline, not the engine: logical order for left-to-right runs inside
+   right-to-left lines ("bit-64"), and the digit check above. Then re-check the mixed and numbers
+   gates.~~ Done in ADR 0033: through the reconcile pipeline all five gates pass on set v2 (mixed
+   1.52%, numbers 99.4%, the latter by one field).
 4. The owner: real scans (item 9), and if possible Acrobat Pro or ABBYY on `ocr-eval/out/images/`
    for the commercial comparison.
 5. Gates stay as they are (spec: only ever tightened). `degraded-arabic-severe` gets a gate once

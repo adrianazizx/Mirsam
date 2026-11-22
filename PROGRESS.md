@@ -435,9 +435,9 @@ Plan, in order:
     - Synthetic set only.
     - Acrobat and ABBYY not measured.
     - CPU speed measured on an M3 Max only, not on a typical Windows laptop.
-  - **Gates the best engine still fails, unchanged through llama.cpp:** mixed Arabic/English
-    (2.07% CER against 2%) and numbers (93.6% against 99%; 97.0% without "64-bit"). They need the
-    pipeline's logical-order and digit-check steps.
+  - **Gates:** the 4B alone fails two, mixed Arabic/English (2.07% CER against 2%) and numbers
+    (93.6% against 99%). Through the reconcile pipeline (ADR 0033) **all five pass**: mixed
+    1.52%, numbers 99.4%. Numbers pass by one field.
 - [x] `ocr-eval` set v2 (47 samples):
   - Severe scans (a new tracked category) and an Arabic form.
   - Table-cell scoring.
@@ -464,15 +464,23 @@ Plan, in order:
       CER), at 8.3 s per page on Metal and 141 s on the CPU.
   - [ ] **2. Word boxes in Rust:** the PP-OCRv5 detector through ONNX Runtime, and ADR 0031's
         alignment.
-  - [ ] **3. Reconcile and verify:**
-    - Re-read numbers, dates, IDs and low-confidence lines from crops.
-    - Find omitted lines.
-    - Flag what still disagrees, never voting silently. A plain vote of 0.8B + Apple Vision
-      against the 4B only reaches 94.2% of fields, and swaps one wrong number for another.
-    - Re-check the mixed and numbers gates.
+  - [x] **3. Reconcile and verify** (ADR 0033): `QualityReader`.
+    - **Assessment:** skew and specks.
+    - **Deskewed line strips,** found without a detector.
+    - **Order fix:** number–unit compounds ("bit-64" → "64-bit") in Arabic lines.
+    - **Re-reads:** every number and every word under 0.95 is re-read: by the 0.8B (page and
+      strips), by the 4B (the strips holding targets), and optionally by the platform OCR for
+      numbers.
+    - **Reconcile:** a word is corrected only when the re-reads agree; otherwise it is flagged.
+    - **Results:** 7 corrections, none wrong. CER 0.60%. All five gates pass.
+    - **Cost:** 24.9 s per page on Metal.
+    - **Still open:** omitted lines ("Lease Agreement") wait for slice 2's detector. CPU-only
+      cost is not measured.
   - [ ] **4. Assembly into the text layer** in logical order (spec §6.3).
 - [ ] Background jobs with draft-then-quality results; survives restart
-- [ ] Word-level confidence, pages-needing-review list
+- [~] Word-level confidence, pages-needing-review list. The engine side is done (ADR 0033):
+      each word has a probability and a status, and `review_list` gives the pages needing
+      review. The UI is not built yet.
 - [ ] Searchable-PDF output in logical order
 - [ ] Model download manager; hardware acceleration
 - [ ] Benchmark gate in CI
@@ -517,6 +525,41 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
+
+- **The failures, broken down:** the 4B misses 11 of 171 fields.
+  - **6 are order:** "64-bit" is drawn "bit-64" in an Arabic line, and the image can't tell
+    which.
+  - **5 are misread digits** on degraded pages.
+  - **Voting doesn't fix them:** a plain vote (0.8B + Apple Vision) reaches only 94.2%.
+- **Spike** (`spikes/ocr-engines/reconcile_lines.py`, `reconcile_sim.py`):
+  - Line strips read at full resolution by both models fix most digit misreads.
+  - The fax and form digits don't settle under enlargement or binarisation.
+- **`safha_core::ocr`** (ADR 0033):
+  - `layout`: assessment, deskew, line strips.
+  - `order`: the unit-word fix.
+  - `reconcile`: words with statuses; corrections only when re-reads agree.
+  - `pipeline`: `QualityReader`, `PageResult`, `review_list`.
+  - `command`: an external program as the third reader. `apple-vision.swift` gets an `--image`
+    mode.
+  - The `ocr_eval` example gets `--pipeline [--vision] [--reread-all-strips]`.
+- **Measured through Rust on set v2** (Metal):
+  - **All five gates pass:** mixed 1.52% (0 order errors), numbers 99.4% (170 of 171), CER
+    0.60% (was 0.89%), table cells 100%, no regressions.
+  - **Corrections:** 7, all fixes.
+  - **The one field still wrong** (the 100 dpi fax's ١٢٣٤) is flagged.
+  - **Flags:** 36 words uncertain, 31 of them right (1.2% false alarms). 12 of 47 pages need a
+    decision.
+  - **Speed:** 24.9 s per page, 10 requests per page on average. CPU-only speed not measured.
+- **The numbers margin is one field.** The photocopied form's employee number was corrected in
+  Rust but only flagged in the spike. ADR 0033 lists what would widen the margin: re-reading the
+  number's own crop (needs word boxes), a digit-strong third reader, and real scans.
+- **Tests:**
+  - `cargo test --workspace` passes: 373 tests, plus 1 ignored (the real-model test). That
+    includes 17 new OCR unit tests (35 in all) for layout, order, reconcile, pipeline and
+    command.
+  - `clippy -D warnings` (with and without `devtools`), `fmt --check` and biome are clean.
 
 ### M4 pipeline slice 1 — 2026-11-22 (recognition from Rust; branch `pomidor/m4-pipeline`)
 
