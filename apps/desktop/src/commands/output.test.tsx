@@ -124,6 +124,34 @@ describe("output commands (ADR 0050)", () => {
     },
   );
 
+  it("follows the file's permissions, and does not compress an encrypted file (ADR 0043)", () => {
+    const permissions = {
+      print: true,
+      printHighQuality: true,
+      modify: false,
+      copy: false,
+      annotate: true,
+      fillForms: true,
+      accessibility: true,
+      assemble: true,
+    };
+    useAppStore.setState((state) => ({
+      documents: state.documents.map((document) => ({
+        ...document,
+        security: { encrypted: true, cipher: "aes256", revision: 6, permissions, owner: false },
+      })),
+    }));
+    for (const id of [
+      "pages.pageNumbers",
+      "pages.watermark",
+      "file.exportText",
+      "file.exportImages",
+      "file.compress",
+    ] as const) {
+      expect(isCommandEnabled(id), id).toBe(false);
+    }
+  });
+
   it("the compress dialog shows the sizes before anything is saved", async () => {
     render(<App />);
     await act(() => runCommand("file.compress"));

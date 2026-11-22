@@ -294,6 +294,11 @@ export type CommandId =
 
 const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
+/** An open document that is not encrypted. */
+const isUnencrypted = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  return active !== null && !active.security?.encrypted;
+};
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
 const hasAnnotationSelected = (state: AppState) =>
@@ -954,7 +959,8 @@ const DECLARED: Command[] = [
   ).map(
     ([id, dialog]): Command => ({
       id,
-      isEnabled: hasDocument,
+      // Compression rewrites the file, which this app does not do to an encrypted one (ADR 0050).
+      isEnabled: id === "file.compress" ? isUnencrypted : hasDocument,
       run: () => openOutput(dialog),
     }),
   ),
@@ -1009,7 +1015,7 @@ const DECLARED: Command[] = [
     // Compresses in memory and shows the sizes; nothing is written yet.
     id: "output.compress",
     paletteHidden: true,
-    isEnabled: hasDocument,
+    isEnabled: isUnencrypted,
     async run(arg) {
       const active = selectActiveDocument(store());
       if (!active || !arg?.compress) return;
@@ -1971,6 +1977,15 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "comment.textBox": "annotate",
   "comment.pen": "annotate",
   "annotation.delete": "annotate",
+  // Output (ADR 0050): stamps change pages; exports take their content out.
+  "pages.headerFooter": "modify",
+  "pages.pageNumbers": "modify",
+  "pages.watermark": "modify",
+  "output.stamp": "modify",
+  "file.exportImages": "copy",
+  "output.exportImages": "copy",
+  "file.exportText": "copy",
+  "output.exportText": "copy",
 };
 
 /** Whether the active document's protection lets its reader do what `flag` names. */
