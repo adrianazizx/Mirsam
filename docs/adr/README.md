@@ -19,6 +19,7 @@ number and says so.
 | [0011](0011-tiles-as-images-and-gesture-zoom.md) | Tiles as BMP images over the `safha` scheme (supersedes 0004's transport); compositor-only zoom gestures; fair frame criterion | Accepted; pinch-out and total memory still over budget |
 | [0012](0012-reading-preferences-windows-printing.md) | Reading preferences from the catalog (own safe reader), several windows, tab reordering; printing through the platform's PDF viewer | Accepted; printing proposed (unverified) |
 | [0013](0013-printing-on-linux.md) | Printing on Linux: GTK's print dialog, each page rendered by PDFium at the printer's resolution | Proposed; checked in CI by printing to a file |
+| [0030](0030-ocr-engines.md) | OCR engines: Nuqta-Arabic-OCR 4B as the recogniser, Nuqta 0.8B as the checking partner (every number re-read), platform OCR or Tesseract as the quick draft; eval set v2 (severe scans, table cells, either column first) | Proposed (spike, synthetic set only) |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
-OCR engines (M4), crypto/PAdES library (M5), Office → PDF (post-1.0).
+crypto/PAdES library (M5), Office → PDF (post-1.0).
