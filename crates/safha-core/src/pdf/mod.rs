@@ -110,7 +110,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// A run of regular characters (a keyword or a number).
+    /// A run of regular characters (a keyword or a number); empty at the end
+    /// of the bytes, and past it (offsets come from the file and may lie).
     pub(crate) fn word(&mut self) -> &'a [u8] {
         self.skip_space();
         let start = self.pos;
@@ -120,7 +121,7 @@ impl<'a> Parser<'a> {
             }
             self.pos += 1;
         }
-        &self.bytes[start..self.pos]
+        self.bytes.get(start..self.pos).unwrap_or_default()
     }
 
     pub(crate) fn keyword(&mut self, expected: &[u8]) -> Option<()> {
@@ -419,11 +420,7 @@ impl<'a> File<'a> {
     }
 
     pub(crate) fn indirect_object_at(&self, offset: usize) -> Option<(Object, Option<&'a [u8]>)> {
-        let mut parser = Parser::new(self.bytes, offset);
-        parser.unsigned()?;
-        parser.unsigned()?;
-        parser.keyword(b"obj")?;
-        let object = parser.object(0)?;
+        let (object, mut parser) = self.value_at(offset)?;
         if parser.word() != b"stream" {
             return Some((object, None));
         }
@@ -453,12 +450,25 @@ impl<'a> File<'a> {
         Some((object, Some(&self.bytes[start..end])))
     }
 
+    /// The value of the object at `offset` (`n g obj value`), and the parser
+    /// just after it.
+    fn value_at(&self, offset: usize) -> Option<(Object, Parser<'a>)> {
+        let mut parser = Parser::new(self.bytes, offset);
+        parser.unsigned()?;
+        parser.unsigned()?;
+        parser.keyword(b"obj")?;
+        let object = parser.object(0)?;
+        Some((object, parser))
+    }
+
     /// Resolves a reference to an object stored directly in the file (used
-    /// for stream lengths, which cannot live in object streams).
+    /// for stream lengths, which cannot live in object streams). Reads the
+    /// value only, never a stream's data: a `/Length` that refers to its own
+    /// stream (or to another stream whose length refers back) must not recurse.
     pub(crate) fn resolve_shallow(&self, object: &Object) -> Option<Object> {
         let Object::Ref(number, _) = object else { return Some(object.clone()) };
         match self.entries.get(number)? {
-            Entry::Offset(offset) => Some(self.indirect_object_at(*offset)?.0),
+            Entry::Offset(offset) => Some(self.value_at(*offset)?.0),
             Entry::InStream { .. } => None,
         }
     }
@@ -623,5 +633,73 @@ mod tests {
             parser.object(0),
             Some(Object::Array(vec![Object::Int(1), Object::Ref(2, 0), Object::Real(3.5)]))
         );
+    }
+
+    /// Objects 1, 2, … with a correct cross-reference table and `trailer`
+    /// as the trailer dictionary's contents.
+    fn file_of(objects: &[&str], trailer: &str) -> Vec<u8> {
+        let mut out = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, body) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{body}\nendobj\n", index + 1).as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+        for offset in offsets {
+            out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(format!("trailer\n<< {trailer} >>\nstartxref\n{xref}\n%%EOF\n").as_bytes());
+        out
+    }
+
+    /// Fuzzing (fuzz/README.md, target `file`; also reached on every open
+    /// through the catalog reader): a `/Prev` past the end of the file used to
+    /// slice out of bounds.
+    #[test]
+    fn a_section_past_the_end_of_the_file_is_not_read() {
+        assert_eq!(Parser::new(b"1 0 obj", 99).word(), b"");
+        assert_eq!(Parser::new(b"1 0 obj", 99).unsigned(), None);
+        let bytes = file_of(&["<< /Type /Catalog >>"], "/Size 2 /Root 1 0 R /Prev 99999");
+        // An unreadable older section makes the chain unreadable (as before).
+        assert!(File::new(&bytes).is_none());
+        assert_eq!(crate::catalog::catalog_hints(&bytes), crate::catalog::CatalogHints::default());
+        // An object said to start past the end.
+        let mut bytes = file_of(&["<< /Type /Catalog >>"], "/Size 2 /Root 1 0 R");
+        let entry = format!("{:010} 00000 n", 9);
+        let at = find(&bytes, entry.as_bytes()).expect("the entry");
+        bytes[at..at + 10].copy_from_slice(b"0000099999");
+        assert_eq!(crate::catalog::catalog_hints(&bytes), crate::catalog::CatalogHints::default());
+    }
+
+    /// Fuzzing (target `objects`): a stream whose `/Length` refers to its own
+    /// object recursed until the stack overflowed.
+    #[test]
+    fn a_stream_whose_length_is_itself_does_not_recurse() {
+        let bytes = file_of(
+            &[
+                "<< /Type /Catalog /ViewerPreferences 2 0 R >>",
+                "<< /Direction /R2L /Length 2 0 R >>\nstream\nxx\nendstream",
+                "<< /Length 4 0 R >>\nstream\nyy\nendstream",
+                "<< /Length 3 0 R >>\nstream\nzz\nendstream",
+            ],
+            "/Size 5 /Root 1 0 R",
+        );
+        let file = File::new(&bytes).expect("reads");
+        let (_, data) = file.indirect_object_at(offset_of(&file, 2)).expect("object 2");
+        assert_eq!(data, Some(b"xx\n".as_slice()), "falls back to the endstream keyword");
+        let (_, data) = file.indirect_object_at(offset_of(&file, 3)).expect("object 3, a cycle of two");
+        assert_eq!(data, Some(b"yy\n".as_slice()));
+        assert_eq!(
+            crate::catalog::catalog_hints(&bytes).direction,
+            Some(crate::catalog::ReadingDirection::RightToLeft)
+        );
+    }
+
+    fn offset_of(file: &File<'_>, number: u32) -> usize {
+        match file.entries[&number] {
+            Entry::Offset(offset) => offset,
+            Entry::InStream { .. } => panic!("object {number} is in a stream"),
+        }
     }
 }
