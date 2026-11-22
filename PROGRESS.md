@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 15, with session M5-a and the M4 runtime side track merged from `main`).
+Last updated: 2026-11-22 (session 16, with session M5-a and the M4 runtime side track merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -44,6 +44,16 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     ToUnicode conventions. Acrobat Reader and pdf.js are untested — testing Acrobat needs it
     installed. The spec's §7 acceptance test on "another viewer" needs rewording once that is
     measured (ADR 0005).
+
+    **Measured at M3's exit (session 16, `docs/demos/m3.md`).** For text this app writes:
+    - **PDFKit (Preview):** copies Arabic, including ligatures and mixed sentences, exactly.
+    - **PDFium (Chrome) and Poppler:** reverse ligatures' letters ("الموظفني"), and PDFium
+      reverses Latin runs inside Arabic. Both do worse on Chrome's own files.
+    - **`/ActualText` on ligatures:** fixed some of PDFium's words and reversed others; Poppler
+      ignored it.
+
+    The decision is still yours: which viewer's convention to follow, or whether to accept
+    this.
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
 12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
@@ -69,6 +79,15 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
+16. **M3's exit, by hand** (`docs/demos/m3.md`):
+    - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
+      cannot be driven here);
+    - type into the paragraph editor with real input methods: macOS and Windows Arabic
+      keyboards, press-and-hold, the emoji picker, dictation.
+
+    Also, when this Mac is idle, re-run the scroll and zoom benchmark. At M3's exit it ran under
+    a load average of 85 (another session's OCR benchmark and builds), and its numbers are not
+    evidence.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -442,7 +461,17 @@ Plan, in order:
         - Chrome's vocalised Arabic and this app's own read in place exactly: no stray spaces,
           letters in order, marks on their letters.
         - A vocalised paragraph's marks go with it when it is edited or removed.
-- [ ] Exit test: all acceptance tests in spec §7
+- [~] **Exit test: all acceptance tests in spec §7** (session 16, `tests/m3_exit.rs`,
+      `docs/demos/m3.md`).
+      - **All four pass:** typo, Arabic insert, mixed sentence, round trip. Checked against
+        PDFium's, Poppler's and PDFKit's rendering and text, where installed.
+      - **Gaps:**
+        - Acrobat Reader is a check by hand;
+        - copying Arabic ligatures and mixed lines is exact in PDFKit and in this app, but not
+          in PDFium (Chrome) or Poppler (owner item 10, measured);
+        - the scroll benchmark is to be re-run on an idle machine (owner item 16).
+      - **Typing** in the paragraph field takes 17–18 ms a keystroke (median), within the 32 ms
+        budget.
 
 ## M4 — OCR (quality-first)
 
@@ -526,6 +555,31 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 16 — 2026-11-22 (Milestone 3's exit test)
+
+- **`tests/m3_exit.rs`:** spec §7's four acceptance tests, each clause checked against every
+  viewer installed.
+  - PDFium's rendering and text (Chrome's engine) everywhere.
+  - Poppler (`pdftoppm`/`pdftotext`) where installed.
+  - PDFKit (`sips`, and `tests/support/pdfkit_text.swift`) on macOS.
+  - What cannot run says so.
+- **Results:** all four pass.
+  - **Typo:** no other paragraph moves; three engines draw the saved page identically outside
+    the paragraph; all read the fix.
+  - **Arabic insert:** a re-set word is drawn as Chrome drew it (width and ink within 5%); the
+    paragraph re-wraps right to left; PDFKit copies it exactly.
+  - **Mixed sentence:** in order in this app and PDFKit.
+  - **Round trip:** English, Arabic and an embedded-font heading, with no drift or duplicate
+    fonts.
+- **Measured:** PDFium and Poppler reverse ligatures' letters and mixed runs, in Chrome's own
+  files too. `/ActualText` on ligatures helped some words and broke others, so it was not
+  kept. Owner item 10 is updated.
+- **Self-test:** typing in the paragraph field is 17–18 ms a keystroke at the median (spec §11:
+  32 ms).
+- **Benchmark:** the scroll benchmark ran under a load average of 85 and is to be re-run (owner
+  item 16).
+- **Demo script:** `docs/demos/m3.md`.
 
 ### Session 15 — 2026-11-22 (Milestone 3: tashkeel in paragraphs edited in place)
 

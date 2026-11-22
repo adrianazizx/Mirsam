@@ -380,7 +380,7 @@ async function addedTextChecks(documentId: number) {
   const edited = "أضيف هذا النص الجديد إلى الصفحة";
   let blockEdited = false;
   let blockReadBack = false;
-  let bold = { applied: false, saved: false, readBack: false };
+  let bold = { applied: false, saved: false, readBack: false, typingMedianMs: -1, typingP95Ms: -1 };
   if (block) {
     await runCommand("text.editBlock", { page: 0, block });
     await runCommand("note.save", { text: edited });
@@ -409,6 +409,8 @@ async function addedTextChecks(documentId: number) {
     blockReadBack,
     boldApplied: bold.applied,
     boldReadBack: bold.readBack,
+    typingMedianMs: bold.typingMedianMs,
+    typingP95Ms: bold.typingP95Ms,
   };
 }
 
@@ -419,7 +421,13 @@ async function addedTextChecks(documentId: number) {
  * from the page as a bold run.
  */
 async function boldFromTheEditor(documentId: number, text: string, word: string) {
-  const result = { applied: false, saved: false, readBack: false };
+  const result = {
+    applied: false,
+    saved: false,
+    readBack: false,
+    typingMedianMs: -1,
+    typingP95Ms: -1,
+  };
   const holds = (candidate: { text: string }) =>
     candidate.text.replace(/\s+/gu, " ").includes(text);
   const block = (await backend.pageTextBlocks(documentId, 0)).find(holds);
@@ -433,6 +441,26 @@ async function boldFromTheEditor(documentId: number, text: string, word: string)
   const editor = field as HTMLElement | null;
   if (!editor) return result;
   editor.focus();
+  // Typing latency (spec section 11: 32 ms a keystroke): each character to
+  // the frame that shows it, typed at the end and taken away again.
+  const end = document.createRange();
+  end.selectNodeContents(editor);
+  end.collapse(false);
+  document.getSelection()?.removeAllRanges();
+  document.getSelection()?.addRange(end);
+  const latencies: number[] = [];
+  for (const char of " تجربة") {
+    const started = performance.now();
+    document.execCommand("insertText", false, char);
+    await nextFrame();
+    latencies.push(performance.now() - started);
+  }
+  for (let i = 0; i < latencies.length; i += 1) document.execCommand("delete");
+  const sorted = [...latencies].sort((a, b) => a - b);
+  const pick = (q: number) =>
+    Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0);
+  result.typingMedianMs = pick(0.5);
+  result.typingP95Ms = pick(0.95);
   const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const at = node.textContent?.indexOf(word) ?? -1;
