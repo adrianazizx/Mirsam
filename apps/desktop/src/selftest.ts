@@ -21,15 +21,20 @@ export function nextFrame(): Promise<void> {
   });
 }
 
-/** Resolves with the first painted event for `page`, or null after `timeoutMs`. */
+/**
+ * Resolves with the first painted event for `page` that `accept` takes, or
+ * null after `timeoutMs`. Start waiting before whatever causes the paint: a
+ * fast paint can otherwise come and go before the wait begins.
+ */
 export function waitForPagePainted(
   page: number,
   timeoutMs: number,
+  accept: (detail: PagePaintedDetail) => boolean = () => true,
 ): Promise<PagePaintedDetail | null> {
   return new Promise((resolve) => {
     const onPainted = (event: Event) => {
       const detail = (event as CustomEvent<PagePaintedDetail>).detail;
-      if (detail.page !== page) return;
+      if (detail.page !== page || !accept(detail)) return;
       window.clearTimeout(timeout);
       window.removeEventListener(PAGE_PAINTED_EVENT, onPainted);
       resolve(detail);
@@ -134,10 +139,13 @@ async function navigationChecks(documentId: number) {
   const editing = await (async () => {
     const pagesBefore = (await backend.pageSizes(documentId)).length;
     const started = performance.now();
+    // The new revision gets a new viewer; only its paint counts.
+    const before = getViewer(documentId);
+    const repaint = waitForPagePainted(0, 15_000, () => getViewer(documentId) !== before);
     await runCommand("pages.duplicate");
     const pagesAfterEdit = (await backend.pageSizes(documentId)).length;
     const editMs = Math.round(performance.now() - started);
-    const repainted = (await waitForPagePainted(0, 10_000)) !== null;
+    const repainted = (await repaint) !== null;
     // Closing the window now must ask first (ADR 0015) and leave it open.
     let closePrompted = false;
     if (isTauri()) {
@@ -162,14 +170,18 @@ async function navigationChecks(documentId: number) {
           .join("\n\n");
       const first = await text(0);
       useAppStore.getState().setActiveTool("pages");
-      const drawn = await waitFor(() => document.querySelector('[role="grid"] canvas') !== null, 10_000);
+      const drawn = await waitFor(
+        () => document.querySelector('[role="grid"] canvas') !== null,
+        10_000,
+      );
       const gridImages = drawn ? document.querySelectorAll('[role="grid"] canvas').length : 0;
       useAppStore.getState().setSelectedPages(documentId, [0]);
       await runCommand("pages.moveLater");
       const moved = (await text(1)) === first && first.length > 0;
       await runCommand("edit.undo");
+      const shown = waitForPagePainted(0, 15_000);
       useAppStore.getState().setActiveTool("select");
-      await waitForPagePainted(0, 10_000);
+      await shown;
       organizer = { gridImages, moved };
     }
     const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
