@@ -651,5 +651,6 @@ fn sanitizing_the_whole_corpus_changes_no_visible_text_and_keeps_every_file_soun
         );
         sanitized += 1;
     }
-    assert!(sanitized > 15, "only {sanitized} files were exercised");
+    // CoreText fixtures exist only on macOS, so the count differs by platform.
+    assert!(sanitized >= 10, "only {sanitized} files were exercised");
 }
