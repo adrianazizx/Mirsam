@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (viewer and shell side track: pinch-out within budget, one running copy; merged with `main` after sessions 16 and M6-a).
+Last updated: 2026-11-23 (M7 packaging: PDFium bundled on every platform, installers checked, fuzzing; merged with `main` after the viewer and shell side track).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -93,6 +93,20 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     a load average of 85 (another session's OCR benchmark and builds), and its numbers are not
     evidence.
 
+17. **Code signing and auto-update (M7) need your certificates and accounts:** an Apple Developer ID
+    (signing and notarizing the `.app`/`.dmg`), a Windows code-signing certificate (the exe, the
+    installers, and `pdfium.dll`, which ships as a resource and needs its own signing step), and an
+    update server or GitHub Releases plus Tauri's updater key. Installers build and pass their checks
+    unsigned (ADR 0060); macOS Gatekeeper and Windows SmartScreen will warn until they are signed.
+18. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
+    spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
+    shipped, and not in the licence report. Say if that is not acceptable.
+19. **The Linux AppImage is 85.7 MiB, over the 60 MB installer budget** (spec §11), because it
+    carries WebKitGTK and GTK, which every other installer takes from the system. The deb and rpm
+    are 11.7 MiB. Ship the AppImage anyway (the budget then reads "excluding a bundled web
+    engine"), or ship deb and rpm only (and perhaps a Flatpak later, which shares the GNOME runtime)?
+    Until you decide, `scripts/bundle.mjs` reports it as a known exception instead of failing.
+
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
 
@@ -100,8 +114,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — runs on GitHub. A fully green run on PR #1 is still to be seen
-      (owner item 3)
+- [x] CI on Windows/macOS/Linux — green on every pull request since PR #1; the shell self-tests
+      are required checks (M7 packaging session)
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -145,13 +159,15 @@ by anything found so far.
 
 ### Known gaps carried forward
 
-- Bundling ships PDFium for macOS arm64 only (`tauri.macos.conf.json`). Intel/universal macOS,
-  Windows (`pdfium.dll` beside the exe), and Linux bundle paths are still to configure and test.
+- ~~Bundling ships PDFium for macOS arm64 only.~~ Done in the M7 packaging session (ADR 0060):
+  macOS arm64/Intel/universal, Windows, Linux deb/rpm/AppImage, each installer checked and
+  self-tested in CI.
 - The self-test reads back the canvas, not the composited window (ADR 0007).
 - `ocr-eval` degraded category is too easy; tables need cell-level scoring (ADR 0006).
 - ~~Preferences live in `localStorage` until the SQLite store exists (M1).~~ Done in session 3:
   the store holds them; `localStorage` keeps a copy for the first frame only.
-- No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
+- ~~No fuzzing of the open/parse path yet.~~ Done in the M7 packaging session: five cargo-fuzz
+  targets (`fuzz/`), three crashes found and fixed.
 
 ## M1 — Viewer (P0 viewing) — done; merged from `m1-viewer` with the open items below
 
@@ -221,7 +237,7 @@ To re-measure (screen unlocked; the release bundle sometimes opens hidden, and s
 rejected as invalid, so run it again):
 
 - debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
-- release: `(cd apps/desktop && pnpm tauri build --features devtools --bundles app) && scripts/scroll-benchmark.sh <out> release`
+- release: `node scripts/bundle.mjs --features devtools --bundles app && scripts/scroll-benchmark.sh <out> release`
 
 Test status at the end of session 6:
 
@@ -637,11 +653,65 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 - [ ] Accessibility pass
 - [ ] Native-speaker Arabic localization review
-- [ ] Onboarding, auto-update, installers and code signing
+- [ ] Onboarding
+- [x] Installers with PDFium for every platform (ADR 0060): `node scripts/bundle.mjs`; each installer
+      opened and checked, the installed app self-tested in English and Arabic (`bundle.yml`)
+- [ ] Code signing and auto-update (owner item 17: certificates)
+- [x] Fuzzing of the open/parse path (spec §11 testing): `fuzz/`, weekly in `fuzz.yml`
 - [ ] Opt-in crash reporting
 - [ ] Performance hardening
 
 ## Session log
+
+### M7 packaging — 2026-11-22/23 (PDFium bundled everywhere, installers checked, fuzzing; branch `pomidor/m7-packaging-abe03e`, PR #17)
+
+- **Bundling (ADR 0060):** `node scripts/bundle.mjs [--target <triple>]` fetches the pinned PDFium
+  for the target and adds it through a `tauri build --config` overlay:
+  - macOS `Contents/Frameworks` (arm64, x86_64, and universal from a `lipo`'d dylib);
+  - Windows: `pdfium.dll` beside the exe, NSIS and MSI;
+  - Linux: `/usr/lib/Mirsam`, for deb, rpm and AppImage. The engine looks there now.
+- **Checks:** PDFium's notices ship in `licenses/pdfium/`. Every installer is opened and checked:
+  pinned bytes (an AppImage's by build ID), architectures, notices, and the 60 MB budget.
+- **Guard:** a bare `tauri build` refuses to bundle.
+- **Self-test of the installed app:** `scripts/bundle-selftest.sh <installer>` installs or unpacks
+  it and runs the end-to-end self-test in English and Arabic. The report names the PDFium library
+  the process loaded and its architecture; the check fails if that library is outside the bundle.
+- **CI (`bundle.yml`):**
+  - macOS arm64, x86_64 (under Rosetta) and universal (run both ways);
+  - Windows x64;
+  - Linux x64, built on Ubuntu 22.04 and self-tested on the latest Ubuntu.
+  It runs on every push to `main` and on pull requests that change packaging; it is not required.
+- **Installer sizes** (unsigned; the self-test harness adds under 0.1 MiB):
+
+  | Installer | Size | Installed app self-test |
+  |---|---|---|
+  | macOS arm64 `.dmg` | 10.6 MiB | passes (this Mac, CI) |
+  | macOS x86_64 `.dmg` | 11.3 MiB | passes under Rosetta (CI) |
+  | macOS universal `.dmg` | 21.9 MiB | passes as arm64 (this Mac); x86_64 in CI |
+  | Windows NSIS `-setup.exe` | 9.1 MiB | passes, installed silently (CI) |
+  | Windows `.msi` | 12.1 MiB | passes, unpacked (CI) |
+  | Linux `.deb` / `.rpm` | 11.7 MiB each | in CI |
+  | Linux `.AppImage` | 85.7 MiB, over budget (owner item 19) | in CI |
+
+- **Fuzzing (`fuzz/`):** five cargo-fuzz targets.
+  - `open`: PDFium plus the shell's first questions to a document.
+  - `file`: every PDFium-free reader, forms included.
+  - `objects`: fuzzed objects inside a correct xref table.
+  - `content`: one page's content stream.
+  - `cmap`: one ToUnicode CMap.
+
+  `fuzz/seed.mjs` seeds them from the fixtures. Ten 15-minute runs (about 570,000 executions) found
+  **three crashes in safha-core**, each fixed with a regression test:
+  - an offset past the end of the file sliced out of bounds (on every open, through the catalog
+    reader);
+  - a stream `/Length` referring to itself recursed until the stack overflowed;
+  - text extraction's tolerance comparison could be circular and panic the standard sort.
+
+  The last runs of all five targets, with the fixes, found nothing. `fuzz.yml` runs every target weekly and on pull
+  requests that touch the readers.
+- **CI:** the shell self-tests in `ci.yml` are real gates (no `continue-on-error`). Tests, clippy
+  and Biome are green on all three platforms.
+- **Not done:** code signing, notarization and auto-update (owner item 17).
 
 ### Viewer and shell side track — 2026-11-23 (pinch-out; one running copy; branch `pomidor/viewer-shell-gaps-84e4f5`)
 
@@ -702,6 +772,7 @@ Test status at the end of this track (this Mac):
   - The full benchmark passes at load 25: pinch-out p95 17 ms, nothing dropped; pinch-in p95
     17 ms; 0.4% of all frames dropped; the app's memory 326 MB.
   - `scripts/instance-selftest.sh` passes.
+
 ### Session M6-a — 2026-11-22 (Milestone 6: stamps, exports, compression; parallel to M4/M5)
 
 Branch `pomidor/m6-exports-a29095`, from `main` after M4 runtime; `main` merged in as it moved (M5-b encryption, M4 pipeline slices 1 and 3, M5-c forms, session 16's M3 close).

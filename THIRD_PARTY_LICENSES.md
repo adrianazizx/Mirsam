@@ -17,7 +17,7 @@ Every dependency below is under a licence permitted by the project policy
 | Noto Naskh Arabic (font) | see assets/fonts/README.md | OFL-1.1 | https://github.com/notofonts/arabic |
 | Noto Sans Arabic (font) | see assets/fonts/README.md | OFL-1.1 | https://github.com/notofonts/arabic |
 
-PDFium: Its own third-party notices ship in third_party/pdfium/<platform>/licenses/.
+PDFium: Its licence and its own third-party notices (third_party/pdfium/<platform>/LICENSE and licenses/) ship inside every installer, in licenses/pdfium/ beside the app's resources (scripts/bundle.mjs).
 
 SQLite: Compiled into the app from source by rusqlite's `bundled` feature; public domain.
 

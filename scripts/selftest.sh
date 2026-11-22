@@ -10,7 +10,9 @@
 # Env:   SAFHA_SELFTEST_APP=<binary> runs another devtools build, e.g. the release
 #        bundle (target/release/bundle/macos/Mirsam.app/Contents/MacOS/safha-desktop);
 #        SAFHA_SELFTEST_SPIKE=<name> runs a benchmark (scroll, tile-transport);
-#        SAFHA_SELFTEST_TIMEOUT=<seconds> (default 60).
+#        SAFHA_SELFTEST_TIMEOUT=<seconds> (default 60);
+#        SAFHA_SELFTEST_UI=bundled: the app carries its own UI (a release build or
+#        an installed bundle, scripts/bundle-selftest.sh), so no dev server is started.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,24 +33,28 @@ rm -f "$OUT/report.json" "$OUT/canvas.png"
 # and nothing written back to them.
 rm -rf "$OUT/state"
 
-# The debug app loads its UI from http://localhost:1420 (tauri.conf.json). A
-# server already there (another checkout's, another session's) would be
-# tested instead of this checkout's UI, so refuse rather than test the wrong code.
-if curl --silent --output /dev/null http://localhost:1420/; then
-  echo "port 1420 is already serving a UI (another dev server?); stop it so this checkout's UI is tested" >&2
-  exit 2
-fi
-
-cd "$ROOT/apps/desktop"
-pnpm exec vite --port 1420 --strictPort >"$OUT/vite.log" 2>&1 &
-VITE_PID=$!
-cleanup() { kill "$VITE_PID" 2>/dev/null || true; }
+VITE_PID=""
+cleanup() { [[ -z "$VITE_PID" ]] || kill "$VITE_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-for _ in $(seq 1 150); do
-  curl --silent --fail --output /dev/null http://localhost:1420/ && break
-  sleep 0.2
-done
+if [[ "${SAFHA_SELFTEST_UI:-dev}" != "bundled" ]]; then
+  # The debug app loads its UI from http://localhost:1420 (tauri.conf.json). A
+  # server already there (another checkout's, another session's) would be
+  # tested instead of this checkout's UI, so refuse rather than test the wrong code.
+  if curl --silent --output /dev/null http://localhost:1420/; then
+    echo "port 1420 is already serving a UI (another dev server?); stop it so this checkout's UI is tested" >&2
+    exit 2
+  fi
+
+  cd "$ROOT/apps/desktop"
+  pnpm exec vite --port 1420 --strictPort >"$OUT/vite.log" 2>&1 &
+  VITE_PID=$!
+
+  for _ in $(seq 1 150); do
+    curl --silent --fail --output /dev/null http://localhost:1420/ && break
+    sleep 0.2
+  done
+fi
 
 SAFHA_OPEN="$(native "$PDF")" SAFHA_STATE_DIR="$(native "$OUT/state")" SAFHA_SELFTEST_OUT="$(native "$OUT")" \
   SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" \
