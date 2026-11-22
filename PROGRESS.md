@@ -13,8 +13,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
-   and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
+2. **The code is on GitHub** as the public repository `adrianazizx/Mirsam` (public since
+   2026-11-22): `main` (Milestone 0) and `m1-viewer` (Milestone 1), open as pull request #1 with
+   Auto-fix on. It has no licence file, so the code is all rights reserved until you choose one
+   (spec D2).
 3. **CI on pull request #1:**
    - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
      including printing through GTK on Linux.
@@ -264,20 +266,16 @@ Remaining M1 work:
 
 ## Session log
 
-### CI cost trim — 2026-11-22
+### CI: docs-only changes skip the build — 2026-11-22
 
-- **Why:** the repository is private on GitHub Free, so CI draws on a $12 monthly Actions
-  allowance. macOS runners cost about ten times Linux ones per minute. The nine runs on
-  2026-11-22 used about $4.90, and macOS was 60% of that.
-- **Now:** pull requests run Linux and Windows only. Pushes to `main` and manual runs ("Run
-  workflow" on the Actions tab) run all three platforms. Documentation-only changes (`docs/`,
-  Markdown files other than `THIRD_PARTY_LICENSES.md`) run nothing. A full pull-request run drops
-  from about $0.58 to about $0.27 with warm caches.
-- **Kept on purpose:** the second run on `main` after a merge. It builds the caches that later
-  pull requests reuse; without it, each new pull request's first run starts cold, which takes
-  about 20 minutes on Linux and Windows.
-- **Consequence:** a pull request can break macOS without CI noticing until it reaches `main`.
-  Run the usual checks on the Mac before pushing, as `CLAUDE.md` already asks.
+- **The repository went public** on 2026-11-22, so standard GitHub-hosted runners are free and
+  CI keeps all three platforms on every pull request.
+- **Documentation-only changes** (`docs/`, Markdown files other than `THIRD_PARTY_LICENSES.md`)
+  run nothing. "Run workflow" on the Actions tab runs everything on any branch.
+- **If the repository goes private again:** CI draws on a $12 monthly Actions allowance (GitHub
+  Free), and macOS minutes cost about ten Linux ones. The nine runs on 2026-11-22 used about
+  $4.90, 60% of it on macOS. Drop macOS from pull requests first; keep the runs on `main`,
+  because they build the caches that pull requests reuse.
 
 ### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
 
