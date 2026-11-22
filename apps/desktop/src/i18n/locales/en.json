@@ -214,7 +214,9 @@
       "moveRightMore": "Move right 10 points",
       "moveUpMore": "Move up 10 points",
       "moveDownMore": "Move down 10 points",
-      "color": "Set the colour of Fill & Sign text and marks"
+      "color": "Set the colour of Fill & Sign text and marks",
+      "toPreviousPage": "Move to the previous page",
+      "toNextPage": "Move to the next page"
     },
     "signatures": {
       "load": "Load signatures"
@@ -644,7 +646,7 @@
     "fillHeading": "Fill",
     "tools": "What a click on the page places",
     "hint": {
-      "select": "Click an item you placed to select it. Drag it, or use the arrow keys, to move it.",
+      "select": "Click an item you placed to select it. Drag it, even onto another page, or use the arrow keys, to move it.",
       "text": "Click on the page where the text goes.",
       "date": "Click on the page where today's date goes.",
       "check": "Click each box to tick.",

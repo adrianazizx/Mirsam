@@ -102,6 +102,26 @@ pub async fn add_fill_mark(
     })
 }
 
+/// Moves a Fill & Sign item to another page, to a box on that displayed
+/// page: one undo step.
+#[tauri::command]
+pub async fn move_annotation_to_page(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    index: usize,
+    to_page: usize,
+    rect: ViewRect,
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |document| {
+        let view = document.view_transform(to_page)?;
+        let corners = [(rect.x, rect.y), (rect.x + rect.width, rect.y + rect.height)];
+        let [(x0, y0), (x1, y1)] = corners.map(|(x, y)| view.page_point(x, y));
+        let rect = [x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)];
+        Ok(vec![AnnotationEdit::MoveToPage { page, index, to_page, rect }])
+    })
+}
+
 /// Recolours a Fill & Sign text or mark: one undo step.
 #[tauri::command]
 pub async fn set_annotation_color(

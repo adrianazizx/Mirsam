@@ -1084,6 +1084,24 @@ export const mockBackend: Backend = {
     });
     return pushState(documentId, next);
   },
+  moveAnnotationToPage: async (documentId, page, index, toPage, rect) => {
+    const state = stateOf(documentId);
+    const [from, to] = [state.pages[page], state.pages[toPage]];
+    if (from === undefined || to === undefined) {
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    }
+    const item = state.markup.get(from)?.[index];
+    if (!item || !["fillText", "mark", "signature"].includes(item.kind)) {
+      throw { code: "invalid_edit", detail: "only Fill & Sign items move to another page" };
+    }
+    const markup = new Map(state.markup);
+    markup.set(
+      from,
+      (markup.get(from) ?? []).filter((_, i) => i !== index),
+    );
+    markup.set(to, [...(markup.get(to) ?? []), { ...item, rects: [rect] }]);
+    return pushState(documentId, { ...state, markup, change: "annotations" });
+  },
   setAnnotationColor: async (documentId, page, index, color) => {
     const next = withMarkup(documentId, page, (list) => {
       const found = list[index];

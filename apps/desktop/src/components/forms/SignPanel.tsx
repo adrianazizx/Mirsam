@@ -1,4 +1,6 @@
 import {
+  ArrowDownToLine,
+  ArrowUpToLine,
   CalendarDays,
   Check,
   Circle,
@@ -137,6 +139,14 @@ export function SignPanel({ document }: { document: OpenDocument }) {
             </Button>
             <CommandButton command="annotation.delete">
               <Trash2 />
+            </CommandButton>
+          </div>
+          <div className={styles.row}>
+            <CommandButton command="fill.toPreviousPage">
+              <ArrowUpToLine />
+            </CommandButton>
+            <CommandButton command="fill.toNextPage">
+              <ArrowDownToLine />
             </CommandButton>
           </div>
         </section>
