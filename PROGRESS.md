@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 8).
+Last updated: 2026-11-22 (session 8; M4 runtime and word-box side track).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -375,23 +375,38 @@ parallel with M2 and merged by pull request at the owner's request.
   - **Primary recogniser: Nuqta-Arabic-OCR 4B.** 0.89% CER over the set, no reading-order errors.
   - **Ensemble partner: Nuqta 0.8B.** It re-reads low-confidence lines and every number, date
     and ID, with the platform's OCR as a third reader for fields.
-  - **Weak-hardware default:** Nuqta 0.8B, if a native runtime makes it usable without a GPU.
-    Through Transformers on the CPU it takes 677 s per page.
+  - **Runtime: llama.cpp with the authors' Q8_0 GGUF builds** (MIT runtime, Apache-2.0 weights).
+    The 4B at Q8_0 writes the same text as bf16 on all 47 pages. Q4_K_M loses accuracy on
+    degraded mixed lines and digits, so it is not shipped.
+  - **Without a GPU (proposed; owner to confirm):** the 4B on the CPU, at 143 s per page (11 GiB). The
+    0.8B (46 s per page, 3 GiB) is for machines whose memory cannot hold the 4B.
   - **Quick draft:** Apple Vision on macOS, Tesseract elsewhere.
   - **Not chosen:** QARI-OCR (invents words), PaddleOCR-VL-1.6 (weak Arabic), PP-OCRv5 Arabic
     (32% CER; drops Latin words in Arabic lines), Baseer (no weights released).
   - **Beats:** plain Tesseract and Apple Vision in every Arabic category.
-  - **Gaps:** synthetic set only; Acrobat and ABBYY not measured; accuracy measured in Python on
-    Metal, not yet through the runtime the app would ship.
-  - **Gates the best engine still fails:** mixed Arabic/English (2.07% CER against 2%) and
-    numbers (93.6% against 99%; 97.0% without "64-bit").
+  - **Gaps:**
+    - Synthetic set only.
+    - Acrobat and ABBYY not measured.
+    - CPU speed measured on an M3 Max only, not on a typical Windows laptop.
+  - **Gates the best engine still fails, unchanged through llama.cpp:** mixed Arabic/English
+    (2.07% CER against 2%) and numbers (93.6% against 99%; 97.0% without "64-bit"). They need the
+    pipeline's logical-order and digit-check steps.
 - [x] `ocr-eval` set v2 (47 samples):
   - Severe scans (a new tracked category) and an Arabic form.
   - Table-cell scoring.
   - Either column first on bilingual side-by-side pages.
   - Baselines for nine engine runs in `ocr-eval/baselines/*.set-v2.json`.
-- [ ] Re-measure Nuqta through a shippable runtime (GGUF/llama.cpp or MLX), and its speed on CPU
-- [ ] Word boxes for VLM text: detector + alignment (PP-OCRv5's detector is the first candidate)
+- [x] Re-measure Nuqta through a shippable runtime: llama.cpp 1.0.0, Q8_0 and Q4_K_M, Metal and
+      CPU only (ADR 0030 follow-up; baselines `ocr-eval/baselines/nuqta-*-llamacpp.set-v2.json`)
+- [~] Word boxes for VLM text, spiked (ADR 0031, proposed):
+  - **Method:** PP-OCRv5 server detector lines, its Arabic recogniser as an alignment guide,
+    words split by ink gaps, UAX #9 word order.
+  - **Results:** 99.0% of words on the right line, 93% with horizontal IoU ≥ 0.5 (mean 0.92)
+    over 26 pages.
+  - **Gaps:**
+    - Vocalized Amiri is weak (IoU-x 0.21–0.70).
+    - No truth yet for skewed or warped pages.
+    - The detector costs 4–10 s per page on PaddlePaddle's CPU backend (ONNX Runtime not tried).
 - [ ] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
       verification with no silent invention
 - [ ] Background jobs with draft-then-quality results; survives restart
@@ -428,6 +443,44 @@ parallel with M2 and merged by pull request at the owner's request.
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
+
+- **Nuqta through llama.cpp** (ADR 0030, new follow-up section):
+  - **Runtime and files:** llama.cpp 1.0.0 (MIT) and the authors' own GGUF builds (Apache-2.0)
+    at Q8_0 and Q4_K_M, with the cards' prompt and input size.
+  - **Accuracy:** at Q8_0 the 4B wrote byte-identical text to the bf16 run on all 47 pages, so
+    0.89% CER again. The 0.8B scored 2.01% against 2.02%.
+  - **Q4_K_M loses accuracy** on degraded mixed lines (4B: 1.52% → 3.19% CER) and digits, so it
+    is not shipped.
+  - **The two failing gates are unchanged:** mixed Arabic/English 2.07% against 2%, and fields
+    93.6% against 99%.
+  - **Speed per page:** Metal 8.4 s (4B Q8_0) and 2.7 s (0.8B Q8_0). CPU only: 143 s (4B
+    Q8_0, 11 GiB) and 46 s (0.8B Q8_0), against 677 s for the 0.8B through Transformers. About 96% of
+    the CPU time goes to reading the 2,420 image tokens.
+  - **Proposal:** the 4B is the default even without a GPU; the 0.8B is for machines too small
+    for the 4B.
+- **Word boxes spike** (ADR 0031):
+  - **Ground truth:** Chrome's DOM word rectangles for the 26 geometry-preserving pages.
+  - **Detector:** PP-OCRv5's server detector found every line.
+  - **Words to lines:**
+    - **Text widths alone** put only 70–75% of words on the right line.
+    - **Anchoring** to the PP-OCRv5 recogniser's rough text, then splitting each line at ink
+      gaps in UAX #9 word order, gives 99.0% on the right line and 93% with IoU-x ≥ 0.5.
+  - **Still weak:** vocalized Amiri text, and a word the VLM wrote differently from the page
+    ("bit-64").
+- **Harness:** `spikes/ocr-engines/`: `run_llamacpp.py`, `word_boxes_truth.mjs`, `wb_detect.py`,
+  `wb_align.py`.
+- **Installed:**
+  - **llama.cpp** through Homebrew (21 MiB).
+  - **The four GGUF builds plus their vision encoders** (about 9.5 GiB), in
+    `~/Library/Caches/safha-dev/ocr-bench/hf`.
+- **Needs the owner (M4):**
+  - **Confirm the 4B is the default on CPU-only machines,** and where the memory threshold for
+    the 0.8B falls. This needs a timing on a typical Windows laptop.
+  - **Real scans (item 9).** Box truth for skewed and warped pages too.
+- **Tests:** no Rust or UI code changed. The scorer runs in this session used `safha-ocr-eval`
+  as it was.
 
 ### M4 side track — 2026-11-22 (OCR engine benchmark, branch `pomidor/m4-ocr-benchmark-f94419`)
 
