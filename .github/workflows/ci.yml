@@ -100,6 +100,13 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked --features safha-desktop/devtools -- -D warnings
       - name: Rust tests
         run: cargo test --workspace --locked
+      # Each platform's Chrome lays out the fixtures a little differently;
+      # keep the PDFs a failure was measured on.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fixtures-${{ matrix.os }}
+          path: fixtures/out
 
   shell-selftest:
     name: Desktop shell self-test (macOS)
