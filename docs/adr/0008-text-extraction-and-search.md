@@ -170,8 +170,9 @@ Results:
 - Selection (M1) maps through `TextLine::spans`; copy uses `TextLine::text` (done: ADR 0010).
 - Suspect pages need a UI affordance ("This page's text can't be read reliably — run OCR?") — M4
   supplies the OCR.
-- Only top-level page objects are scanned for space glyphs; text inside form XObjects falls back
-  to stream/gap spacing.
+- ~~Only top-level page objects are scanned for space glyphs~~ Form XObjects are scanned too,
+  their children's bounds mapped through each form's matrix (ADR 0019). Flattened text boxes
+  need this; the corpus is unchanged at 86 / 118.
 - More producers (Word, LibreOffice, XeLaTeX) are not in the corpus yet; each will likely need
   its own observation. The thresholds live in one `Params` struct.
 - Copy from *other* viewers is a different matter (ADR 0005): this is about reading.

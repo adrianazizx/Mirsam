@@ -1,19 +1,26 @@
 import type {
+  AnnotationKind,
   Backend,
+  CommentReply,
+  DocumentComment,
   DocumentInfo,
+  EditOutcome,
   KeptRequest,
   Lane,
   OpenOutcome,
   OutlineItem,
+  PageEdit,
   PageSize,
   Priority,
   RecentFile,
+  RecoveryInfo,
   RenderedPage,
   SearchHit,
   SearchOptions,
   TextLayer,
   TextLine,
   TileRequest,
+  ViewRect,
 } from "./types";
 
 /**
@@ -161,12 +168,139 @@ function fold(text: string, options: SearchOptions): string {
   return folded;
 }
 
+/** An annotation the mock keeps, in displayed-page points of its page. */
+interface MockMarkup {
+  kind: AnnotationKind;
+  rects: ViewRect[];
+  contents: string | null;
+  strokes: [number, number][][];
+  /** Its thread (ADR 0041): who and when, replies, and whether it is resolved. */
+  author?: string | null;
+  modified?: number;
+  replies?: CommentReply[];
+  resolved?: boolean;
+}
+
+/** Who and when, for a new annotation or reply: the `commentAuthor` setting, now. */
+function signed(): { author: string | null; modified: number } {
+  const author = (loadSettings().commentAuthor ?? "").trim();
+  return { author: author === "" ? null : author, modified: Math.floor(Date.now() / 1000) };
+}
+
+/** Changes the comment at `index` of `page`, as one undoable step. */
+function withComment(
+  documentId: number,
+  page: number,
+  index: number,
+  change: (comment: MockMarkup) => MockMarkup,
+): EditOutcome {
+  const next = withMarkup(documentId, page, (list) => {
+    const found = list[index];
+    if (!found) throw { code: "invalid_edit", detail: "no such annotation" };
+    return list.map((item, i) => (i === index ? change(item) : item));
+  });
+  return pushState(documentId, next);
+}
+
+/**
+ * One revision of a mock document: its pages as original page numbers (-1:
+ * blank), the markup on each original page, and what the step to it changed.
+ */
+interface MockState {
+  pages: number[];
+  markup: Map<number, MockMarkup[]>;
+  change: "pages" | "annotations";
+}
+
+/** Each edited mock document's revisions, with undo and redo. */
+const edits = new Map<number, { states: MockState[]; at: number; saved: number }>();
+
+function stateOf(documentId: number): MockState {
+  const history = edits.get(documentId);
+  return (
+    history?.states[history.at] ?? {
+      pages: Array.from({ length: basePageCount(documentId) }, (_, i) => i),
+      markup: new Map(),
+      change: "pages",
+    }
+  );
+}
+
+/** Records the next revision; undone revisions are forgotten. */
+function pushState(documentId: number, next: MockState): EditOutcome {
+  const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
+  history.states = [...history.states.slice(0, history.at + 1), next];
+  history.at += 1;
+  edits.set(documentId, history);
+  return outcome(documentId, next.change);
+}
+
+/** Markup on a page (by its original page number), copied before changing. */
+function withMarkup(
+  documentId: number,
+  page: number,
+  change: (list: MockMarkup[]) => MockMarkup[],
+): MockState {
+  const state = stateOf(documentId);
+  const original = state.pages[page];
+  if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+  const markup = new Map(state.markup);
+  markup.set(original, change([...(markup.get(original) ?? [])]));
+  return { pages: state.pages, markup, change: "annotations" };
+}
+
+function basePageCount(documentId: number): number {
+  return documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount;
+}
+
+/** The document's current pages as original page numbers. */
+function pagesOf(documentId: number): number[] {
+  return stateOf(documentId).pages;
+}
+
+function applyEdit(pages: number[], edit: PageEdit): number[] {
+  const chosen = new Set("pages" in edit ? edit.pages : []);
+  if ([...chosen].some((page) => page < 0 || page >= pages.length)) {
+    throw { code: "page_out_of_range", detail: "page out of range" };
+  }
+  switch (edit.kind) {
+    case "rotate":
+      return pages;
+    case "delete": {
+      const kept = pages.filter((_, i) => !chosen.has(i));
+      if (kept.length === 0) throw { code: "invalid_edit", detail: "a document keeps one page" };
+      return kept;
+    }
+    case "move": {
+      const moved = pages.filter((_, i) => chosen.has(i));
+      const rest = pages.filter((_, i) => !chosen.has(i));
+      const at = Math.min(edit.to, rest.length);
+      return [...rest.slice(0, at), ...moved, ...rest.slice(at)];
+    }
+    case "insertBlank":
+      return [...pages.slice(0, edit.at), -1, ...pages.slice(edit.at)];
+    case "duplicate":
+      return pages.flatMap((page, i) => (chosen.has(i) ? [page, page] : [page]));
+  }
+}
+
+function outcome(documentId: number, change: MockState["change"]): EditOutcome {
+  const history = edits.get(documentId);
+  return {
+    pageCount: pagesOf(documentId).length,
+    canUndo: (history?.at ?? 0) > 0,
+    canRedo: history ? history.at < history.states.length - 1 : false,
+    modified: history ? history.at !== history.saved : false,
+    pagesChanged: change === "pages",
+  };
+}
+
 function search(documentId: number, query: string, options: SearchOptions): SearchHit[] {
   const needle = fold(query, options)
     .replace(/\uFFFF/g, "")
     .trim();
   if (!needle) throw { code: "invalid_query", detail: "empty" };
-  const pageCount = documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount;
+  const pageCount = pagesOf(documentId).length;
   const hits: SearchHit[] = [];
   for (let page = 0; page < pageCount; page += 1) {
     const layer = textLayer(page);
@@ -244,7 +378,81 @@ function blank(width: number, height: number): RenderedPage {
   return { width, height, renderMicros: 0, fromCache: false, image: blankImage(width, height) };
 }
 
-function drawTile(page: number, tile: TileRequest): RenderedPage {
+/** Annotations over a page, drawn like the engine's appearance streams. */
+function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
+  const colours: Record<AnnotationKind, string> = {
+    highlight: "rgb(255 219 0)",
+    underline: "rgb(0 107 230)",
+    squiggly: "rgb(0 107 230)",
+    strikeOut: "rgb(219 33 33)",
+    ink: "rgb(13 56 153)",
+    note: "rgb(255 219 0)",
+    textBox: "rgb(0 0 0)",
+  };
+  for (const { kind, rects, strokes, contents } of markup) {
+    if (kind === "textBox") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = colours.textBox;
+      ctx.font = `400 12px ${FONT}`;
+      ctx.direction = /[\u0600-\u06FF]/.test(contents?.[0] ?? "") ? "rtl" : "ltr";
+      for (const rect of rects) {
+        ctx.textAlign = ctx.direction === "rtl" ? "right" : "left";
+        const x = ctx.direction === "rtl" ? rect.x + rect.width - 2 : rect.x + 2;
+        ctx.fillText(contents ?? "", x, rect.y + 14, rect.width - 4);
+      }
+      ctx.direction = "ltr";
+      ctx.textAlign = "start";
+      continue;
+    }
+    if (kind === "ink" || kind === "note") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = kind === "ink" ? colours.ink : "rgb(64 64 64)";
+      ctx.fillStyle = colours[kind];
+      ctx.lineWidth = kind === "ink" ? 2 : 0.6;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      if (kind === "note") {
+        for (const rect of rects) {
+          ctx.fillRect(rect.x + 1.5, rect.y + 1.5, rect.width - 3, rect.height - 7);
+          ctx.strokeRect(rect.x + 1.5, rect.y + 1.5, rect.width - 3, rect.height - 7);
+        }
+      }
+      for (const stroke of strokes) {
+        ctx.beginPath();
+        for (const [x, y] of stroke) ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+      continue;
+    }
+    ctx.fillStyle = colours[kind];
+    ctx.strokeStyle = colours[kind];
+    ctx.globalCompositeOperation = kind === "highlight" ? "multiply" : "source-over";
+    for (const rect of rects) {
+      const width = Math.max(0.5, rect.height * 0.07);
+      const bottom = rect.y + rect.height - width;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      if (kind === "highlight") {
+        ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+        continue;
+      }
+      if (kind === "squiggly") {
+        const step = Math.max(1, rect.height / 8);
+        for (let x = 0, i = 0; x <= rect.width; x += step, i += 1) {
+          ctx.lineTo(rect.x + x, bottom + (i % 2 === 0 ? step / 2 : -step / 2));
+        }
+      } else {
+        const y = kind === "underline" ? bottom : rect.y + rect.height / 2;
+        ctx.moveTo(rect.x, y);
+        ctx.lineTo(rect.x + rect.width, y);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function drawTile(page: number, tile: TileRequest, markup: MockMarkup[] = []): RenderedPage {
   const { width, height, scale } = tile;
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -288,6 +496,7 @@ function drawTile(page: number, tile: TileRequest): RenderedPage {
   ctx.direction = "ltr";
   ctx.font = `400 11px ${FONT}`;
   ctx.fillText(`— ${page + 1} —`, size.width / 2, size.height - MARGIN / 2);
+  drawMarkup(ctx, markup);
 
   return {
     width,
@@ -302,6 +511,10 @@ interface Job {
   lane: Lane;
   generation: number;
   page: number;
+  /** The page's original content after edits (-1: a blank page). */
+  original: number;
+  /** The markup on it when the render was asked for. */
+  markup: MockMarkup[];
   tile: TileRequest;
   priority: Priority;
   seq: number;
@@ -332,7 +545,11 @@ function pump() {
   busy = true;
   setTimeout(() => {
     busy = false;
-    job.resolve(drawTile(job.page, job.tile));
+    job.resolve(
+      job.original < 0
+        ? blank(job.tile.width, job.tile.height)
+        : drawTile(job.original, job.tile, job.markup),
+    );
     pump();
   }, 1);
 }
@@ -371,10 +588,55 @@ let recents: RecentFile[] = [
 
 const opened = (document: DocumentInfo): OpenOutcome => ({ kind: "opened", document });
 
+/** Whether the file the mock's insert "picks" needs a password; tests set it. */
+let mockInsertIsLocked = false;
+let pendingInsert: { documentId: number; at: number } | null = null;
+export function setMockInsertIsLocked(locked: boolean): void {
+  mockInsertIsLocked = locked;
+  pendingInsert = null;
+}
+
+/** Inserts the sample's first three pages before page `at`. */
+function insertSample(documentId: number, at: number): EditOutcome {
+  const state = stateOf(documentId);
+  const pages = [...state.pages.slice(0, at), 0, 1, 2, ...state.pages.slice(at)];
+  return pushState(documentId, { pages, markup: state.markup, change: "pages" });
+}
+
+/** Recovery files the mock's startup offers; tests set them. */
+let mockRecoveries: RecoveryInfo[] = [];
+export function setMockRecoveries(list: RecoveryInfo[]): void {
+  mockRecoveries = list;
+}
+
 export const mockBackend: Backend = {
   appInfo: async () => ({ version: "0.0.1-mock", devtools: false }),
   openDocumentDialog: async () => opened(SAMPLE),
-  startup: async () => ({ documents: [], active: null }),
+  startup: async () => ({ documents: [], active: null, recoveries: [...mockRecoveries] }),
+  // A restored recovery file reopens with unsaved changes; the locked sample's asks first.
+  restoreRecovery: async (token) => {
+    const entry = mockRecoveries.find((candidate) => candidate.token === token);
+    mockRecoveries = mockRecoveries.filter((candidate) => candidate.token !== token);
+    if (entry?.name === LOCKED.name) {
+      return {
+        outcome: { kind: "needsPassword", token: 2, name: LOCKED.name, retry: false },
+        replaced: null,
+      };
+    }
+    const canUndo = !entry?.originalChanged;
+    return { outcome: opened({ ...SAMPLE, modified: true, canUndo }), replaced: null };
+  },
+  unlockRecovery: async (_token, password) => ({
+    outcome:
+      password === LOCKED_PASSWORD
+        ? opened({ ...LOCKED, modified: true, canUndo: true })
+        : { kind: "needsPassword", token: 2, name: LOCKED.name, retry: true },
+    replaced: null,
+  }),
+  discardRecovery: async (token) => {
+    mockRecoveries = mockRecoveries.filter((entry) => entry.token !== token);
+  },
+  hasRecoveryFile: async () => null,
   unlockDocument: async (_token, password) =>
     password === LOCKED_PASSWORD
       ? opened(LOCKED)
@@ -405,18 +667,223 @@ export const mockBackend: Backend = {
     }
   },
   pageSizes: async (documentId) =>
-    Array.from(
-      { length: documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount },
-      (_, page) => sizeOf(page),
+    pagesOf(documentId).map((original) =>
+      original < 0 ? { width: 595, height: 842 } : sizeOf(original),
     ),
+  editPages: async (documentId, edit) => {
+    const state = stateOf(documentId);
+    return pushState(documentId, {
+      pages: applyEdit(state.pages, edit),
+      markup: state.markup,
+      change: "pages",
+    });
+  },
+  undoEdit: async (documentId) => {
+    const history = edits.get(documentId);
+    if (!history || history.at === 0) return outcome(documentId, "annotations");
+    const undone = history.states[history.at]?.change ?? "pages";
+    history.at -= 1;
+    return outcome(documentId, undone);
+  },
+  addMarkup: async (documentId, kind, pages) => {
+    if (pages.length === 0) throw { code: "invalid_edit", detail: "nothing marked" };
+    let state = stateOf(documentId);
+    for (const { page, rects } of pages) {
+      const original = state.pages[page];
+      if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+      const markup = new Map(state.markup);
+      markup.set(original, [
+        ...(markup.get(original) ?? []),
+        { kind, rects, contents: null, strokes: [], ...signed() },
+      ]);
+      state = { pages: state.pages, markup, change: "annotations" };
+    }
+    return pushState(documentId, state);
+  },
+  addInk: async (documentId, page, strokes) => {
+    const points = strokes.flat();
+    if (points.length === 0) throw { code: "invalid_edit", detail: "no ink" };
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const rect = {
+      x: Math.min(...xs) - 2,
+      y: Math.min(...ys) - 2,
+      width: Math.max(...xs) - Math.min(...xs) + 4,
+      height: Math.max(...ys) - Math.min(...ys) + 4,
+    };
+    const ink: MockMarkup = {
+      kind: "ink",
+      rects: [rect],
+      contents: null,
+      strokes: strokes.map((stroke) => stroke.map((p): [number, number] => [p.x, p.y])),
+      ...signed(),
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, ink]),
+    );
+  },
+  addNote: async (documentId, page, x, y, contents) => {
+    const note: MockMarkup = {
+      kind: "note",
+      rects: [{ x, y, width: 20, height: 20 }],
+      contents,
+      strokes: [],
+      ...signed(),
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, note]),
+    );
+  },
+  addTextBox: async (documentId, page, x, y, width, contents) => {
+    if (contents.trim() === "") throw { code: "invalid_edit", detail: "a text box needs text" };
+    const lines = Math.max(1, Math.ceil((contents.length * 6) / Math.max(1, width - 4)));
+    const box: MockMarkup = {
+      kind: "textBox",
+      rects: [{ x, y, width, height: lines * 16 + 4 }],
+      contents,
+      strokes: [],
+      ...signed(),
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, box]),
+    );
+  },
+  setAnnotationContents: async (documentId, page, index, contents) => {
+    const next = withMarkup(documentId, page, (list) => {
+      const found = list[index];
+      if (found?.kind !== "note" && found?.kind !== "textBox") {
+        throw { code: "invalid_edit", detail: "not a note or a text box" };
+      }
+      return list.map((item, i) => (i === index ? { ...item, contents } : item));
+    });
+    return pushState(documentId, next);
+  },
+  removeAnnotations: async (documentId, page, indices) => {
+    const next = withMarkup(documentId, page, (list) => {
+      if (indices.some((index) => !list[index])) {
+        throw { code: "invalid_edit", detail: "no such annotation" };
+      }
+      return list.filter((_, i) => !indices.includes(i));
+    });
+    return pushState(documentId, next);
+  },
+  pageAnnotations: async (documentId, page) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    return (original === undefined ? [] : (state.markup.get(original) ?? [])).map(
+      ({ kind, rects, contents, strokes }, index) => ({ index, kind, rects, contents, strokes }),
+    );
+  },
+  documentComments: async (documentId) => {
+    const state = stateOf(documentId);
+    return state.pages.flatMap((original, page) =>
+      (state.markup.get(original) ?? []).map(
+        (item, index): DocumentComment => ({
+          page,
+          index,
+          kind: item.kind,
+          author: item.author ?? null,
+          modified: item.modified ?? null,
+          contents:
+            item.kind === "note" || item.kind === "textBox" ? (item.contents ?? null) : null,
+          // The mock's pages have no text of their own.
+          markedText: null,
+          rect: item.rects.reduce((box, rect) => ({
+            x: Math.min(box.x, rect.x),
+            y: Math.min(box.y, rect.y),
+            width: Math.max(box.x + box.width, rect.x + rect.width) - Math.min(box.x, rect.x),
+            height: Math.max(box.y + box.height, rect.y + rect.height) - Math.min(box.y, rect.y),
+          })),
+          resolved: item.resolved ?? false,
+          replies: item.replies ?? [],
+        }),
+      ),
+    );
+  },
+  replyToComment: async (documentId, page, index, contents) => {
+    if (contents.trim() === "") throw { code: "invalid_edit", detail: "a reply needs some text" };
+    return withComment(documentId, page, index, (comment) => {
+      const reply = { index: 1000 + (comment.replies?.length ?? 0), contents, ...signed() };
+      return { ...comment, replies: [...(comment.replies ?? []), reply] };
+    });
+  },
+  setCommentResolved: async (documentId, page, index, resolved) =>
+    withComment(documentId, page, index, (comment) => ({ ...comment, resolved })),
+  // The mock "picks" a file whose pages are the sample's first three.
+  // The mock "picks" a file whose pages are the sample's first three; when
+  // tests say so, it is the locked sample's, which asks for its password.
+  insertPagesFromFiles: async (documentId, at) => {
+    if (mockInsertIsLocked) {
+      pendingInsert = { documentId, at };
+      return { kind: "needsPassword", token: 9, name: LOCKED.name, retry: false };
+    }
+    return { kind: "inserted", edit: insertSample(documentId, at) };
+  },
+  unlockInsert: async (_token, password) => {
+    const pending = pendingInsert;
+    if (!pending) throw { code: "unknown_token", detail: "no insert waiting" };
+    if (password !== LOCKED_PASSWORD) {
+      return { kind: "needsPassword", token: 9, name: LOCKED.name, retry: true };
+    }
+    pendingInsert = null;
+    return { kind: "inserted", edit: insertSample(pending.documentId, pending.at) };
+  },
+  extractPages: async () => "Extract.pdf",
+  // The mock "writes" parts of 20 pages when split by size, whatever the limit.
+  splitDocument: async (documentId, by) => {
+    const count = pagesOf(documentId).length;
+    if (by.kind === "bookmarks") return (await mockBackend.bookmarkParts(documentId)).length;
+    return Math.ceil(count / (by.kind === "pages" ? by.size : 20));
+  },
+  bookmarkParts: async (documentId) => {
+    const count = pagesOf(documentId).length;
+    const starts = (documentId === SAMPLE.id ? OUTLINE : [])
+      .filter((item) => item.page !== null && item.page < count)
+      .map((item) => ({ title: item.title, page: item.page ?? 0 }))
+      .sort((a, b) => a.page - b.page)
+      .filter((item, i, all) => i === 0 || item.page !== all[i - 1]?.page);
+    return starts.map((item, i) => ({
+      title: item.title,
+      start: i === 0 ? 0 : item.page,
+      end: starts[i + 1]?.page ?? count,
+    }));
+  },
+  saveDocument: async (documentId) => {
+    const history = edits.get(documentId);
+    if (history) history.saved = history.at;
+    return {
+      name: documentId === LOCKED.id ? LOCKED.name : SAMPLE.name,
+      modified: false,
+      incremental: false,
+    };
+  },
+  saveDocumentAs: async (documentId) => {
+    const history = edits.get(documentId);
+    if (history) history.saved = history.at;
+    return { name: "Copy.pdf", modified: false, incremental: false };
+  },
+  redoEdit: async (documentId) => {
+    const history = edits.get(documentId);
+    if (!history || history.at >= history.states.length - 1) {
+      return outcome(documentId, "annotations");
+    }
+    history.at += 1;
+    return outcome(documentId, history.states[history.at]?.change ?? "pages");
+  },
   documentOutline: async (documentId) => (documentId === SAMPLE.id ? OUTLINE : []),
   pageLabels: async () => null,
-  pageText: async (_documentId, page) => textLayer(page),
+  pageText: async (documentId, page) => {
+    const original = pagesOf(documentId)[page] ?? page;
+    return original < 0 ? { blocks: [], direction: "ltr", quality: "noText" } : textLayer(original);
+  },
   searchDocument: async (documentId, query, options) => {
     const hits = search(documentId, query, options);
     return { hits: hits.slice(0, 5000), truncated: hits.length > 5000 };
   },
-  renderTile: (_documentId, requestGeneration, page, tile, priority, lane = "main") =>
+  renderTile: (documentId, requestGeneration, page, tile, priority, lane = "main") =>
     new Promise<RenderedPage>((resolve, reject) => {
       if (requestGeneration < generations[lane]) {
         reject(CANCELLED);
@@ -426,6 +893,8 @@ export const mockBackend: Backend = {
         lane,
         generation: requestGeneration,
         page,
+        original: pagesOf(documentId)[page] ?? page,
+        markup: stateOf(documentId).markup.get(pagesOf(documentId)[page] ?? page) ?? [],
         tile,
         priority,
         seq: ++seq,
@@ -442,6 +911,10 @@ export const mockBackend: Backend = {
   printDocument: async () => {},
   moveToNewWindow: async () => {},
   onSettingChanged: async () => () => {},
+  onCloseRequested: async () => () => {},
+  onQuitRequested: async () => () => {},
+  closeWindowDiscarding: async () => {},
+  quitDiscarding: async () => {},
   selftestConfig: async () => null,
   selftestReport: async () => {},
   renderStats: async () => null,

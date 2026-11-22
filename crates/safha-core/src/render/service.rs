@@ -216,6 +216,23 @@ impl RenderService {
         deferred.run();
     }
 
+    /// Replaces a document with another revision of it (after an edit, an
+    /// undo, or a redo). Everything rendered, queued, or open for the old
+    /// revision is discarded, and a render of it still running is not cached.
+    /// Viewport generations carry on, so the viewer's requests stay valid.
+    pub fn replace_document(&self, id: DocumentId, source: Arc<dyn TileSource>) {
+        let mut deferred = Deferred::default();
+        {
+            let mut state = self.shared.lock();
+            let Some(doc) = state.documents.get_mut(&id) else { return };
+            doc.revision += 1;
+            doc.source = source;
+            let revision = doc.revision;
+            state.drop_document_work(id, |old| old < revision, &mut deferred);
+        }
+        deferred.run();
+    }
+
     /// Declares that the document's content changed (an edit): everything
     /// rendered or queued for the old content is discarded.
     pub fn invalidate_document(&self, id: DocumentId) {

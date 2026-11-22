@@ -4,12 +4,27 @@ import { useAppStore } from "../../state/appStore";
 import { IconButton } from "../ui/IconButton";
 import styles from "./ErrorBanner.module.css";
 
-/** Inline, non-modal error message (docs/SPEC.md section 4, interaction rules). */
+/**
+ * Inline, non-modal error message (docs/SPEC.md section 4, interaction rules),
+ * or, when there is no error, a notice about something done elsewhere.
+ */
 export function ErrorBanner() {
   const { t } = useTranslation();
   const errorCode = useAppStore((state) => state.errorCode);
   const setError = useAppStore((state) => state.setError);
-  if (!errorCode) return null;
+  const notice = useAppStore((state) => state.notice);
+  const setNotice = useAppStore((state) => state.setNotice);
+  if (!errorCode) {
+    if (!notice) return null;
+    return (
+      <div className={`${styles.banner} ${styles.notice}`} role="status">
+        <p className={styles.message}>{t(`notices.${notice.key}`, notice.values ?? {})}</p>
+        <IconButton label={t("errors.dismiss")} onPress={() => setNotice(null)}>
+          <X />
+        </IconButton>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.banner} role="alert">

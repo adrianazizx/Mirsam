@@ -30,6 +30,7 @@
   /* Sizes */
   --size-hit: 32px; /* minimum pointer target on desktop */
   --size-icon: 18px;
+  --size-icon-sm: 14px; /* inline with small text */
   --size-tabbar: 40px;
   --size-rail: 48px;
   --size-statusbar: 32px;
@@ -42,12 +43,19 @@
   --size-side-panel: 248px;
   /* Thumbnails are drawn this wide (CSS px), read by src/viewer/thumbnails.ts */
   --size-thumbnail: 128px;
+  /* The page organizer: a page image's width, and the gap between pages. */
+  --size-page-grid-image: 168px;
+  --size-page-grid-gap: 16px;
   --size-search-result: 56px; /* row height of the virtualized results list */
   --size-palette: 560px;
+  --size-note-editor: 280px; /* the note editor's width */
+  --size-note-text: 96px; /* its text field's height */
   --size-palette-row: 36px;
   --size-unlock-panel: 400px;
   --size-selection-toolbar-span: 480px;
+  --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
   --border-width: 1px;
+  --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;
 
   /* Typography */
@@ -114,6 +122,9 @@
   --color-search-hit: rgb(250 204 21 / 0.45);
   --color-search-hit-active: rgb(234 88 12 / 0.5);
   --color-text-selection: rgb(14 116 144 / 0.3);
+  /* On the white page in either theme: the pen's ink and a note's icon, as the engine draws them. */
+  --color-ink: #0d3899;
+  --color-note: #ffdb00;
   --color-search-mark-bg: #fde68a;
   --color-search-mark-text: #1b1f24;
   --shadow-popover: 0 2px 4px rgb(16 24 40 / 0.08), 0 8px 24px rgb(16 24 40 / 0.14);
@@ -155,6 +166,8 @@
   --color-search-hit: rgb(250 204 21 / 0.45);
   --color-search-hit-active: rgb(234 88 12 / 0.5);
   --color-text-selection: rgb(77 196 220 / 0.35);
+  --color-ink: #0d3899;
+  --color-note: #ffdb00;
   --color-search-mark-bg: #854d0e;
   --color-search-mark-text: #fef3c7;
   --shadow-popover: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);

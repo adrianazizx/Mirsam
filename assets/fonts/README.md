@@ -25,3 +25,9 @@ The UI itself loads IBM Plex Sans and IBM Plex Sans Arabic from the
 redistributed under that name. Subsetting for PDF embedding is embedding, not
 redistribution of a modified font, but re-check this when the Milestone 3
 subsetter lands.
+
+**Embedded now (ADR 0019).** Text boxes embed subsets of `IBMPlexSans-VF.ttf`
+(instanced at weight 400) and `IBMPlexSansArabic-Regular.ttf` in the user's
+PDFs, under their own names with a subset tag. Both files are compiled into the
+engine. The Reserved Font Name question above is listed for the project owner
+in `PROGRESS.md`.

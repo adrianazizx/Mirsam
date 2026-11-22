@@ -127,7 +127,7 @@ collection runs on its own schedule), small for frames.
   - fewer relayouts by time.
 - **Memory over 500 MB counts WebKit.** WebKit's own floor is about 155 MB in release (290 MB in
   debug) with only the first page on screen. The shell alone stays under 500 MB. Whether the spec's budget
-  covers WebKit's processes is the owner's call (PROGRESS.md). The shell's growth to 339 MB is
+  covers WebKit's processes was the owner's call: it does not (decided in session 6, below). The shell's growth to 339 MB is
   64 MiB of tile cache plus allocator retention from about 3,400 renders and their response
   copies. A response body must be an owned buffer, so the copy cannot go.
 - **The release bundle sometimes opens hidden** under the benchmark (3 of 5 launches), with the
@@ -164,8 +164,10 @@ The macOS runner's debug build passes the hard budgets but not the frame ones (p
 shell + webview 646 MB). Since a virtual machine without a GPU says little about a laptop, CI runs
 the benchmark with `--ci`:
 
-- **Warnings only:** frame timing, and the shell + webview total (owner question 12).
-- **Still fail the run:** blank time, jump-to-preview, and the shell's own memory.
+- **Warnings only:** every timing check (frames, blank time, jump-to-preview), the
+  visible-window check, and the shell + webview total. One run measured a jump-to-preview of
+  697 ms on a slow runner, against 21–22 ms in the others.
+- **Still fails the run:** the shell's own memory.
 
 ### Pinch-out: three hypotheses tested, none confirmed
 
@@ -184,3 +186,9 @@ WebKit: probably rasterizing the area each zoom-out frame reveals.
 
 Finding it needs Web Inspector's timeline on a real machine, with a person at it. The extreme
 case stays open; ordinary pinches meet the budget.
+
+### Owner decision: what the memory budget measures
+
+The spec's 500 MB budget for the 1,000-page document covers **the app's own process**, which
+measured 339 MB in the release benchmark. The system webview's processes are measured and
+reported but not budgeted. `check-scroll-benchmark.mjs` and the spec's §11 now say so.

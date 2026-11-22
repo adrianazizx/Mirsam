@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use pdfium_render::prelude::Pdfium;
 
@@ -36,6 +36,9 @@ pub struct Engine {
 }
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
+/// Serializes the one-time load: `pdfium-render` refuses a second bind, and a
+/// thread refused while the winner was still storing its engine used to fail.
+static LOADING: Mutex<()> = Mutex::new(());
 
 impl Engine {
     /// Returns the process-wide engine, loading PDFium on first use.
@@ -45,12 +48,13 @@ impl Engine {
         if let Some(engine) = ENGINE.get() {
             return Ok(engine);
         }
-        // Two threads can race to this point; `pdfium-render` rejects the second
-        // bind, so the loser simply picks up the winner's engine.
-        match Self::load(source) {
-            Ok(engine) => Ok(ENGINE.get_or_init(|| engine)),
-            Err(err) => ENGINE.get().ok_or(err),
+        let _loading = LOADING.lock().unwrap_or_else(PoisonError::into_inner);
+        // Another thread may have loaded it while this one waited.
+        if let Some(engine) = ENGINE.get() {
+            return Ok(engine);
         }
+        let engine = Self::load(source)?;
+        Ok(ENGINE.get_or_init(|| engine))
     }
 
     fn load(source: &PdfiumSource) -> Result<Engine> {
@@ -77,12 +81,25 @@ impl Engine {
     /// The engine never holds the source file open, so the original on disk
     /// stays untouched and replaceable (spec section 9, "Document model and saving").
     pub fn open_bytes(&'static self, bytes: Vec<u8>, password: Option<&str>) -> Result<Document> {
-        // Read before PDFium takes the bytes: the catalog's reading preferences,
-        // which PDFium exposes only through an `unsafe` call.
+        self.open_shared(Arc::from(bytes), password)
+    }
+
+    /// Opens a document from bytes it shares with its caller: PDFium reads
+    /// them in place, and the document keeps them for editing (an edit
+    /// appends to them, ADR 0014).
+    pub fn open_shared(&'static self, bytes: Arc<[u8]>, password: Option<&str>) -> Result<Document> {
+        // The catalog's reading preferences, which PDFium exposes only through
+        // an `unsafe` call.
         let hints = crate::catalog::catalog_hints(&bytes);
         let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
-        let inner = self.pdfium.load_pdf_from_byte_vec(bytes, password)?;
-        Ok(Document::new(inner, hints))
+        let inner = self.pdfium.load_pdf_from_reader(std::io::Cursor::new(Arc::clone(&bytes)), password)?;
+        Ok(Document::new(inner, hints, bytes, password.map(str::to_owned), self))
+    }
+
+    /// An empty PDF to copy pages into (extracting, splitting).
+    pub(crate) fn new_pdf(&'static self) -> Result<pdfium_render::prelude::PdfDocument<'static>> {
+        let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(self.pdfium.create_new_pdf()?)
     }
 
     /// Reads `path` fully into memory and opens it.

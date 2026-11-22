@@ -1,10 +1,11 @@
-import { ListTree, PanelLeftClose, Search, SquareStack } from "lucide-react";
+import { ListTree, MessageSquare, PanelLeftClose, Search, SquareStack } from "lucide-react";
 import { ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { type CommandId, runCommand } from "../../commands/registry";
 import { type LeftPanel as Panel, selectActiveDocument, useAppStore } from "../../state/appStore";
 import { CommandButton } from "../ui/CommandButton";
 import { Tooltip } from "../ui/Tooltip";
+import { CommentsPanel } from "./CommentsPanel";
 import styles from "./LeftPanel.module.css";
 import { OutlinePanel } from "./OutlinePanel";
 import { SearchPanel } from "./SearchPanel";
@@ -14,11 +15,12 @@ const VIEWS: { panel: Panel; command: CommandId; icon: React.ReactNode }[] = [
   { panel: "thumbnails", command: "view.showThumbnails", icon: <SquareStack /> },
   { panel: "outline", command: "view.showOutline", icon: <ListTree /> },
   { panel: "search", command: "search.focus", icon: <Search /> },
+  { panel: "comments", command: "view.showComments", icon: <MessageSquare /> },
 ];
 
 /**
- * The left panel (spec section 4): thumbnails, outline, and search results for
- * the active document. "Left" in the spec's English layout; it sits at the
+ * The left panel (spec section 4): thumbnails, outline, search results, and
+ * comments (ADR 0041) for the active document. "Left" in the spec's English layout; it sits at the
  * inline start, so it is on the right in the Arabic UI.
  */
 export function LeftPanel() {
@@ -64,6 +66,8 @@ export function LeftPanel() {
           <ThumbnailsPanel key={documentId} documentId={documentId} />
         ) : panel === "outline" ? (
           <OutlinePanel key={documentId} documentId={documentId} />
+        ) : panel === "comments" ? (
+          <CommentsPanel key={documentId} documentId={documentId} />
         ) : (
           <SearchPanel key={documentId} documentId={documentId} />
         )}

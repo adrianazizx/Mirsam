@@ -9,6 +9,10 @@
   border-inline-start: var(--space-1) solid var(--color-danger);
 }
 
+.notice {
+  border-inline-start-color: var(--color-accent);
+}
+
 .message {
   flex: 1;
   user-select: text;

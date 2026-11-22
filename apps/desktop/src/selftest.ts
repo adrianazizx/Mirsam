@@ -21,15 +21,20 @@ export function nextFrame(): Promise<void> {
   });
 }
 
-/** Resolves with the first painted event for `page`, or null after `timeoutMs`. */
+/**
+ * Resolves with the first painted event for `page` that `accept` takes, or
+ * null after `timeoutMs`. Start waiting before whatever causes the paint: a
+ * fast paint can otherwise come and go before the wait begins.
+ */
 export function waitForPagePainted(
   page: number,
   timeoutMs: number,
+  accept: (detail: PagePaintedDetail) => boolean = () => true,
 ): Promise<PagePaintedDetail | null> {
   return new Promise((resolve) => {
     const onPainted = (event: Event) => {
       const detail = (event as CustomEvent<PagePaintedDetail>).detail;
-      if (detail.page !== page) return;
+      if (detail.page !== page || !accept(detail)) return;
       window.clearTimeout(timeout);
       window.removeEventListener(PAGE_PAINTED_EVENT, onPainted);
       resolve(detail);
@@ -129,6 +134,83 @@ async function navigationChecks(documentId: number) {
   );
   const thumbnails = document.querySelectorAll('[data-testid="thumbnails"] button').length;
 
+  // Markup (ADR 0017): highlight the page's text from the selection, see it
+  // painted by the same view (no rebuild), find it listed, then undo it.
+  const markup = layer.blocks.length === 0 ? null : await markupChecks(documentId);
+  // Notes and ink (ADR 0018): an Arabic note and a pen stroke, painted and read
+  // back; the stroke erased; everything undone.
+  const notesAndInk = await notesAndInkChecks(documentId);
+
+  // Editing (ADR 0014): duplicate the page, see the new revision painted,
+  // then undo back to the file as opened.
+  const editing = await (async () => {
+    const pagesBefore = (await backend.pageSizes(documentId)).length;
+    const started = performance.now();
+    // The new revision gets a new viewer; only its paint counts.
+    const before = getViewer(documentId);
+    const repaint = waitForPagePainted(0, 15_000, () => getViewer(documentId) !== before);
+    await runCommand("pages.duplicate");
+    const pagesAfterEdit = (await backend.pageSizes(documentId)).length;
+    const editMs = Math.round(performance.now() - started);
+    const repainted = (await repaint) !== null;
+    // Autosave (ADR 0040): the unsaved change is kept in a recovery file.
+    const recoveryAfterEdit = await recoveryFile(documentId, true);
+    // Closing the window now must ask first (ADR 0015) and leave it open.
+    let closePrompted = false;
+    if (isTauri()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("selftest_request_close");
+      closePrompted = await waitFor(
+        () => useAppStore.getState().closePrompt?.kind === "window",
+        5_000,
+      );
+      await runCommand("app.cancelClose");
+    }
+    await runCommand("edit.undo");
+    const pagesAfterUndo = (await backend.pageSizes(documentId)).length;
+    // Back to the file as opened: nothing left to recover.
+    const recoveryAfterUndo = await recoveryFile(documentId, false);
+
+    // The page organizer, when there is more than one page: its grid draws,
+    // and moving the first page later puts it second.
+    let organizer: { gridImages: number; moved: boolean } | null = null;
+    if (pagesBefore >= 2) {
+      const text = async (page: number) =>
+        (await backend.pageText(documentId, page)).blocks
+          .map((block) => block.lines.map((line) => line.text).join("\n"))
+          .join("\n\n");
+      const first = await text(0);
+      useAppStore.getState().setActiveTool("pages");
+      const drawn = await waitFor(
+        () => document.querySelector('[role="grid"] canvas') !== null,
+        10_000,
+      );
+      const gridImages = drawn ? document.querySelectorAll('[role="grid"] canvas').length : 0;
+      useAppStore.getState().setSelectedPages(documentId, [0]);
+      await runCommand("pages.moveLater");
+      const moved = (await text(1)) === first && first.length > 0;
+      await runCommand("edit.undo");
+      const shown = waitForPagePainted(0, 15_000);
+      useAppStore.getState().setActiveTool("select");
+      await shown;
+      organizer = { gridImages, moved };
+    }
+    const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
+    return {
+      pagesBefore,
+      pagesAfterEdit,
+      pagesAfterUndo,
+      editMs,
+      repainted,
+      closePrompted,
+      organizer,
+      modifiedAfterUndo: open?.modified ?? null,
+      recoveryAfterEdit,
+      recoveryAfterUndo,
+      revision: open?.revision ?? null,
+    };
+  })();
+
   // A second window opens, and the shell has both.
   await runCommand("window.new");
   let windows: string[] | null = null;
@@ -156,7 +238,209 @@ async function navigationChecks(documentId: number) {
     labels: labels?.slice(0, 5) ?? null,
     thumbnailDrawn,
     thumbnails,
+    markup,
+    notesAndInk,
+    editing,
     windows,
+  };
+}
+
+async function markupChecks(documentId: number) {
+  const viewer = getViewer(documentId);
+  await runCommand("edit.selectAll");
+  await waitFor(() => viewer?.hasSelection() ?? false, 3_000);
+  const runs = viewer?.selectionMarks().reduce((sum, page) => sum + page.rects.length, 0) ?? 0;
+  const started = performance.now();
+  await runCommand("markup.highlight");
+  const markMs = Math.round(performance.now() - started);
+  // Highlighter yellow (multiplied over white), once the repainted tiles show it.
+  // A highlight of a page's text covers far more than a few tiles' worth.
+  const highlighted = 500;
+  const yellowPixels = await pixelsOnScreen(
+    documentId,
+    (r, g, b) => r > 200 && g > 150 && b < 120,
+    highlighted,
+  );
+  const listed = await backend.pageAnnotations(documentId, 0);
+  const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
+  const result = {
+    runs,
+    markMs,
+    painted: yellowPixels > highlighted,
+    sameViewer: getViewer(documentId) === viewer,
+    yellowPixels,
+    kinds: listed.map((item) => item.kind),
+    quads: listed[0]?.rects.length ?? 0,
+    paint: open?.paint ?? null,
+    modified: open?.modified ?? null,
+    removedByUndo: false,
+  };
+  await runCommand("edit.undo");
+  result.removedByUndo = (await backend.pageAnnotations(documentId, 0)).length === 0;
+  return result;
+}
+
+/**
+ * Enough matching pixels for a small mark (a note's icon, a line of text) at
+ * the view's render scale (device pixels per point). A CI runner's small
+ * window at 1x draws a page at about 1 pixel per point, where a note's icon
+ * has a few dozen pure-yellow pixels; this Mac draws three times larger in
+ * each direction. Nothing matches before the mark is drawn, so a small floor
+ * still tells drawn from not drawn.
+ */
+function enoughAt(scale: number): number {
+  return Math.max(8, Math.round(8 * scale * scale));
+}
+
+/**
+ * Page 0's on-screen pixels that `match` takes, once there are more than
+ * `enough` (or when `timeoutMs` runs out). A repaint after an edit replaces
+ * tiles one by one, and a slow machine may still be repainting for another
+ * reason (a zoom change) when the edit lands: waiting for one "painted" event
+ * can catch the wrong one. What is on screen is what counts.
+ */
+async function pixelsOnScreen(
+  documentId: number,
+  match: (r: number, g: number, b: number) => boolean,
+  enough: number,
+  timeoutMs = 15_000,
+): Promise<number> {
+  let count = 0;
+  await waitFor(() => {
+    count = countPixels(documentId, match);
+    return count > enough;
+  }, timeoutMs);
+  return count;
+}
+
+/** Waits until page 0's visible part is covered by current tiles. */
+function pageSettled(documentId: number, timeoutMs = 15_000): Promise<boolean> {
+  return waitFor(
+    () =>
+      getViewer(documentId)
+        ?.snapshot()
+        .visible.some((page) => page.page === 0 && page.sharp) ?? false,
+    timeoutMs,
+  );
+}
+
+/** Pixels of page 0's on-screen tiles that `match` takes. */
+function countPixels(documentId: number, match: (r: number, g: number, b: number) => boolean) {
+  let count = 0;
+  for (const { canvas, tile } of getViewer(documentId)?.pageCanvases(0).tiles ?? []) {
+    const data = canvas.getContext("2d")?.getImageData(0, 0, tile.width, tile.height).data;
+    for (let i = 0; data && i < data.length; i += 4) {
+      if (match(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0)) count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Whether the document has a recovery file, polled until it is `expected`
+ * (autosaves wait for edits to pause, ADR 0040), or null outside devtools.
+ */
+async function recoveryFile(documentId: number, expected: boolean): Promise<boolean | null> {
+  const deadline = performance.now() + 10_000;
+  for (;;) {
+    const kept = await backend.hasRecoveryFile(documentId);
+    if (kept === null || kept === expected || performance.now() > deadline) return kept;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
+async function notesAndInkChecks(documentId: number) {
+  const viewer = getViewer(documentId);
+  const scale = viewer?.snapshot().scale ?? 1;
+  const enough = enoughAt(scale);
+  const text = "راجع البند ٤ — check clause 4";
+  // The note and the stroke go near the page's top: show it, so its tiles are on screen.
+  if (viewer) {
+    const shown = waitForPagePainted(0, 15_000);
+    viewer.goToPage(0, 0);
+    await Promise.race([shown, new Promise((resolve) => setTimeout(resolve, 2_000))]);
+  }
+
+  await runCommand("note.place", { page: 0, x: 24, y: 24 });
+  await runCommand("note.save", { text });
+  // The icon's yellow.
+  const notePixels = await pixelsOnScreen(
+    documentId,
+    (r, g, b) => r > 220 && g > 180 && b < 80,
+    enough,
+  );
+  const notePainted = notePixels > enough;
+  const note = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "note");
+
+  // A text box (ADR 0019): Arabic, shaped and drawn with embedded fonts.
+  const boxText = "تمت المراجعة والموافقة";
+  const dark = (r: number, g: number, b: number) => r < 90 && g < 90 && b < 90;
+  // Counted against the page as it is before, every tile in place.
+  await pageSettled(documentId);
+  const darkBefore = countPixels(documentId, dark);
+  await runCommand("textBox.place", { page: 0, x: 60, y: 24, width: 200 });
+  await runCommand("note.save", { text: boxText });
+  let boxPixels = 0;
+  await waitFor(() => {
+    boxPixels = countPixels(documentId, dark) - darkBefore;
+    return boxPixels > enough;
+  }, 15_000);
+  const boxPainted = boxPixels > enough;
+  const box = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "textBox");
+
+  const stroke = [
+    { x: 60, y: 60, pressure: 0.5 },
+    { x: 140, y: 64, pressure: 0.8 },
+    { x: 220, y: 60, pressure: 1 },
+  ];
+  await runCommand("ink.add", { page: 0, strokes: [stroke] });
+  // The pen's dark blue.
+  const inkPixels = await pixelsOnScreen(
+    documentId,
+    (r, g, b) => r < 70 && g < 110 && b > 110,
+    enough,
+  );
+  const inkPainted = inkPixels > enough;
+  const ink = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "ink");
+
+  // The comments panel (ADR 0041): the three listed, a reply and a resolve
+  // read back from the file, then both undone (two of the undos below).
+  await runCommand("view.showComments");
+  const replyText = "تم — done";
+  if (note) await runCommand("comment.reply", { page: 0, index: note.index, text: replyText });
+  if (note) await runCommand("comment.resolve", { page: 0, index: note.index, resolved: true });
+  const listed = await backend.documentComments(documentId);
+  const thread = listed.find((comment) => comment.kind === "note");
+  await waitFor(() => document.querySelectorAll('[data-testid="comment"]').length >= 3, 5_000);
+  const comments = {
+    kinds: listed.map((comment) => comment.kind).sort(),
+    replied: thread?.replies[0]?.contents === replyText,
+    resolved: thread?.resolved ?? false,
+    panelItems: document.querySelectorAll('[data-testid="comment"]').length,
+    replyOnPage: (await backend.pageAnnotations(documentId, 0)).length,
+  };
+  await runCommand("view.showThumbnails");
+
+  await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
+  const erased = !(await backend.pageAnnotations(documentId, 0)).some((a) => a.kind === "ink");
+  // The erase, the resolve, the reply, the stroke, the text box, the note.
+  for (let i = 0; i < 6; i += 1) await runCommand("edit.undo");
+  const cleared = (await backend.pageAnnotations(documentId, 0)).length === 0;
+  return {
+    scale,
+    enough,
+    noteMatches: note?.contents === text,
+    boxMatches: box?.contents === boxText,
+    boxPainted,
+    boxPixels,
+    notePainted,
+    notePixels,
+    inkPainted,
+    inkPixels,
+    inkPoints: ink?.strokes[0]?.length ?? 0,
+    erased,
+    cleared,
+    comments,
   };
 }
 

@@ -4,8 +4,26 @@
     {
       "name": "safha-ui",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "apps/desktop", "dev"],
+      "runtimeArgs": [
+        "--dir",
+        "apps/desktop",
+        "dev"
+      ],
       "port": 1420
+    },
+    {
+      "name": "safha-ui-1421",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "apps/desktop",
+        "exec",
+        "vite",
+        "--port",
+        "1421",
+        "--strictPort"
+      ],
+      "port": 1421
     }
   ]
 }
