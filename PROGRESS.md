@@ -424,8 +424,9 @@ Plan, in order:
   - **Runtime: llama.cpp with the authors' Q8_0 GGUF builds** (MIT runtime, Apache-2.0 weights).
     The 4B at Q8_0 writes the same text as bf16 on all 47 pages. Q4_K_M loses accuracy on
     degraded mixed lines and digits, so it is not shipped.
-  - **Without a GPU (proposed; owner to confirm):** the 4B on the CPU, at 143 s per page (11 GiB). The
-    0.8B (46 s per page, 3 GiB) is for machines whose memory cannot hold the 4B.
+  - **Without a GPU: the 4B on the CPU** (owner's decision, 2026-11-22), at 143 s per page
+    (11 GiB). The 0.8B (46 s per page, 3 GiB) is only for machines whose memory cannot hold the
+    4B. That memory threshold is still to be set from a timing on a typical Windows laptop.
   - **Quick draft:** Apple Vision on macOS, Tesseract elsewhere.
   - **Not chosen:** QARI-OCR (invents words), PaddleOCR-VL-1.6 (weak Arabic), PP-OCRv5 Arabic
     (32% CER; drops Latin words in Arabic lines), Baseer (no weights released).
@@ -511,8 +512,8 @@ Plan, in order:
   - **Speed per page:** Metal 8.4 s (4B Q8_0) and 2.7 s (0.8B Q8_0). CPU only: 143 s (4B
     Q8_0, 11 GiB) and 46 s (0.8B Q8_0), against 677 s for the 0.8B through Transformers. About 96% of
     the CPU time goes to reading the 2,420 image tokens.
-  - **Proposal:** the 4B is the default even without a GPU; the 0.8B is for machines too small
-    for the 4B.
+  - **Decided by the owner:** the 4B is the default even without a GPU; the 0.8B is only for
+    machines too small for the 4B.
 - **Word boxes spike** (ADR 0031):
   - **Ground truth:** Chrome's DOM word rectangles for the 26 geometry-preserving pages.
   - **Detector:** PP-OCRv5's server detector found every line.
@@ -529,8 +530,8 @@ Plan, in order:
   - **The four GGUF builds plus their vision encoders** (about 9.5 GiB), in
     `~/Library/Caches/safha-dev/ocr-bench/hf`.
 - **Needs the owner (M4):**
-  - **Confirm the 4B is the default on CPU-only machines,** and where the memory threshold for
-    the 0.8B falls. This needs a timing on a typical Windows laptop.
+  - ~~Confirm the 4B is the default on CPU-only machines.~~ Confirmed. Still open: the memory
+    threshold for the 0.8B, which needs a timing on a typical Windows laptop.
   - **Real scans (item 9).** Box truth for skewed and warped pages too.
 - **Tests:** no Rust or UI code changed. The scorer runs in this session used `safha-ocr-eval`
   as it was.

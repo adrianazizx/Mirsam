@@ -339,14 +339,15 @@ include the severe, vocalized and mixed conditions.
   have flagged all five wrong digit fields; without the third reader, four, since both Nuqta models
   wrote ١٣٣٤ on the photocopy. Where the platform has no OCR, the third reader is still open. The ensemble is there to catch errors, not to vote the
   text into shape.
-- **Machines without a usable GPU: Nuqta 4B on the CPU, proposed (owner to confirm).** Through
-  llama.cpp it runs on the CPU alone, and the spec puts the most accurate engine first if it runs
-  even slowly. The 4B is that engine, at 143 s per page (Q8_0, 11 GiB peak memory) on this CPU.
+- **Machines without a usable GPU: Nuqta 4B on the CPU** (decided by the owner, 2026-11-22).
+  Through llama.cpp the 4B runs on the CPU alone, and the spec puts the most accurate engine
+  first if it runs even slowly. On this CPU it takes 143 s per page (Q8_0, 11 GiB peak memory).
   Through Transformers the 0.8B took 677 s per page on the CPU, because Transformers falls back
-  to an unoptimized implementation of Qwen3.5's linear-attention layers there. **Nuqta 0.8B alone** (Q8_0, 46 s per
-  page on the CPU, 3 GiB) is for machines whose memory cannot hold the 4B. Where the line falls
-  (RAM, and minutes per page on a slow CPU) is the owner's call. It needs measuring on a typical
-  Windows laptop.
+  to an unoptimized implementation of Qwen3.5's linear-attention layers there.
+  - **Nuqta 0.8B alone** (Q8_0, 46 s per page on the CPU, 3 GiB) is only for machines whose
+    memory cannot hold the 4B.
+  - **Still open:** that memory threshold. It is set once the 4B is timed on a typical Windows
+    laptop.
 - **Quick draft pass (searchable within moments):** the platform's built-in OCR where there is one
   (Apple Vision on macOS: 0.27 s per page, 9.5% CER). Elsewhere it is Tesseract `ara+eng`, marked
   as a draft and replaced page by page. Windows' built-in OCR is not measured yet.
@@ -380,8 +381,8 @@ with its Arabic recogniser as a guide, provides the word boxes (ADR 0031).
 ## Consequences / what M4 does next
 
 1. ~~Re-measure Nuqta through a shippable runtime.~~ Done (follow-up above): llama.cpp Q8_0
-   matches bf16. Next: measure the CPU speed on a typical Windows laptop, and settle the RAM
-   threshold between the 4B and the 0.8B with the owner.
+   matches bf16. The owner made the 4B the default on CPU-only machines too. Next: time it on a
+   typical Windows laptop and set the memory threshold below which the 0.8B is used instead.
 2. ~~Word boxes.~~ Spiked and measured: ADR 0031.
 3. Fix in the pipeline, not the engine: logical order for left-to-right runs inside right-to-left
    lines ("bit-64"), and the digit check above. Then re-check the mixed and numbers gates.
