@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use pdfium_render::prelude::Pdfium;
 
@@ -77,12 +77,19 @@ impl Engine {
     /// The engine never holds the source file open, so the original on disk
     /// stays untouched and replaceable (spec section 9, "Document model and saving").
     pub fn open_bytes(&'static self, bytes: Vec<u8>, password: Option<&str>) -> Result<Document> {
-        // Read before PDFium takes the bytes: the catalog's reading preferences,
-        // which PDFium exposes only through an `unsafe` call.
+        self.open_shared(Arc::from(bytes), password)
+    }
+
+    /// Opens a document from bytes it shares with its caller: PDFium reads
+    /// them in place, and the document keeps them for editing (an edit
+    /// appends to them, ADR 0014).
+    pub fn open_shared(&'static self, bytes: Arc<[u8]>, password: Option<&str>) -> Result<Document> {
+        // The catalog's reading preferences, which PDFium exposes only through
+        // an `unsafe` call.
         let hints = crate::catalog::catalog_hints(&bytes);
         let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
-        let inner = self.pdfium.load_pdf_from_byte_vec(bytes, password)?;
-        Ok(Document::new(inner, hints))
+        let inner = self.pdfium.load_pdf_from_reader(std::io::Cursor::new(Arc::clone(&bytes)), password)?;
+        Ok(Document::new(inner, hints, bytes, password.map(str::to_owned), self))
     }
 
     /// Reads `path` fully into memory and opens it.

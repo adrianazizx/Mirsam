@@ -40,11 +40,49 @@ pub struct TileRequest {
 pub struct Document {
     inner: PdfDocument<'static>,
     hints: crate::catalog::CatalogHints,
+    /// The file's bytes as PDFium reads them; an edit appends to a copy.
+    bytes: Arc<[u8]>,
+    /// Kept in memory while the document is open, so an edited revision of an
+    /// encrypted file can be opened too (ADR 0014). Never written anywhere.
+    password: Option<String>,
+    engine: &'static crate::Engine,
 }
 
 impl Document {
-    pub(crate) fn new(inner: PdfDocument<'static>, hints: crate::catalog::CatalogHints) -> Self {
-        Self { inner, hints }
+    pub(crate) fn new(
+        inner: PdfDocument<'static>,
+        hints: crate::catalog::CatalogHints,
+        bytes: Arc<[u8]>,
+        password: Option<String>,
+        engine: &'static crate::Engine,
+    ) -> Self {
+        Self { inner, hints, bytes, password, engine }
+    }
+
+    /// The document's bytes: the file as opened plus any edits.
+    pub fn bytes(&self) -> Arc<[u8]> {
+        Arc::clone(&self.bytes)
+    }
+
+    /// Another revision of this document (after an edit, an undo or a redo),
+    /// opened with the same password.
+    pub fn revision(&self, bytes: Arc<[u8]>) -> Result<Document> {
+        self.engine.open_shared(bytes, self.password.as_deref())
+    }
+
+    /// This document with `edit` applied, and the update that applies it.
+    pub fn with_page_edit(&self, edit: &crate::edit::PageEdit) -> Result<(Document, Vec<u8>)> {
+        let update = crate::edit::page_edit_update(&self.bytes, edit)?;
+        let mut bytes = Vec::with_capacity(self.bytes.len() + update.len());
+        bytes.extend_from_slice(&self.bytes);
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// Whether the document carries digital signatures, which only an
+    /// incremental save keeps valid.
+    pub fn is_signed(&self) -> bool {
+        !self.inner.signatures().is_empty()
     }
 
     /// The document's own reading preferences: `/ViewerPreferences /Direction`

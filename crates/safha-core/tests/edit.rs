@@ -200,3 +200,26 @@ fn impossible_edits_are_refused() {
         Err(Error::EditUnsupported(_))
     ));
 }
+
+#[test]
+fn a_document_edits_undoes_and_redoes_through_its_history() {
+    use safha_core::edit::EditHistory;
+
+    // The encrypted fixture: each revision must reopen with the password.
+    let (bytes, password) = fixture("qpdf/encrypted");
+    let document = open(&bytes, password.as_deref());
+    let mut history = EditHistory::new(document.bytes());
+
+    let (edited, update) = document
+        .with_page_edit(&PageEdit::InsertBlank { at: 1, width: 100.0, height: 100.0 })
+        .expect("the edit applies");
+    history.push(update);
+    assert_eq!(edited.page_count(), 2);
+    assert!(history.is_modified());
+
+    let undone = edited.revision(history.undo().expect("undo")).expect("reopens");
+    assert_eq!(undone.page_count(), 1);
+    let redone = undone.revision(history.redo().expect("redo")).expect("reopens");
+    assert_eq!(redone.page_count(), 2);
+    assert_eq!(redone.page_size(1).expect("size").width, 100.0);
+}

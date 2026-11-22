@@ -14,6 +14,7 @@
 //! deleted pages, stay in the file's earlier revision; a full save drops them.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::pdf::write::{Update, XrefForm};
@@ -193,6 +194,85 @@ pub fn page_edit_update(bytes: &[u8], edit: &PageEdit) -> Result<Vec<u8>> {
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
 }
 
+/// A document's edits as a stack of incremental updates (ADR 0014).
+///
+/// Revision *n* is the file as opened followed by the first *n* updates, so
+/// undo and redo move along the stack and nothing is ever recomputed. Storage
+/// is the original bytes plus the updates, never a copy per revision.
+#[derive(Debug, Clone)]
+pub struct EditHistory {
+    base: Arc<[u8]>,
+    updates: Vec<Vec<u8>>,
+    /// `updates[..applied]` are in effect; the rest were undone.
+    applied: usize,
+    /// `applied` when the document was last saved; `None` once that revision
+    /// can no longer be reached (an edit after undoing past it).
+    saved: Option<usize>,
+}
+
+impl EditHistory {
+    pub fn new(base: Arc<[u8]>) -> Self {
+        Self { base, updates: Vec::new(), applied: 0, saved: Some(0) }
+    }
+
+    /// Records an update applied to the current revision. Undone updates are
+    /// forgotten: redo has nothing left after a new edit.
+    pub fn push(&mut self, update: Vec<u8>) {
+        self.updates.truncate(self.applied);
+        if self.saved.is_some_and(|saved| saved > self.applied) {
+            self.saved = None;
+        }
+        self.updates.push(update);
+        self.applied += 1;
+    }
+
+    /// Steps back one edit; the bytes of the revision before it.
+    pub fn undo(&mut self) -> Option<Arc<[u8]>> {
+        self.applied = self.applied.checked_sub(1)?;
+        Some(self.current())
+    }
+
+    /// Steps forward one undone edit.
+    pub fn redo(&mut self) -> Option<Arc<[u8]>> {
+        if self.applied == self.updates.len() {
+            return None;
+        }
+        self.applied += 1;
+        Some(self.current())
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.applied > 0
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.applied < self.updates.len()
+    }
+
+    /// Whether the current revision differs from the last saved one.
+    pub fn is_modified(&self) -> bool {
+        self.saved != Some(self.applied)
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.saved = Some(self.applied);
+    }
+
+    /// The current revision's bytes.
+    pub fn current(&self) -> Arc<[u8]> {
+        if self.applied == 0 {
+            return Arc::clone(&self.base);
+        }
+        let extra: usize = self.updates[..self.applied].iter().map(Vec::len).sum();
+        let mut bytes = Vec::with_capacity(self.base.len() + extra);
+        bytes.extend_from_slice(&self.base);
+        for update in &self.updates[..self.applied] {
+            bytes.extend_from_slice(update);
+        }
+        Arc::from(bytes)
+    }
+}
+
 enum Slot {
     Existing(usize),
     New(Dict),
@@ -353,5 +433,36 @@ fn unreadable(file: &File<'_>) -> Error {
         Error::EditUnsupported("its page tree is in an encrypted object stream, which cannot be read yet")
     } else {
         Error::EditUnsupported("its page tree cannot be read")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_steps_back_and_forth_and_tracks_the_saved_revision() {
+        let mut history = EditHistory::new(Arc::from(&b"base"[..]));
+        assert!(!history.can_undo() && !history.is_modified());
+        history.push(b"+1".to_vec());
+        history.push(b"+2".to_vec());
+        assert_eq!(&*history.current(), b"base+1+2");
+        assert!(history.is_modified());
+        history.mark_saved();
+        assert!(!history.is_modified());
+
+        assert_eq!(history.undo().as_deref(), Some(&b"base+1"[..]));
+        assert!(history.is_modified() && history.can_redo());
+        assert_eq!(history.redo().as_deref(), Some(&b"base+1+2"[..]));
+        assert!(!history.is_modified() && !history.can_redo());
+
+        // A new edit after undoing past the save: the saved revision is gone.
+        history.undo();
+        history.undo();
+        history.push(b"+3".to_vec());
+        assert_eq!(&*history.current(), b"base+3");
+        assert!(history.is_modified() && !history.can_redo());
+        assert_eq!(history.undo().as_deref(), Some(&b"base"[..]));
+        assert_eq!(history.undo(), None);
     }
 }
