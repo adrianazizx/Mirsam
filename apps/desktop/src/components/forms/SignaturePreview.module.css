@@ -1,0 +1,32 @@
+/* Ink on paper in either theme: a signature looks as it will on the page. */
+.preview {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: var(--size-signature-preview);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-page-paper);
+  color: var(--color-ink);
+  object-fit: contain;
+}
+
+.stroke {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.typed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--font-size-xl);
+}
+
+.naskh {
+  font-family: var(--font-signature-naskh);
+}

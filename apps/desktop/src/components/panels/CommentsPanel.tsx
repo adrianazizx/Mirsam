@@ -39,7 +39,8 @@ import { Button } from "../ui/Button";
 import selectStyles from "../ui/CommandSelect.module.css";
 import styles from "./CommentsPanel.module.css";
 
-const KIND_ICONS: Record<AnnotationKind, ReactNode> = {
+/** Fill & Sign items (ADR 0045) are never comments, so they have no icon here. */
+const KIND_ICONS: Partial<Record<AnnotationKind, ReactNode>> = {
   highlight: <Highlighter />,
   underline: <Underline />,
   strikeOut: <Strikethrough />,

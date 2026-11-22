@@ -21,14 +21,20 @@ export function NoteEditor({ documentId }: { documentId: number }) {
   const locale = useAppStore((state) => state.locale);
   const note = useAppStore((state) => {
     const selected = state.documents.find((open) => open.id === documentId)?.selectedAnnotation;
-    return selected?.kind === "note" || selected?.kind === "textBox" ? selected : null;
+    return selected?.kind === "note" ||
+      selected?.kind === "textBox" ||
+      selected?.kind === "fillText"
+      ? selected
+      : null;
   });
   const pending = useAppStore((state) =>
     state.pendingNote?.documentId === documentId ? state.pendingNote : null,
   );
   const block = pending?.kind === "block" ? (pending.block ?? null) : null;
   const initial = block?.text ?? note?.contents ?? "";
-  const kind = pending?.kind ?? (note?.kind === "textBox" ? "textBox" : "note");
+  const kind =
+    pending?.kind ??
+    (note?.kind === "textBox" ? "textBox" : note?.kind === "fillText" ? "fillText" : "note");
   const [text, setText] = useState(initial);
   // A paragraph of page text: its own font where it can, or a bundled family (ADR 0023).
   const [family, setFamily] = useState<"auto" | "sans" | "naskh">("auto");

@@ -196,6 +196,36 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
+    /// The document's form fields (ADR 0045), each widget with its box on
+    /// the displayed page.
+    pub fn form(&self) -> Result<crate::forms::FormInfo> {
+        let mut info = crate::forms::read(&self.bytes, self.password.as_deref())?;
+        let mut views = std::collections::HashMap::new();
+        for widget in info.fields.iter_mut().flat_map(|field| field.widgets.iter_mut()) {
+            let Some(page) = widget.page else { continue };
+            let view = views.entry(page).or_insert_with(|| self.view_transform(page).ok());
+            let [left, bottom, right, top] = widget.rect;
+            widget.view = view.map(|view| view.rect(crate::text::Rect { left, bottom, right, top }));
+        }
+        Ok(info)
+    }
+
+    /// This document with form fields filled in (ADR 0045), in order, and
+    /// the one update that does it.
+    pub fn with_form_edits(&self, edits: &[crate::forms::FormEdit]) -> Result<(Document, Vec<u8>)> {
+        if edits.is_empty() {
+            return Err(Error::InvalidEdit("no form edits given"));
+        }
+        let mut bytes = self.bytes.to_vec();
+        let start = bytes.len();
+        for edit in edits {
+            let update = crate::forms::form_update(&bytes, self.password.as_deref(), edit)?;
+            bytes.extend_from_slice(&update);
+        }
+        let update = bytes[start..].to_vec();
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
     /// This document with `marks` redacted (ADR 0042). The content under
     /// each mark is removed from the file, not covered, and the result is
     /// checked: the text PDFium reads from the new revision must hold nothing
@@ -355,14 +385,25 @@ impl Document {
         let page = self.page(index)?;
         let annotations = page.annotations();
         let mut out = Vec::new();
+        let mut fills = None;
         // By index, not by iterator: the iterator stops at the first entry
         // PDFium cannot read, and the index is the annotation's position in
         // `/Annots`, which changing or removing it needs.
         for position in 0..annotations.len() {
             let Ok(annotation) = annotations.get(position) else { continue };
-            let Some(kind) = annotation_kind(&annotation) else { continue };
-            let contents = matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox)
-                .then(|| annotation.contents().unwrap_or_default());
+            let kind = match annotation_kind(&annotation) {
+                Some(kind) => kind,
+                // Ours are told apart by their `/Name`, which PDFium does not read.
+                None if annotation.annotation_type() == PdfPageAnnotationType::Stamp => {
+                    let fills = fills.get_or_insert_with(|| crate::annotate::fill_kinds(&self.bytes, index));
+                    let Some(kind) = fills.get(&position) else { continue };
+                    *kind
+                }
+                None => continue,
+            };
+            let contents =
+                matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox | AnnotationKind::FillText)
+                    .then(|| annotation.contents().unwrap_or_default());
             out.push(AnnotationInfo {
                 index: position,
                 kind,

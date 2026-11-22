@@ -55,12 +55,17 @@
   --size-selection-toolbar-span: 480px;
   --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
   --size-swatch: 22px; /* a colour choice */
+  --size-signature-pad: 160px; /* the height of the pad a signature is drawn on */
+  --size-signature-preview: 44px; /* a kept signature's preview */
+  --size-signature-text: 32px; /* a typed signature's preview text */
   --border-width: 1px;
   --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;
 
   /* Typography */
   --font-ui: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  /* Typed signatures' previews; the PDF itself is set in the bundled Amiri (ADR 0045). */
+  --font-signature-naskh: "Amiri", "Noto Naskh Arabic", "Geeza Pro", serif;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 13px;
