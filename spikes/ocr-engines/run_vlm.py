@@ -1,6 +1,10 @@
 """Vision-language OCR models over the evaluation set, through 🤗 Transformers (ADR 0030).
 
-    python run_vlm.py <model> [--only <id substring>] [--device mps|cpu]
+    python run_vlm.py <model> [--only <id substring>] [--device mps|cpu] [--confidence]
+
+With --confidence the run goes to hyp/<model>+conf/ and also writes
+<sample>.conf.json: every word of the raw answer with the lowest probability
+the model gave any of its tokens (greedy decoding, so the chosen token's softmax).
 
 Each model runs the way its card documents: its own prompt, its own input size,
 greedy decoding. Output markup is removed by `to_text.py`, identically for all.
@@ -10,6 +14,7 @@ Weights come from the Hugging Face cache under SAFHA_OCR_BENCH_CACHE/hf.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from pathlib import Path
@@ -95,6 +100,28 @@ MODELS = {
 }
 
 
+def word_confidences(processor, tokens, scores) -> list[list]:
+    """[word, lowest token probability in it] for each whitespace-separated word of the answer."""
+    probs = [torch.softmax(step[0].float(), dim=-1)[token].item() for step, token in zip(scores, tokens)]
+    text, char_probs = "", []
+    for i in range(len(tokens)):
+        decoded = processor.decode(tokens[: i + 1], skip_special_tokens=True)
+        char_probs += [probs[i]] * max(0, len(decoded) - len(text))
+        text = decoded
+    words, current, low = [], "", 1.0
+    for char, prob in zip(text, char_probs):
+        if char.isspace():
+            if current:
+                words.append([current, round(low, 4)])
+            current, low = "", 1.0
+        else:
+            current += char
+            low = min(low, prob)
+    if current:
+        words.append([current, round(low, 4)])
+    return words
+
+
 def weights_bytes(repo: str) -> int:
     """On-disk size of a cached model repo (the blobs its snapshot links to)."""
     from huggingface_hub import snapshot_download
@@ -109,6 +136,7 @@ def main() -> None:
     parser.add_argument("--only")
     parser.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
     parser.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"])
+    parser.add_argument("--confidence", action="store_true")
     args = parser.parse_args()
     spec = MODELS[args.model]
     dtype = getattr(torch, args.dtype)
@@ -128,7 +156,7 @@ def main() -> None:
     import transformers
 
     run = Run(
-        args.model,
+        f"{args.model}+conf" if args.confidence else args.model,
         {
             "repo": spec["repo"],
             "adapter": spec.get("adapter"),
@@ -159,8 +187,15 @@ def main() -> None:
         with torch.inference_mode():
             # PaddleOCR-VL-1.6 ships `use_cache: false` in its generation config, which makes
             # Transformers re-run the whole image prefix per token and end answers early.
-            out = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
-        new_tokens = out[0, inputs["input_ids"].shape[1] :]
+            out = model.generate(
+                **inputs,
+                max_new_tokens=MAX_NEW_TOKENS,
+                do_sample=False,
+                use_cache=True,
+                output_scores=args.confidence,
+                return_dict_in_generate=True,
+            )
+        new_tokens = out.sequences[0, inputs["input_ids"].shape[1] :]
         raw = processor.decode(new_tokens, skip_special_tokens=True)
         if mps:
             torch.mps.synchronize()
@@ -170,6 +205,9 @@ def main() -> None:
         if len(new_tokens) >= MAX_NEW_TOKENS:
             flags["hit_token_limit"] = True
         (run.hyp_dir / f"{sample.id}.raw.txt").write_text(raw, encoding="utf-8")
+        if args.confidence:
+            confidences = word_confidences(processor, new_tokens.tolist(), out.scores)
+            (run.hyp_dir / f"{sample.id}.conf.json").write_text(json.dumps(confidences, ensure_ascii=False))
         run.write(sample, to_text(raw), seconds, **flags)
         if mps:
             torch.mps.empty_cache()
