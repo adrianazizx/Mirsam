@@ -113,6 +113,10 @@
     "textBox": {
       "place": "Place a text box"
     },
+    "text": {
+      "place": "Place new text",
+      "setStyle": "Set the text style"
+    },
     "ink": {
       "add": "Add ink",
       "erase": "Erase ink strokes"
@@ -317,6 +321,38 @@
     "label": "Text box",
     "text": "Text of the box",
     "placeholder": "Type the text…"
+  },
+  "pageText": {
+    "label": "New text",
+    "text": "Text to add to the page",
+    "placeholder": "Type the text…"
+  },
+  "textStyle": {
+    "family": "Font",
+    "sans": "Sans",
+    "naskh": "Naskh",
+    "size": "Size",
+    "points": "{{size}} pt",
+    "color": "Colour",
+    "colors": {
+      "black": "Black",
+      "blue": "Blue",
+      "red": "Red",
+      "green": "Green"
+    },
+    "align": "Alignment",
+    "aligns": {
+      "start": "Align to start",
+      "center": "Centre",
+      "end": "Align to end",
+      "justify": "Justify"
+    },
+    "direction": "Direction",
+    "directions": {
+      "auto": "Direction from the text",
+      "rtl": "Right to left",
+      "ltr": "Left to right"
+    }
   },
   "comment": {
     "tools": "Comment tools"

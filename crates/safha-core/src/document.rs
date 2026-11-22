@@ -179,6 +179,17 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
+    /// This document with `text` written into its page's content (ADR 0021),
+    /// the update that does it, and the text's height as displayed.
+    pub fn with_new_text(&self, text: &crate::text_edit::NewText) -> Result<(Document, Vec<u8>, f32)> {
+        let view = self.view_transform(text.page)?;
+        let update = crate::text_edit::add_text_update(&self.bytes, self.password.as_deref(), &view, text)?;
+        let height = text.height()?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, height))
+    }
+
     /// The page's annotations of the kinds this app writes (markup, ink,
     /// notes, text boxes), and the map from page space to the page as
     /// displayed. Replies and review states are left out: they belong to

@@ -28,6 +28,25 @@ export interface EditOutcome {
    * annotations did: the same pages just need painting again.
    */
   pagesChanged: boolean;
+  /**
+   * What the pages draw as text changed (their pages, or text written into
+   * their content, ADR 0021): page text and search results are stale.
+   */
+  textChanged?: boolean;
+}
+
+/** How new page text is set (ADR 0021). */
+export interface TextStyle {
+  /** The bundled families: IBM Plex Sans (with Plex Sans Arabic), or Amiri. */
+  family: "sans" | "naskh";
+  /** Points. */
+  size: number;
+  /** RGB, each 0 to 1. */
+  color: [number, number, number];
+  /** Start and end follow the text's direction. */
+  align: "start" | "center" | "end" | "justify";
+  /** Auto: the text's first strong character decides. */
+  direction: "auto" | "ltr" | "rtl";
 }
 
 /** The four text-markup annotations (ADR 0017). */
@@ -488,6 +507,19 @@ export interface Backend {
   hasRecoveryFile(documentId: number): Promise<boolean | null>;
   /** Every comment in the document, page by page (ADR 0041). */
   documentComments(documentId: number): Promise<DocumentComment[]>;
+  /**
+   * Writes text into a page's content (ADR 0021), its box's top-left corner
+   * at displayed-page (`x`, `y`), wrapped to `width`.
+   */
+  addText(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    width: number,
+    text: string,
+    style: TextStyle,
+  ): Promise<EditOutcome>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
   replyToComment(
     documentId: number,

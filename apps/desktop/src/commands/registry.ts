@@ -8,6 +8,7 @@ import {
   type RestoreOutcome,
   type SplitBy,
   type StrokePoint,
+  type TextStyle,
 } from "../backend";
 import {
   type AppState,
@@ -102,6 +103,8 @@ export interface CommandArg {
   filter?: Partial<CommentFilter>;
   /** `comments.sort`. */
   sort?: CommentSort;
+  /** `text.setStyle`: what to change in how new page text is set. */
+  textStyle?: Partial<TextStyle>;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -190,6 +193,8 @@ export type CommandId =
   | "comments.filter"
   | "comments.sort"
   | "comments.setAuthor"
+  | "text.place"
+  | "text.setStyle"
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
@@ -1041,6 +1046,32 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    // The Edit tool: a press places new page text there (ADR 0021).
+    id: "text.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      getViewer(active.id)?.clearSelection();
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "pageText",
+        page: arg.page,
+        x: arg.x,
+        y: arg.y,
+        width: arg.width ?? TEXT_BOX_WIDTH,
+      });
+    },
+  },
+  {
+    id: "text.setStyle",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.textStyle) store().setTextStyle(arg.textStyle);
+    },
+  },
+  {
     id: "note.save",
     paletteHidden: true,
     isEnabled: isWritingNote,
@@ -1055,9 +1086,11 @@ const COMMANDS: Command[] = [
         if (text.trim() === "") return;
         const { page, x, y, width } = pending;
         const outcome =
-          pending.kind === "textBox"
-            ? await backend.addTextBox(active.id, page, x, y, width, text)
-            : await backend.addNote(active.id, page, x, y, text);
+          pending.kind === "pageText"
+            ? await backend.addText(active.id, page, x, y, width, text, store().textStyle)
+            : pending.kind === "textBox"
+              ? await backend.addTextBox(active.id, page, x, y, width, text)
+              : await backend.addNote(active.id, page, x, y, text);
         store().applyEdit(active.id, outcome);
         return;
       }

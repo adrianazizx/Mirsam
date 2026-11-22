@@ -777,6 +777,20 @@ export const mockBackend: Backend = {
       ({ kind, rects, contents, strokes }, index) => ({ index, kind, rects, contents, strokes }),
     );
   },
+  // The mock keeps no page content of its own: the text is a step to undo.
+  addText: async (documentId, page, x, y, width, text) => {
+    if (text.trim() === "") throw { code: "invalid_edit", detail: "new text needs some text" };
+    if (!(width >= 1) || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw { code: "invalid_edit", detail: "text needs a place on the page" };
+    }
+    const state = stateOf(documentId);
+    if (state.pages[page] === undefined)
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    return {
+      ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
+      textChanged: true,
+    };
+  },
   documentComments: async (documentId) => {
     const state = stateOf(documentId);
     return state.pages.flatMap((original, page) =>

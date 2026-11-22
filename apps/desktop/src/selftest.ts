@@ -140,6 +140,9 @@ async function navigationChecks(documentId: number) {
   // Notes and ink (ADR 0018): an Arabic note and a pen stroke, painted and read
   // back; the stroke erased; everything undone.
   const notesAndInk = await notesAndInkChecks(documentId);
+  // New page text (ADR 0021): Arabic written into the page's content with the
+  // Edit tool, painted, read back as the page's own text, then undone.
+  const addedText = await addedTextChecks(documentId);
 
   // Editing (ADR 0014): duplicate the page, see the new revision painted,
   // then undo back to the file as opened.
@@ -240,6 +243,7 @@ async function navigationChecks(documentId: number) {
     thumbnails,
     markup,
     notesAndInk,
+    addedText,
     editing,
     windows,
   };
@@ -347,6 +351,31 @@ async function recoveryFile(documentId: number, expected: boolean): Promise<bool
     if (kept === null || kept === expected || performance.now() > deadline) return kept;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
+}
+
+async function addedTextChecks(documentId: number) {
+  const text = "أضيف هذا النص إلى الصفحة";
+  const pageText = async () =>
+    (await backend.pageText(documentId, 0)).blocks
+      .map((block) => block.lines.map((line) => line.text).join(" "))
+      .join(" ");
+  const dark = (r: number, g: number, b: number) => r < 90 && g < 90 && b < 90;
+  const enough = enoughAt(getViewer(documentId)?.snapshot().scale ?? 1);
+  await pageSettled(documentId);
+  const darkBefore = countPixels(documentId, dark);
+  useAppStore.getState().setActiveTool("edit");
+  await runCommand("text.place", { page: 0, x: 60, y: 40, width: 220 });
+  await runCommand("note.save", { text });
+  let pixels = 0;
+  await waitFor(() => {
+    pixels = countPixels(documentId, dark) - darkBefore;
+    return pixels > enough;
+  }, 15_000);
+  const readBack = (await pageText()).replace(/\s+/gu, " ").includes(text);
+  await runCommand("edit.undo");
+  const undone = !(await pageText()).includes(text);
+  useAppStore.getState().setActiveTool("select");
+  return { painted: pixels > enough, pixels, enough, readBack, undone };
 }
 
 async function notesAndInkChecks(documentId: number) {

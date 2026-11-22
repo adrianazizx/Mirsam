@@ -190,6 +190,8 @@ export const tauriBackend: Backend = {
     invoke<void>("selftest_report", { report: { results, canvasPng } }),
   renderStats: async () => ((await hasDevtools()) ? invoke<RenderStats>("render_stats") : null),
   windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
+  addText: (documentId, page, x, y, width, text, style) =>
+    invoke<EditOutcome>("add_text", { documentId, text: { page, x, y, width, text, ...style } }),
   documentComments: (documentId) => invoke<DocumentComment[]>("document_comments", { documentId }),
   replyToComment: (documentId, page, index, contents) =>
     invoke<EditOutcome>("reply_to_comment", { documentId, page, index, contents }),

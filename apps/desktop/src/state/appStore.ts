@@ -9,6 +9,7 @@ import type {
   SaveOutcome,
   SearchHit,
   SearchOptions,
+  TextStyle,
 } from "../backend";
 import type { Locale } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
@@ -108,7 +109,8 @@ export type CommentTool = "note" | "textBox" | "pen" | "eraser";
  */
 export interface PendingNote {
   documentId: number;
-  kind: "note" | "textBox";
+  /** A sticky note, a text box, or text written into the page (ADR 0021). */
+  kind: "note" | "textBox" | "pageText";
   page: number;
   x: number;
   y: number;
@@ -132,6 +134,15 @@ export interface PendingUnlock {
   insert?: { documentId: number; at: number; pageCount: number };
 }
 
+/** New page text: the sans family, 12 points, black, aligned to its start. */
+export const DEFAULT_TEXT_STYLE: TextStyle = {
+  family: "sans",
+  size: 12,
+  color: [0, 0, 0],
+  align: "start",
+  direction: "auto",
+};
+
 export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
   caseSensitive: false,
   wholeWord: false,
@@ -147,6 +158,9 @@ export interface AppState {
   /** The open side panel at the inline start, or null when it is closed. */
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
+  /** How the Edit tool sets new page text (ADR 0021). */
+  textStyle: TextStyle;
+  setTextStyle(patch: Partial<TextStyle>): void;
   /** The name written on new comments (ADR 0041); none when empty. */
   commentAuthor: string;
   /** The comments panel's filters and order (not kept between sessions). */
@@ -358,6 +372,10 @@ export const useAppStore = create<AppState>((set, get) => {
     pendingNote: null,
     commentFilter: DEFAULT_COMMENT_FILTER,
     commentSort: "page",
+    textStyle: DEFAULT_TEXT_STYLE,
+    setTextStyle(patch) {
+      set((state) => ({ textStyle: { ...state.textStyle, ...patch } }));
+    },
     setCommentAuthor: (name) => update("commentAuthor", name.trim().slice(0, MAX_AUTHOR)),
     setCommentFilter(patch) {
       set((state) => ({ commentFilter: { ...state.commentFilter, ...patch } }));
@@ -482,6 +500,8 @@ export const useAppStore = create<AppState>((set, get) => {
                   ...open,
                   paint: open.paint + 1,
                   selectedAnnotation: null,
+                  // Text written into them: what search found, and selected, is stale.
+                  ...(outcome.textChanged ? { search: IDLE_SEARCH, hasSelection: false } : {}),
                   canUndo: outcome.canUndo,
                   canRedo: outcome.canRedo,
                   modified: outcome.modified,

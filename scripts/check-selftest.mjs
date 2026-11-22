@@ -107,6 +107,14 @@ if (nav) {
     check(comments?.replyOnPage === 3, `replies and states counted as page annotations (${comments?.replyOnPage})`);
     check(notes.cleared, "undo did not take the note, the text box, and the stroke away");
   }
+  // New page text (ADR 0021): written into the page with the Edit tool.
+  const added = nav.addedText;
+  check(added !== undefined && added !== null, "no added-text results");
+  if (added) {
+    check(added.painted, `the added text was not painted (${added.pixels} px, ${added.enough} needed)`);
+    check(added.readBack, "the added Arabic text did not read back as page text");
+    check(added.undone, "undo did not take the added text away");
+  }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
   check(editing !== undefined && editing !== null, "no editing results");
@@ -161,6 +169,10 @@ if (nav) {
         `erased ${n.erased}, undone ${n.cleared}; comments ${JSON.stringify(n.comments?.kinds)}, ` +
         `reply ${n.comments?.replied}, resolved ${n.comments?.resolved}, ${n.comments?.panelItems} in the panel`,
     );
+  }
+  if (nav.addedText) {
+    const a = nav.addedText;
+    console.log(`  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}`);
   }
   if (nav.editing) {
     const e = nav.editing;

@@ -120,6 +120,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       mode: (): ViewerMode => {
         const { activeTool, commentTool } = useAppStore.getState();
         if (activeTool === "select") return "select";
+        if (activeTool === "edit") return "text";
         return activeTool === "comment" ? commentTool : "none";
       },
       callbacks: {
@@ -134,6 +135,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceNote: (page, x, y) => void runCommand("note.place", { page, x, y }),
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
+        onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
       },
     });
     viewerRef.current = viewer;

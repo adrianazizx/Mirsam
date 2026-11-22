@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 8).
+Last updated: 2026-11-22 (session 9).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -323,10 +323,28 @@ M2 closed in session 8 at the owner's go-ahead, with these items carried forward
 - **Autosave:** a single running copy is not enforced.
 - **From M1:** extreme pinch-out, and printing on screen (owner item 13).
 
-## M3 — Text engine — groundwork merged to `main` ahead of M2
+## M3 — Text engine — started in session 9 on branch `m3-text` (groundwork merged to `main` ahead of M2)
 
-The parts that do not depend on M2, built on branch `pomidor/m3-text-engine-3c22b6` in
-parallel with M2 and merged by pull request at the owner's request.
+The groundwork that did not depend on M2 was built on branch `pomidor/m3-text-engine-3c22b6`
+in parallel with M2 and merged by pull request at the owner's request. M3 proper started in
+session 9.
+
+Plan, in order:
+
+1. ~~**Writing text into page content**~~ **done (ADR 0021):** its own content stream under a
+   placing `cm`, the page's original content wrapped once in `q … Q`, resources made the page's
+   own; encrypted files; undo.
+2. ~~**Add-new-text tool**~~ **done (ADR 0021):** the Edit tool places text; a strip sets font
+   (Sans, Naskh), size, colour, alignment and direction.
+3. **[SPIKE] Editor surface:** our own caret, selection and IME drawing over the page vs. a
+   transparent `contenteditable` synchronized with the layout engine. Measure caret fidelity,
+   Arabic IME behaviour, and effort; ADR before in-place editing.
+4. **Page analysis → edit model:** text objects with font, size, matrix and colour, then
+   lines, then blocks; direction, alignment, spacing, lists.
+5. **In-place editing with reflow** inside a block's box: reuse the embedded font when it has
+   the glyphs, otherwise substitute for the whole paragraph (with an indicator); remove the
+   block's text objects and write the new ones, keeping z-order and clipping.
+6. **Exit test:** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
       `spikes/pdfium-regenerate/`).
@@ -361,11 +379,19 @@ parallel with M2 and merged by pull request at the owner's request.
         work).
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
-      M2's text boxes. Writing into page content is still to do. Must solve:
+      M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
+      block's existing text objects (for in-place editing) is still to do. Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
-- [ ] Add-new-text tool
+- [x] Add-new-text tool (ADR 0021):
+      - the Edit tool: a press places the text, the shared editor takes it;
+      - Sans (IBM Plex Sans + Plex Sans Arabic) or Naskh (Amiri), 8–72 pt, four colours,
+        start/centre/end/justify, direction auto/RTL/LTR;
+      - written into the page's content: prints, extracts and searches as page text everywhere;
+      - turned pages, unbalanced page content, inherited resources, encrypted files; undo; save.
+      - Gap: not editable once added (in-place editing, step 5); each addition embeds its own
+        subsets (font reuse comes with step 5); installed fonts come with the font picker.
 - [ ] In-place editing with reflow — **[SPIKE]** editor surface vs `contenteditable` overlay first
 - [ ] Exit test: all acceptance tests in spec §7
 
@@ -409,6 +435,28 @@ parallel with M2 and merged by pull request at the owner's request.
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 9 — 2026-11-22 (Milestone 3 started: text in page content, the add-text tool)
+
+- **M2 merged into `main`** (PR #2) at the owner's go-ahead; M3 continues on `m3-text`.
+- **Text in page content (ADR 0021):**
+  - New text gets its own content stream under a placing `cm`, so it stands upright on turned
+    pages.
+  - The page's original content is wrapped once in `q … Q`, so a page that leaves its
+    graphics state changed cannot move the new text.
+  - The page gets its own `/Resources`, adding the fonts under unused names.
+  - Encrypted files are supported, and undo works (a new change kind: `Content`).
+- **Bundled families:** Sans (IBM Plex) and Naskh (Amiri), now one module shared with text
+  boxes.
+- **The Edit tool:** a press places new text; a strip sets font, size, colour, alignment and
+  direction. A content change repaints in place, re-reads page text, and clears stale search
+  results.
+- **Extraction fix:** a ligature whose letters cannot tell their order (Plex's noon-yeh "ني")
+  read back reversed on pages with no other evidence. It is now reversed by default, as PDFium
+  reports such letters. The corpus is unchanged at 86/118.
+- **Self-test:** Arabic text placed with the Edit tool is painted, reads back as page text,
+  and is undone, in English and Arabic.
+- **Tests:** 270 Rust and 155 UI tests pass on this Mac.
 
 ### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
 
