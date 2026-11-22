@@ -546,6 +546,16 @@ export type OpenOutcome =
   /** Encrypted: continue with `unlockDocument(token, password)`. `retry` means the last password was wrong. */
   | { kind: "needsPassword"; token: number; name: string; retry: boolean };
 
+/**
+ * Documents that arrived while the app runs: a later copy of the app handed
+ * them over (ADR 0046), or the platform asked to open them (Finder).
+ */
+export interface DocumentsArrived {
+  documents: OpenOutcome[];
+  /** The error code of the first one that could not be opened. */
+  error: string | null;
+}
+
 export interface Startup {
   /** Restored tabs and the launch document, in tab order. */
   documents: OpenOutcome[];
@@ -1037,6 +1047,8 @@ export interface Backend {
    * follows a change made in one. Returns a function that stops listening.
    */
   onSettingChanged(listener: (key: string, value: string) => void): Promise<() => void>;
+  /** Documents arrived for this window while the app runs (ADR 0046). */
+  onDocumentsArrived(listener: (arrived: DocumentsArrived) => void): Promise<() => void>;
   /** The shell asks this window to confirm closing it: it holds unsaved changes (ADR 0015). */
   onCloseRequested(listener: () => void): Promise<() => void>;
   /** The shell asks this window to confirm quitting: documents hold unsaved changes. */

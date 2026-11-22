@@ -12,7 +12,7 @@ use safha_core::catalog::{PageLayout, ReadingDirection};
 use safha_core::store::{Session, SessionWindow, ViewState};
 use safha_core::{Document, Engine, PdfiumSource};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{CommandError, CommandResult};
@@ -198,7 +198,7 @@ pub async fn startup(
             }
         }
     }
-    if let Some(path) = state.take_startup_document() {
+    for path in state.take_launch_documents() {
         let outcome = open_path(&state, &path, None, MAIN_WINDOW)?;
         active = opened_id(&outcome).or(active);
         if !documents
@@ -209,6 +209,47 @@ pub async fn startup(
         }
     }
     Ok(Startup { documents, active, recoveries: crate::recovery::list(&state) })
+}
+
+/// Event sent to a window when documents arrive from elsewhere while the app
+/// runs: a later copy of the app handed them over (ADR 0046), or the
+/// platform asked us to open them (macOS "Open with", Finder).
+pub const DOCUMENTS_ARRIVED: &str = "documents-arrived";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentsArrived {
+    documents: Vec<OpenOutcome>,
+    /// The first document that could not be opened, if any.
+    error: Option<&'static str>,
+}
+
+/// Opens documents that arrived from elsewhere in the window the user was
+/// last in, and brings that window forward. Before the UI has asked for its
+/// startup documents they join those instead.
+pub fn open_arrivals(app: &AppHandle, documents: Vec<std::path::PathBuf>) {
+    let state = app.state::<AppState>();
+    let Some(documents) = state.add_launch_documents(documents) else { return };
+    let Some(label) = state.arrival_window() else { return };
+    let mut arrived = DocumentsArrived { documents: Vec::new(), error: None };
+    for path in documents {
+        match open_path(&state, &path, None, &label) {
+            Ok(outcome) => arrived.documents.push(outcome),
+            Err(err) => {
+                eprintln!("safha: could not open a document from elsewhere: {}", err.detail);
+                arrived.error = arrived.error.or(Some(err.code));
+            }
+        }
+    }
+    if let Err(err) = app.emit_to(label.as_str(), DOCUMENTS_ARRIVED, arrived) {
+        eprintln!("safha: could not show documents from elsewhere: {err}");
+    }
+    if let Some(window) = app.get_webview_window(&label) {
+        // Best effort: a window manager may refuse to raise it.
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// Opens an empty window.

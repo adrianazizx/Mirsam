@@ -78,8 +78,14 @@ pub struct AppState {
     /// Process start, for the self-test's cold-start timing.
     #[cfg_attr(not(feature = "devtools"), allow(dead_code))]
     pub started: Instant,
-    startup_document: Mutex<Option<PathBuf>>,
+    /// Documents to open in the main window at startup: from the command
+    /// line, the platform ("Open with"), or later copies of the app that
+    /// started before the UI asked (ADR 0046). `None` once taken.
+    launch_documents: Mutex<Option<Vec<PathBuf>>>,
     started_up: AtomicBool,
+    /// The window the user was last in: documents another copy hands over
+    /// open there.
+    last_focused: Mutex<Option<String>>,
     documents: Mutex<HashMap<u32, OpenFile>>,
     /// Files waiting for a password, by token.
     locked: Mutex<HashMap<u32, PathBuf>>,
@@ -118,11 +124,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(started: Instant, startup_document: Option<PathBuf>) -> Self {
+    pub fn new(started: Instant, launch_documents: impl IntoIterator<Item = PathBuf>) -> Self {
         Self {
             started,
-            startup_document: Mutex::new(startup_document),
+            launch_documents: Mutex::new(Some(launch_documents.into_iter().collect())),
             started_up: AtomicBool::new(false),
+            last_focused: Mutex::new(None),
             documents: Mutex::new(HashMap::new()),
             locked: Mutex::new(HashMap::new()),
             locked_recoveries: Mutex::new(HashMap::new()),
@@ -221,9 +228,36 @@ impl AppState {
         !self.started_up.swap(true, Ordering::SeqCst)
     }
 
-    /// Returns the launch document path once; later calls get `None`.
-    pub fn take_startup_document(&self) -> Option<PathBuf> {
-        lock(&self.startup_document).take()
+    /// Returns the launch documents once; later calls get none.
+    pub fn take_launch_documents(&self) -> Vec<PathBuf> {
+        lock(&self.launch_documents).take().unwrap_or_default()
+    }
+
+    /// Documents arriving from elsewhere (another copy, the platform): they
+    /// join the launch documents while the UI has not taken those yet.
+    /// Otherwise they are returned, to be opened now.
+    pub fn add_launch_documents(&self, documents: Vec<PathBuf>) -> Option<Vec<PathBuf>> {
+        match lock(&self.launch_documents).as_mut() {
+            Some(waiting) => {
+                waiting.extend(documents);
+                None
+            }
+            None => Some(documents),
+        }
+    }
+
+    /// A window got the focus.
+    pub fn focused(&self, window: &str) {
+        *lock(&self.last_focused) = Some(window.to_string());
+    }
+
+    /// Where documents from elsewhere go: the document window the user was
+    /// last in, or the first one still open.
+    pub fn arrival_window(&self) -> Option<String> {
+        let windows = lock(&self.windows);
+        let last = lock(&self.last_focused).clone();
+        last.filter(|label| windows.iter().any(|(known, _)| known == label))
+            .or_else(|| windows.first().map(|(label, _)| label.clone()))
     }
 
     pub fn next_token(&self) -> u32 {
@@ -478,6 +512,10 @@ impl AppState {
         self.quit_confirmed.load(Ordering::SeqCst)
     }
 
+    pub fn exiting(&self) -> bool {
+        self.exiting.load(Ordering::SeqCst)
+    }
+
     pub fn set_exiting(&self) {
         self.exiting.store(true, Ordering::SeqCst);
     }
@@ -606,5 +644,34 @@ mod tests {
         let second = state.add_window();
         assert!(!state.move_to_window(7, &second));
         assert!(second.starts_with("window-"));
+    }
+
+    #[test]
+    fn documents_from_elsewhere_wait_for_the_ui_and_then_open_directly() {
+        let state = AppState::new(Instant::now(), [PathBuf::from("/a.pdf")]);
+        assert_eq!(state.add_launch_documents(vec![PathBuf::from("/b.pdf")]), None);
+        assert_eq!(state.take_launch_documents(), [PathBuf::from("/a.pdf"), PathBuf::from("/b.pdf")]);
+        // The UI has taken them: later arrivals are the caller's to open.
+        assert_eq!(
+            state.add_launch_documents(vec![PathBuf::from("/c.pdf")]),
+            Some(vec![PathBuf::from("/c.pdf")])
+        );
+        assert!(state.take_launch_documents().is_empty());
+    }
+
+    #[test]
+    fn documents_from_elsewhere_go_to_the_window_last_used() {
+        let state = state();
+        assert_eq!(state.arrival_window().as_deref(), Some(MAIN_WINDOW));
+        let second = state.add_window();
+        state.focused(&second);
+        assert_eq!(state.arrival_window(), Some(second.clone()));
+        // A print window is no document window.
+        state.focused("print-7");
+        assert_eq!(state.arrival_window().as_deref(), Some(MAIN_WINDOW));
+        state.focused(&second);
+        state.set_window_tabs(&second, WindowTabs { ids: vec![1], active: Some(1) });
+        assert!(state.close_window(&second));
+        assert_eq!(state.arrival_window().as_deref(), Some(MAIN_WINDOW));
     }
 }
