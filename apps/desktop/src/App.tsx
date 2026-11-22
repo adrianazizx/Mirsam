@@ -9,6 +9,7 @@ import {
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
+import { SignatureDialog } from "./components/forms/SignatureDialog";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
 import { SecurityDialog } from "./components/protect/SecurityDialog";
@@ -186,6 +187,7 @@ export function App() {
       <UnsavedChangesDialog />
       <RecoveryDialog />
       <SplitDialog />
+      <SignatureDialog />
       <RedactDialog />
       <SecurityDialog />
     </I18nProvider>

@@ -50,6 +50,8 @@ const PAIRS: [string, string, number][] = [
   ["color-focus-ring", "color-bg-surface", 3],
   ["color-focus-ring", "color-bg-canvas", 3],
   ["color-border-strong", "color-bg-surface", 3],
+  // Signatures are previewed as ink on paper in both themes (ADR 0045).
+  ["color-ink", "color-page-paper", 4.5],
 ];
 
 describe.each([
