@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 pub(crate) mod content;
 pub(crate) mod crypt;
 pub(crate) mod fontinfo;
+pub(crate) mod image;
 pub(crate) mod text;
 pub(crate) mod write;
 

@@ -1,0 +1,148 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--color-scrim);
+}
+
+.modal {
+  inline-size: min(var(--size-palette), calc(100vw - 2 * var(--space-4)));
+  background: var(--color-bg-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  outline: none;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tabList {
+  display: flex;
+  gap: var(--space-1);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.tab {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  border-block-end: var(--border-width-thick) solid transparent;
+  color: var(--color-text-muted);
+  cursor: default;
+  outline: none;
+}
+
+.tab[data-selected] {
+  border-block-end-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.tab[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  outline: none;
+}
+
+.draw,
+.type {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Ink on paper in either theme, as it will be on the page. */
+.pad {
+  inline-size: 100%;
+  block-size: var(--size-signature-pad);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-page-paper);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.baseline {
+  stroke: var(--color-border);
+  stroke-width: var(--border-width);
+}
+
+.stroke {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.label {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.input {
+  block-size: var(--size-hit);
+  padding-inline: var(--space-2);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--border-width));
+}
+
+.typedPreview {
+  margin: 0;
+  min-block-size: calc(var(--size-signature-text) * 1.6);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-page-paper);
+  color: var(--color-ink);
+  font-size: var(--size-signature-text);
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.naskh {
+  font-family: var(--font-signature-naskh);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

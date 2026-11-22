@@ -17,7 +17,8 @@ export const DEFAULT_COMMENT_FILTER: CommentFilter = { status: "all", kind: "all
 /** The longest name the app writes on comments (the engine allows 256). */
 export const MAX_AUTHOR = 100;
 
-const KIND_GROUP: Record<AnnotationKind, Exclude<CommentKindFilter, "all">> = {
+/** Fill & Sign items (ADR 0045) are never comments, so they belong to no group. */
+const KIND_GROUP: Partial<Record<AnnotationKind, Exclude<CommentKindFilter, "all">>> = {
   highlight: "markup",
   underline: "markup",
   strikeOut: "markup",

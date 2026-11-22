@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (M4 runtime and word-box side track, merged with `main` after session M5-a).
+Last updated: 2026-11-22 (session M5-b: form filling, Fill & Sign, signatures; branch `pomidor/m5-forms-0522c7`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -465,9 +465,26 @@ Plan, in order:
 
 ## M5 — Forms, sign, protect
 
-- [ ] Form filling with shaped appearance streams
-- [ ] Fill & Sign on flat forms
-- [ ] Drawn/typed/image signatures
+- [~] Form filling with shaped appearance streams (session M5-b, ADR 0045):
+  - **Done:** text (single-line, multi-line, comb, password), check boxes, radio buttons, drop-downs,
+    and lists. Each widget gets our own appearance, with Arabic shaped and starting at the right.
+    `/V` is written, and `NeedAppearances` is turned off after every valued field is drawn.
+  - **Tested** in PDFium renders, after a save through PDFium, flattened by qpdf, and in an
+    encrypted file.
+  - **Gaps:**
+    - JavaScript format, calculate, and validate actions are not run; a date field is text.
+    - Fields are filled in the inspector, not on the page.
+    - Fields in encrypted object streams are not listed.
+- [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
+  click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
+  - Resized in 25% steps, with text keeping its size for later changes.
+  - **Gaps:** no drag to move or drag handles to resize; fixed colours and sizes.
+- [~] Drawn/typed/image signatures and initials (ADR 0045):
+  - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
+    kept as a soft mask) or JPEG, picked through the native dialog.
+  - **Kept** in the state store (schema 4), on this device only. **Placed** in proportion and
+    resizable.
+  - **Gap:** the image import and the image preview URL are untested in the real shell.
 - [ ] Encryption and permissions
 - [~] True redaction with pattern search (session M5-a, ADR 0042): text, image pixels, paths,
       annotations and metadata mentions removed from the file and checked by extraction and render;
@@ -497,6 +514,65 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session M5-b — 2026-11-22 (Milestone 5: form filling, Fill & Sign, signatures; parallel to M5 crypto and M6)
+
+Branch `pomidor/m5-forms-0522c7`, from `main` after PR #11. Left the OCR code and the
+encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11ba5`) alone; only used
+`pdf::crypt`'s existing API.
+
+- **ADR 0045** records the approach:
+  - Our parser reads and writes the form.
+  - Every widget's appearance is ours, shaped by `typeset` and written by `pdf::text`.
+  - `/Q 0` starts where the text's own direction starts.
+  - `NeedAppearances` is turned off once every valued field is drawn.
+  - Fill & Sign items are `/Stamp`s named `Mirsam*`, moved and resized through `/Rect` alone.
+  - Signatures are kept in the state store.
+- **Engine:**
+  - **`safha_core::forms`:** `read`, `form_update`, and `forms/appearance.rs`;
+    `Document::form` and `Document::with_form_edits`.
+  - **`annotate::fill`:** `FillText`, `Mark`, `SignatureStamp`, and `Signature` (drawn, typed,
+    image). `AnnotationEdit` gains `AddFillText`, `AddMark`, `AddSignature` and `SetRect`;
+    `SetContents` also takes fill text. `AnnotationKind` gains `FillText`, `Mark` and `Signature`.
+  - **`pdf::image`:** PNG decoding and JPEG pass-through as image XObjects with soft masks; the
+    annotation writer writes images.
+  - **`store`:** a `signatures` table (schema version 4).
+  - **Dependencies:** `png` (MIT OR Apache-2.0) moves from dev-dependencies to dependencies, and
+    `serde_json` joins them. Both were in the tree already, and `THIRD_PARTY_LICENSES.md` is
+    unchanged.
+- **Shell (`forms.rs`):**
+  - Commands: `form_fields`, `set_form_field`, `add_fill_text`, `add_fill_mark`,
+    `place_signature`, `set_annotation_rect`, `signatures`, `save_drawn_signature`,
+    `save_typed_signature`, `import_signature_image` (native dialog), and `delete_signature`.
+  - `safha://localhost/signature?id=N` serves kept images.
+  - A new error code, `store_unavailable`.
+- **UI:**
+  - The Forms tool's panel and the Sign tool's panel, in the inspector.
+  - The new-signature dialog (Draw, Type, Image).
+  - The viewer's `place` mode.
+  - Smaller and Larger in the selection toolbar.
+  - Fill text edited in the note editor.
+  - 21 commands, English and Arabic strings, and signature tokens (with an ink-on-paper contrast
+    pair).
+  - The mock backend has a sample form on the sample document's first page, and keeps signatures.
+- **Tests:**
+  - **Rust:** `tests/forms.rs` (9) runs on a hand-written AcroForm. It covers every kind of field,
+    Arabic and English, comb, `NeedAppearances`, encryption made with qpdf, and a save through
+    PDFium.
+  - `tests/fill_sign.rs` (4) uses the fixtures: render-in-place, `SetRect`, `SetContents`, turned
+    pages, encrypted files, flatten read-back, and save.
+  - Unit tests cover `fill`, `pdf::image`, `forms`, `forms/appearance`, and the store.
+  - **UI:** `commands/forms.test.tsx` (10, in English and Arabic).
+  - `cargo test --workspace`, clippy (with and without `devtools`), fmt, `pnpm test` (182), `tsc`,
+    Biome, `cargo deny`, and the licence report are all clean.
+- **Checked by eye:**
+  - Renders of a filled form and of Fill & Sign items (PDFium).
+  - The Forms and Sign panels and the signature dialog in the browser preview, against the mock,
+    in Arabic (RTL) and English (LTR).
+  - Not run in the native shell. The end-to-end self-test does not cover forms.
+- **For whoever merges:** m5-crypto also edits `registry.ts`, `appStore.ts`, `en/ar.json`, `types.ts`,
+  and `mock.ts`, so expect textual conflicts there. If another branch also takes store schema 4,
+  renumber one of them.
 
 ### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
 

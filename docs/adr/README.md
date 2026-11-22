@@ -32,6 +32,7 @@ number and says so.
 | [0040](0040-autosave-and-recovery.md) | Autosave: each modified document's current bytes in a recovery file 2 s after its last change; restored at startup (undo back to the original when unchanged, Save As when it changed); encrypted ones ask for the password | Accepted |
 | [0041](0041-comments-panel.md) | Comments panel: threads read by our parser (`/IRT`, review states) with PDFium's text; replies and resolve as hidden-appearance annotations; authors only by the user's chosen name; filter, sort, go to | Accepted |
 | [0042](0042-true-redaction-and-sanitize.md) | True redaction by rewriting content streams (glyphs cut by code with exact gap compensation, image pixels, paths, annotations, metadata scrubbed), checked by extraction; Arabic-aware pattern presets; sanitize; marks in the UI until applied | Accepted; JPEG pixels and encrypted files open |
+| [0045](0045-forms-fill-and-sign-signatures.md) | Form filling with our own shaped appearances (`/Q 0` starts where the text's direction starts; comb, list, and button states drawn; `NeedAppearances` turned off after drawing every field); Fill & Sign items as our own `/Stamp`s, resized by `/Rect`; drawn, typed, and image (PNG with soft mask, JPEG as is) signatures kept in the state store | Accepted |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
 crypto/PAdES library (M5), Office → PDF (post-1.0).
