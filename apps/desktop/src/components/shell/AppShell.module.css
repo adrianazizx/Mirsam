@@ -30,6 +30,8 @@
 
 .panel {
   display: flex;
+  /* The Comment tool's strip, when shown, sits above the page area. */
+  flex-direction: column;
   flex: 1;
   min-block-size: 0;
 }

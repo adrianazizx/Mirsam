@@ -81,6 +81,17 @@ if (nav) {
       check(markup.removedByUndo, "undo did not remove the highlight");
     }
   }
+  // Notes and ink (ADR 0018): an Arabic note and a stroke, painted and read back, erased, undone.
+  const notes = nav.notesAndInk;
+  check(notes !== undefined && notes !== null, "no notes-and-ink results");
+  if (notes) {
+    check(notes.noteMatches, "the note's Arabic text did not come back as written");
+    check(notes.notePainted && notes.notePixels > 50, `the note's icon was not painted (${notes.notePixels} px)`);
+    check(notes.inkPainted && notes.inkPixels > 50, `the stroke was not painted (${notes.inkPixels} px)`);
+    check(notes.inkPoints === 3, `the stroke came back with ${notes.inkPoints} points`);
+    check(notes.erased, "the eraser did not remove the stroke");
+    check(notes.cleared, "undo did not take the note and the stroke away");
+  }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
   check(editing !== undefined && editing !== null, "no editing results");
@@ -122,6 +133,13 @@ if (nav) {
     console.log(
       `  markup: highlight of ${m.runs} runs in ${m.markMs} ms, ${m.yellowPixels} px painted, ` +
         `same view ${m.sameViewer}, undo removed it ${m.removedByUndo}`,
+    );
+  }
+  if (nav.notesAndInk) {
+    const n = nav.notesAndInk;
+    console.log(
+      `  notes and ink: note ${n.notePixels} px, text kept ${n.noteMatches}; stroke ${n.inkPixels} px, ` +
+        `erased ${n.erased}, undone ${n.cleared}`,
     );
   }
   if (nav.editing) {

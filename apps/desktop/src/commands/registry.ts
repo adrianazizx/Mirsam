@@ -4,6 +4,7 @@ import {
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
+  type StrokePoint,
 } from "../backend";
 import {
   type AppState,
@@ -75,6 +76,15 @@ export interface CommandArg {
   to?: number;
   /** `pages.splitInto`: pages per file. */
   size?: number;
+  /** `note.save`: the note's text. */
+  text?: string;
+  /** `note.place`: the icon's top-left corner, in displayed-page points. */
+  x?: number;
+  y?: number;
+  /** `ink.add`: the pen's strokes, in displayed-page points. */
+  strokes?: StrokePoint[][];
+  /** `ink.erase`: the ink annotations touched, by index. */
+  indices?: number[];
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -109,7 +119,15 @@ export type CommandId =
   | "markup.underline"
   | "markup.strikeOut"
   | "markup.squiggly"
-  | "markup.delete"
+  | "annotation.delete"
+  | "comment.note"
+  | "comment.pen"
+  | "comment.eraser"
+  | "note.place"
+  | "note.save"
+  | "note.cancel"
+  | "ink.add"
+  | "ink.erase"
   | "edit.undo"
   | "edit.redo"
   | "pages.rotateClockwise"
@@ -165,7 +183,12 @@ const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
-const hasMarkupSelected = (state: AppState) => Boolean(selectActiveDocument(state)?.selectedMarkup);
+const hasAnnotationSelected = (state: AppState) =>
+  Boolean(selectActiveDocument(state)?.selectedAnnotation);
+/** A note is being written: a new one, or the selected one. */
+const isWritingNote = (state: AppState) =>
+  (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
+  selectActiveDocument(state)?.selectedAnnotation?.kind === "note";
 const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
 const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
 
@@ -236,6 +259,12 @@ async function markSelection(kind: MarkupKind): Promise<void> {
   const outcome = await backend.addMarkup(active.id, kind, pages);
   viewer.clearSelection();
   store().applyEdit(active.id, outcome);
+}
+
+/** Switches to the Comment tool in one of its modes (ADR 0018). */
+function chooseCommentTool(tool: "note" | "pen" | "eraser") {
+  store().setActiveTool("comment");
+  store().setCommentTool(tool);
 }
 
 async function stepActive(step: "undo" | "redo"): Promise<void> {
@@ -823,15 +852,95 @@ const COMMANDS: Command[] = [
     run: () => markSelection("squiggly"),
   },
   {
-    id: "markup.delete",
+    id: "annotation.delete",
     shortcut: { key: "Delete", alternate: "Backspace", notInFields: true },
-    isEnabled: hasMarkupSelected,
+    isEnabled: hasAnnotationSelected,
     async run() {
       const active = selectActiveDocument(store());
-      const selected = active?.selectedMarkup;
+      const selected = active?.selectedAnnotation;
       if (!active || !selected) return;
-      const outcome = await backend.removeAnnotation(active.id, selected.page, selected.index);
+      const outcome = await backend.removeAnnotations(active.id, selected.page, [selected.index]);
       store().applyEdit(active.id, outcome);
+    },
+  },
+  { id: "comment.note", isEnabled: hasDocument, run: () => chooseCommentTool("note") },
+  { id: "comment.pen", isEnabled: hasDocument, run: () => chooseCommentTool("pen") },
+  { id: "comment.eraser", isEnabled: hasDocument, run: () => chooseCommentTool("eraser") },
+  {
+    // A press with the note tool: the note is added once its text is saved.
+    id: "note.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      getViewer(active.id)?.clearSelection();
+      store().setPendingNote({ documentId: active.id, page: arg.page, x: arg.x, y: arg.y });
+    },
+  },
+  {
+    id: "note.save",
+    paletteHidden: true,
+    isEnabled: isWritingNote,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const text = arg?.text ?? "";
+      const pending = store().pendingNote;
+      if (pending && pending.documentId === active.id) {
+        store().setPendingNote(null);
+        // An empty new note is no note.
+        if (text.trim() === "") return;
+        const outcome = await backend.addNote(active.id, pending.page, pending.x, pending.y, text);
+        store().applyEdit(active.id, outcome);
+        return;
+      }
+      const note = active.selectedAnnotation;
+      if (note?.kind !== "note") return;
+      getViewer(active.id)?.clearSelection();
+      if ((note.contents ?? "") === text) return;
+      const outcome = await backend.setAnnotationContents(active.id, note.page, note.index, text);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "note.cancel",
+    paletteHidden: true,
+    isEnabled: isWritingNote,
+    run() {
+      store().setPendingNote(null);
+      const active = selectActiveDocument(store());
+      if (active) getViewer(active.id)?.clearSelection();
+    },
+  },
+  {
+    id: "ink.add",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const page = arg?.page;
+      if (!active || page === undefined || !arg?.strokes?.length) return;
+      try {
+        store().applyEdit(active.id, await backend.addInk(active.id, page, arg.strokes));
+      } catch (error) {
+        // Not added: the stroke on screen must not stay as if it were.
+        getViewer(active.id)?.clearInkPreview(page);
+        throw error;
+      }
+    },
+  },
+  {
+    id: "ink.erase",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || !arg.indices?.length) return;
+      store().applyEdit(
+        active.id,
+        await backend.removeAnnotations(active.id, arg.page, arg.indices),
+      );
     },
   },
   {
@@ -846,7 +955,7 @@ const COMMANDS: Command[] = [
   {
     id: "edit.deselect",
     shortcut: { key: "Escape", notInFields: true },
-    isEnabled: (state) => hasSelection(state) || hasMarkupSelected(state),
+    isEnabled: (state) => hasSelection(state) || hasAnnotationSelected(state),
     run() {
       const active = selectActiveDocument(store());
       if (active) getViewer(active.id)?.clearSelection();

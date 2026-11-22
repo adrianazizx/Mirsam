@@ -110,23 +110,28 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
-    /// The page's markup annotations (highlight, underline, strikethrough,
-    /// squiggly), and the map from page space to the page as displayed.
-    pub fn page_markup(&self, index: usize) -> Result<(Vec<crate::annotate::MarkupInfo>, ViewTransform)> {
-        use crate::annotate::{MarkupInfo, MarkupKind};
+    /// The page's annotations of the kinds this app writes (markup, ink,
+    /// notes), and the map from page space to the page as displayed.
+    pub fn page_annotations(
+        &self,
+        index: usize,
+    ) -> Result<(Vec<crate::annotate::AnnotationInfo>, ViewTransform)> {
+        use crate::annotate::{AnnotationInfo, AnnotationKind};
         let page = self.page(index)?;
         let annotations = page.annotations();
         let mut out = Vec::new();
         // By index, not by iterator: the iterator stops at the first entry
         // PDFium cannot read, and the index is the annotation's position in
-        // `/Annots`, which removing it needs.
+        // `/Annots`, which changing or removing it needs.
         for position in 0..annotations.len() {
             let Ok(annotation) = annotations.get(position) else { continue };
             let kind = match annotation.annotation_type() {
-                PdfPageAnnotationType::Highlight => MarkupKind::Highlight,
-                PdfPageAnnotationType::Underline => MarkupKind::Underline,
-                PdfPageAnnotationType::Strikeout => MarkupKind::StrikeOut,
-                PdfPageAnnotationType::Squiggly => MarkupKind::Squiggly,
+                PdfPageAnnotationType::Highlight => AnnotationKind::Highlight,
+                PdfPageAnnotationType::Underline => AnnotationKind::Underline,
+                PdfPageAnnotationType::Strikeout => AnnotationKind::StrikeOut,
+                PdfPageAnnotationType::Squiggly => AnnotationKind::Squiggly,
+                PdfPageAnnotationType::Ink => AnnotationKind::Ink,
+                PdfPageAnnotationType::Text => AnnotationKind::Note,
                 _ => continue,
             };
             let rect =
@@ -149,7 +154,16 @@ impl Document {
                     bounds.top().value,
                 ));
             }
-            out.push(MarkupInfo { index: position, kind, rects });
+            let contents = (kind == AnnotationKind::Note).then(|| annotation.contents().unwrap_or_default());
+            out.push(AnnotationInfo { index: position, kind, rects, contents, strokes: Vec::new() });
+        }
+        if out.iter().any(|info| info.kind == AnnotationKind::Ink) {
+            let mut strokes = crate::annotate::ink_strokes(&self.bytes, index);
+            for info in &mut out {
+                if let Some(found) = strokes.remove(&info.index) {
+                    info.strokes = found;
+                }
+            }
         }
         Ok((out, ViewTransform::of_page(&page)?))
     }

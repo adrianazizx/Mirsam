@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::annotate::{AnnotationEdit, Markup, MarkupKind, Quad};
+use safha_core::annotate::{AnnotationEdit, AnnotationKind, Ink, InkPoint, Markup, MarkupKind, Note, Quad};
 use safha_core::edit::{Change, EditHistory, PageEdit};
 use safha_core::view::ViewRect;
 
@@ -90,6 +90,23 @@ pub struct MarkedPage {
     rects: Vec<ViewRect>,
 }
 
+/// Applies annotation edits to a document as one undo step.
+fn edit_annotations(
+    state: &AppState,
+    document_id: u32,
+    edits: impl FnOnce(&safha_core::Document) -> safha_core::Result<Vec<AnnotationEdit>>,
+) -> CommandResult<EditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let edits = edits(&document)?;
+    let (revision, update) = document.with_annotation_edits(&edits)?;
+    history.push_annotations(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(EditOutcome::new(page_count, &history, Change::Annotations))
+}
+
 /// Marks text with highlight, underline, strikethrough, or squiggly: one
 /// annotation per page, all in one undo step.
 #[tauri::command]
@@ -99,71 +116,143 @@ pub async fn add_markup(
     kind: MarkupKind,
     pages: Vec<MarkedPage>,
 ) -> CommandResult<EditOutcome> {
-    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let mut history = lock(&history);
-    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let edits = pages
-        .into_iter()
-        .map(|marked| {
-            let view = document.view_transform(marked.page)?;
-            let quads = marked.rects.iter().map(|rect| Quad::from_view(*rect, &view)).collect();
-            Ok(AnnotationEdit::AddMarkup {
-                page: marked.page,
-                markup: Markup { kind, quads, color: kind.default_color() },
+    edit_annotations(&state, document_id, |document| {
+        pages
+            .into_iter()
+            .map(|marked| {
+                let view = document.view_transform(marked.page)?;
+                let quads = marked.rects.iter().map(|rect| Quad::from_view(*rect, &view)).collect();
+                Ok(AnnotationEdit::AddMarkup {
+                    page: marked.page,
+                    markup: Markup { kind, quads, color: kind.default_color() },
+                })
             })
-        })
-        .collect::<safha_core::Result<Vec<_>>>()?;
-    let (revision, update) = document.with_annotation_edits(&edits)?;
-    history.push_annotations(update);
-    let page_count = revision.page_count();
-    state.replace_revision(document_id, revision);
-    Ok(EditOutcome::new(page_count, &history, Change::Annotations))
+            .collect()
+    })
 }
 
-/// Removes a markup annotation (with its pop-up and replies).
+/// A point of a pen stroke on the displayed page, with the pen's pressure.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct StrokePoint {
+    x: f32,
+    y: f32,
+    pressure: f32,
+}
+
+/// Adds freehand ink: the strokes, in displayed-page points (ADR 0018).
 #[tauri::command]
-pub async fn remove_annotation(
+pub async fn add_ink(
     state: State<'_, AppState>,
     document_id: u32,
     page: usize,
-    index: usize,
+    strokes: Vec<Vec<StrokePoint>>,
 ) -> CommandResult<EditOutcome> {
-    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let mut history = lock(&history);
-    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let (revision, update) = document.with_annotation_edit(&AnnotationEdit::Remove { page, index })?;
-    history.push_annotations(update);
-    let page_count = revision.page_count();
-    state.replace_revision(document_id, revision);
-    Ok(EditOutcome::new(page_count, &history, Change::Annotations))
+    edit_annotations(&state, document_id, |document| {
+        let view = document.view_transform(page)?;
+        let strokes = strokes
+            .iter()
+            .map(|stroke| stroke.iter().map(|p| InkPoint::from_view(p.x, p.y, p.pressure, &view)).collect())
+            .collect();
+        Ok(vec![AnnotationEdit::AddInk {
+            page,
+            ink: Ink { strokes, color: Ink::DEFAULT_COLOR, width: Ink::DEFAULT_WIDTH },
+        }])
+    })
 }
 
-/// A markup annotation as the UI hit-tests it.
-#[derive(Debug, Serialize)]
-pub struct MarkupWire {
-    /// What `remove_annotation` takes.
-    index: usize,
-    kind: MarkupKind,
-    /// Displayed-page rectangles, one per run of marked text.
-    rects: Vec<ViewRect>,
-}
-
-/// The page's markup annotations, in displayed-page coordinates.
+/// Adds a sticky note whose icon's top-left corner is displayed at (`x`, `y`).
 #[tauri::command]
-pub async fn page_markup(
+pub async fn add_note(
     state: State<'_, AppState>,
     document_id: u32,
     page: usize,
-) -> CommandResult<Vec<MarkupWire>> {
+    x: f32,
+    y: f32,
+    contents: String,
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |document| {
+        let view = document.view_transform(page)?;
+        Ok(vec![AnnotationEdit::AddNote {
+            page,
+            note: Note { rect: Note::rect_at(x, y, &view), contents, color: Note::DEFAULT_COLOR },
+        }])
+    })
+}
+
+/// Replaces a note's text.
+#[tauri::command]
+pub async fn set_annotation_contents(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    index: usize,
+    contents: String,
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |_| Ok(vec![AnnotationEdit::SetContents { page, index, contents }]))
+}
+
+/// Removes annotations of one page (with their pop-ups and replies), in one
+/// undo step.
+#[tauri::command]
+pub async fn remove_annotations(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    mut indices: Vec<usize>,
+) -> CommandResult<EditOutcome> {
+    // Highest first: removing one moves the ones after it.
+    indices.sort_unstable_by(|a, b| b.cmp(a));
+    indices.dedup();
+    edit_annotations(&state, document_id, |_| {
+        Ok(indices.into_iter().map(|index| AnnotationEdit::Remove { page, index }).collect())
+    })
+}
+
+/// An annotation as the UI hit-tests and shows it.
+#[derive(Debug, Serialize)]
+pub struct AnnotationWire {
+    /// What `remove_annotations` and `set_annotation_contents` take.
+    index: usize,
+    kind: AnnotationKind,
+    /// Displayed-page rectangles: one per run of marked text, else its box.
+    rects: Vec<ViewRect>,
+    /// A note's text.
+    contents: Option<String>,
+    /// Ink strokes, as displayed-page `[x, y]` points.
+    strokes: Vec<Vec<[f32; 2]>>,
+}
+
+/// The page's annotations of the kinds this app writes, in displayed-page
+/// coordinates.
+#[tauri::command]
+pub async fn page_annotations(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+) -> CommandResult<Vec<AnnotationWire>> {
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     tauri::async_runtime::spawn_blocking(move || {
-        let (markup, view) = document.page_markup(page)?;
-        Ok(markup
+        let (annotations, view) = document.page_annotations(page)?;
+        Ok(annotations
             .into_iter()
-            .map(|info| MarkupWire {
+            .map(|info| AnnotationWire {
                 index: info.index,
                 kind: info.kind,
                 rects: info.rects.into_iter().map(|rect| view.rect(rect)).collect(),
+                contents: info.contents,
+                strokes: info
+                    .strokes
+                    .iter()
+                    .map(|stroke| {
+                        stroke
+                            .iter()
+                            .map(|&(x, y)| {
+                                let (x, y) = view.point(x, y);
+                                [x, y]
+                            })
+                            .collect()
+                    })
+                    .collect(),
             })
             .collect())
     })

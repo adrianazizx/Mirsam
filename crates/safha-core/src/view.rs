@@ -119,6 +119,14 @@ impl ViewTransform {
 }
 
 #[cfg(test)]
+impl ViewTransform {
+    /// A page turned a quarter: page (x, y) is displayed at (y, x).
+    pub(crate) fn of_rotation_for_tests() -> Self {
+        Self { a: 0.0, b: 1.0, c: 1.0, d: 0.0, e: 0.0, f: 0.0 }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

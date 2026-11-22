@@ -1,10 +1,10 @@
 import type {
+  AnnotationKind,
   Backend,
   DocumentInfo,
   EditOutcome,
   KeptRequest,
   Lane,
-  MarkupKind,
   OpenOutcome,
   OutlineItem,
   PageEdit,
@@ -165,10 +165,12 @@ function fold(text: string, options: SearchOptions): string {
   return folded;
 }
 
-/** A markup annotation the mock keeps: displayed-page rectangles of its page. */
+/** An annotation the mock keeps, in displayed-page points of its page. */
 interface MockMarkup {
-  kind: MarkupKind;
+  kind: AnnotationKind;
   rects: ViewRect[];
+  contents: string | null;
+  strokes: [number, number][][];
 }
 
 /**
@@ -347,15 +349,37 @@ function blank(width: number, height: number): RenderedPage {
   return { width, height, renderMicros: 0, fromCache: false, image: blankImage(width, height) };
 }
 
-/** Markup over a page, drawn like the engine's appearance streams. */
+/** Annotations over a page, drawn like the engine's appearance streams. */
 function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
-  const colours: Record<MarkupKind, string> = {
+  const colours: Record<AnnotationKind, string> = {
     highlight: "rgb(255 219 0)",
     underline: "rgb(0 107 230)",
     squiggly: "rgb(0 107 230)",
     strikeOut: "rgb(219 33 33)",
+    ink: "rgb(13 56 153)",
+    note: "rgb(255 219 0)",
   };
-  for (const { kind, rects } of markup) {
+  for (const { kind, rects, strokes } of markup) {
+    if (kind === "ink" || kind === "note") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = kind === "ink" ? colours.ink : "rgb(64 64 64)";
+      ctx.fillStyle = colours[kind];
+      ctx.lineWidth = kind === "ink" ? 2 : 0.6;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      if (kind === "note") {
+        for (const rect of rects) {
+          ctx.fillRect(rect.x + 1.5, rect.y + 1.5, rect.width - 3, rect.height - 7);
+          ctx.strokeRect(rect.x + 1.5, rect.y + 1.5, rect.width - 3, rect.height - 7);
+        }
+      }
+      for (const stroke of strokes) {
+        ctx.beginPath();
+        for (const [x, y] of stroke) ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+      continue;
+    }
     ctx.fillStyle = colours[kind];
     ctx.strokeStyle = colours[kind];
     ctx.globalCompositeOperation = kind === "highlight" ? "multiply" : "source-over";
@@ -579,19 +603,66 @@ export const mockBackend: Backend = {
       const original = state.pages[page];
       if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
       const markup = new Map(state.markup);
-      markup.set(original, [...(markup.get(original) ?? []), { kind, rects }]);
+      markup.set(original, [
+        ...(markup.get(original) ?? []),
+        { kind, rects, contents: null, strokes: [] },
+      ]);
       state = { pages: state.pages, markup, change: "annotations" };
     }
     return pushState(documentId, state);
   },
-  removeAnnotation: async (documentId, page, index) => {
+  addInk: async (documentId, page, strokes) => {
+    const points = strokes.flat();
+    if (points.length === 0) throw { code: "invalid_edit", detail: "no ink" };
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const rect = {
+      x: Math.min(...xs) - 2,
+      y: Math.min(...ys) - 2,
+      width: Math.max(...xs) - Math.min(...xs) + 4,
+      height: Math.max(...ys) - Math.min(...ys) + 4,
+    };
+    const ink: MockMarkup = {
+      kind: "ink",
+      rects: [rect],
+      contents: null,
+      strokes: strokes.map((stroke) => stroke.map((p): [number, number] => [p.x, p.y])),
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, ink]),
+    );
+  },
+  addNote: async (documentId, page, x, y, contents) => {
+    const note: MockMarkup = {
+      kind: "note",
+      rects: [{ x, y, width: 20, height: 20 }],
+      contents,
+      strokes: [],
+    };
+    return pushState(
+      documentId,
+      withMarkup(documentId, page, (list) => [...list, note]),
+    );
+  },
+  setAnnotationContents: async (documentId, page, index, contents) => {
     const next = withMarkup(documentId, page, (list) => {
-      if (!list[index]) throw { code: "invalid_edit", detail: "no such annotation" };
-      return list.filter((_, i) => i !== index);
+      const found = list[index];
+      if (found?.kind !== "note") throw { code: "invalid_edit", detail: "not a note" };
+      return list.map((item, i) => (i === index ? { ...item, contents } : item));
     });
     return pushState(documentId, next);
   },
-  pageMarkup: async (documentId, page) => {
+  removeAnnotations: async (documentId, page, indices) => {
+    const next = withMarkup(documentId, page, (list) => {
+      if (indices.some((index) => !list[index])) {
+        throw { code: "invalid_edit", detail: "no such annotation" };
+      }
+      return list.filter((_, i) => !indices.includes(i));
+    });
+    return pushState(documentId, next);
+  },
+  pageAnnotations: async (documentId, page) => {
     const state = stateOf(documentId);
     const original = state.pages[page];
     return (original === undefined ? [] : (state.markup.get(original) ?? [])).map(

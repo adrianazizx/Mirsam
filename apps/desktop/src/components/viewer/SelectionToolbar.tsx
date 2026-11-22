@@ -8,26 +8,26 @@ import styles from "./SelectionToolbar.module.css";
 
 /**
  * The floating toolbar over selected text (spec section 4): copy, and mark
- * the text as standard PDF annotations (ADR 0017). Over a selected markup
- * annotation it offers deleting it instead.
+ * the text as standard PDF annotations (ADR 0017). Over a selected
+ * annotation (markup or ink) it offers deleting it instead.
  */
 export function SelectionToolbar({ documentId }: { documentId: number }) {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
-  const markupSelected = useAppStore((state) =>
-    Boolean(state.documents.find((open) => open.id === documentId)?.selectedMarkup),
+  const annotationSelected = useAppStore((state) =>
+    Boolean(state.documents.find((open) => open.id === documentId)?.selectedAnnotation),
   );
   return (
     <div className={styles.band}>
       {/* The page area is always left to right; the toolbar follows the UI language. */}
       <Toolbar
         className={styles.toolbar}
-        aria-label={t(markupSelected ? "selection.markupToolbar" : "selection.toolbar")}
+        aria-label={t(annotationSelected ? "selection.annotationToolbar" : "selection.toolbar")}
         dir={directionOf(locale)}
         data-testid="selection-toolbar"
       >
-        {markupSelected ? (
-          <CommandButton command="markup.delete" tooltipPlacement="top">
+        {annotationSelected ? (
+          <CommandButton command="annotation.delete" tooltipPlacement="top">
             <Trash2 />
           </CommandButton>
         ) : (

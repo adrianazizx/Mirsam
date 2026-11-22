@@ -1,0 +1,47 @@
+/* Hangs below its zero-size anchor (the note's icon), starting at its inline start. */
+.band {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  inline-size: var(--size-note-editor);
+  padding: var(--space-2);
+  background: var(--color-bg-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.text {
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: var(--size-note-text);
+  padding: var(--space-2);
+  resize: vertical;
+  font: inherit;
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+  background: var(--color-bg-app);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.text:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.spacer {
+  flex: 1;
+}

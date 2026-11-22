@@ -39,13 +39,27 @@ export interface MarkedPage {
   rects: ViewRect[];
 }
 
-/** A markup annotation on a page, for hit-testing and removing it. */
-export interface PageMarkup {
-  /** Its position in the page's annotations; what `removeAnnotation` takes. */
+/** The annotations the app writes and can change or remove (ADRs 0017, 0018). */
+export type AnnotationKind = MarkupKind | "ink" | "note";
+
+/** An annotation on a page, for hit-testing, showing, and changing it. */
+export interface PageAnnotation {
+  /** Its position in the page's annotations; what the edit commands take. */
   index: number;
-  kind: MarkupKind;
-  /** Displayed-page rectangles, one per run of marked text. */
+  kind: AnnotationKind;
+  /** Displayed-page rectangles: one per run of marked text, else its box. */
   rects: ViewRect[];
+  /** A note's text. */
+  contents: string | null;
+  /** Ink strokes as displayed-page `[x, y]` points. */
+  strokes: [number, number][][];
+}
+
+/** A point of a pen stroke on the displayed page, with the pen's pressure (0–1). */
+export interface StrokePoint {
+  x: number;
+  y: number;
+  pressure: number;
 }
 
 /** The document after a save. */
@@ -366,10 +380,27 @@ export interface Backend {
   redoEdit(documentId: number): Promise<EditOutcome>;
   /** Marks text: one annotation per page, all in one undo step (ADR 0017). */
   addMarkup(documentId: number, kind: MarkupKind, pages: MarkedPage[]): Promise<EditOutcome>;
-  /** Removes a markup annotation, with its pop-up and replies. */
-  removeAnnotation(documentId: number, page: number, index: number): Promise<EditOutcome>;
-  /** The page's markup annotations. */
-  pageMarkup(documentId: number, page: number): Promise<PageMarkup[]>;
+  /** Adds freehand ink: strokes in displayed-page points (ADR 0018). */
+  addInk(documentId: number, page: number, strokes: StrokePoint[][]): Promise<EditOutcome>;
+  /** Adds a sticky note whose icon's top-left corner is displayed at (`x`, `y`). */
+  addNote(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Replaces a note's text. */
+  setAnnotationContents(
+    documentId: number,
+    page: number,
+    index: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Removes annotations of one page (with their pop-ups and replies) in one undo step. */
+  removeAnnotations(documentId: number, page: number, indices: number[]): Promise<EditOutcome>;
+  /** The page's annotations of the kinds the app writes. */
+  pageAnnotations(documentId: number, page: number): Promise<PageAnnotation[]>;
   /**
    * Asks for PDFs and inserts their pages before page `at`, in order (ADR 0016);
    * null if cancelled.

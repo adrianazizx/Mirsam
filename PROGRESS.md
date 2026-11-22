@@ -219,14 +219,20 @@ Plan, in order: every later slice edits documents, so the editing model and savi
    text selection, as standard annotations with appearance streams. Click a markup to select
    it; Delete removes it. New objects in encrypted files are encrypted (RC4, AES-128, AES-256).
    The view paints again instead of rebuilding. Colour choice comes with the inspector.
-6. **Notes, text boxes, ink** (RTL-aware text entry).
+6. **Notes, text boxes, ink** (RTL-aware text entry):
+   - ~~**Ink and sticky notes**~~ **done (ADR 0018):** the Comment tool's Note, Draw (with
+     pressure), and Erase-ink modes; a note editor that follows the text's own direction.
+   - **Text boxes** next. Their appearance draws shaped text with an embedded font subset, so
+     they need the content-stream writer, built on M3's `typeset` (ADR 0020).
 7. **Autosave and recovery.**
 8. **Comments panel** (P1, if time allows in M2).
 
 - [~] Markup, notes, text boxes, ink:
       - Markup is done (ADR 0017): highlight, underline, strikethrough, squiggly; select and
         delete; undo; English and Arabic; encrypted files.
-      - Not yet: notes, text boxes, ink, and choosing colours.
+      - Ink and sticky notes are done (ADR 0018): pressure, eraser, notes upright on turned
+        pages, Arabic note text, edit and delete.
+      - Not yet: text boxes and callouts, choosing colours and widths, moving annotations.
 - [ ] Comments panel
 - [~] Page organizer (reorder/rotate/delete/merge/split/extract):
       - The Pages tool shows a virtualized grid (React Aria `GridList` + `GridLayout`).
@@ -333,7 +339,7 @@ parallel with M2 and merged by pull request at the owner's request.
 
 ## Session log
 
-### Session 7 — 2026-11-22 (Milestone 2: markup)
+### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes)
 
 - **CI on PR #2:** a slow macOS runner failed the scroll benchmark's timing. On CI every
   benchmark timing check now warns; only the app's own memory fails the run (ADR 0011). After
@@ -356,8 +362,20 @@ parallel with M2 and merged by pull request at the owner's request.
   cached the tab items).
 - **Self-test:** highlights the first page's text and checks the yellow on screen in the same
   view, and undo; in English and Arabic.
-- **Tests:** 167 Rust and 132 UI tests pass on this Mac. The self-test passes in English (LTR)
-  and Arabic (RTL, dark).
+- **Merged `main`** (Milestone 3 groundwork) into `m2-organize` to clear PR #2's conflicts.
+- **Ink and sticky notes (ADR 0018):**
+  - **The Comment tool** has Note, Draw and Erase-ink modes.
+  - **Ink** widens with pen pressure. A preview stands in until the page repaints, and the
+    eraser removes whole strokes.
+  - **Notes** are `/Text` annotations with their text in `/Contents`. Their icon stands upright
+    on turned pages.
+  - **The note editor's** text field takes its direction from the text (`dir="auto"`).
+  - **The annotation module** is now a folder: markup, ink, notes.
+- **Not yet:** text boxes. They need the content-stream writer with shaped text and embedded
+  fonts.
+- **Tests:** 223 Rust and 141 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark): markup, an Arabic note, and a pressure stroke, each painted and
+  undone.
 
 ### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
 

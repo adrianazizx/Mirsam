@@ -1,19 +1,21 @@
 import {
+  type AnnotationKind,
   type Backend,
   type MarkedPage,
-  type MarkupKind,
-  type PageMarkup,
+  type PageAnnotation,
   type PageSize,
   type RenderedPage,
   releaseRendered,
   renderedCanvas,
   type SearchHit,
+  type StrokePoint,
   type TextLayer,
   type TileRequest,
   type Urgency,
   type ViewRect,
 } from "../backend";
 import { clampZoom } from "../state/zoom";
+import { annotationAt, clampToPage, erased, inkRuns } from "./annotations";
 import {
   PAGE_PAINTED_EVENT,
   PAGE_PREVIEW_EVENT,
@@ -97,17 +99,38 @@ export interface ViewerCallbacks {
   onFatal(error: unknown): void;
   /** Text became selected, or the selection was cleared. */
   onSelectionChange?(hasSelection: boolean): void;
-  /** A markup annotation was selected (clicked), or the selection was cleared. */
-  onMarkupSelect?(selected: SelectedMarkup | null): void;
+  /** An annotation was selected (clicked), or the selection was cleared. */
+  onAnnotationSelect?(selected: SelectedAnnotation | null): void;
+  /** The pen finished a stroke (Comment tool). */
+  onInk?(page: number, strokes: StrokePoint[][]): void;
+  /** The eraser touched these ink annotations of a page (Comment tool). */
+  onErase?(page: number, indices: number[]): void;
+  /** A press placed a new note: its icon's top-left corner (Comment tool). */
+  onPlaceNote?(page: number, x: number, y: number): void;
 }
 
-/** A markup annotation the reader selected by clicking it. */
-export interface SelectedMarkup {
+/** An annotation the reader selected by clicking it. */
+export interface SelectedAnnotation {
   page: number;
-  /** Its position in the page's annotations (what removing it takes). */
+  /** Its position in the page's annotations (what changing or removing it takes). */
   index: number;
-  kind: MarkupKind;
+  kind: AnnotationKind;
+  /** A note's text. */
+  contents: string | null;
+  /** Its box on the displayed page. */
+  rect: ViewRect;
 }
+
+/**
+ * What a press on a page does: select text and annotations; place a note,
+ * draw, or erase (the Comment tool); or nothing (other tools).
+ */
+export type ViewerMode = "select" | "note" | "pen" | "eraser" | "none";
+
+/** A note's icon, in points (the engine's `NOTE_SIZE`). */
+export const NOTE_SIZE = 20;
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** Class names for the DOM the viewer creates (from the wrapper's CSS module). */
 export interface ViewerClassNames {
@@ -120,8 +143,16 @@ export interface ViewerClassNames {
   searchHit: string;
   searchHitActive: string;
   selection: string;
-  /** Outline of a selected markup annotation. */
+  /** Outline of a selected annotation. */
   markupSelected: string;
+  /** Ink drawn but not yet rendered by the engine (an SVG over the page). */
+  inkPreview: string;
+  /** Ink the eraser is touching. */
+  inkErasing: string;
+  /** Where a new note's icon goes, while its text is written. */
+  notePending: string;
+  /** Anchor element the note editor is rendered into. */
+  noteEditor: string;
   /** Anchor element the selection toolbar is rendered into. */
   selectionToolbar: string;
 }
@@ -138,8 +169,8 @@ export interface ViewerOptions {
   /** Accessible name of a page, e.g. "Page 3 of contract.pdf". */
   pageLabel(page: number): string;
   isMac: boolean;
-  /** Whether dragging selects text (the Select tool is active). */
-  canSelect?(): boolean;
+  /** What a press on a page does now (the active tool); "select" if absent. */
+  mode?(): ViewerMode;
 }
 
 /** What the benchmark and self-test read each frame. */
@@ -213,6 +244,8 @@ interface Slot {
   preview: HTMLCanvasElement | null;
   /** The preview from before a refresh, shown until the new one arrives. */
   stalePreview: HTMLCanvasElement | null;
+  /** The SVG drawing this page's ink preview, when there is one. */
+  ink: SVGSVGElement | null;
   tiles: Map<string, TileCanvas>;
   box: PageBox | null;
   /** Ids of the full-resolution tiles on screen at the current scale, from the last update. */
@@ -317,7 +350,7 @@ export class ViewerController {
   private dprQuery: MediaQueryList | null = null;
   private destroyed = false;
 
-  private readonly canSelect: () => boolean;
+  private readonly mode: () => ViewerMode;
   private readonly layers = new Map<number, TextLayer>();
   private readonly layerRequests = new Set<number>();
   private selection: Selection | null = null;
@@ -330,16 +363,26 @@ export class ViewerController {
   private selectionReported = false;
   private readonly searchMarks = new Map<number, HitMark[]>();
   private readonly selectionRects = new Map<number, ViewRect[]>();
-  /** Markup annotations of recently visited pages, for clicking them. */
-  private readonly markup = new Map<number, PageMarkup[]>();
-  private readonly markupRequests = new Map<number, Promise<void>>();
-  /** Answers about markup from before the last refresh are dropped. */
-  private markupGeneration = 0;
-  private selectedMarkup: SelectedMarkup | null = null;
-  /** Where the last plain click pressed: markup there is selected if no text was. */
+  /** Annotations of recently visited pages, for clicking and erasing them. */
+  private readonly annotations = new Map<number, PageAnnotation[]>();
+  private readonly annotationRequests = new Map<number, Promise<void>>();
+  /** Answers about annotations from before the last refresh are dropped. */
+  private annotationGeneration = 0;
+  private selectedAnnotation: SelectedAnnotation | null = null;
+  /** Where the last plain click pressed: an annotation there is selected if no text was. */
   private pressedPoint: PagePoint | null = null;
-  /** Counts presses, so a late answer about markup applies only to its own click. */
+  /** Counts presses, so a late answer about annotations applies only to its own click. */
   private presses = 0;
+  /** A pen stroke being drawn, kept on the page it started on. */
+  private drawing: { pointerId: number; page: number; points: StrokePoint[] } | null = null;
+  /** Strokes drawn but not yet in the page's tiles: shown until the page repaints. */
+  private readonly inkPreview = new Map<number, StrokePoint[][]>();
+  /** The ink annotations the eraser has touched during this press. */
+  private erasing: { pointerId: number; page: number; indices: Set<number> } | null = null;
+  /** Where the note editor sits: a new note's icon, or the selected note. */
+  private noteAnchor: { page: number; rect: ViewRect; pending: boolean } | null = null;
+  /** Where the note editor is drawn: under the note's icon. */
+  readonly noteEditorHost: HTMLDivElement;
   /** Where the selection toolbar is drawn: above the selection's first line. */
   readonly selectionToolbarHost: HTMLDivElement;
 
@@ -357,7 +400,7 @@ export class ViewerController {
     this.currentPage = options.initial.page;
     this.initialOffset = options.initial.offset ?? 0;
 
-    this.canSelect = options.canSelect ?? (() => true);
+    this.mode = options.mode ?? (() => "select");
     this.content = document.createElement("div");
     this.content.dataset.viewerContent = "";
     this.content.style.position = "relative";
@@ -366,6 +409,10 @@ export class ViewerController {
     this.selectionToolbarHost.className = this.classNames.selectionToolbar;
     this.selectionToolbarHost.hidden = true;
     this.content.append(this.selectionToolbarHost);
+    this.noteEditorHost = document.createElement("div");
+    this.noteEditorHost.className = this.classNames.noteEditor;
+    this.noteEditorHost.hidden = true;
+    this.content.append(this.noteEditorHost);
 
     this.client = this.newClient();
 
@@ -459,10 +506,10 @@ export class ViewerController {
       slot.firstTileRequestAt = null;
       slot.renderMicros = 0;
     }
-    this.markupGeneration += 1;
-    this.markup.clear();
-    this.markupRequests.clear();
-    this.setSelectedMarkup(null);
+    this.annotationGeneration += 1;
+    this.annotations.clear();
+    this.annotationRequests.clear();
+    this.setSelectedAnnotation(null);
     this.update();
   }
 
@@ -668,7 +715,7 @@ export class ViewerController {
   clearSelection(): void {
     this.pendingAnchor = null;
     this.setSelection(null);
-    this.setSelectedMarkup(null);
+    this.setSelectedAnnotation(null);
   }
 
   /** The selected text's runs, page by page: what marking it covers (ADR 0017). */
@@ -679,9 +726,38 @@ export class ViewerController {
       .map(([page, rects]) => ({ page, rects: rects.map((rect) => ({ ...rect })) }));
   }
 
-  /** The markup annotation selected by clicking it, if any. */
-  selectedMarkupAnnotation(): SelectedMarkup | null {
-    return this.selectedMarkup;
+  /** The annotation selected by clicking it, if any. */
+  currentAnnotation(): SelectedAnnotation | null {
+    return this.selectedAnnotation;
+  }
+
+  /**
+   * Shows where a new note's icon goes (its top-left corner) while its text
+   * is written, and anchors the note editor there; null takes it away.
+   */
+  showPendingNote(note: { page: number; x: number; y: number } | null): void {
+    const previous = this.noteAnchor;
+    if (note) {
+      this.noteAnchor = {
+        page: note.page,
+        rect: { x: note.x, y: note.y, width: NOTE_SIZE, height: NOTE_SIZE },
+        pending: true,
+      };
+    } else if (previous?.pending) {
+      this.noteAnchor = null;
+    }
+    for (const page of new Set([previous?.page, this.noteAnchor?.page])) {
+      const slot = page === undefined ? undefined : this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+    this.placeNoteEditor();
+  }
+
+  /** Drops the pen's preview on a page (its stroke was not added after all). */
+  clearInkPreview(page: number): void {
+    if (!this.inkPreview.delete(page)) return;
+    const slot = this.slots.get(page);
+    if (slot) this.paintOverlay(slot);
   }
 
   /** Selects all text on the current page. */
@@ -751,65 +827,214 @@ export class ViewerController {
     }
   }
 
-  /** The page's markup, from the cache or asked for once; settles when it is known. */
-  private loadMarkup(page: number): Promise<void> {
-    const pending = this.markupRequests.get(page);
-    if (this.markup.has(page)) return Promise.resolve();
+  /** The page's annotations, from the cache or asked for once; settles when they are known. */
+  private loadAnnotations(page: number): Promise<void> {
+    const pending = this.annotationRequests.get(page);
+    if (this.annotations.has(page)) return Promise.resolve();
     if (pending) return pending;
-    const generation = this.markupGeneration;
-    const request = this.backend.pageMarkup(this.documentId, page).then(
+    const generation = this.annotationGeneration;
+    const request = this.backend.pageAnnotations(this.documentId, page).then(
       (list) => {
-        if (this.destroyed || generation !== this.markupGeneration) return;
-        this.markupRequests.delete(page);
-        this.markup.set(page, list);
-        if (this.markup.size > TEXT_LAYER_PAGES) {
-          const oldest = this.markup.keys().next().value;
-          if (oldest !== undefined && oldest !== this.selectedMarkup?.page)
-            this.markup.delete(oldest);
+        if (this.destroyed || generation !== this.annotationGeneration) return;
+        this.annotationRequests.delete(page);
+        this.annotations.set(page, list);
+        if (this.annotations.size > TEXT_LAYER_PAGES) {
+          const oldest = this.annotations.keys().next().value;
+          if (oldest !== undefined && oldest !== this.selectedAnnotation?.page) {
+            this.annotations.delete(oldest);
+          }
         }
       },
       (error: unknown) => {
-        if (generation === this.markupGeneration) this.markupRequests.delete(page);
-        console.warn("page markup unavailable", page, error);
+        if (generation === this.annotationGeneration) this.annotationRequests.delete(page);
+        console.warn("page annotations unavailable", page, error);
       },
     );
-    this.markupRequests.set(page, request);
+    this.annotationRequests.set(page, request);
     return request;
   }
 
-  /** The markup annotation under a point, the one drawn last first. */
-  private markupAt(point: PagePoint): SelectedMarkup | null {
-    const list = this.markup.get(point.page) ?? [];
-    for (let i = list.length - 1; i >= 0; i -= 1) {
-      const markup = list[i];
-      const hit = markup?.rects.some(
-        (rect) =>
-          point.x >= rect.x &&
-          point.x <= rect.x + rect.width &&
-          point.y >= rect.y &&
-          point.y <= rect.y + rect.height,
-      );
-      if (markup && hit) return { page: point.page, index: markup.index, kind: markup.kind };
-    }
-    return null;
+  /** The annotation under a point, the one drawn last first. */
+  private annotationAt(point: PagePoint): SelectedAnnotation | null {
+    const hit = annotationAt(this.annotations.get(point.page) ?? [], point);
+    if (!hit) return null;
+    const x0 = Math.min(...hit.rects.map((r) => r.x));
+    const y0 = Math.min(...hit.rects.map((r) => r.y));
+    const x1 = Math.max(...hit.rects.map((r) => r.x + r.width));
+    const y1 = Math.max(...hit.rects.map((r) => r.y + r.height));
+    return {
+      page: point.page,
+      index: hit.index,
+      kind: hit.kind,
+      contents: hit.contents,
+      rect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 },
+    };
   }
 
-  private setSelectedMarkup(selected: SelectedMarkup | null): void {
-    const previous = this.selectedMarkup;
+  private setSelectedAnnotation(selected: SelectedAnnotation | null): void {
+    const previous = this.selectedAnnotation;
     if (previous?.page === selected?.page && previous?.index === selected?.index) return;
-    this.selectedMarkup = selected;
+    this.selectedAnnotation = selected;
+    // A note opens its editor under the icon; a pending new note stays put.
+    if (selected?.kind === "note") {
+      this.noteAnchor = { page: selected.page, rect: selected.rect, pending: false };
+    } else if (this.noteAnchor && !this.noteAnchor.pending) {
+      this.noteAnchor = null;
+    }
     for (const page of new Set([previous?.page, selected?.page])) {
       const slot = page === undefined ? undefined : this.slots.get(page);
       if (slot) this.paintOverlay(slot);
     }
     this.placeSelectionToolbar();
-    this.callbacks.onMarkupSelect?.(selected);
+    this.placeNoteEditor();
+    this.callbacks.onAnnotationSelect?.(selected);
   }
 
-  private selectedMarkupRects(): ViewRect[] {
-    const selected = this.selectedMarkup;
+  /** The selected annotation's rectangles: its marked runs, else its box. */
+  private selectedAnnotationRects(): ViewRect[] {
+    const selected = this.selectedAnnotation;
     if (!selected) return [];
-    return this.markup.get(selected.page)?.find((m) => m.index === selected.index)?.rects ?? [];
+    const found = this.annotations.get(selected.page)?.find((a) => a.index === selected.index);
+    return found && found.kind !== "ink" && found.kind !== "note" ? found.rects : [selected.rect];
+  }
+
+  /** Puts the note editor's host under the note's icon. */
+  private placeNoteEditor(): void {
+    const host = this.noteEditorHost;
+    const anchor = this.noteAnchor;
+    const box = anchor ? this.layout?.boxes[anchor.page] : undefined;
+    const size = anchor ? this.sizes?.[anchor.page] : undefined;
+    if (!anchor || !box || !size) {
+      host.hidden = true;
+      return;
+    }
+    const sx = box.width / size.width;
+    const sy = box.height / size.height;
+    host.hidden = false;
+    // The page area is always left to right: inline-start is the left edge.
+    host.style.insetInlineStart = `${box.x + anchor.rect.x * sx}px`;
+    host.style.insetBlockStart = `${box.y + (anchor.rect.y + anchor.rect.height) * sy}px`;
+  }
+
+  /** A client position on a given page (not the nearest one), clamped to it. */
+  private pointOnPage(page: number, clientX: number, clientY: number): PagePoint | null {
+    const box = this.layout?.boxes[page];
+    const size = this.sizes?.[page];
+    if (!box || !size || box.width <= 0 || box.height <= 0) return null;
+    const bounds = this.container.getBoundingClientRect();
+    const x =
+      ((clientX - bounds.left + this.container.scrollLeft - box.x) * size.width) / box.width;
+    const y =
+      ((clientY - bounds.top + this.container.scrollTop - box.y) * size.height) / box.height;
+    return { page, ...clampToPage(x, y, size.width, size.height) };
+  }
+
+  /** A mouse has no pressure (it reports 0.5 while pressed, 0 otherwise): count it as 0.5. */
+  private static pressureOf(event: PointerEvent): number {
+    return event.pointerType === "mouse" || !(event.pressure > 0) ? 0.5 : event.pressure;
+  }
+
+  private startStroke(event: PointerEvent, point: PagePoint): void {
+    this.setSelection(null);
+    this.setSelectedAnnotation(null);
+    const pressure = ViewerController.pressureOf(event);
+    this.drawing = {
+      pointerId: event.pointerId,
+      page: point.page,
+      points: [{ x: point.x, y: point.y, pressure }],
+    };
+    this.content.setPointerCapture?.(event.pointerId);
+    this.paintInk(point.page);
+  }
+
+  private extendStroke(event: PointerEvent): void {
+    const drawing = this.drawing;
+    if (!drawing) return;
+    // Every sample the pointer reported since the last event, for a smooth line.
+    const samples = event.getCoalescedEvents?.() ?? [];
+    for (const sample of samples.length > 0 ? samples : [event]) {
+      const point = this.pointOnPage(drawing.page, sample.clientX, sample.clientY);
+      const last = drawing.points.at(-1);
+      if (!point || (last && last.x === point.x && last.y === point.y)) continue;
+      drawing.points.push({
+        x: point.x,
+        y: point.y,
+        pressure: ViewerController.pressureOf(sample),
+      });
+    }
+    this.paintInk(drawing.page);
+  }
+
+  private finishStroke(event: PointerEvent): void {
+    const drawing = this.drawing;
+    if (!drawing) return;
+    this.drawing = null;
+    this.content.releasePointerCapture?.(event.pointerId);
+    // Shown until the page's tiles, rendered with the new ink, replace it.
+    this.inkPreview.set(drawing.page, [
+      ...(this.inkPreview.get(drawing.page) ?? []),
+      drawing.points,
+    ]);
+    this.paintInk(drawing.page);
+    this.callbacks.onInk?.(drawing.page, [drawing.points]);
+  }
+
+  private startErasing(event: PointerEvent, point: PagePoint): void {
+    this.setSelection(null);
+    this.setSelectedAnnotation(null);
+    this.erasing = { pointerId: event.pointerId, page: point.page, indices: new Set() };
+    this.content.setPointerCapture?.(event.pointerId);
+    void this.loadAnnotations(point.page).then(() => this.eraseAt(point));
+  }
+
+  private eraseAt(point: PagePoint): void {
+    const erasing = this.erasing;
+    if (!erasing || erasing.page !== point.page) return;
+    let touched = false;
+    for (const index of erased(this.annotations.get(point.page) ?? [], point)) {
+      if (!erasing.indices.has(index)) {
+        erasing.indices.add(index);
+        touched = true;
+      }
+    }
+    const slot = this.slots.get(point.page);
+    if (touched && slot) this.paintOverlay(slot);
+  }
+
+  private finishErasing(event: PointerEvent): void {
+    const erasing = this.erasing;
+    if (!erasing) return;
+    this.erasing = null;
+    this.content.releasePointerCapture?.(event.pointerId);
+    const slot = this.slots.get(erasing.page);
+    if (slot) this.paintOverlay(slot);
+    if (erasing.indices.size > 0) this.callbacks.onErase?.(erasing.page, [...erasing.indices]);
+  }
+
+  /** Redraws a page's ink preview (or the whole overlay, the first time). */
+  private paintInk(page: number): void {
+    const slot = this.slots.get(page);
+    if (!slot) return;
+    if (!slot.ink) {
+      this.paintOverlay(slot);
+      return;
+    }
+    this.drawInk(slot.ink, page);
+  }
+
+  private drawInk(svg: SVGSVGElement, page: number): void {
+    const strokes = [...(this.inkPreview.get(page) ?? [])];
+    if (this.drawing?.page === page) strokes.push(this.drawing.points);
+    const paths: SVGPathElement[] = [];
+    for (const stroke of strokes) {
+      for (const run of inkRuns(stroke)) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", run.d);
+        path.setAttribute("stroke-width", String(run.width));
+        paths.push(path);
+      }
+    }
+    svg.replaceChildren(...paths);
   }
 
   /** The page point under a client position: the nearest page, clamped to it. */
@@ -836,20 +1061,46 @@ export class ViewerController {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 || !this.canSelect() || !this.layout) return;
-    // The selection toolbar's own buttons.
-    if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
+    const mode = this.mode();
+    if (event.button !== 0 || mode === "none" || !this.layout) return;
+    // The selection toolbar's and the note editor's own controls.
+    if (
+      event.target instanceof Node &&
+      (this.selectionToolbarHost.contains(event.target) ||
+        this.noteEditorHost.contains(event.target))
+    ) {
+      return;
+    }
     // Clicks on the scrollbars land on the container, not the content.
     this.container.focus({ preventScroll: true });
     const point = this.pointAt(event.clientX, event.clientY);
     if (!point) return;
     event.preventDefault();
+    if (mode === "pen") {
+      this.startStroke(event, point);
+      return;
+    }
+    if (mode === "eraser") {
+      this.startErasing(event, point);
+      return;
+    }
     const clicks = this.countClick(event);
-    // A plain click on markup selects it, unless the press turns into a text selection.
+    // A plain click on an annotation selects it, unless the press turns into a text selection.
     this.presses += 1;
     this.pressedPoint = clicks === 1 && !event.shiftKey ? point : null;
-    void this.loadMarkup(point.page);
-    this.setSelectedMarkup(null);
+    void this.loadAnnotations(point.page);
+    this.setSelectedAnnotation(null);
+    if (mode === "note") {
+      // A press places a note (or opens one) when it ends; it selects no text.
+      this.setSelection(null);
+      this.dragging = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+      this.content.setPointerCapture?.(event.pointerId);
+      return;
+    }
     const layer = this.layers.get(point.page);
     this.dragging = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
     this.content.setPointerCapture?.(event.pointerId);
@@ -889,6 +1140,15 @@ export class ViewerController {
   }
 
   private readonly onPointerMove = (event: PointerEvent) => {
+    if (this.drawing && event.pointerId === this.drawing.pointerId) {
+      this.extendStroke(event);
+      return;
+    }
+    if (this.erasing && event.pointerId === this.erasing.pointerId) {
+      const point = this.pointOnPage(this.erasing.page, event.clientX, event.clientY);
+      if (point) this.eraseAt(point);
+      return;
+    }
     const dragging = this.dragging;
     if (!dragging) {
       if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
@@ -908,6 +1168,20 @@ export class ViewerController {
   };
 
   private readonly onPointerUp = (event: PointerEvent) => {
+    if (this.drawing && event.pointerId === this.drawing.pointerId) {
+      if (event.type === "pointercancel") {
+        const { page } = this.drawing;
+        this.drawing = null;
+        this.paintInk(page);
+      } else {
+        this.finishStroke(event);
+      }
+      return;
+    }
+    if (this.erasing && event.pointerId === this.erasing.pointerId) {
+      this.finishErasing(event);
+      return;
+    }
     if (!this.dragging || event.pointerId !== this.dragging.pointerId) return;
     this.dragging = null;
     this.pendingAnchor = null;
@@ -917,12 +1191,29 @@ export class ViewerController {
     const pressed = this.pressedPoint;
     this.pressedPoint = null;
     if (!pressed || this.selection !== null) return;
-    // The page's markup may still be on its way (a click right after an edit).
+    // The page's annotations may still be on their way (a click right after an edit).
     const press = this.presses;
-    void this.loadMarkup(pressed.page).then(() => {
+    const mode = this.mode();
+    void this.loadAnnotations(pressed.page).then(() => {
       if (this.destroyed || press !== this.presses || this.selection !== null) return;
-      const hit = this.markupAt(pressed);
-      if (hit) this.setSelectedMarkup(hit);
+      const hit = this.annotationAt(pressed);
+      if (mode !== "note") {
+        if (hit) this.setSelectedAnnotation(hit);
+      } else if (hit?.kind === "note") {
+        this.setSelectedAnnotation(hit);
+      } else {
+        // The icon centred on the press, kept on the page.
+        const size = this.sizes?.[pressed.page];
+        if (!size) return;
+        const half = NOTE_SIZE / 2;
+        const { x, y } = clampToPage(
+          pressed.x - half,
+          pressed.y - half,
+          size.width - NOTE_SIZE,
+          size.height - NOTE_SIZE,
+        );
+        this.callbacks.onPlaceNote?.(pressed.page, x, y);
+      }
     });
   };
 
@@ -961,24 +1252,31 @@ export class ViewerController {
     this.autoScrollFrame = null;
   }
 
-  /** The text cursor over text; text arrives on first hover over a page. */
+  /**
+   * The cursor: the text cursor over text when selecting, or the Comment
+   * tool's own; a page's text and annotations arrive on first hover.
+   */
   private updateCursor(event: PointerEvent): void {
-    if (!this.canSelect()) {
+    const mode = this.mode();
+    this.content.dataset.mode = mode;
+    if (mode !== "select") {
       delete this.content.dataset.overText;
+      const point = mode === "none" ? null : this.pointAt(event.clientX, event.clientY);
+      if (point) void this.loadAnnotations(point.page);
       return;
     }
     const point = this.pointAt(event.clientX, event.clientY);
     const layer = point ? this.layers.get(point.page) : undefined;
     if (point && !layer) void this.loadLayer(point.page);
-    if (point) void this.loadMarkup(point.page);
+    if (point) void this.loadAnnotations(point.page);
     const over = point !== null && layer !== undefined && isOverText(layer, point.x, point.y);
     if (over) this.content.dataset.overText = "";
     else delete this.content.dataset.overText;
   }
 
   private setSelection(selection: Selection | null): void {
-    // Selecting text and selecting markup exclude each other.
-    if (selection) this.setSelectedMarkup(null);
+    // Selecting text and selecting an annotation exclude each other.
+    if (selection) this.setSelectedAnnotation(null);
     this.selection = selection;
     const previous = new Set(this.selectionRects.keys());
     this.selectionRects.clear();
@@ -1007,9 +1305,10 @@ export class ViewerController {
     const host = this.selectionToolbarHost;
     let first = [...this.selectionRects.keys()].sort((a, b) => a - b)[0];
     let rects = first === undefined ? undefined : this.selectionRects.get(first);
-    if (!rects?.length && this.selectedMarkup) {
-      first = this.selectedMarkup.page;
-      rects = this.selectedMarkupRects();
+    // A note has its editor instead.
+    if (!rects?.length && this.selectedAnnotation && this.selectedAnnotation.kind !== "note") {
+      first = this.selectedAnnotation.page;
+      rects = this.selectedAnnotationRects();
     }
     const box = first === undefined ? undefined : this.layout?.boxes[first];
     const size = first === undefined ? undefined : this.sizes?.[first];
@@ -1053,12 +1352,41 @@ export class ViewerController {
       place(element, rect);
       slot.overlay.append(element);
     }
-    if (this.selectedMarkup?.page === slot.page) {
-      for (const rect of this.selectedMarkupRects()) {
+    if (this.selectedAnnotation?.page === slot.page) {
+      for (const rect of this.selectedAnnotationRects()) {
         const element = document.createElement("div");
         element.className = this.classNames.markupSelected;
         place(element, rect);
         slot.overlay.append(element);
+      }
+    }
+    if (this.noteAnchor?.pending && this.noteAnchor.page === slot.page) {
+      const element = document.createElement("div");
+      element.className = this.classNames.notePending;
+      place(element, this.noteAnchor.rect);
+      slot.overlay.append(element);
+    }
+    // Ink the eraser touches: its strokes, marked.
+    const erasing = this.erasing?.page === slot.page ? this.erasing.indices : null;
+    const preview = this.inkPreview.has(slot.page) || this.drawing?.page === slot.page;
+    slot.ink = null;
+    if (preview || (erasing && erasing.size > 0)) {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("viewBox", `0 0 ${size.width} ${size.height}`);
+      svg.setAttribute("preserveAspectRatio", "none");
+      svg.setAttribute("aria-hidden", "true");
+      svg.classList.add(this.classNames.inkPreview);
+      slot.overlay.append(svg);
+      slot.ink = svg;
+      this.drawInk(svg, slot.page);
+      for (const annotation of this.annotations.get(slot.page) ?? []) {
+        if (!erasing?.has(annotation.index)) continue;
+        for (const stroke of annotation.strokes) {
+          const path = document.createElementNS(SVG_NS, "path");
+          path.setAttribute("d", `M${stroke.map(([x, y]) => `${x} ${y}`).join("L")}`);
+          path.classList.add(this.classNames.inkErasing);
+          svg.append(path);
+        }
       }
     }
   }
@@ -1249,6 +1577,7 @@ export class ViewerController {
     }
     if (this.pinned) this.pinned.scrollTop = this.container.scrollTop;
     this.placeSelectionToolbar();
+    this.placeNoteEditor();
   }
 
   /** `at` is relative to the viewport's top-left; null means its centre. */
@@ -1439,6 +1768,7 @@ export class ViewerController {
       overlay,
       preview: null,
       stalePreview: null,
+      ink: null,
       tiles: new Map(),
       box: null,
       visibleTileIds: [],
@@ -1452,7 +1782,9 @@ export class ViewerController {
     if (
       this.searchMarks.has(page) ||
       this.selectionRects.has(page) ||
-      this.selectedMarkup?.page === page
+      this.selectedAnnotation?.page === page ||
+      this.noteAnchor?.page === page ||
+      this.inkPreview.has(page)
     ) {
       this.paintOverlay(slot);
     }
@@ -1597,6 +1929,8 @@ export class ViewerController {
     }
     if (slot.sharpAt !== null) return;
     slot.sharpAt = performance.now();
+    // The engine's tiles now show the ink the preview stood in for.
+    if (this.inkPreview.delete(slot.page)) this.paintOverlay(slot);
     const size = this.sizes?.[slot.page];
     if (!size) return;
     const pixels = pagePixelSize(size, this.scale);

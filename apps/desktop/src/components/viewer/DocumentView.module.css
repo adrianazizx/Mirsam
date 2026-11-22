@@ -74,7 +74,52 @@
   background: var(--color-text-selection);
 }
 
-/* A markup annotation selected by clicking it. */
+/* Ink drawn but not yet rendered by the engine: an SVG over the page, in page points. */
+.inkPreview {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Ink the eraser is touching. */
+.inkErasing {
+  stroke: var(--color-danger);
+  stroke-width: 4;
+  stroke-dasharray: 4 3;
+}
+
+/* Where a new note's icon goes while its text is written. */
+.notePending {
+  position: absolute;
+  background: var(--color-note);
+  outline: var(--focus-ring-width) dashed var(--color-focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* Anchor of the note editor (positioned by the viewer, under the note's icon). */
+.noteEditor {
+  position: absolute;
+  z-index: var(--layer-selection-toolbar);
+  inline-size: 0;
+  block-size: 0;
+}
+
+[data-viewer-content][data-mode="pen"],
+[data-viewer-content][data-mode="note"] {
+  cursor: crosshair;
+}
+
+[data-viewer-content][data-mode="eraser"] {
+  cursor: cell;
+}
+
+/* An annotation selected by clicking it. */
 .markupSelected {
   position: absolute;
   outline: var(--focus-ring-width) solid var(--color-focus-ring);

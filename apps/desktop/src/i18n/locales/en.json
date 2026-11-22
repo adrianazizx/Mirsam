@@ -80,8 +80,24 @@
       "highlight": "Highlight",
       "underline": "Underline",
       "strikeOut": "Strikethrough",
-      "squiggly": "Squiggly underline",
-      "delete": "Delete markup"
+      "squiggly": "Squiggly underline"
+    },
+    "annotation": {
+      "delete": "Delete annotation"
+    },
+    "comment": {
+      "note": "Add note",
+      "pen": "Draw",
+      "eraser": "Erase ink"
+    },
+    "note": {
+      "place": "Place a note",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "ink": {
+      "add": "Add ink",
+      "erase": "Erase ink strokes"
     },
     "search": {
       "focus": "Find in document…",
@@ -175,7 +191,7 @@
   },
   "selection": {
     "toolbar": "Selected text",
-    "markupToolbar": "Selected markup"
+    "annotationToolbar": "Selected annotation"
   },
   "panel": {
     "label": "Side panel",
@@ -251,5 +267,13 @@
     "help": "Each file gets this many pages, in order; the last one gets the rest.",
     "confirm": "Choose a folder…",
     "cancel": "Cancel"
+  },
+  "note": {
+    "label": "Note",
+    "text": "Note text",
+    "placeholder": "Write a note…"
+  },
+  "comment": {
+    "tools": "Comment tools"
   }
 }

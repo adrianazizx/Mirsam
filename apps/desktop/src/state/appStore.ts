@@ -10,7 +10,7 @@ import type {
   SearchOptions,
 } from "../backend";
 import type { Locale } from "../i18n";
-import type { SelectedMarkup } from "../viewer/controller";
+import type { SelectedAnnotation } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { clampZoom } from "./zoom";
 
@@ -74,8 +74,8 @@ export interface OpenDocument extends DocumentInfo {
   search: SearchState;
   /** Whether text is selected in this document's page view. */
   hasSelection: boolean;
-  /** The markup annotation selected (clicked) in the page view. */
-  selectedMarkup: SelectedMarkup | null;
+  /** The annotation selected (clicked) in the page view: markup, ink, or a note. */
+  selectedAnnotation: SelectedAnnotation | null;
   /** Bumped by every edit, undo, and redo that changes pages: views showing pages start over. */
   revision: number;
   /**
@@ -89,6 +89,17 @@ export interface OpenDocument extends DocumentInfo {
   modified: boolean;
   /** Pages selected in the page organizer (zero-based, ascending). */
   selectedPages: number[];
+}
+
+/** The Comment tool's modes (ADR 0018). */
+export type CommentTool = "note" | "pen" | "eraser";
+
+/** Where a new note's icon goes: its top-left corner in displayed-page points. */
+export interface PendingNote {
+  documentId: number;
+  page: number;
+  x: number;
+  y: number;
 }
 
 /** A close that waits for the user: something holds unsaved changes (ADR 0015). */
@@ -120,6 +131,10 @@ export interface AppState {
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
   activeTool: ToolId;
+  /** What a press on a page does while the Comment tool is active. */
+  commentTool: CommentTool;
+  /** A note being written before it is added: where its icon goes. */
+  pendingNote: PendingNote | null;
   documents: OpenDocument[];
   activeDocumentId: number | null;
   /** Encrypted files waiting for a password; the first one is being asked for. */
@@ -137,6 +152,8 @@ export interface AppState {
   setLeftPanel(panel: LeftPanel | null): void;
   setSearchOptions(options: SearchOptions): void;
   setActiveTool(tool: ToolId): void;
+  setCommentTool(tool: CommentTool): void;
+  setPendingNote(note: PendingNote | null): void;
   addDocument(info: DocumentInfo, options?: { activate?: boolean }): void;
   removeDocument(id: number): void;
   activateDocument(id: number): void;
@@ -300,6 +317,8 @@ export const useAppStore = create<AppState>((set, get) => {
   return {
     ...loadCached(),
     activeTool: "select",
+    commentTool: "note",
+    pendingNote: null,
     documents: [],
     activeDocumentId: null,
     unlocks: [],
@@ -322,7 +341,13 @@ export const useAppStore = create<AppState>((set, get) => {
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),
     setSearchOptions: (searchOptions) => update("searchOptions", searchOptions),
     setActiveTool(activeTool) {
-      set({ activeTool });
+      set({ activeTool, pendingNote: null });
+    },
+    setCommentTool(commentTool) {
+      set({ commentTool, pendingNote: null });
+    },
+    setPendingNote(pendingNote) {
+      set({ pendingNote });
     },
     addDocument(info, options) {
       if (get().documents.some((open) => open.id === info.id)) {
@@ -345,7 +370,7 @@ export const useAppStore = create<AppState>((set, get) => {
         outline: null,
         search: IDLE_SEARCH,
         hasSelection: false,
-        selectedMarkup: null,
+        selectedAnnotation: null,
         revision: 0,
         paint: 0,
         canUndo: false,
@@ -406,7 +431,7 @@ export const useAppStore = create<AppState>((set, get) => {
                   // The same pages: everything on them stays, they are painted again.
                   ...open,
                   paint: open.paint + 1,
-                  selectedMarkup: null,
+                  selectedAnnotation: null,
                   canUndo: outcome.canUndo,
                   canRedo: outcome.canRedo,
                   modified: outcome.modified,
@@ -420,7 +445,7 @@ export const useAppStore = create<AppState>((set, get) => {
                   outline: null,
                   search: IDLE_SEARCH,
                   hasSelection: false,
-                  selectedMarkup: null,
+                  selectedAnnotation: null,
                   revision: open.revision + 1,
                   // Page numbers moved; the command that edited says what is selected next.
                   selectedPages: [],

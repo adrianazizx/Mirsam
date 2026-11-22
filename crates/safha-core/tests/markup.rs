@@ -10,7 +10,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use common::manifest;
-use safha_core::annotate::{AnnotationEdit, Markup, MarkupKind, Quad};
+use safha_core::annotate::{AnnotationEdit, AnnotationKind, Markup, MarkupKind, Quad};
 use safha_core::edit::EditHistory;
 use safha_core::save::save;
 use safha_core::view::ViewRect;
@@ -167,8 +167,8 @@ fn each_kind_draws_on_its_line_and_nowhere_else() {
     assert_eq!(changed_outside(&before, &after, &rects), 0, "markup drew outside its lines");
 
     // The engine lists them back where they were put, by kind.
-    let (markup, view) = document.page_markup(0).expect("markup");
-    assert_eq!(markup.iter().map(|m| m.kind).collect::<Vec<_>>(), kinds);
+    let (markup, view) = document.page_annotations(0).expect("markup");
+    assert_eq!(markup.iter().map(|m| m.kind).collect::<Vec<_>>(), kinds.map(AnnotationKind::from));
     for (info, rect) in markup.iter().zip(&rects) {
         let shown = view.rect(info.rects[0]);
         for (a, b) in
@@ -187,7 +187,7 @@ fn each_kind_draws_on_its_line_and_nowhere_else() {
     let target = scratch("four-kinds-saved.pdf");
     save(&document, &target).expect("saves");
     let reopened = engine().open_file(&target, None).expect("reopens");
-    assert_eq!(reopened.page_markup(0).expect("markup").0.len(), 4);
+    assert_eq!(reopened.page_annotations(0).expect("markup").0.len(), 4);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn an_arabic_selection_is_marked_where_it_is() {
     }
     assert_eq!(changed_outside(&before, &after, &rects), 0);
     // One annotation with a quad per line.
-    let (markup, _) = edited.page_markup(0).expect("markup");
+    let (markup, _) = edited.page_annotations(0).expect("markup");
     assert_eq!(markup.len(), 1);
     assert_eq!(markup[0].rects.len(), 2);
 }
@@ -319,9 +319,13 @@ fn annotated_pdf() -> Vec<u8> {
 #[test]
 fn an_annots_array_of_its_own_is_rewritten_in_place() {
     let document = engine().open_bytes(annotated_pdf(), None).expect("opens");
-    let (markup, _) = document.page_markup(0).expect("markup");
-    assert_eq!(markup.len(), 1, "the highlight; the pop-up, reply and link are not markup");
-    assert_eq!((markup[0].index, markup[0].kind), (0, MarkupKind::Highlight));
+    let (markup, _) = document.page_annotations(0).expect("markup");
+    // The highlight and the reply (a note); the pop-up and the link are not listed.
+    assert_eq!(
+        markup.iter().map(|m| (m.index, m.kind)).collect::<Vec<_>>(),
+        [(0, AnnotationKind::Highlight), (2, AnnotationKind::Note)]
+    );
+    assert_eq!(markup[1].contents.as_deref(), Some("A reply"));
 
     // Adding appends to the array object; the page still points at it.
     let rect = ViewRect { x: 10.0, y: 40.0, width: 60.0, height: 12.0 };
@@ -330,10 +334,10 @@ fn an_annots_array_of_its_own_is_rewritten_in_place() {
     qpdf(&["--check", &file]);
     assert!(qpdf(&["--show-object=3", &file]).contains("/Annots 4 0 R"));
     assert_eq!(qpdf(&["--show-object=4", &file]).trim(), "[ 5 0 R 6 0 R 7 0 R 8 0 R 9 0 R ]");
-    let (markup, _) = added.page_markup(0).expect("markup");
+    let (markup, _) = added.page_annotations(0).expect("markup");
     assert_eq!(
         markup.iter().map(|m| (m.index, m.kind)).collect::<Vec<_>>(),
-        [(0, MarkupKind::Highlight), (4, MarkupKind::StrikeOut)]
+        [(0, AnnotationKind::Highlight), (2, AnnotationKind::Note), (4, AnnotationKind::StrikeOut)]
     );
 
     // Removing the highlight takes its pop-up and the reply along; the link stays.
@@ -342,10 +346,13 @@ fn an_annots_array_of_its_own_is_rewritten_in_place() {
     let file = on_disk(&removed.bytes(), "own-array-removed.pdf");
     qpdf(&["--check", &file]);
     assert_eq!(qpdf(&["--show-object=4", &file]).trim(), "[ 8 0 R 9 0 R ]");
-    let (markup, _) = removed.page_markup(0).expect("markup");
-    assert_eq!(markup.iter().map(|m| (m.index, m.kind)).collect::<Vec<_>>(), [(1, MarkupKind::StrikeOut)]);
+    let (markup, _) = removed.page_annotations(0).expect("markup");
+    assert_eq!(
+        markup.iter().map(|m| (m.index, m.kind)).collect::<Vec<_>>(),
+        [(1, AnnotationKind::StrikeOut)]
+    );
 
-    // The link is not markup: not removed here.
+    // The link is none of the kinds this app writes: not removed here.
     assert!(matches!(
         removed.with_annotation_edit(&AnnotationEdit::Remove { page: 0, index: 0 }),
         Err(Error::InvalidEdit(_))
@@ -364,8 +371,9 @@ fn undo_takes_markup_away_and_redo_brings_it_back() {
     let rects = lines(&document, 0, 1);
     let (_, update) = apply(&document, &markup_on(&document, 0, MarkupKind::Squiggly, &rects));
     history.push(update);
-    let count =
-        |bytes: Arc<[u8]>| document.revision(bytes).expect("opens").page_markup(0).expect("markup").0.len();
+    let count = |bytes: Arc<[u8]>| {
+        document.revision(bytes).expect("opens").page_annotations(0).expect("markup").0.len()
+    };
     assert_eq!(count(history.current()), 1);
     assert_eq!(count(history.undo().expect("undo")), 0);
     assert_eq!(count(history.redo().expect("redo")), 1);
@@ -395,7 +403,7 @@ fn a_selection_across_pages_is_one_step() {
         .map(|page| markup_on(&document, page, MarkupKind::Highlight, &lines(&document, page, 1)))
         .collect();
     let (edited, update) = document.with_annotation_edits(&edits).expect("marks both pages");
-    let count = |document: &Document, page: usize| document.page_markup(page).expect("markup").0.len();
+    let count = |document: &Document, page: usize| document.page_annotations(page).expect("markup").0.len();
     assert_eq!((0..4).map(|page| count(&edited, page)).collect::<Vec<_>>(), [0, 1, 1, 0]);
     qpdf(&["--check", &on_disk(&edited.bytes(), "two-pages.pdf")]);
 

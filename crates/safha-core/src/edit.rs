@@ -365,7 +365,7 @@ pub(crate) struct Leaf {
     pub(crate) generation: u16,
     pub(crate) dict: Dict,
     /// Effective rotation in degrees, own or inherited.
-    rotate: i64,
+    pub(crate) rotate: i64,
     /// Whether the root `/Pages` node is the page's parent.
     under_root: bool,
     /// Inheritable attributes the page takes from an ancestor other than the

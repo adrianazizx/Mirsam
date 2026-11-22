@@ -1,0 +1,52 @@
+/* A strip above the page area while the Comment tool is active. */
+.bar {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-1);
+  background: var(--color-bg-surface);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.group {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.tool svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+.tool[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.tool[data-pressed] {
+  background: var(--color-bg-pressed);
+}
+
+.tool[data-selected] {
+  background: var(--color-bg-selected);
+  color: var(--color-text-on-selected);
+}
+
+.tool[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+}

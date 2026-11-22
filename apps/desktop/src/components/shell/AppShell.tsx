@@ -2,6 +2,7 @@ import type { Key } from "react-aria-components";
 import { TabPanel, Tabs } from "react-aria-components";
 import { Gallery } from "../../gallery/Gallery";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
+import { CommentToolbar } from "../comments/CommentToolbar";
 import { PageGrid } from "../pages/PageGrid";
 import { CommandPalette } from "../palette/CommandPalette";
 import { LeftPanel } from "../panels/LeftPanel";
@@ -30,6 +31,7 @@ export function AppShell() {
   const activeDocumentId = useAppStore((state) => selectActiveDocument(state)?.id ?? null);
   // The Pages tool shows the page organizer in place of the page view.
   const organizing = useAppStore((state) => state.activeTool === "pages");
+  const commenting = useAppStore((state) => state.activeTool === "comment");
   const activateDocument = useAppStore((state) => state.activateDocument);
   const galleryOpen = useAppStore((state) => state.galleryOpen);
   const leftPanelOpen = useAppStore((state) => state.leftPanel !== null);
@@ -65,7 +67,10 @@ export function AppShell() {
               {organizing ? (
                 <PageGrid documentId={activeDocumentId} />
               ) : (
-                <DocumentView documentId={activeDocumentId} />
+                <>
+                  {commenting ? <CommentToolbar /> : null}
+                  <DocumentView documentId={activeDocumentId} />
+                </>
               )}
             </TabPanel>
           ) : (

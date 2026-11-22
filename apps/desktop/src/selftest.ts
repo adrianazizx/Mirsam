@@ -137,6 +137,9 @@ async function navigationChecks(documentId: number) {
   // Markup (ADR 0017): highlight the page's text from the selection, see it
   // painted by the same view (no rebuild), find it listed, then undo it.
   const markup = layer.blocks.length === 0 ? null : await markupChecks(documentId);
+  // Notes and ink (ADR 0018): an Arabic note and a pen stroke, painted and read
+  // back; the stroke erased; everything undone.
+  const notesAndInk = await notesAndInkChecks(documentId);
 
   // Editing (ADR 0014): duplicate the page, see the new revision painted,
   // then undo back to the file as opened.
@@ -230,6 +233,7 @@ async function navigationChecks(documentId: number) {
     thumbnailDrawn,
     thumbnails,
     markup,
+    notesAndInk,
     editing,
     windows,
   };
@@ -254,7 +258,7 @@ async function markupChecks(documentId: number) {
       if (r > 200 && g > 150 && b < 120) yellowPixels += 1;
     }
   }
-  const listed = await backend.pageMarkup(documentId, 0);
+  const listed = await backend.pageAnnotations(documentId, 0);
   const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
   const result = {
     runs,
@@ -269,8 +273,67 @@ async function markupChecks(documentId: number) {
     removedByUndo: false,
   };
   await runCommand("edit.undo");
-  result.removedByUndo = (await backend.pageMarkup(documentId, 0)).length === 0;
+  result.removedByUndo = (await backend.pageAnnotations(documentId, 0)).length === 0;
   return result;
+}
+
+/** Pixels of page 0's on-screen tiles that `match` takes. */
+function countPixels(documentId: number, match: (r: number, g: number, b: number) => boolean) {
+  let count = 0;
+  for (const { canvas, tile } of getViewer(documentId)?.pageCanvases(0).tiles ?? []) {
+    const data = canvas.getContext("2d")?.getImageData(0, 0, tile.width, tile.height).data;
+    for (let i = 0; data && i < data.length; i += 4) {
+      if (match(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0)) count += 1;
+    }
+  }
+  return count;
+}
+
+async function notesAndInkChecks(documentId: number) {
+  const viewer = getViewer(documentId);
+  const painted = () => waitForPagePainted(0, 15_000, () => getViewer(documentId) === viewer);
+  const text = "راجع البند ٤ — check clause 4";
+  // The note and the stroke go near the page's top: show it, so its tiles are on screen.
+  if (viewer) {
+    const shown = waitForPagePainted(0, 15_000);
+    viewer.goToPage(0, 0);
+    await Promise.race([shown, new Promise((resolve) => setTimeout(resolve, 2_000))]);
+  }
+
+  await runCommand("note.place", { page: 0, x: 24, y: 24 });
+  let repaint = painted();
+  await runCommand("note.save", { text });
+  const notePainted = (await repaint) !== null;
+  // The icon's yellow.
+  const notePixels = countPixels(documentId, (r, g, b) => r > 220 && g > 180 && b < 80);
+  const note = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "note");
+
+  repaint = painted();
+  const stroke = [
+    { x: 60, y: 60, pressure: 0.5 },
+    { x: 140, y: 64, pressure: 0.8 },
+    { x: 220, y: 60, pressure: 1 },
+  ];
+  await runCommand("ink.add", { page: 0, strokes: [stroke] });
+  const inkPainted = (await repaint) !== null;
+  // The pen's dark blue.
+  const inkPixels = countPixels(documentId, (r, g, b) => r < 70 && g < 110 && b > 110);
+  const ink = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "ink");
+
+  await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
+  const erased = !(await backend.pageAnnotations(documentId, 0)).some((a) => a.kind === "ink");
+  for (let i = 0; i < 3; i += 1) await runCommand("edit.undo");
+  const cleared = (await backend.pageAnnotations(documentId, 0)).length === 0;
+  return {
+    noteMatches: note?.contents === text,
+    notePainted,
+    notePixels,
+    inkPainted,
+    inkPixels,
+    inkPoints: ink?.strokes[0]?.length ?? 0,
+    erased,
+    cleared,
+  };
 }
 
 /**

@@ -17,6 +17,9 @@ const key = (init: KeyboardEventInit) => new KeyboardEvent("keydown", init);
 
 beforeEach(() => {
   useAppStore.setState({
+    activeTool: "select",
+    commentTool: "note",
+    pendingNote: null,
     documents: [],
     activeDocumentId: null,
     errorCode: null,
@@ -215,7 +218,7 @@ describe("command registry", () => {
     registerViewer(1, viewer);
     useAppStore.getState().updateDocument(1, { hasSelection: true });
     // The mock keeps its edits between tests: count relative to here.
-    const before = (await backend.pageMarkup(1, 2)).length;
+    const before = (await backend.pageAnnotations(1, 2)).length;
 
     await runCommand("markup.highlight");
     expect(clearSelection).toHaveBeenCalled();
@@ -225,32 +228,120 @@ describe("command registry", () => {
       modified: true,
       canUndo: true,
     });
-    const marked = await backend.pageMarkup(1, 2);
-    expect(marked.at(-1)).toEqual({ index: before, kind: "highlight", rects: [rect] });
+    const marked = await backend.pageAnnotations(1, 2);
+    expect(marked.at(-1)).toEqual({
+      index: before,
+      kind: "highlight",
+      rects: [rect],
+      contents: null,
+      strokes: [],
+    });
 
     // Clicking it selects it; the delete key removes it.
-    useAppStore
-      .getState()
-      .updateDocument(1, { selectedMarkup: { page: 2, index: before, kind: "highlight" } });
-    expect(commandForEvent(key({ key: "Backspace" }), true)?.id).toBe("markup.delete");
-    expect(commandForEvent(key({ key: "Delete" }), false)?.id).toBe("markup.delete");
-    expect(shortcutLabel("markup.delete", true)).toBe("⌫");
-    expect(shortcutLabel("markup.delete", false)).toBe("Del");
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { page: 2, index: before, kind: "highlight", contents: null, rect },
+    });
+    expect(commandForEvent(key({ key: "Backspace" }), true)?.id).toBe("annotation.delete");
+    expect(commandForEvent(key({ key: "Delete" }), false)?.id).toBe("annotation.delete");
+    expect(shortcutLabel("annotation.delete", true)).toBe("⌫");
+    expect(shortcutLabel("annotation.delete", false)).toBe("Del");
     expect(isCommandEnabled("edit.deselect")).toBe(true);
-    await runCommand("markup.delete");
-    expect(await backend.pageMarkup(1, 2)).toHaveLength(before);
+    await runCommand("annotation.delete");
+    expect(await backend.pageAnnotations(1, 2)).toHaveLength(before);
     expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
       paint: 2,
-      selectedMarkup: null,
+      selectedAnnotation: null,
     });
 
     // Undo is an annotation change too: the pages are painted, not rebuilt.
     await runCommand("edit.undo");
-    expect(await backend.pageMarkup(1, 2)).toHaveLength(before + 1);
+    expect(await backend.pageAnnotations(1, 2)).toHaveLength(before + 1);
     expect(selectActiveDocument(useAppStore.getState())).toMatchObject({ paint: 3, revision: 0 });
     await runCommand("edit.undo");
-    expect(await backend.pageMarkup(1, 2)).toHaveLength(before);
+    expect(await backend.pageAnnotations(1, 2)).toHaveLength(before);
     unregisterViewer(1, viewer);
+  });
+
+  it("writes notes: placed, saved with their text, edited, and cancelled", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    const clearSelection = vi.fn();
+    const viewer = { clearSelection } as unknown as ViewerController;
+    registerViewer(1, viewer);
+    await runCommand("comment.note");
+    expect(useAppStore.getState()).toMatchObject({ activeTool: "comment", commentTool: "note" });
+    const before = (await backend.pageAnnotations(1, 3)).length;
+
+    // An empty new note is no note.
+    await runCommand("note.place", { page: 3, x: 40, y: 60 });
+    expect(useAppStore.getState().pendingNote).toEqual({ documentId: 1, page: 3, x: 40, y: 60 });
+    await runCommand("note.save", { text: "  " });
+    expect(useAppStore.getState().pendingNote).toBeNull();
+    expect(await backend.pageAnnotations(1, 3)).toHaveLength(before);
+
+    await runCommand("note.place", { page: 3, x: 40, y: 60 });
+    await runCommand("note.save", { text: "راجع البند ٤" });
+    const added = (await backend.pageAnnotations(1, 3)).at(-1);
+    expect(added).toMatchObject({ kind: "note", contents: "راجع البند ٤" });
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      paint: 1,
+      modified: true,
+    });
+
+    // The selected note: saving its text unchanged edits nothing; a new text is one step.
+    const rect = { x: 40, y: 60, width: 20, height: 20 };
+    const select = () =>
+      useAppStore.getState().updateDocument(1, {
+        selectedAnnotation: {
+          page: 3,
+          index: added?.index ?? 0,
+          kind: "note",
+          contents: "راجع البند ٤",
+          rect,
+        },
+      });
+    select();
+    await runCommand("note.save", { text: "راجع البند ٤" });
+    expect(clearSelection).toHaveBeenCalled();
+    expect(selectActiveDocument(useAppStore.getState())?.paint).toBe(1);
+    select();
+    await runCommand("note.save", { text: "check clause 4" });
+    expect((await backend.pageAnnotations(1, 3)).at(-1)?.contents).toBe("check clause 4");
+    // Cancel leaves it as it is.
+    select();
+    await runCommand("note.cancel");
+    expect((await backend.pageAnnotations(1, 3)).at(-1)?.contents).toBe("check clause 4");
+
+    for (let i = 0; i < 2; i += 1) await runCommand("edit.undo");
+    expect(await backend.pageAnnotations(1, 3)).toHaveLength(before);
+    unregisterViewer(1, viewer);
+  });
+
+  it("adds ink and erases it, each in one step", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    await runCommand("comment.pen");
+    expect(useAppStore.getState().commentTool).toBe("pen");
+    const before = (await backend.pageAnnotations(1, 5)).length;
+    const stroke = [
+      { x: 10, y: 10, pressure: 0.5 },
+      { x: 60, y: 20, pressure: 0.8 },
+    ];
+    await runCommand("ink.add", { page: 5, strokes: [stroke] });
+    const ink = (await backend.pageAnnotations(1, 5)).at(-1);
+    expect(ink).toMatchObject({
+      kind: "ink",
+      strokes: [
+        [
+          [10, 10],
+          [60, 20],
+        ],
+      ],
+    });
+    await runCommand("comment.eraser");
+    await runCommand("ink.erase", { page: 5, indices: [ink?.index ?? 0] });
+    expect(await backend.pageAnnotations(1, 5)).toHaveLength(before);
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({ paint: 2, revision: 0 });
+    for (let i = 0; i < 2; i += 1) await runCommand("edit.undo");
+    expect(await backend.pageAnnotations(1, 5)).toHaveLength(before);
   });
 
   it("keeps the last page: deleting needs two", () => {
