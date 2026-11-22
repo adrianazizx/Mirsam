@@ -1,0 +1,1410 @@
+{
+  "engine": "apple-vision",
+  "set_version": 2,
+  "categories": {
+    "all": {
+      "samples": 47,
+      "cer": 0.09522904390800228,
+      "wer": 0.19819111285882815,
+      "cer_base": 0.08896844338371784,
+      "field_accuracy": 0.7894736842105263,
+      "fields_total": 171,
+      "order_errors": 39,
+      "cell_accuracy": 0.775,
+      "cells_total": 80,
+      "cell_order_errors": 36
+    },
+    "clean-arabic-300dpi": {
+      "samples": 4,
+      "cer": 0.002512562814070352,
+      "wer": 0.015789473684210527,
+      "cer_base": 0.0008741258741258741,
+      "field_accuracy": 1.0,
+      "fields_total": 0,
+      "order_errors": 0,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "clean-english-300dpi": {
+      "samples": 1,
+      "cer": 0.0,
+      "wer": 0.0,
+      "cer_base": 0.0,
+      "field_accuracy": 1.0,
+      "fields_total": 6,
+      "order_errors": 0,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "degraded-arabic": {
+      "samples": 11,
+      "cer": 0.01253822629969419,
+      "wer": 0.05357142857142857,
+      "cer_base": 0.0026393929396238865,
+      "field_accuracy": 1.0,
+      "fields_total": 0,
+      "order_errors": 0,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "degraded-arabic-severe": {
+      "samples": 12,
+      "cer": 0.06678607983623337,
+      "wer": 0.25,
+      "cer_base": 0.04377637130801688,
+      "field_accuracy": 1.0,
+      "fields_total": 0,
+      "order_errors": 0,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "degraded-mixed": {
+      "samples": 4,
+      "cer": 0.20711297071129708,
+      "wer": 0.3644578313253012,
+      "cer_base": 0.20502092050209206,
+      "field_accuracy": 0.7236842105263158,
+      "fields_total": 76,
+      "order_errors": 17,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "diacritized": {
+      "samples": 3,
+      "cer": 0.014035087719298246,
+      "wer": 0.09195402298850575,
+      "cer_base": 0.003898635477582846,
+      "field_accuracy": 1.0,
+      "fields_total": 0,
+      "order_errors": 0,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "mixed-arabic-english": {
+      "samples": 4,
+      "cer": 0.0945821854912764,
+      "wer": 0.1282051282051282,
+      "cer_base": 0.0940959409594096,
+      "field_accuracy": 0.8571428571428571,
+      "fields_total": 56,
+      "order_errors": 7,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "numbers-dates-ids": {
+      "samples": 14,
+      "cer": 0.20949176553922436,
+      "wer": 0.3132036847492323,
+      "cer_base": 0.20689042798792398,
+      "field_accuracy": 0.7894736842105263,
+      "fields_total": 171,
+      "order_errors": 39,
+      "cell_accuracy": 0.775,
+      "cells_total": 80,
+      "cell_order_errors": 36
+    },
+    "other-typefaces": {
+      "samples": 4,
+      "cer": 0.005862646566164154,
+      "wer": 0.03684210526315789,
+      "cer_base": 0.0008741258741258741,
+      "field_accuracy": 1.0,
+      "fields_total": 0,
+      "order_errors": 0,
+      "cell_accuracy": 1.0,
+      "cells_total": 0,
+      "cell_order_errors": 0
+    },
+    "tables-forms": {
+      "samples": 5,
+      "cer": 0.44452945677123185,
+      "wer": 0.625,
+      "cer_base": 0.43735588009223675,
+      "field_accuracy": 0.7878787878787878,
+      "fields_total": 33,
+      "order_errors": 15,
+      "cell_accuracy": 0.775,
+      "cells_total": 80,
+      "cell_order_errors": 36
+    }
+  },
+  "samples": {
+    "syn-ar-lam-alef-amiri-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-kufi-clean-300": {
+      "cer": {
+        "errors": 3,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-blur-200": {
+      "cer": {
+        "errors": 1,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-clean-300": {
+      "cer": {
+        "errors": 0,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 0,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-faded-200": {
+      "cer": {
+        "errors": 4,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-fax-100": {
+      "cer": {
+        "errors": 18,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 7,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-fax-broken-100": {
+      "cer": {
+        "errors": 42,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 17,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 17,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-lowres-150": {
+      "cer": {
+        "errors": 1,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-photocopy2-150": {
+      "cer": {
+        "errors": 43,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 23,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 19,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-shadow-200": {
+      "cer": {
+        "errors": 1,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-skew-noise-200": {
+      "cer": {
+        "errors": 5,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 2,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-naskh-warp-200": {
+      "cer": {
+        "errors": 9,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 5,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-lam-alef-sans-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 217
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 34
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 196
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-amiri-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-amiri-faded-200": {
+      "cer": {
+        "errors": 2,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 2,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-amiri-fax-broken-100": {
+      "cer": {
+        "errors": 45,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 30,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 38,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-amiri-photocopy2-150": {
+      "cer": {
+        "errors": 44,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 24,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 40,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-amiri-warp-200": {
+      "cer": {
+        "errors": 3,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 2,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-kufi-clean-300": {
+      "cer": {
+        "errors": 2,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 2,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-blur-200": {
+      "cer": {
+        "errors": 3,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-faded-200": {
+      "cer": {
+        "errors": 5,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 4,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 3,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-fax-100": {
+      "cer": {
+        "errors": 3,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-fax-broken-100": {
+      "cer": {
+        "errors": 22,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 19,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 19,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-lowres-150": {
+      "cer": {
+        "errors": 1,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-photocopy2-150": {
+      "cer": {
+        "errors": 35,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 20,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 21,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-shadow-200": {
+      "cer": {
+        "errors": 1,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-skew-noise-200": {
+      "cer": {
+        "errors": 3,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 2,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-naskh-warp-200": {
+      "cer": {
+        "errors": 7,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 6,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 5,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-plain-sans-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 380
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 61
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 376
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-vocalized-amiri-blur-200": {
+      "cer": {
+        "errors": 4,
+        "reference": 285
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 29
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 171
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-vocalized-amiri-clean-300": {
+      "cer": {
+        "errors": 6,
+        "reference": 285
+      },
+      "wer": {
+        "errors": 3,
+        "reference": 29
+      },
+      "cer_base": {
+        "errors": 1,
+        "reference": 171
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-ar-vocalized-naskh-clean-300": {
+      "cer": {
+        "errors": 2,
+        "reference": 285
+      },
+      "wer": {
+        "errors": 2,
+        "reference": 29
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 171
+      },
+      "fields": {
+        "matched": 0,
+        "total": 0
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-contract-two-column-naskh-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 611
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 112
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 606
+      },
+      "fields": {
+        "matched": 9,
+        "total": 9
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-contract-two-column-sans-clean-300": {
+      "cer": {
+        "errors": 1,
+        "reference": 611
+      },
+      "wer": {
+        "errors": 1,
+        "reference": 112
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 606
+      },
+      "fields": {
+        "matched": 9,
+        "total": 9
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-en-paragraphs-latin-clean-300": {
+      "cer": {
+        "errors": 0,
+        "reference": 250
+      },
+      "wer": {
+        "errors": 0,
+        "reference": 39
+      },
+      "cer_base": {
+        "errors": 0,
+        "reference": 250
+      },
+      "fields": {
+        "matched": 6,
+        "total": 6
+      },
+      "order": {
+        "displaced_runs": 0,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-form-leave-request-naskh-clean-300": {
+      "cer": {
+        "errors": 118,
+        "reference": 415
+      },
+      "wer": {
+        "errors": 22,
+        "reference": 66
+      },
+      "cer_base": {
+        "errors": 115,
+        "reference": 412
+      },
+      "fields": {
+        "matched": 6,
+        "total": 6
+      },
+      "order": {
+        "displaced_runs": 3,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 16,
+        "total": 16,
+        "misordered": 7
+      }
+    },
+    "syn-form-leave-request-sans-photocopy2-150": {
+      "cer": {
+        "errors": 82,
+        "reference": 415
+      },
+      "wer": {
+        "errors": 31,
+        "reference": 66
+      },
+      "cer_base": {
+        "errors": 73,
+        "reference": 412
+      },
+      "fields": {
+        "matched": 0,
+        "total": 6
+      },
+      "order": {
+        "displaced_runs": 1,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 5,
+        "total": 16,
+        "misordered": 0
+      }
+    },
+    "syn-mixed-inline-naskh-clean-300": {
+      "cer": {
+        "errors": 102,
+        "reference": 478
+      },
+      "wer": {
+        "errors": 23,
+        "reference": 83
+      },
+      "cer_base": {
+        "errors": 102,
+        "reference": 478
+      },
+      "fields": {
+        "matched": 15,
+        "total": 19
+      },
+      "order": {
+        "displaced_runs": 3,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-mixed-inline-naskh-fax-100": {
+      "cer": {
+        "errors": 86,
+        "reference": 478
+      },
+      "wer": {
+        "errors": 21,
+        "reference": 83
+      },
+      "cer_base": {
+        "errors": 86,
+        "reference": 478
+      },
+      "fields": {
+        "matched": 14,
+        "total": 19
+      },
+      "order": {
+        "displaced_runs": 4,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-mixed-inline-naskh-photocopy2-150": {
+      "cer": {
+        "errors": 120,
+        "reference": 478
+      },
+      "wer": {
+        "errors": 48,
+        "reference": 83
+      },
+      "cer_base": {
+        "errors": 116,
+        "reference": 478
+      },
+      "fields": {
+        "matched": 11,
+        "total": 19
+      },
+      "order": {
+        "displaced_runs": 5,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-mixed-inline-naskh-skew-noise-200": {
+      "cer": {
+        "errors": 89,
+        "reference": 478
+      },
+      "wer": {
+        "errors": 28,
+        "reference": 83
+      },
+      "cer_base": {
+        "errors": 89,
+        "reference": 478
+      },
+      "fields": {
+        "matched": 15,
+        "total": 19
+      },
+      "order": {
+        "displaced_runs": 4,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-mixed-inline-sans-clean-300": {
+      "cer": {
+        "errors": 102,
+        "reference": 478
+      },
+      "wer": {
+        "errors": 25,
+        "reference": 83
+      },
+      "cer_base": {
+        "errors": 102,
+        "reference": 478
+      },
+      "fields": {
+        "matched": 15,
+        "total": 19
+      },
+      "order": {
+        "displaced_runs": 4,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-mixed-inline-sans-warp-200": {
+      "cer": {
+        "errors": 101,
+        "reference": 478
+      },
+      "wer": {
+        "errors": 24,
+        "reference": 83
+      },
+      "cer_base": {
+        "errors": 101,
+        "reference": 478
+      },
+      "fields": {
+        "matched": 15,
+        "total": 19
+      },
+      "order": {
+        "displaced_runs": 4,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 0,
+        "total": 0,
+        "misordered": 0
+      }
+    },
+    "syn-table-bilingual-naskh-clean-300": {
+      "cer": {
+        "errors": 127,
+        "reference": 159
+      },
+      "wer": {
+        "errors": 27,
+        "reference": 28
+      },
+      "cer_base": {
+        "errors": 127,
+        "reference": 159
+      },
+      "fields": {
+        "matched": 7,
+        "total": 7
+      },
+      "order": {
+        "displaced_runs": 3,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 15,
+        "total": 16,
+        "misordered": 11
+      }
+    },
+    "syn-table-bilingual-naskh-lowres-150": {
+      "cer": {
+        "errors": 127,
+        "reference": 159
+      },
+      "wer": {
+        "errors": 27,
+        "reference": 28
+      },
+      "cer_base": {
+        "errors": 127,
+        "reference": 159
+      },
+      "fields": {
+        "matched": 7,
+        "total": 7
+      },
+      "order": {
+        "displaced_runs": 3,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 15,
+        "total": 16,
+        "misordered": 11
+      }
+    },
+    "syn-table-bilingual-sans-fax-broken-100": {
+      "cer": {
+        "errors": 127,
+        "reference": 159
+      },
+      "wer": {
+        "errors": 28,
+        "reference": 28
+      },
+      "cer_base": {
+        "errors": 127,
+        "reference": 159
+      },
+      "fields": {
+        "matched": 6,
+        "total": 7
+      },
+      "order": {
+        "displaced_runs": 5,
+        "reversed_words": 0
+      },
+      "cells": {
+        "matched": 11,
+        "total": 16,
+        "misordered": 7
+      }
+    }
+  },
+  "missing": []
+}

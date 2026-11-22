@@ -1,0 +1,51 @@
+{
+  "id": "form-leave-request",
+  "description": "An Arabic-only administrative form: a label/value table in a right-to-left layout, with Arabic-Indic digits in IDs and dates. Fictional person and numbers.",
+  "covers": [
+    "table",
+    "form",
+    "arabic-indic-digits",
+    "dates"
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "نموذج طلب إجازة"
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "يُعبأ هذا النموذج من قِبل الموظف ويُرفع إلى إدارة الموارد البشرية قبل بدء الإجازة بأسبوع على الأقل."
+    },
+    {
+      "kind": "table",
+      "dir": "rtl",
+      "font": "naskh",
+      "rows": [
+        ["اسم الموظف", "سارة أحمد العتيبي"],
+        ["الرقم الوظيفي", "٢٠٤٨٧"],
+        ["رقم الهوية", "١٠٢٣٤٥٦٧٨٩"],
+        ["الإدارة", "الشؤون المالية"],
+        ["نوع الإجازة", "إجازة سنوية"],
+        ["من تاريخ", "١٥/٠٤/٢٠٢٦"],
+        ["إلى تاريخ", "٢٩/٠٤/٢٠٢٦"],
+        ["عدد الأيام", "١٤"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "أقر بأن البيانات المذكورة أعلاه صحيحة، وأتعهد بالعودة إلى العمل في اليوم التالي لانتهاء الإجازة."
+    },
+    {
+      "kind": "paragraph",
+      "dir": "rtl",
+      "font": "naskh",
+      "text": "تاريخ تقديم الطلب: ١٠/٠٤/٢٠٢٦"
+    }
+  ]
+}

@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use safha_ocr_eval::{Manifest, Report, Targets, evaluate, score_sample};
+use safha_ocr_eval::{Manifest, Report, Targets, evaluate, score_best};
 
 struct Args {
     manifest: PathBuf,
@@ -61,15 +61,18 @@ fn run() -> Result<bool, String> {
     let mut scores = Vec::with_capacity(manifest.samples.len());
     let mut missing = Vec::new();
     for sample in &manifest.samples {
-        let truth_path = set_dir.join(&sample.truth);
-        let truth =
-            std::fs::read_to_string(&truth_path).map_err(|err| format!("{}: {err}", truth_path.display()))?;
+        let mut truths = Vec::with_capacity(1 + sample.truth_alternatives.len());
+        for file in std::iter::once(&sample.truth).chain(&sample.truth_alternatives) {
+            let path = set_dir.join(file);
+            truths.push(std::fs::read_to_string(&path).map_err(|err| format!("{}: {err}", path.display()))?);
+        }
+        let truths: Vec<&str> = truths.iter().map(String::as_str).collect();
         let hypothesis =
             std::fs::read_to_string(args.hyp.join(format!("{}.txt", sample.id))).unwrap_or_else(|_| {
                 missing.push(sample.id.clone());
                 String::new()
             });
-        scores.push(score_sample(&truth, &hypothesis, &sample.fields));
+        scores.push(score_best(&truths, &hypothesis, &sample.fields, &sample.cells));
     }
     let report = evaluate(&args.engine, &manifest, scores, missing);
 
@@ -80,20 +83,27 @@ fn run() -> Result<bool, String> {
         manifest.samples.len()
     );
     println!(
-        "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6}",
-        "category", "n", "CER", "WER", "CER-base", "fields", "order"
+        "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6} {:>8} {:>7}",
+        "category", "n", "CER", "WER", "CER-base", "fields", "order", "cells", "c-order"
     );
     for (name, score) in &report.categories {
         let fields = if score.fields_total > 0 { percent(score.field_accuracy) } else { "-".into() };
+        let (cells, cell_order) = if score.cells_total > 0 {
+            (percent(score.cell_accuracy), score.cell_order_errors.to_string())
+        } else {
+            ("-".into(), "-".into())
+        };
         println!(
-            "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6}",
+            "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6} {:>8} {:>7}",
             name,
             score.samples,
             percent(score.cer),
             percent(score.wer),
             percent(score.cer_base),
             fields,
-            score.order_errors
+            score.order_errors,
+            cells,
+            cell_order
         );
     }
     if !report.missing.is_empty() {
