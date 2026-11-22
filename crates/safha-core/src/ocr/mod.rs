@@ -9,20 +9,36 @@
 //!   measured with;
 //! - [`to_text`] and per-word confidence from the model's token probabilities.
 //!
-//! Word boxes, re-reading and reconciling, and writing the text layer come in
-//! later slices.
+//! - [`QualityReader`]: assessment and line strips ([`analyze`]), number–unit order
+//!   ([`resolve_unit_order`]), re-reading of numbers and unsure words, and
+//!   reconciling ([`reconcile`]) into words with a status and a review list
+//!   ([`review_list`]) (ADR 0033).
+//!
+//! Word boxes and writing the text layer come in later slices.
 
+mod command;
 mod image;
+mod layout;
 mod llama;
+mod order;
+mod pipeline;
+mod reconcile;
 mod text;
 
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub use command::CommandEngine;
 pub use image::{NUQTA_PIXELS, OcrImage, nuqta_size, prepare_nuqta};
+pub use layout::{LineBox, PageLayout, analyze, deskew};
 pub use llama::{
     ChatAnswer, Device, LlamaServer, NUQTA_PROMPT, NuqtaEngine, NuqtaModel, NuqtaQuant, NuqtaSize,
     ServerConfig, parse_chat_response,
+};
+pub use order::{OrderFix, UNIT_WORDS, resolve_unit_order};
+pub use pipeline::{PageResult, PageReview, QualityReader, Settings, review_list};
+pub use reconcile::{
+    OtherReadings, ReviewedWord, WordStatus, is_target, key, reconcile, words_with_confidence,
 };
 pub use text::{Token, strip_think, to_text, word_confidences};
 

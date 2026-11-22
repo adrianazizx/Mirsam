@@ -5,6 +5,9 @@
 //
 // Usage: swift apple-vision.swift <manifest.json> <out-dir>
 // Writes <out-dir>/<sample id>.txt for every sample in the manifest.
+//
+//        swift apple-vision.swift --image <page.png>
+// Prints one image's text (the pipeline's third reader for numbers, ADR 0033).
 
 import Foundation
 import Vision
@@ -18,14 +21,6 @@ struct Manifest: Decodable {
 }
 
 let args = CommandLine.arguments
-guard args.count == 3 else {
-    FileHandle.standardError.write("usage: apple-vision.swift <manifest.json> <out-dir>\n".data(using: .utf8)!)
-    exit(2)
-}
-let manifestURL = URL(fileURLWithPath: args[1])
-let outDir = URL(fileURLWithPath: args[2])
-let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifestURL))
-try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
 func makeRequest() -> VNRecognizeTextRequest {
     let request = VNRecognizeTextRequest()
@@ -34,6 +29,23 @@ func makeRequest() -> VNRecognizeTextRequest {
     request.recognitionLanguages = ["ar-SA", "en-US"]
     return request
 }
+
+if args.count == 3 && args[1] == "--image" {
+    let request = makeRequest()
+    try VNImageRequestHandler(url: URL(fileURLWithPath: args[2]), options: [:]).perform([request])
+    let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+    print(lines.joined(separator: "\n"))
+    exit(0)
+}
+
+guard args.count == 3 else {
+    FileHandle.standardError.write("usage: apple-vision.swift <manifest.json> <out-dir> | --image <png>\n".data(using: .utf8)!)
+    exit(2)
+}
+let manifestURL = URL(fileURLWithPath: args[1])
+let outDir = URL(fileURLWithPath: args[2])
+let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifestURL))
+try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
 let supported = (try? makeRequest().supportedRecognitionLanguages()) ?? []
 guard supported.contains("ar-SA") else {
