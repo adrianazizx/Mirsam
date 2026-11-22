@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use safha_core::edit::{EditHistory, PageEdit};
@@ -181,6 +181,26 @@ fn save_to(state: &AppState, document_id: u32, path: PathBuf) -> CommandResult<S
         modified: history.is_modified(),
         incremental: mode == safha_core::save::SaveMode::Incremental,
     })
+}
+
+/// Asks a window's UI to confirm closing it: it holds unsaved changes.
+pub const CLOSE_REQUESTED: &str = "close-requested";
+/// Asks a window's UI to confirm quitting: documents hold unsaved changes.
+pub const QUIT_REQUESTED: &str = "quit-requested";
+
+/// Closes the calling window although it holds unsaved changes (the user
+/// confirmed).
+#[tauri::command]
+pub fn close_window_discarding(window: WebviewWindow, state: State<'_, AppState>) -> CommandResult<()> {
+    state.confirm_close(window.label());
+    window.close().map_err(|err| CommandError::new("window_error", err.to_string()))
+}
+
+/// Quits although documents hold unsaved changes (the user confirmed).
+#[tauri::command]
+pub fn quit_discarding(app: AppHandle, state: State<'_, AppState>) {
+    state.confirm_quit();
+    app.exit(0);
 }
 
 #[cfg(test)]

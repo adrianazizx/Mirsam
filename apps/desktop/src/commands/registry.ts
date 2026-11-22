@@ -59,6 +59,8 @@ export interface CommandArg {
   index?: number;
   /** `file.close`, `tabs.move`: a tab other than the active one. */
   documentId?: number;
+  /** `file.close`: close even with unsaved changes (the user chose not to save). */
+  force?: boolean;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -70,6 +72,10 @@ export type CommandId =
   | "file.open"
   | "file.close"
   | "file.print"
+  | "file.saveAndClose"
+  | "window.closeDiscarding"
+  | "app.quitDiscarding"
+  | "app.cancelClose"
   | "file.save"
   | "file.saveAs"
   | "file.openRecent"
@@ -346,8 +352,47 @@ const COMMANDS: Command[] = [
     async run(arg) {
       const id = arg?.documentId ?? selectActiveDocument(store())?.id;
       if (id === undefined) return;
+      const open = store().documents.find((candidate) => candidate.id === id);
+      if (open?.modified && !arg?.force) {
+        store().setClosePrompt({ kind: "tab", documentId: id, name: open.name });
+        return;
+      }
+      store().setClosePrompt(null);
       store().removeDocument(id);
       await backend.closeDocument(id);
+    },
+  },
+  {
+    id: "file.saveAndClose",
+    paletteHidden: true,
+    async run(arg) {
+      const id = arg?.documentId;
+      if (id === undefined) return;
+      store().applySave(id, await backend.saveDocument(id));
+      await runCommand("file.close", { documentId: id, force: true });
+    },
+  },
+  {
+    id: "window.closeDiscarding",
+    paletteHidden: true,
+    async run() {
+      store().setClosePrompt(null);
+      await backend.closeWindowDiscarding();
+    },
+  },
+  {
+    id: "app.quitDiscarding",
+    paletteHidden: true,
+    async run() {
+      store().setClosePrompt(null);
+      await backend.quitDiscarding();
+    },
+  },
+  {
+    id: "app.cancelClose",
+    paletteHidden: true,
+    run() {
+      store().setClosePrompt(null);
     },
   },
   {

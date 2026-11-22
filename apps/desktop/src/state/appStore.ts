@@ -81,6 +81,12 @@ export interface OpenDocument extends DocumentInfo {
   modified: boolean;
 }
 
+/** A close that waits for the user: something holds unsaved changes (ADR 0015). */
+export type ClosePrompt =
+  | { kind: "tab"; documentId: number; name: string }
+  | { kind: "window" }
+  | { kind: "quit" };
+
 export interface PendingUnlock {
   token: number;
   name: string;
@@ -135,6 +141,8 @@ export interface AppState {
   applyEdit(id: number, outcome: EditOutcome): void;
   /** After Save or Save As: the name may change, and the document is no longer modified. */
   applySave(id: number, outcome: SaveOutcome): void;
+  closePrompt: ClosePrompt | null;
+  setClosePrompt(prompt: ClosePrompt | null): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
   pushUnlock(unlock: PendingUnlock): void;
   /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
@@ -381,6 +389,10 @@ export const useAppStore = create<AppState>((set, get) => {
             : open,
         ),
       }));
+    },
+    closePrompt: null,
+    setClosePrompt(prompt) {
+      set({ closePrompt: prompt });
     },
     applySave(id, outcome) {
       set((state) => ({

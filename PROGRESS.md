@@ -211,8 +211,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 2. **Page organizer:** rotate, delete, duplicate and insert blank work on the current page, with
    undo and redo, and are in the palette. Still to do: moving pages, and a page grid with
    multi-select and drag to reorder.
-3. **Safe save:** Save and Save As (temp file → validate → atomic rename). The original is never
-   written in place; signed files are saved incrementally.
+3. ~~**Safe save**~~ **done (ADR 0015):** Save and Save As (temp file → validate → atomic
+   rename). The original is never written in place; signed files are saved incrementally. The
+   app asks before a modified tab, window, or the app closes.
 4. **Merge, insert from another PDF, extract, split.**
 5. **Markup** (highlight, underline, strikethrough, squiggly) from the text selection, as
    standard annotations with appearance streams.
@@ -227,7 +228,12 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       moves pages. No page grid yet.
 - [x] Undo journal: undo and redo for page edits (`EditHistory`, ADR 0014); annotations will
       use it too
-- [ ] Safe save pipeline (temp → validate with reopen + `qpdf --check` → atomic rename)
+- [x] Safe save pipeline (ADR 0015):
+      - temp file → reopen to validate → atomic rename;
+      - a full PDFium rewrite drops deleted pages' content;
+      - signed files are saved incrementally;
+      - `qpdf --check` runs in tests (qpdf is not bundled);
+      - unsaved changes are marked on the tab, and the app asks before closing them.
 - [ ] Autosave and recovery
 
 ## M3 — Text engine
@@ -312,8 +318,10 @@ Plan, in order: every later slice edits documents, so the editing model and savi
   - **Page edits** (rotate, delete, duplicate, insert blank) on the current page, with undo and
     redo, in the core, the shell, and the UI.
   - **Self-test:** checks an edit and its undo in the real app in both directions.
-  - **Tests:** 137 Rust and 124 UI tests pass on this Mac. The branch has no pull request yet,
-    so CI has not run on it.
+  - **Save and Save As** (ADR 0015). The app asks before closing a modified tab, window, or the
+    whole app; the self-test checks the window prompt.
+  - **Draft PR #2** is open with Auto-fix on.
+  - **Tests:** 142 Rust and 126 UI tests pass on this Mac.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 

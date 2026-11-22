@@ -352,6 +352,14 @@ export interface Backend {
    * follows a change made in one. Returns a function that stops listening.
    */
   onSettingChanged(listener: (key: string, value: string) => void): Promise<() => void>;
+  /** The shell asks this window to confirm closing it: it holds unsaved changes (ADR 0015). */
+  onCloseRequested(listener: () => void): Promise<() => void>;
+  /** The shell asks this window to confirm quitting: documents hold unsaved changes. */
+  onQuitRequested(listener: () => void): Promise<() => void>;
+  /** Closes this window without saving its documents (the user confirmed). */
+  closeWindowDiscarding(): Promise<void>;
+  /** Quits without saving (the user confirmed). */
+  quitDiscarding(): Promise<void>;
   selftestConfig(): Promise<SelftestConfig | null>;
   selftestReport(results: unknown, canvasPng: string | null): Promise<void>;
   /** Devtools builds only; null elsewhere. */

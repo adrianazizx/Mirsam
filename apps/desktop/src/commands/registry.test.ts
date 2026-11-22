@@ -6,7 +6,12 @@ import { commandForEvent, isCommandEnabled, runCommand, shortcutLabel } from "./
 const key = (init: KeyboardEventInit) => new KeyboardEvent("keydown", init);
 
 beforeEach(() => {
-  useAppStore.setState({ documents: [], activeDocumentId: null, errorCode: null });
+  useAppStore.setState({
+    documents: [],
+    activeDocumentId: null,
+    errorCode: null,
+    closePrompt: null,
+  });
 });
 
 describe("command registry", () => {
@@ -93,6 +98,29 @@ describe("command registry", () => {
       modified: false,
     });
     expect(shortcutLabel("file.saveAs", true)).toBe("⇧⌘S");
+  });
+
+  it("asks before closing a tab with unsaved changes", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    useAppStore.getState().addDocument({ id: 2, name: "b.pdf", pageCount: 12 });
+    useAppStore.getState().activateDocument(1);
+    await runCommand("pages.duplicate");
+
+    await runCommand("file.close");
+    expect(useAppStore.getState().closePrompt).toEqual({
+      kind: "tab",
+      documentId: 1,
+      name: "a.pdf",
+    });
+    expect(useAppStore.getState().documents.map((open) => open.id)).toEqual([1, 2]);
+    await runCommand("app.cancelClose");
+    expect(useAppStore.getState().closePrompt).toBeNull();
+
+    // An unmodified tab closes at once; "Don't save" closes the modified one.
+    await runCommand("file.close", { documentId: 2 });
+    await runCommand("file.close", { documentId: 1, force: true });
+    expect(useAppStore.getState().documents).toEqual([]);
+    expect(useAppStore.getState().closePrompt).toBeNull();
   });
 
   it("keeps the last page: deleting needs two", () => {

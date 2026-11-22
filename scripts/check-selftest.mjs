@@ -64,6 +64,7 @@ if (nav) {
   if (editing) {
     check(editing.pagesAfterEdit === editing.pagesBefore + 1, `duplicating gave ${editing.pagesAfterEdit} pages`);
     check(editing.repainted, "the edited document was not painted");
+    check(editing.closePrompted, "closing a window with unsaved changes did not ask first");
     check(editing.pagesAfterUndo === editing.pagesBefore, `undo left ${editing.pagesAfterUndo} pages`);
     check(editing.modifiedAfterUndo === false, "undo back to the file still counts as modified");
   }
@@ -89,7 +90,7 @@ if (nav) {
     const e = nav.editing;
     console.log(
       `  editing: duplicate ${e.pagesBefore} → ${e.pagesAfterEdit} pages in ${e.editMs} ms, ` +
-        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}`,
+        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}, close asked ${e.closePrompted}`,
     );
   }
 }

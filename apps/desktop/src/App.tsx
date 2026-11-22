@@ -10,6 +10,7 @@ import {
   runCommand,
 } from "./commands/registry";
 import { AppShell } from "./components/shell/AppShell";
+import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
 import { applyLocale, formatTag } from "./i18n";
 import {
   type AppState,
@@ -150,9 +151,33 @@ export function App() {
     };
   }, []);
 
+  // The shell asks before a window or the app closes over unsaved changes (ADR 0015).
+  useEffect(() => {
+    const stops: (() => void)[] = [];
+    let live = true;
+    const keep = (stop: () => void) => {
+      if (live) stops.push(stop);
+      else stop();
+    };
+    const ask = (kind: "window" | "quit") => () => useAppStore.getState().setClosePrompt({ kind });
+    backend
+      .onCloseRequested(ask("window"))
+      .then(keep)
+      .catch((error: unknown) => console.warn("cannot ask before closing", error));
+    backend
+      .onQuitRequested(ask("quit"))
+      .then(keep)
+      .catch((error: unknown) => console.warn("cannot ask before quitting", error));
+    return () => {
+      live = false;
+      for (const stop of stops) stop();
+    };
+  }, []);
+
   return (
     <I18nProvider locale={formatTag(locale)}>
       <AppShell />
+      <UnsavedChangesDialog />
     </I18nProvider>
   );
 }

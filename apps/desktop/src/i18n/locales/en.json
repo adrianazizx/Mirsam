@@ -29,7 +29,8 @@
       "cancelUnlock": "Cancel opening",
       "print": "Print…",
       "save": "Save",
-      "saveAs": "Save as…"
+      "saveAs": "Save as…",
+      "saveAndClose": "Save and close"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -56,7 +57,9 @@
       "toggleTheme": "Switch theme",
       "toggleLanguage": "العربية",
       "toggleGallery": "Design gallery",
-      "commandPalette": "All commands…"
+      "commandPalette": "All commands…",
+      "quitDiscarding": "Quit without saving",
+      "cancelClose": "Keep open"
     },
     "tabs": {
       "next": "Next tab",
@@ -86,7 +89,8 @@
       "toggleTaMarbuta": "Treat ة and ه as the same"
     },
     "window": {
-      "new": "New window"
+      "new": "New window",
+      "closeDiscarding": "Close window without saving"
     },
     "pages": {
       "rotateClockwise": "Rotate page clockwise",
@@ -203,5 +207,16 @@
     "title": "Recent files",
     "missing": "Moved or deleted",
     "forget": "Remove {{name}} from recent files"
+  },
+  "unsaved": {
+    "title": "Unsaved changes",
+    "tab": "Save the changes to this document before closing it?",
+    "window": "Some documents in this window have unsaved changes. Close it anyway?",
+    "quit": "Some documents have unsaved changes. Quit anyway?",
+    "save": "Save",
+    "discard": "Don't save",
+    "closeAnyway": "Close without saving",
+    "quitAnyway": "Quit without saving",
+    "cancel": "Cancel"
   }
 }

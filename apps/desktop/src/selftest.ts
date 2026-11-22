@@ -138,6 +138,14 @@ async function navigationChecks(documentId: number) {
     const pagesAfterEdit = (await backend.pageSizes(documentId)).length;
     const editMs = Math.round(performance.now() - started);
     const repainted = (await waitForPagePainted(0, 10_000)) !== null;
+    // Closing the window now must ask first (ADR 0015) and leave it open.
+    let closePrompted = false;
+    if (isTauri()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("selftest_request_close");
+      closePrompted = await waitFor(() => useAppStore.getState().closePrompt?.kind === "window", 5_000);
+      await runCommand("app.cancelClose");
+    }
     await runCommand("edit.undo");
     const pagesAfterUndo = (await backend.pageSizes(documentId)).length;
     const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
@@ -147,6 +155,7 @@ async function navigationChecks(documentId: number) {
       pagesAfterUndo,
       editMs,
       repainted,
+      closePrompted,
       modifiedAfterUndo: open?.modified ?? null,
       revision: open?.revision ?? null,
     };

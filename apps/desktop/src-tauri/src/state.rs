@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -75,6 +75,10 @@ pub struct AppState {
     /// Set once the app is quitting: closing windows then must not drop
     /// their tabs from the saved session.
     exiting: AtomicBool,
+    /// Windows the user chose to close although they hold unsaved changes.
+    close_confirmed: Mutex<HashSet<String>>,
+    /// The user chose to quit although documents hold unsaved changes.
+    quit_confirmed: AtomicBool,
     /// The one render thread and tile cache for every open document.
     pub render: RenderService,
     /// Local state (recents, positions, settings, session). Set once at
@@ -95,6 +99,8 @@ impl AppState {
             next_id: AtomicU32::new(1),
             windows: Mutex::new(vec![(MAIN_WINDOW.to_string(), WindowTabs::default())]),
             exiting: AtomicBool::new(false),
+            close_confirmed: Mutex::new(HashSet::new()),
+            quit_confirmed: AtomicBool::new(false),
             render: RenderService::new(render_config()),
             store: OnceLock::new(),
         }
@@ -287,6 +293,44 @@ impl AppState {
         }
         windows.retain(|(label, _)| label != window);
         true
+    }
+
+    /// Open documents with unsaved changes, with their windows: in `window`,
+    /// or in any window.
+    pub fn unsaved(&self, window: Option<&str>) -> Vec<(u32, String)> {
+        // Edits lock a history and then the document map; never hold the map
+        // while waiting for a history.
+        let files: Vec<(u32, String, Arc<Mutex<EditHistory>>)> = lock(&self.documents)
+            .iter()
+            .filter(|(_, file)| window.is_none_or(|window| file.window == window))
+            .map(|(id, file)| (*id, file.window.clone(), Arc::clone(&file.history)))
+            .collect();
+        let mut unsaved: Vec<(u32, String)> = files
+            .into_iter()
+            .filter(|(_, _, history)| lock(history).is_modified())
+            .map(|(id, window, _)| (id, window))
+            .collect();
+        unsaved.sort_unstable();
+        unsaved
+    }
+
+    /// The user confirmed closing `window` without saving.
+    pub fn confirm_close(&self, window: &str) {
+        lock(&self.close_confirmed).insert(window.to_string());
+    }
+
+    /// Whether `window` may close although it holds unsaved changes (once).
+    pub fn take_close_confirmed(&self, window: &str) -> bool {
+        lock(&self.close_confirmed).remove(window)
+    }
+
+    /// The user confirmed quitting without saving.
+    pub fn confirm_quit(&self) {
+        self.quit_confirmed.store(true, Ordering::SeqCst);
+    }
+
+    pub fn quit_confirmed(&self) -> bool {
+        self.quit_confirmed.load(Ordering::SeqCst)
     }
 
     pub fn set_exiting(&self) {

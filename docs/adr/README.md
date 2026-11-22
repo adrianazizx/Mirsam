@@ -20,6 +20,7 @@ number and says so.
 | [0012](0012-reading-preferences-windows-printing.md) | Reading preferences from the catalog (own safe reader), several windows, tab reordering; printing through the platform's PDF viewer | Accepted; printing proposed (unverified) |
 | [0013](0013-printing-on-linux.md) | Printing on Linux: GTK's print dialog, each page rendered by PDFium at the printer's resolution | Proposed; checked in CI by printing to a file |
 | [0014](0014-edits-as-incremental-updates.md) | Edits as incremental updates written by our own writer; undo as a stack of them; documents keep their bytes (and, in memory, their password) | Accepted for page edits |
+| [0015](0015-saving-and-unsaved-changes.md) | Saving (signed files incrementally, others rewritten in full by PDFium; validated; atomic rename); asking before closing a modified tab or window, or quitting | Accepted |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
 OCR engines (M4), crypto/PAdES library (M5), Office → PDF (post-1.0).

@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   type AppInfo,
   type Backend,
@@ -142,6 +143,13 @@ export const tauriBackend: Backend = {
   editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
   undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
   redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
+  // Addressed to one window: listen on this window only.
+  onCloseRequested: (listener) =>
+    getCurrentWebviewWindow().listen("close-requested", () => listener()),
+  onQuitRequested: (listener) =>
+    getCurrentWebviewWindow().listen("quit-requested", () => listener()),
+  closeWindowDiscarding: () => invoke<void>("close_window_discarding"),
+  quitDiscarding: () => invoke<void>("quit_discarding"),
   saveDocument: (documentId) => invoke<SaveOutcome>("save_document", { documentId }),
   saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
