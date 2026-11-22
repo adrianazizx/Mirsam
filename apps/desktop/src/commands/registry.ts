@@ -36,6 +36,7 @@ import {
   selectActiveDocument,
   useAppStore,
 } from "../state/appStore";
+import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
 import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
 import {
@@ -165,6 +166,8 @@ export interface CommandArg {
   signature?: number;
   /** `signature.saveTyped`: the family it is set in. */
   family?: "sans" | "naskh";
+  /** `fill.color`: one of the document colours (`state/colors.ts`). */
+  colorId?: string;
   /** `ocrModels.download`, `.cancel`, `.delete`: the OCR package (ADR 0034). */
   modelId?: string;
 }
@@ -249,7 +252,10 @@ export type CommandId =
   | "fill.dot"
   | "fill.signature"
   | "fill.place"
+  | "fill.color"
   | "fill.move"
+  | "fill.toPreviousPage"
+  | "fill.toNextPage"
   | "fill.moveLeft"
   | "fill.moveRight"
   | "fill.moveUp"
@@ -531,6 +537,57 @@ async function placeFill(item: SelectedAnnotation, rect: ViewRect): Promise<void
   const outcome = await backend.setAnnotationRect(active.id, item.page, item.index, rect);
   getViewer(active.id)?.reselectAfterRefresh({ ...item, rect });
   store().applyEdit(active.id, outcome);
+}
+
+/**
+ * Moves a Fill & Sign item to `rect` on another page (ADR 0045) as one undo
+ * step. It goes last in that page's annotations, and stays selected there.
+ */
+async function moveFillToPage(
+  item: SelectedAnnotation,
+  page: number,
+  rect: ViewRect,
+): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active || !FILL_KINDS.includes(item.kind)) return;
+  const outcome = await backend.moveAnnotationToPage(active.id, item.page, item.index, page, rect);
+  const landed = (await backend.pageAnnotations(active.id, page))
+    .filter((candidate) => candidate.kind === item.kind)
+    .at(-1);
+  if (landed)
+    getViewer(active.id)?.reselectAfterRefresh({ ...item, page, index: landed.index, rect });
+  store().applyEdit(active.id, outcome);
+}
+
+/** The page before or after the selected Fill & Sign item's, if there is one. */
+function fillPageTarget(state: AppState, step: -1 | 1): number | null {
+  const active = selectActiveDocument(state);
+  const selected = active?.selectedAnnotation;
+  if (!active || !selected) return null;
+  const page = selected.page + step;
+  return page >= 0 && page < active.pageCount ? page : null;
+}
+
+/**
+ * Moves the selected Fill & Sign item to the page before or after its own,
+ * where it was on its page (kept on the new one), and shows that page.
+ */
+async function stepFillPage(step: -1 | 1): Promise<void> {
+  const active = selectActiveDocument(store());
+  const selected = active?.selectedAnnotation;
+  const page = fillPageTarget(store(), step);
+  if (!active || !selected || page === null) return;
+  const size = getViewer(active.id)?.pageSize(page) ?? null;
+  const { rect } = selected;
+  const clamp = (value: number, max: number | null) =>
+    Math.max(0, max === null ? value : Math.min(max, value));
+  const next = {
+    ...rect,
+    x: clamp(rect.x, size ? size.width - rect.width : null),
+    y: clamp(rect.y, size ? size.height - rect.height : null),
+  };
+  await moveFillToPage(selected, page, next);
+  navigateTo(active, page);
 }
 
 /**
@@ -1719,7 +1776,8 @@ const DECLARED: Command[] = [
       const active = selectActiveDocument(store());
       if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
       const { page, x, y } = arg;
-      const { fillTool, fillSignature, signatures, locale } = store();
+      const { fillTool, fillSignature, signatures, locale, fillColor } = store();
+      const color = rgbOf(fillColor);
       getViewer(active.id)?.clearSelection();
       switch (fillTool) {
         case "text":
@@ -1735,7 +1793,7 @@ const DECLARED: Command[] = [
         case "date": {
           store().applyEdit(
             active.id,
-            await backend.addFillText(active.id, page, x, y, fillDate(locale)),
+            await backend.addFillText(active.id, page, x, y, fillDate(locale), undefined, color),
           );
           store().setFill(null);
           return;
@@ -1745,7 +1803,15 @@ const DECLARED: Command[] = [
         case "dot": {
           // Centred on the press; the tool stays, to tick several boxes.
           const half = FILL_MARK_SIZE / 2;
-          const outcome = await backend.addFillMark(active.id, page, x - half, y - half, fillTool);
+          const outcome = await backend.addFillMark(
+            active.id,
+            page,
+            x - half,
+            y - half,
+            fillTool,
+            undefined,
+            color,
+          );
           store().applyEdit(active.id, outcome);
           return;
         }
@@ -1771,12 +1837,30 @@ const DECLARED: Command[] = [
     },
   },
   {
-    // A Fill & Sign item dragged on the page (ADR 0045).
+    // A Fill & Sign item dragged on its page, or onto another (`page`) (ADR 0045).
     id: "fill.move",
     paletteHidden: true,
     isEnabled: hasDocument,
     async run(arg) {
-      if (arg?.annotation && arg.rect) await placeFill(arg.annotation, arg.rect);
+      const item = arg?.annotation;
+      if (!item || !arg.rect) return;
+      if (arg.page !== undefined && arg.page !== item.page)
+        await moveFillToPage(item, arg.page, arg.rect);
+      else await placeFill(item, arg.rect);
+    },
+  },
+  {
+    id: "fill.toPreviousPage",
+    isEnabled: (state) => hasFillSelected(state) && fillPageTarget(state, -1) !== null,
+    async run() {
+      await stepFillPage(-1);
+    },
+  },
+  {
+    id: "fill.toNextPage",
+    isEnabled: (state) => hasFillSelected(state) && fillPageTarget(state, 1) !== null,
+    async run() {
+      await stepFillPage(1);
     },
   },
   ...(
@@ -1800,6 +1884,29 @@ const DECLARED: Command[] = [
       run: () => nudgeFill(dx * NUDGE_MORE, dy * NUDGE_MORE),
     },
   ]),
+  {
+    // The colour new Fill & Sign text and marks take; the selected one is recoloured (ADR 0045).
+    id: "fill.color",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const choice = DOCUMENT_COLORS.find((color) => color.id === arg?.colorId);
+      if (!choice) return;
+      store().setFillColor(choice.id as DocumentColorId);
+      const active = selectActiveDocument(store());
+      const selected = active?.selectedAnnotation;
+      if (!active || !selected || (selected.kind !== "fillText" && selected.kind !== "mark"))
+        return;
+      const outcome = await backend.setAnnotationColor(
+        active.id,
+        selected.page,
+        selected.index,
+        rgbOf(choice.id),
+      );
+      getViewer(active.id)?.reselectAfterRefresh(selected);
+      store().applyEdit(active.id, outcome);
+    },
+  },
   { id: "fill.larger", isEnabled: hasFillSelected, run: () => resizeFill(FILL_STEP) },
   { id: "fill.smaller", isEnabled: hasFillSelected, run: () => resizeFill(1 / FILL_STEP) },
   { id: "signatures.load", paletteHidden: true, run: loadSignatures },
@@ -2004,7 +2111,15 @@ const DECLARED: Command[] = [
           pending.kind === "pageText"
             ? await backend.addText(active.id, page, x, y, width, text, store().textStyle)
             : pending.kind === "fillText"
-              ? await backend.addFillText(active.id, page, x, y, text)
+              ? await backend.addFillText(
+                  active.id,
+                  page,
+                  x,
+                  y,
+                  text,
+                  undefined,
+                  rgbOf(store().fillColor),
+                )
               : pending.kind === "textBox"
                 ? await backend.addTextBox(active.id, page, x, y, width, text)
                 : await backend.addNote(active.id, page, x, y, text);
@@ -2458,7 +2573,10 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "fill.dot": "annotate",
   "fill.signature": "annotate",
   "fill.place": "annotate",
+  "fill.color": "annotate",
   "fill.move": "annotate",
+  "fill.toPreviousPage": "annotate",
+  "fill.toNextPage": "annotate",
   "fill.moveLeft": "annotate",
   "fill.moveRight": "annotate",
   "fill.moveUp": "annotate",

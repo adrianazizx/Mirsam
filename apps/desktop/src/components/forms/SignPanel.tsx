@@ -1,4 +1,6 @@
 import {
+  ArrowDownToLine,
+  ArrowUpToLine,
   CalendarDays,
   Check,
   Circle,
@@ -8,12 +10,19 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { useEffect } from "react";
-import { type Key, ToggleButton, ToggleButtonGroup } from "react-aria-components";
+import { type CSSProperties, useEffect } from "react";
+import {
+  type Key,
+  Radio,
+  RadioGroup,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { FILL_KINDS, type SignatureInfo } from "../../backend";
 import { type CommandId, isCommandEnabled, runCommand } from "../../commands/registry";
 import { type FillTool, type OpenDocument, useAppStore } from "../../state/appStore";
+import { cssOf, DOCUMENT_COLORS } from "../../state/colors";
 import { Button } from "../ui/Button";
 import { CommandButton } from "../ui/CommandButton";
 import { IconButton } from "../ui/IconButton";
@@ -43,6 +52,7 @@ export function SignPanel({ document }: { document: OpenDocument }) {
   const { t } = useTranslation();
   const fillTool = useAppStore((state) => state.fillTool);
   const fillSignature = useAppStore((state) => state.fillSignature);
+  const fillColor = useAppStore((state) => state.fillColor);
   const signatures = useAppStore((state) => state.signatures);
   const selected = document.selectedAnnotation;
   // A file opened with its user password may not allow annotating (ADR 0043).
@@ -90,6 +100,29 @@ export function SignPanel({ document }: { document: OpenDocument }) {
         <p className={styles.hint} data-testid="fill-hint">
           {t(permitted ? `sign.hint.${fillTool ?? "select"}` : "sign.notPermitted")}
         </p>
+        <RadioGroup
+          aria-label={t("sign.color")}
+          aria-describedby="fill-color-hint"
+          orientation="horizontal"
+          value={fillColor}
+          isDisabled={!permitted}
+          onChange={(colorId) => void runCommand("fill.color", { colorId })}
+          className={styles.tools}
+          data-testid="fill-colors"
+        >
+          {DOCUMENT_COLORS.map((choice) => (
+            <Radio
+              key={choice.id}
+              value={choice.id}
+              aria-label={t(`textStyle.colors.${choice.id}`)}
+              className={styles.swatch}
+              style={{ "--swatch": cssOf(choice.rgb) } as CSSProperties}
+            />
+          ))}
+        </RadioGroup>
+        <p id="fill-color-hint" className={styles.hint}>
+          {t("sign.colorHint")}
+        </p>
       </section>
 
       {fillSelected ? (
@@ -106,6 +139,14 @@ export function SignPanel({ document }: { document: OpenDocument }) {
             </Button>
             <CommandButton command="annotation.delete">
               <Trash2 />
+            </CommandButton>
+          </div>
+          <div className={styles.row}>
+            <CommandButton command="fill.toPreviousPage">
+              <ArrowUpToLine />
+            </CommandButton>
+            <CommandButton command="fill.toNextPage">
+              <ArrowDownToLine />
             </CommandButton>
           </div>
         </section>

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { backend } from "../backend";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
@@ -15,6 +15,10 @@ const field = async (name: string) => {
   return found;
 };
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 beforeEach(async () => {
   localStorage.clear();
   useAppStore.setState({
@@ -26,6 +30,7 @@ beforeEach(async () => {
     pendingNote: null,
     fillTool: null,
     fillSignature: null,
+    fillColor: "black",
     signatures: null,
     signatureDialog: null,
   });
@@ -190,6 +195,83 @@ describe("Fill & Sign (ADR 0045)", () => {
     field.remove();
   });
 
+  it("places text, dates and marks in the chosen colour, and recolours the selected one", async () => {
+    const addMark = vi.spyOn(backend, "addFillMark");
+    const addText = vi.spyOn(backend, "addFillText");
+    const recolour = vi.spyOn(backend, "setAnnotationColor");
+    const red: [number, number, number] = [0.72, 0.11, 0.11];
+
+    // Black until another colour is chosen; with nothing selected, choosing recolours nothing.
+    await runCommand("fill.check");
+    await runCommand("fill.place", { page: 0, x: 107, y: 107 });
+    expect(addMark.mock.lastCall?.[6]).toEqual([0, 0, 0]);
+    useAppStore.getState().updateDocument(1, { selectedAnnotation: null });
+    await runCommand("fill.color", { colorId: "red" });
+    expect(useAppStore.getState().fillColor).toBe("red");
+    expect(recolour).not.toHaveBeenCalled();
+
+    await runCommand("fill.place", { page: 0, x: 207, y: 107 });
+    expect(addMark.mock.lastCall?.[6]).toEqual(red);
+    await runCommand("fill.date");
+    await runCommand("fill.place", { page: 0, x: 50, y: 200 });
+    expect(addText.mock.lastCall?.[6]).toEqual(red);
+    await runCommand("fill.text");
+    await runCommand("fill.place", { page: 0, x: 50, y: 260 });
+    await runCommand("note.save", { text: "نعم" });
+    expect(addText.mock.lastCall?.[6]).toEqual(red);
+
+    // Selected, the first (black) tick is recoloured: one undo step.
+    const [first] = await annotations();
+    const rect = first?.rects[0];
+    if (!first || !rect) throw new Error("no mark");
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { page: 0, index: first.index, kind: "mark", contents: null, rect },
+    });
+    await runCommand("fill.color", { colorId: "blue" });
+    expect(recolour).toHaveBeenLastCalledWith(1, 0, first.index, [0.05, 0.28, 0.63]);
+    expect(useAppStore.getState().fillColor).toBe("blue");
+
+    // A signature keeps its own colour.
+    recolour.mockClear();
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { page: 0, index: first.index, kind: "signature", contents: null, rect },
+    });
+    await runCommand("fill.color", { colorId: "green" });
+    expect(recolour).not.toHaveBeenCalled();
+  });
+
+  it("moves an item to another page, by a drag or to the next and previous page", async () => {
+    await runCommand("fill.check");
+    await runCommand("fill.place", { page: 0, x: 107, y: 107 });
+    const [placed] = await annotations();
+    const rect = placed?.rects[0];
+    if (!placed || !rect) throw new Error("no mark");
+    const item = { page: 0, index: placed.index, kind: placed.kind, contents: null, rect };
+
+    // Dragged onto page 2: it leaves page 1 for page 2, one undo step.
+    await runCommand("fill.move", { annotation: item, rect: { ...rect, y: 40 }, page: 1 });
+    expect(await annotations()).toEqual([]);
+    const [moved] = await backend.pageAnnotations(1, 1);
+    expect(moved?.kind).toBe("mark");
+    expect(moved?.rects[0]).toEqual({ ...rect, y: 40 });
+    expect(active()?.canUndo).toBe(true);
+
+    // Selected there, it goes back a page, where it was on its page.
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { ...item, page: 1, index: moved?.index ?? 0, rect: { ...rect, y: 40 } },
+    });
+    expect(isCommandEnabled("fill.toPreviousPage")).toBe(true);
+    await runCommand("fill.toPreviousPage");
+    expect(await backend.pageAnnotations(1, 1)).toEqual([]);
+    expect((await annotations())[0]?.rects[0]).toEqual({ ...rect, y: 40 });
+    expect(active()?.page).toBe(0);
+
+    // There is no page before the first.
+    useAppStore.getState().updateDocument(1, { selectedAnnotation: { ...item, page: 0 } });
+    expect(isCommandEnabled("fill.toPreviousPage")).toBe(false);
+    expect(isCommandEnabled("fill.toNextPage")).toBe(true);
+  });
+
   it("keeps a drawn signature as initials", async () => {
     await runCommand("signature.newInitials");
     await runCommand("signature.saveDrawn", {
@@ -243,6 +325,10 @@ describe("the Forms and Sign panels", () => {
     expect(await screen.findByRole("heading", { name: heading })).toBeTruthy();
     expect((await screen.findByTestId("fill-hint")).textContent).toBe(hint);
     const panel = within(screen.getByTestId("sign-panel"));
+    // The colours, named in the UI language; black is chosen.
+    const swatches = within(screen.getByTestId("fill-colors")).getAllByRole("radio");
+    expect(swatches).toHaveLength(4);
+    expect((swatches[0] as HTMLInputElement).checked).toBe(true);
     fireEvent.click(panel.getAllByRole("button", { name: add })[0] as HTMLElement);
     const dialog = await screen.findByTestId("signature-dialog");
     expect(within(dialog).getByTestId("signature-pad")).toBeTruthy();

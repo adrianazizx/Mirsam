@@ -615,7 +615,11 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - Moved by dragging (a dashed outline shows where it lands) or with the arrow keys (1 pt, Shift
     10 pt). Resized by dragging a corner handle (in proportion, about the opposite corner) or in
     25% steps; text keeps its size for later changes.
-  - **Gaps:** no moving to another page; fixed colours and sizes.
+  - Text, dates and marks in black, blue, red or green, chosen in the Sign panel; choosing one also
+    recolours the selected text or mark.
+  - Moved to another page by dragging it there (the view scrolls on near the edge) or with
+    "previous page" and "next page"; upright on pages turned otherwise.
+  - **Gaps:** fixed starting sizes.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -1076,6 +1080,37 @@ encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11b
     edge). 196 UI tests pass.
   - **Checked in the browser preview:** a drawn signature selected, then enlarged by its
     bottom-right handle.
+- **Colours for Fill & Sign text and marks** (added on request; its own PR, after the resize one):
+  - **Choosing:** the Sign panel offers the Edit tool's four document colours (moved to
+    `state/colors.ts`, shared). New text, dates and marks take the chosen one (`fill.color`;
+    `add_fill_text` and `add_fill_mark` take a colour).
+  - **Recolouring:** with a text or mark selected, choosing a colour recolours it:
+    `AnnotationEdit::SetColor`, through the shell's `set_annotation_color`, as one undo step. Its
+    appearance is drawn again in the same box, `/C` and the text's `/DA` are updated, and the colour
+    survives a later change of text. Signatures refuse it.
+  - **Tests:** a Rust test recolours text and a cross in a plain and an encrypted file (red pixels
+    in their boxes, the same boxes, the text read back flattened, the colour kept after changing the
+    text, a signature refused). A UI test covers new items in the chosen colour, recolouring the
+    selection, signatures left alone, and the swatches in English and Arabic. 446 Rust and 207 UI
+    tests pass.
+- **Fill & Sign items move to another page** (added on request; its own PR, after the colour one):
+  - **Dragging:** an item follows the pointer onto the page it is over, held where it was grabbed
+    and kept inside that page. The view auto-scrolls near the top or bottom edge, as it does for
+    text selection.
+  - **Commands:** the panel's "previous page" and "next page" (`fill.toPreviousPage`,
+    `fill.toNextPage`) move the selected item to the same place on the neighbouring page, and show
+    that page.
+  - **Engine:** `AnnotationEdit::MoveToPage` (shell: `move_annotation_to_page`) moves the
+    annotation object from one page's `/Annots` to the end of the other's, sets `/P` and `/Rect`,
+    and, between pages turned differently, rewrites its appearance's `/Matrix` with the stream data
+    untouched.
+  - **Also fixed:** merging `main` into #23 broke the watermark dialog's colour list (read-only
+    tuples), so the shared palette types its colours as plain `[number, number, number]`. That fix
+    was pushed to #23 too.
+  - **Tests:** a Rust test moves fill text from the unturned page to the 90° page, then to the 180°
+    one. It lands in its box only, upright, nothing is left behind, it survives a save, and a note is
+    refused. A viewer test drags across a page boundary; a command test covers moving by drag and by
+    previous/next page. 471 Rust and 220 UI tests pass.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 

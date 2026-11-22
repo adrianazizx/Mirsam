@@ -121,6 +121,14 @@ What each item draws:
 - **Dates** are text: today's date as the UI language writes it, with Western digits in the Arabic
   UI (`formatTag`, the open digits question in PROGRESS.md).
 - **Marks** are vector paths in a 100-unit box.
+- **Colour:** text, dates and marks are placed in one of the four document colours the Edit tool
+  offers (black, blue, red, green; `state/colors.ts`), black by default.
+  - Choosing a colour in the Sign panel applies to the next items. With a text or a mark selected,
+    it also recolours that one (`AnnotationEdit::SetColor`, one undo step). The appearance is drawn
+    again in the new colour, in the same box, and `/C` and fill text's `/DA` are updated, so later
+    changes keep the colour.
+  - Signatures keep their own ink (dark blue for drawn and typed, the image's own colours), and
+    refuse `SetColor`.
 
 Every item stands upright on a turned page, as a text box does. Its appearance is turned back by the
 page's `/Rotate`, and changed text keeps its displayed top-left corner.
@@ -181,6 +189,16 @@ listed but not filled here.
       toolbar's or a list's arrow keys keep their meaning. Each nudge is one undo step.
     - After an edit the viewer reads the visible pages' annotations again at once, so an item just
       placed can be dragged without first moving the pointer over it.
+  - **To another page:** an item dragged over another page follows the pointer there; the view
+    scrolls on near its top or bottom edge, to reach pages out of sight. Letting go there, or the
+    panel's "previous page" and "next page" (`fill.toPreviousPage`, `fill.toNextPage`, the item
+    where it was on its page), moves it as one undo step (`AnnotationEdit::MoveToPage`, the shell's
+    `move_annotation_to_page`).
+    - The annotation keeps its object. It leaves one page's `/Annots` for the end of the other's,
+      with `/P` and `/Rect` set for the new page, and stays selected there.
+    - On a page turned otherwise, its appearance stream is written again under its own number with
+      the new page's `/Matrix` and its data as it was (so encrypted data stays valid): it stands
+      upright on its new page.
   - **Resizing:** a selected item shows a handle at each corner. Dragging a handle resizes the item
     about the opposite corner.
     - It keeps its proportions: the appearance is fitted to the box, so a change of aspect would
@@ -217,9 +235,11 @@ paper in both themes (`--color-ink` on `--color-page-paper`, a new contrast pair
     - Fields are filled in the panel, not on the page itself.
     - Form creation, import/export (FDF/XFDF), and flattening are P1.
   - **Fill & Sign:**
-    - An item moves only on its own page; dragging it onto another page stops at the edge.
+    - Moving to another page keeps the item's displayed size; on a smaller page it is kept inside
+      the page's edges, not shrunk.
     - Handles resize in proportion only; text cannot be reflowed into a different shape.
-    - Fill text and marks are black, at 11 pt and 14 pt.
+    - Fill text and marks are placed at 11 pt and 14 pt (then resized as above).
+    - The panel shows the colour chosen for new items, not the selected item's own colour.
   - **Signatures and the shell:**
     - Typed-signature previews use the webview's fonts (Amiri where the system has it). The PDF is
       set in the bundled Amiri.

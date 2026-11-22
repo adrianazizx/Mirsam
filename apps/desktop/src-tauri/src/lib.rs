@@ -55,6 +55,8 @@ macro_rules! product_commands {
             forms::add_fill_mark,
             forms::place_signature,
             forms::set_annotation_rect,
+            forms::set_annotation_color,
+            forms::move_annotation_to_page,
             forms::signatures,
             forms::save_drawn_signature,
             forms::save_typed_signature,

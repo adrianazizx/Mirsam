@@ -215,7 +215,10 @@
       "moveLeftMore": "Move left 10 points",
       "moveRightMore": "Move right 10 points",
       "moveUpMore": "Move up 10 points",
-      "moveDownMore": "Move down 10 points"
+      "moveDownMore": "Move down 10 points",
+      "color": "Set the colour of Fill & Sign text and marks",
+      "toPreviousPage": "Move to the previous page",
+      "toNextPage": "Move to the next page"
     },
     "signatures": {
       "load": "Load signatures"
@@ -664,7 +667,7 @@
     "fillHeading": "Fill",
     "tools": "What a click on the page places",
     "hint": {
-      "select": "Click an item you placed to select it. Drag it, or use the arrow keys, to move it.",
+      "select": "Click an item you placed to select it. Drag it, even onto another page, or use the arrow keys, to move it.",
       "text": "Click on the page where the text goes.",
       "date": "Click on the page where today's date goes.",
       "check": "Click each box to tick.",
@@ -685,7 +688,9 @@
       "image": "signature image"
     },
     "keptLocally": "Signatures are kept on this device only.",
-    "notPermitted": "This file's permissions do not allow adding to its pages. Its owner password lifts that."
+    "notPermitted": "This file's permissions do not allow adding to its pages. Its owner password lifts that.",
+    "color": "Colour",
+    "colorHint": "New text, dates and marks take this colour. Choosing one also recolours the selected text or mark."
   },
   "signature": {
     "title": "New signature",

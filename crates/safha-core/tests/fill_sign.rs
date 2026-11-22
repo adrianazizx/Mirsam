@@ -323,3 +323,145 @@ fn signatures_in_encrypted_files() {
     assert!(read.contains("خالد بن سعد العتيبي") && read.contains("Khalid"), "{read}");
     assert_eq!(signed.page_annotations(0).expect("listed").0.len(), 2);
 }
+
+/// Pixels inside a displayed rectangle that are clearly red (dark ink of
+/// another colour, or paper, is not).
+fn red_inside(bitmap: &Bitmap, area: ViewRect) -> usize {
+    let mut red = 0;
+    for y in (area.y * SCALE) as u32..((area.y + area.height) * SCALE) as u32 {
+        for x in (area.x * SCALE) as u32..((area.x + area.width) * SCALE) as u32 {
+            if let Some([r, g, b, _]) = bitmap.pixel(x, y)
+                && r > 140
+                && g < 100
+                && b < 100
+            {
+                red += 1;
+            }
+        }
+    }
+    red
+}
+
+#[test]
+fn text_and_marks_change_colour_in_place_and_keep_it() {
+    const RED: [f32; 3] = [0.72, 0.11, 0.11];
+    for (fixture_name, text) in [("chrome/ar-plain", "موافق عليه"), ("qpdf/encrypted", "Approved — موافق")]
+    {
+        let (bytes, password) = fixture(fixture_name);
+        let mut document = engine().open_bytes(bytes, password.as_deref()).expect("opens");
+        let view = document.view_transform(0).expect("view");
+        let fill = FillText::at(60.0, 600.0, text, 24.0, FillText::DEFAULT_COLOR, &view).expect("fits");
+        document = apply(&document, AnnotationEdit::AddFillText { page: 0, text: fill });
+        let mark = Mark::at(60.0, 660.0, 30.0, MarkKind::Cross, Mark::DEFAULT_COLOR, &view);
+        document = apply(&document, AnnotationEdit::AddMark { page: 0, mark });
+        let (annotations, _) = document.page_annotations(0).expect("listed");
+        let (text_index, mark_index) = (annotations[0].index, annotations[1].index);
+        let boxes: Vec<ViewRect> = annotations.iter().map(|a| view.rect(a.rects[0])).collect();
+        let black = render(&document, 0);
+        assert!(boxes.iter().all(|area| red_inside(&black, *area) == 0), "{fixture_name}: black at first");
+
+        for index in [text_index, mark_index] {
+            document = apply(&document, AnnotationEdit::SetColor { page: 0, index, color: RED });
+        }
+        let red = render(&document, 0);
+        for (area, what) in boxes.iter().zip(["text", "mark"]) {
+            assert!(red_inside(&red, *area) > 40, "{fixture_name}: the {what} is red now");
+        }
+        // The same items, in the same boxes; the text reads as before.
+        let (after, _) = document.page_annotations(0).expect("listed");
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].contents.as_deref(), Some(text));
+        assert_eq!(view.rect(after[0].rects[0]), boxes[0]);
+        // Changed later, the text stays red.
+        document = apply(
+            &document,
+            AnnotationEdit::SetContents { page: 0, index: text_index, contents: format!("{text} ✓") },
+        );
+        let (changed, _) = document.page_annotations(0).expect("listed");
+        assert!(red_inside(&render(&document, 0), view.rect(changed[0].rects[0])) > 40, "{fixture_name}");
+        let flat =
+            flattened(&document, password.as_deref(), &format!("colour-{}", fixture_name.replace('/', "-")));
+        assert!(normalize(&flat.page_text(0).expect("text").text()).contains(text), "{fixture_name}");
+    }
+
+    // Signatures keep their own colours.
+    let (bytes, _) = fixture("chrome/en-paragraphs");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let view = document.view_transform(0).expect("view");
+    let stamp =
+        SignatureStamp::at(60.0, 600.0, 120.0, drawn(), Signature::DEFAULT_COLOR, &view).expect("fits");
+    let signed = apply(&document, AnnotationEdit::AddSignature { page: 0, stamp });
+    let index = signed.page_annotations(0).expect("listed").0[0].index;
+    let refused = signed.with_annotation_edit(&AnnotationEdit::SetColor { page: 0, index, color: RED });
+    assert!(matches!(refused, Err(safha_core::Error::InvalidEdit(_))));
+}
+
+/// The page-space box displayed at `area` on a page.
+fn page_rect(view: &safha_core::view::ViewTransform, area: ViewRect) -> [f32; 4] {
+    let [(x0, y0), (x1, y1)] =
+        [(area.x, area.y), (area.x + area.width, area.y + area.height)].map(|(x, y)| view.page_point(x, y));
+    [x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)]
+}
+
+#[test]
+fn items_move_to_another_page_and_stand_upright_there() {
+    // Pages turned 0, 90, 180 and 270 degrees.
+    let (bytes, _) = fixture("qpdf/rotated");
+    let mut document = engine().open_bytes(bytes, None).expect("opens");
+    let view = document.view_transform(0).expect("view");
+    let text = FillText::at(30.0, 40.0, "منقول — Moved", 14.0, FillText::DEFAULT_COLOR, &view).expect("fits");
+    let before = [render(&document, 0), render(&document, 1), render(&document, 2)];
+    document = apply(&document, AnnotationEdit::AddFillText { page: 0, text });
+    let (index, _, placed) = last_box(&document, 0);
+
+    // To the page turned a quarter, at the same place as displayed.
+    let to = document.view_transform(1).expect("view");
+    let moved = apply(
+        &document,
+        AnnotationEdit::MoveToPage { page: 0, index, to_page: 1, rect: page_rect(&to, placed) },
+    );
+    assert!(moved.page_annotations(0).expect("listed").0.is_empty(), "it left page 1");
+    let (_, kind, shown) = last_box(&moved, 1);
+    assert_eq!(kind, AnnotationKind::FillText);
+    assert!((shown.x - placed.x).abs() < 0.01 && (shown.width - placed.width).abs() < 0.01, "{shown:?}");
+    assert!(shown.width > shown.height, "upright, wider than tall: {shown:?}");
+    // Drawn in its new box only; its old page is as it was.
+    let (inside, outside) = changes(&before[1], &render(&moved, 1), shown);
+    assert!(inside > 50 && outside == 0, "{inside} inside, {outside} outside");
+    let (_, left_behind) = changes(&before[0], &render(&moved, 0), shown);
+    assert_eq!(left_behind, 0, "nothing stays on the first page");
+
+    // Once more, to the upside-down page: still upright, and still readable.
+    let (index, _, _) = last_box(&moved, 1);
+    let to = moved.view_transform(2).expect("view");
+    let again = apply(
+        &moved,
+        AnnotationEdit::MoveToPage { page: 1, index, to_page: 2, rect: page_rect(&to, placed) },
+    );
+    let (_, _, shown) = last_box(&again, 2);
+    let (inside, outside) = changes(&before[2], &render(&again, 2), shown);
+    assert!(inside > 50 && outside == 0, "{inside} inside, {outside} outside");
+    let path = scratch("moved.pdf");
+    save(&again, &path).expect("saves");
+    let reopened = engine().open_file(&path, None).expect("reopens");
+    assert_eq!(reopened.page_annotations(2).expect("listed").0.len(), 1);
+    assert!(reopened.page_annotations(1).expect("listed").0.is_empty());
+
+    // Only Fill & Sign items move between pages.
+    let (bytes, _) = fixture("chrome/en-paragraphs");
+    let plain = engine().open_bytes(bytes, None).expect("opens");
+    let view = plain.view_transform(0).expect("view");
+    let note = safha_core::annotate::Note {
+        rect: safha_core::annotate::Note::rect_at(10.0, 10.0, &view),
+        contents: "x".into(),
+        color: safha_core::annotate::Note::DEFAULT_COLOR,
+    };
+    let noted = apply(&plain, AnnotationEdit::AddNote { page: 0, note });
+    let refused = noted.with_annotation_edit(&AnnotationEdit::MoveToPage {
+        page: 0,
+        index: 0,
+        to_page: 0,
+        rect: [10.0, 10.0, 30.0, 30.0],
+    });
+    assert!(matches!(refused, Err(safha_core::Error::InvalidEdit(_))));
+}

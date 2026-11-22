@@ -191,6 +191,8 @@ interface MockMarkup {
   rects: ViewRect[];
   contents: string | null;
   strokes: [number, number][][];
+  /** A Fill & Sign text's or mark's colour (ADR 0045); black when absent. */
+  color?: [number, number, number];
   /** Its thread (ADR 0041): who and when, replies, and whether it is resolved. */
   author?: string | null;
   modified?: number;
@@ -577,11 +579,13 @@ function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
     mark: "rgb(0 0 0)",
     signature: "rgb(15 33 115)",
   };
-  for (const { kind, rects, strokes, contents } of markup) {
+  const rgb = (color: [number, number, number]) =>
+    `rgb(${color.map((c) => Math.round(c * 255)).join(" ")})`;
+  for (const { kind, rects, strokes, contents, color } of markup) {
     if (kind === "mark" || kind === "signature") {
       // A tick across the box: the mock has no appearance streams to draw.
       ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = colours[kind];
+      ctx.strokeStyle = color ? rgb(color) : colours[kind];
       ctx.lineWidth = kind === "mark" ? 1.6 : 2;
       ctx.lineCap = "round";
       for (const rect of rects) {
@@ -595,7 +599,7 @@ function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
     }
     if (kind === "textBox" || kind === "fillText") {
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = colours[kind];
+      ctx.fillStyle = color ? rgb(color) : colours[kind];
       ctx.font = `400 12px ${FONT}`;
       ctx.direction = /[\u0600-\u06FF]/.test(contents?.[0] ?? "") ? "rtl" : "ltr";
       for (const rect of rects) {
@@ -1028,7 +1032,7 @@ export const mockBackend: Backend = {
     form.set(id, values);
     return pushState(documentId, { ...state, form, change: "annotations" });
   },
-  addFillText: async (documentId, page, x, y, contents, size = 11) => {
+  addFillText: async (documentId, page, x, y, contents, size = 11, color) => {
     if (contents.trim() === "") throw { code: "invalid_edit", detail: "fill text needs some text" };
     const lines = contents.split("\n");
     const width = Math.max(...lines.map((line) => line.length)) * size * 0.55 + 2;
@@ -1037,18 +1041,20 @@ export const mockBackend: Backend = {
       rects: [{ x, y, width, height: lines.length * size * 1.3 + 2 }],
       contents,
       strokes: [],
+      ...(color ? { color } : {}),
     };
     return pushState(
       documentId,
       withMarkup(documentId, page, (list) => [...list, item]),
     );
   },
-  addFillMark: async (documentId, page, x, y, _kind, size = 14) => {
+  addFillMark: async (documentId, page, x, y, _kind, size = 14, color) => {
     const item: MockMarkup = {
       kind: "mark",
       rects: [{ x, y, width: size, height: size }],
       contents: null,
       strokes: [],
+      ...(color ? { color } : {}),
     };
     return pushState(
       documentId,
@@ -1076,6 +1082,34 @@ export const mockBackend: Backend = {
         throw { code: "invalid_edit", detail: "only Fill & Sign items are moved or resized" };
       }
       return list.map((item, i) => (i === index ? { ...item, rects: [rect] } : item));
+    });
+    return pushState(documentId, next);
+  },
+  moveAnnotationToPage: async (documentId, page, index, toPage, rect) => {
+    const state = stateOf(documentId);
+    const [from, to] = [state.pages[page], state.pages[toPage]];
+    if (from === undefined || to === undefined) {
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    }
+    const item = state.markup.get(from)?.[index];
+    if (!item || !["fillText", "mark", "signature"].includes(item.kind)) {
+      throw { code: "invalid_edit", detail: "only Fill & Sign items move to another page" };
+    }
+    const markup = new Map(state.markup);
+    markup.set(
+      from,
+      (markup.get(from) ?? []).filter((_, i) => i !== index),
+    );
+    markup.set(to, [...(markup.get(to) ?? []), { ...item, rects: [rect] }]);
+    return pushState(documentId, { ...state, markup, change: "annotations" });
+  },
+  setAnnotationColor: async (documentId, page, index, color) => {
+    const next = withMarkup(documentId, page, (list) => {
+      const found = list[index];
+      if (found?.kind !== "fillText" && found?.kind !== "mark") {
+        throw { code: "invalid_edit", detail: "only Fill & Sign text and marks change colour" };
+      }
+      return list.map((item, i) => (i === index ? { ...item, color } : item));
     });
     return pushState(documentId, next);
   },
