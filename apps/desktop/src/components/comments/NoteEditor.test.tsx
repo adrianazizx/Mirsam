@@ -39,9 +39,10 @@ describe.each([
     useAppStore.setState({ locale });
     applyLocale(locale);
     const block = await open(rtl);
-    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
-    expect(field.value).toBe(block.text);
+    const field = screen.getByTestId("block-field");
+    expect(field.textContent).toBe(block.text);
     expect(field.getAttribute("dir")).toBe(rtl ? "rtl" : "ltr");
+    expect(screen.getByRole("textbox")).toBe(field);
     // The paragraph's own font, until a family is chosen.
     const note = () => screen.getByTestId("block-font").textContent ?? "";
     expect(note()).toContain(block.font);
@@ -50,7 +51,8 @@ describe.each([
     expect(/substituted|استبدال/i.test(note())).toBe(true);
 
     const edit = vi.spyOn(backend, "editTextBlock");
-    fireEvent.change(field, { target: { value: `نص جديد new text ${locale}` } });
+    field.textContent = `نص جديد new text ${locale}`;
+    fireEvent.input(field);
     fireEvent.keyDown(field, { key: "Enter", metaKey: true });
     await vi.waitFor(() => expect(edit).toHaveBeenCalled());
     expect(edit).toHaveBeenCalledWith(
@@ -58,6 +60,36 @@ describe.each([
       expect.objectContaining({ text: `نص جديد new text ${locale}`, family: "naskh" }),
     );
     expect(selectActiveDocument(useAppStore.getState())?.modified).toBe(true);
+    edit.mockRestore();
+  });
+
+  it("makes the selection bold with the browser's own command, and saves the marks", async () => {
+    useAppStore.setState({ locale });
+    applyLocale(locale);
+    const block = await open(rtl);
+    const field = screen.getByTestId("block-field");
+    // jsdom has no editing commands: the button's command is what is checked here.
+    const exec = vi.fn(() => true);
+    Object.defineProperty(document, "execCommand", { value: exec, configurable: true });
+    fireEvent.click(screen.getByTestId("block-bold"));
+    expect(exec).toHaveBeenCalledWith("bold");
+    fireEvent.click(screen.getByTestId("block-italic"));
+    expect(exec).toHaveBeenCalledWith("italic");
+
+    // What the browser would do: the first word in <b>. Saving sends it as a mark.
+    const [first = "", ...rest] = block.text.split(" ");
+    field.innerHTML = `<b>${first}</b> ${rest.join(" ")}`;
+    fireEvent.input(field);
+    const edit = vi.spyOn(backend, "editTextBlock");
+    fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+    await vi.waitFor(() => expect(edit).toHaveBeenCalled());
+    expect(edit).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        text: block.text,
+        marks: [{ start: 0, end: first.length, bold: true, italic: false }],
+      }),
+    );
     edit.mockRestore();
   });
 

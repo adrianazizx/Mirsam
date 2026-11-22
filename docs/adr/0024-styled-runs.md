@@ -77,8 +77,8 @@ suffix are cut, and past that the middle counts as replaced. Then:
   - a slant stands in for a real italic in bundled faces;
   - underline and strikethrough are drawn as paths, which the analysis does not read;
   - kerning in reused fonts (as before);
-  - the user cannot yet change a run's style while editing: a native field has no bold
-    button. That comes with commands that act on a selection of the field.
+  - the user cannot yet change a run's style while editing (since ADR 0025: bold and italic
+    can be set).
 - **Size:** the app grows by about 650 KB of bundled fonts (Amiri Bold, Plex Sans Arabic
   SemiBold). The variable fonts' bold instances share their data.
 

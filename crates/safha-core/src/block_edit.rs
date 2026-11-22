@@ -154,6 +154,107 @@ pub struct BlockEdit {
     pub text: String,
     /// The bundled family for the substitute; `None` chooses from the block's font.
     pub family: Option<FontFamily>,
+    /// Bold and italic as the editor set them on the new text (ADR 0025).
+    /// `None` keeps each character's own: its font's.
+    pub marks: Option<Vec<Mark>>,
+}
+
+/// Bold and italic set on a stretch of the new text in the editor: UTF-16
+/// offsets into it. Characters no mark covers are neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mark {
+    pub start: usize,
+    pub end: usize,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+/// How a run of the new text is to look: its style on the page (font, size,
+/// colour), and the bold and italic it is to have.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Look {
+    style: RunStyle,
+    bold: bool,
+    italic: bool,
+}
+
+/// `runs` of `text` with their bold and italic: from `marks` when the editor
+/// set them, else from each run's font. Split wherever either changes.
+fn looks(
+    text: &str,
+    runs: &[(Range<usize>, RunStyle)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+    marks: Option<&[Mark]>,
+) -> Vec<(Range<usize>, Look)> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    let mut out: Vec<(Range<usize>, Look)> = Vec::new();
+    let mut run = 0;
+    let mut unit = 0; // UTF-16 offset of the character
+    for (at, c) in text.char_indices() {
+        while run + 1 < runs.len() && runs[run].0.end <= at {
+            run += 1;
+        }
+        let Some(&(_, style)) = runs.get(run) else { break };
+        let (bold, italic) = match marks {
+            Some(marks) => marks
+                .iter()
+                .find(|m| m.start <= unit && unit < m.end)
+                .map_or((false, false), |m| (m.bold, m.italic)),
+            None => info(style.font).map_or((false, false), |f| (f.bold, f.italic)),
+        };
+        let look = Look { style, bold, italic };
+        let end = at + c.len_utf8();
+        match out.last_mut() {
+            Some((range, last)) if *last == look && range.end == at => range.end = end,
+            _ => out.push((at..end, look)),
+        }
+        unit += c.len_utf16();
+    }
+    out
+}
+
+/// A font's family, for finding its bold or italic among a page's fonts:
+/// the name before its style ("Helvetica-BoldOblique", "Arial,Bold"), without
+/// the "MT" and "PS" of some vendors' names.
+fn family_key(name: &str) -> String {
+    let base = name.split(['-', ',']).next().unwrap_or(name).to_ascii_lowercase();
+    for suffix in ["psmt", "mt", "ps"] {
+        if let Some(stripped) = base.strip_suffix(suffix)
+            && !stripped.is_empty()
+        {
+            return stripped.to_string();
+        }
+    }
+    base
+}
+
+/// Each run in a font the page already has, if every one can be: its own
+/// font when that has the bold and italic it is to have, else one of the
+/// page's fonts of the same family that has them (Helvetica-Bold for a
+/// Helvetica word made bold). Each must have codes for its run's text.
+fn own_fonts(
+    text: &str,
+    looks: &[(Range<usize>, Look)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+) -> Option<Vec<(Range<usize>, RunStyle)>> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    looks
+        .iter()
+        .map(|(range, look)| {
+            let run_text = &text[range.clone()];
+            let own = info(look.style.font)?;
+            let fits =
+                |f: &FontInfo| f.bold == look.bold && f.italic == look.italic && reusable_for(f, run_text);
+            let key = if fits(own) {
+                look.style.font
+            } else {
+                let family = family_key(&own.name);
+                (0..fonts.len())
+                    .find(|&k| info(k).is_some_and(|f| family_key(&f.name) == family && fits(f)))?
+            };
+            Some((range.clone(), RunStyle { font: key, ..look.style }))
+        })
+        .collect()
 }
 
 /// What an edit did.
@@ -571,6 +672,7 @@ pub fn edit_block_update(
     let text = edit.text.replace("\r\n", "\n").replace('\r', "\n");
     // The new text in the old one's styles (ADR 0024).
     let runs = style_runs(&restyle(&styled_chars(block), &text));
+    let looks = looks(&text, &runs, &read.fonts, edit.marks.as_deref());
 
     // ---- Removing: the block's operators.
     let removed: std::collections::HashSet<usize> = block.shown.iter().copied().collect();
@@ -678,19 +780,13 @@ pub fn edit_block_update(
 
     if !text.trim().is_empty() {
         // Each run in its own font, when every one can set its text.
-        let reuse = edit.family.is_none()
-            && runs.iter().all(|(range, style)| {
-                read.fonts
-                    .get(style.font)
-                    .and_then(|(_, f)| f.as_deref())
-                    .is_some_and(|f| reusable_for(f, &text[range.clone()]))
-            });
-        let (local, matrix_top, lines) = if reuse {
+        let reuse = if edit.family.is_none() { own_fonts(&text, &looks, &read.fonts) } else { None };
+        let (local, matrix_top, lines) = if let Some(runs) = reuse {
             let pitch = block.pitch.unwrap_or(block.size * 1.2);
             let (content, lines) = reuse_content(&text, &runs, &read.fonts, width, pitch, align);
             (content, first_baseline, lines)
         } else {
-            let set_in = substitutes(&text, &runs, &read.fonts, block.font, edit.family)?;
+            let set_in = substitutes(&text, &looks, &read.fonts, block.font, edit.family)?;
             let faces: Vec<FontFace> = set_in.fonts.iter().map(|f| f.face.clone()).collect();
             let style = ParagraphStyle {
                 direction: if block.rtl { BaseDirection::Rtl } else { BaseDirection::Ltr },
@@ -1064,7 +1160,7 @@ struct Substitute {
 
 fn substitutes(
     text: &str,
-    runs: &[(Range<usize>, RunStyle)],
+    runs: &[(Range<usize>, Look)],
     fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
     dominant: usize,
     family: Option<FontFamily>,
@@ -1072,13 +1168,13 @@ fn substitutes(
     let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
     // Each original font's faces, once.
     let mut chains: HashMap<usize, (Vec<NamedFont>, FontFamily)> = HashMap::new();
-    for (_, style) in runs {
+    for (_, Look { style, .. }) in runs {
         if chains.contains_key(&style.font) {
             continue;
         }
         let its_text: String = runs
             .iter()
-            .filter(|(_, s)| s.font == style.font)
+            .filter(|(_, look)| look.style.font == style.font)
             .map(|(range, _)| &text[range.clone()])
             .collect();
         let chain = match family {
@@ -1099,10 +1195,9 @@ fn substitutes(
     };
     let mut spans = Vec::with_capacity(runs.len());
     let mut paints = Vec::with_capacity(runs.len());
-    for (range, style) in runs {
+    for (range, look) in runs {
+        let Look { style, bold, italic } = *look;
         let (chain, _) = &chains[&style.font];
-        let bold = info(style.font).is_some_and(|f| f.bold);
-        let italic = info(style.font).is_some_and(|f| f.italic);
         let mut indices = Vec::with_capacity(chain.len());
         for font in chain {
             let font = if bold { bold_of(font)? } else { font.clone() };
@@ -1111,15 +1206,11 @@ fn substitutes(
         let mut span = Span::new(range.clone(), indices[0], style.size);
         span.fallbacks = indices[1..].to_vec();
         spans.push(span);
-        paints.push(Paint {
-            range: range.clone(),
-            color: style.color,
-            slant: info(style.font).is_some_and(|f| f.italic),
-        });
+        paints.push(Paint { range: range.clone(), color: style.color, slant: italic });
     }
     let (chain, family) = chains
         .get(&dominant)
-        .or_else(|| runs.first().and_then(|(_, s)| chains.get(&s.font)))
+        .or_else(|| runs.first().and_then(|(_, s)| chains.get(&s.style.font)))
         .cloned()
         .ok_or(Error::InvalidEdit("an empty paragraph"))?;
     Ok(Substitute {
@@ -1224,6 +1315,32 @@ mod tests {
             pattern(&restyle(&arabic, "يدفع الإيجار كاملا شهريا")),
             format!("{}{}{}", dots(5), bold(7), dots(12))
         );
+    }
+
+    #[test]
+    fn a_fonts_family_is_its_name_before_its_style() {
+        for (a, b) in [
+            ("Helvetica", "Helvetica-BoldOblique"),
+            ("Arial", "Arial,Bold"),
+            ("ArialMT", "Arial-BoldMT"),
+            ("TimesNewRomanPSMT", "TimesNewRomanPS-BoldItalicMT"),
+            ("IBMPlexSans", "IBMPlexSans-Bold"),
+        ] {
+            assert_eq!(family_key(a), family_key(b), "{a} / {b}");
+        }
+        assert_ne!(family_key("Helvetica"), family_key("Times-Roman"));
+    }
+
+    #[test]
+    fn marks_set_bold_and_italic_by_utf16_offsets_and_split_runs() {
+        let style = RunStyle { font: 0, size: 12.0, color: [0.0; 3] };
+        // "𝐀" is two UTF-16 units: the mark after it starts at 3, not 5 (bytes).
+        let text = "𝐀 bold rest";
+        let runs = vec![(0..text.len(), style)];
+        let marks = [Mark { start: 3, end: 7, bold: true, italic: false }];
+        let looks = looks(text, &runs, &[], Some(&marks));
+        let parts: Vec<(&str, bool)> = looks.iter().map(|(r, l)| (&text[r.clone()], l.bold)).collect();
+        assert_eq!(parts, vec![("𝐀 ", false), ("bold", true), (" rest", false)]);
     }
 
     #[test]

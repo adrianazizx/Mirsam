@@ -188,6 +188,19 @@ pub struct BlockEditArg {
     text: String,
     /// A bundled family for the substitute; absent keeps the paragraph's own font if it can.
     family: Option<safha_core::fonts::FontFamily>,
+    /// Bold and italic as the editor set them (ADR 0025); absent keeps each character's own.
+    #[serde(default)]
+    marks: Option<Vec<MarkArg>>,
+}
+
+/// Bold and italic on a stretch of the new text: UTF-16 offsets into it.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkArg {
+    start: usize,
+    end: usize,
+    bold: bool,
+    italic: bool,
 }
 
 /// The document after a paragraph was edited in place, and what became of its font.
@@ -216,6 +229,17 @@ pub async fn edit_text_block(
         fingerprint: edit.fingerprint,
         text: edit.text,
         family: edit.family,
+        marks: edit.marks.map(|marks| {
+            marks
+                .into_iter()
+                .map(|m| safha_core::block_edit::Mark {
+                    start: m.start,
+                    end: m.end,
+                    bold: m.bold,
+                    italic: m.italic,
+                })
+                .collect()
+        }),
     };
     let (revision, update, done) = document.with_block_edit(&edit)?;
     history.push_content(update);

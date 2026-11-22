@@ -114,7 +114,9 @@
       "place": "Place a text box"
     },
     "text": {
-      "editBlock": "Edit a paragraph of page text"
+      "editBlock": "Edit a paragraph of page text",
+      "bold": "Bold",
+      "italic": "Italic"
     },
     "ink": {
       "add": "Add ink",
@@ -507,6 +509,7 @@
     "ownFont": "Set in the paragraph's own font ({{font}}) where it has the letters.",
     "substituted": "Font substituted: the paragraph is set in a bundled font instead of {{font}}.",
     "styled": "Its bold, italic, sizes and colours are kept; text you type takes the style of the text before it.",
-    "familyAuto": "Automatic"
+    "familyAuto": "Automatic",
+    "formatting": "Formatting"
   }
 }

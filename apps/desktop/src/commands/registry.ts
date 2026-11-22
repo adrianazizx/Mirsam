@@ -1,4 +1,5 @@
 import {
+  type BlockMark,
   backend,
   type EditOutcome,
   isBackendError,
@@ -15,6 +16,7 @@ import {
   type TextStyle,
   type ViewRect,
 } from "../backend";
+import { marksOfRuns, sameMarks } from "../components/comments/richText";
 import {
   type AppState,
   type CommentTool,
@@ -131,6 +133,8 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /** `note.save` of a paragraph: bold and italic as its field set them (ADR 0025). */
+  blockMarks?: BlockMark[];
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -238,6 +242,8 @@ export type CommandId =
   | "comments.setAuthor"
   | "text.place"
   | "text.editBlock"
+  | "text.bold"
+  | "text.italic"
   | "text.setStyle"
   | "view.readingNormal"
   | "view.readingSepia"
@@ -264,6 +270,22 @@ const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.l
 const hasAnnotationSelected = (state: AppState) =>
   Boolean(selectActiveDocument(state)?.selectedAnnotation);
 /** A note is being written: a new one, or the selected one. */
+/** A paragraph of page text is open in the editor (ADR 0023). */
+const isEditingBlock = (state: AppState) =>
+  state.pendingNote?.kind === "block" && state.pendingNote.documentId === state.activeDocumentId;
+
+/**
+ * Bold or italic on the paragraph field's selection, by the browser's own
+ * editing command, so the field's undo covers it (ADR 0025). The field keeps
+ * focus: the editor's buttons do not take it.
+ */
+function formatBlock(kind: "bold" | "italic") {
+  const field = document.querySelector<HTMLElement>('[data-testid="block-field"]');
+  if (!field) return;
+  if (!field.contains(document.activeElement)) field.focus();
+  document.execCommand(kind);
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
 const isWritingNote = (state: AppState) =>
   (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
   ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
@@ -1401,6 +1423,22 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "text.bold",
+    isEnabled: isEditingBlock,
+    shortcut: { key: "b", mod: true },
+    run() {
+      formatBlock("bold");
+    },
+  },
+  {
+    id: "text.italic",
+    isEnabled: isEditingBlock,
+    shortcut: { key: "i", mod: true },
+    run() {
+      formatBlock("italic");
+    },
+  },
+  {
     id: "text.setStyle",
     paletteHidden: true,
     run(arg) {
@@ -1419,15 +1457,18 @@ const COMMANDS: Command[] = [
       if (pending && pending.documentId === active.id) {
         store().setPendingNote(null);
         if (pending.kind === "block" && pending.block) {
-          // Unchanged text is no edit; emptied text removes the paragraph (undoable).
+          // Unchanged text and looks are no edit; emptied text removes the paragraph (undoable).
           const { block } = pending;
-          if (text === block.text) return;
+          const marks = arg?.blockMarks;
+          const restyled = marks !== undefined && !sameMarks(text, marks, marksOfRuns(block.runs));
+          if (text === block.text && !restyled && !arg?.blockFamily) return;
           const done = await backend.editTextBlock(active.id, {
             page: pending.page,
             index: block.index,
             fingerprint: block.fingerprint,
             text,
             ...(arg?.blockFamily ? { family: arg.blockFamily } : {}),
+            ...(marks ? { marks } : {}),
           });
           store().applyEdit(active.id, done);
           if (done.substituted) {

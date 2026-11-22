@@ -117,6 +117,9 @@ if (nav) {
     // In-place editing (ADR 0023): the paragraph is found, edited, and read back.
     check(added.blockFound, "the added paragraph was not found as one right-to-left block in logical order");
     check(added.blockEdited && added.blockReadBack, "the edited paragraph did not read back as page text");
+    // Bold from the editor (ADR 0025): the browser's own command, saved, read back.
+    check(added.boldApplied, "the editor's bold command did not make the selected word bold in the field");
+    check(added.boldReadBack, "the word made bold in the editor did not read back as a bold run");
   }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
@@ -177,7 +180,7 @@ if (nav) {
     const a = nav.addedText;
     console.log(
       `  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}; ` +
-        `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}`,
+        `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}; bold in the field ${a.boldApplied}, read back ${a.boldReadBack}`,
     );
   }
   if (nav.editing) {

@@ -189,9 +189,25 @@ describe("command registry", () => {
         height: 36,
       });
 
-      // Unchanged text is no edit.
+      // Unchanged text is no edit, nor are unchanged looks.
       await runCommand("note.save", { text: block.text });
       expect(edit).not.toHaveBeenCalled();
+      await runCommand("text.editBlock", { page: 0, block });
+      await runCommand("note.save", { text: block.text, blockMarks: [] });
+      expect(edit).not.toHaveBeenCalled();
+
+      // Bold set on unchanged text is an edit (ADR 0025), and the bold
+      // command only runs while a paragraph is open.
+      expect(isCommandEnabled("text.bold")).toBe(false);
+      await runCommand("text.editBlock", { page: 0, block });
+      expect(isCommandEnabled("text.bold") && isCommandEnabled("text.italic")).toBe(true);
+      const bold = [{ start: 0, end: 3, bold: true, italic: false }];
+      await runCommand("note.save", { text: block.text, blockMarks: bold });
+      expect(edit).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ text: block.text, marks: bold }),
+      );
+      edit.mockClear();
 
       await runCommand("text.editBlock", { page: 0, block });
       await runCommand("note.save", { text: block.text.replace("one", "a single") });

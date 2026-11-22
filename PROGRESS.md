@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 12, with session M5-a and the M4 runtime side track merged from `main`).
+Last updated: 2026-11-22 (session 13, with session M5-a and the M4 runtime side track merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -424,8 +424,14 @@ Plan, in order:
         - Typed text takes the style before it; typing over a word keeps its style.
         - Each run is written in its own font when it can be, else in a bundled face at its
           weight (bold faces added), slanted for italic.
-        - Still to do: changing a run's style while editing (the native field has no bold
-          button), and weights other than regular and bold.
+        - Still to do: weights other than regular and bold.
+      - Session 13 (ADR 0025): **bold and italic while editing.**
+        - The paragraph field is the browser's own rich-text editing, held to bold and italic.
+        - `text.bold` and `text.italic` (Cmd/Ctrl+B and I, and B and I buttons) run its own
+          commands, so its undo covers them.
+        - The edit carries marks, served by the page's own bold and italic fonts of the same
+          family, or by bundled faces.
+        - Not yet settable from the editor: underline, size, colour.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -510,6 +516,30 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 13 — 2026-11-22 (Milestone 3: bold and italic commands in the paragraph editor, ADR 0025)
+
+- **The field:**
+  - The paragraph editor's field is a `contenteditable` held to text, line breaks, bold and
+    italic.
+  - Enter is a line break, pasted text is plain, and drops are refused.
+  - `richText` fills it from runs and reads it back (inline styles and WebKit's un-bold
+    included).
+- **Commands:**
+  - `text.bold` and `text.italic` (Cmd/Ctrl+B, Cmd/Ctrl+I) run the browser's own `bold` and
+    `italic`, so undo covers them.
+  - B and I toggle buttons keep the field's focus and show the selection's state.
+- **Engine:**
+  - `BlockEdit::marks` sets each character's bold and italic.
+  - A run that needs another style takes the page's font of the same family that has it
+    (Helvetica-Bold), else the paragraph is set in bundled faces.
+  - A style-only change is an edit.
+- **Tests:**
+  - Rust: own-font marks, bundled bold-italic, family key, UTF-16 marks.
+  - UI: rich text, the editor's buttons and marks in English and Arabic, registry gating and
+    style-only saves.
+  - Real-app self-test: an Arabic word made bold in the field with WebKit's command and read
+    back as a bold run (English light; Arabic dark on two fixtures).
 
 ### Session 12 — 2026-11-22 (Milestone 3: styled runs in edited paragraphs, ADR 0024)
 

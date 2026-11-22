@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use common::manifest;
-use safha_core::block_edit::{BlockEdit, EditedBlock, Refusal, TextBlock};
+use safha_core::block_edit::{BlockEdit, EditedBlock, Mark, Refusal, TextBlock};
 use safha_core::fonts::FontFamily;
 use safha_core::save::save;
 use safha_core::text_edit::NewText;
@@ -116,6 +116,7 @@ fn edit_to(
         fingerprint: block.fingerprint,
         text: text.into(),
         family: None,
+        marks: None,
     };
     let (edited, update, outcome) = document.with_block_edit(&edit).unwrap_or_else(|e| panic!("{e}"));
     (edited, outcome, update)
@@ -548,6 +549,7 @@ fn a_substituted_paragraph_keeps_bold_italic_size_and_colour_and_keeps_them_on_t
         fingerprint: block.fingerprint,
         text: new.clone(),
         family: Some(FontFamily::Sans),
+        marks: None,
     };
     let (edited, _, outcome) = document.with_block_edit(&edit).expect("edits");
     assert_eq!(outcome.substituted.as_ref().map(|s| s.font.as_str()), Some("IBMPlexSans"));
@@ -586,6 +588,92 @@ fn arabic_typed_over_a_bold_word_is_set_in_a_bold_arabic_face() {
     assert!(run_with(&after, "first").3, "still red");
 }
 
+/// The editor's marks for a paragraph as it reads: its runs' bold and italic.
+fn marks_of(block: &TextBlock) -> Vec<Mark> {
+    block.runs.iter().map(|r| Mark { start: r.start, end: r.end, bold: r.bold, italic: r.italic }).collect()
+}
+
+/// `marks` with `needle` (in `text`) set to `bold` and `italic`, as the editor's buttons would.
+fn styled_as(mut marks: Vec<Mark>, text: &str, needle: &str, bold: bool, italic: bool) -> Vec<Mark> {
+    let at = text.find(needle).expect("needle");
+    let start = text[..at].encode_utf16().count();
+    let end = start + needle.encode_utf16().count();
+    let mut out = Vec::new();
+    for m in marks.drain(..) {
+        if m.end <= start || m.start >= end {
+            out.push(m);
+            continue;
+        }
+        if m.start < start {
+            out.push(Mark { end: start, ..m });
+        }
+        if m.end > end {
+            out.push(Mark { start: end, ..m });
+        }
+    }
+    out.push(Mark { start, end, bold, italic });
+    out
+}
+
+fn edit_marked(
+    document: &Document,
+    block: &TextBlock,
+    text: &str,
+    marks: Vec<Mark>,
+) -> (Document, EditedBlock) {
+    let edit = BlockEdit {
+        page: 0,
+        index: block.index,
+        fingerprint: block.fingerprint,
+        text: text.into(),
+        family: None,
+        marks: Some(marks),
+    };
+    let (edited, _, outcome) = document.with_block_edit(&edit).unwrap_or_else(|e| panic!("{e}"));
+    (edited, outcome)
+}
+
+#[test]
+fn bold_and_italic_set_in_the_editor_use_the_pages_own_bold_and_italic() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let text = block.text.clone();
+    // "first" made bold (and stays red), "due" no longer bold, "rent" italic.
+    let marks = styled_as(marks_of(&block), &text, "first", true, false);
+    let marks = styled_as(marks, &text, "due", false, false);
+    let marks = styled_as(marks, &text, "rent", false, true);
+    let (edited, outcome) = edit_marked(&document, &block, &text, marks);
+    assert_eq!(outcome.substituted, None, "the page has Helvetica's bold and oblique");
+    let after = block_with(&edited, 0, "The rent is due");
+    assert_eq!(normalize(&after.text), normalize(&text));
+    assert_eq!(run_with(&after, "first"), ("Helvetica-Bold".into(), true, false, true));
+    assert_eq!(run_with(&after, "due"), ("Helvetica".into(), false, false, false));
+    assert_eq!(run_with(&after, "rent"), ("Helvetica-Oblique".into(), false, true, false));
+    assert_eq!(run_with(&after, "without delay"), ("Helvetica-Oblique".into(), false, true, false));
+    qpdf_check(&edited.bytes(), "marked-own.pdf");
+}
+
+#[test]
+fn bold_italic_the_page_lacks_sets_the_paragraph_in_bundled_faces() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let text = block.text.clone();
+    // No Helvetica-BoldOblique on the page.
+    let marks = styled_as(marks_of(&block), &text, "month", true, true);
+    let (edited, outcome) = edit_marked(&document, &block, &text, marks);
+    assert!(outcome.substituted.is_some());
+    let after = block_with(&edited, 0, "The rent is due");
+    assert_eq!(normalize(&after.text), normalize(&text));
+    let (font, bold, italic, _) = run_with(&after, "month");
+    assert!(bold && italic && font.ends_with("BoldOblique"), "{font}");
+    // The rest keeps its own look in the bundled faces.
+    let (_, bold, italic, red) = run_with(&after, "due");
+    assert!(bold && !italic && !red);
+    let (_, bold, italic, red) = run_with(&after, "first");
+    assert!(!bold && !italic && red);
+    assert!(run_with(&after, "without delay").2, "still italic");
+}
+
 // ------------------------------------------------------------------ refusals
 
 #[test]
@@ -600,6 +688,7 @@ fn an_edit_of_text_that_changed_is_refused() {
         fingerprint: block.fingerprint ^ 1,
         text: "x".into(),
         family: None,
+        marks: None,
     };
     assert!(matches!(document.with_block_edit(&stale), Err(Error::InvalidEdit(_))));
     let missing = BlockEdit { index: 99, ..stale };
@@ -614,7 +703,7 @@ fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
     let blocks = document.text_blocks(0).expect("blocks");
     assert!(!blocks.is_empty(), "the page's text is listed");
     assert!(blocks.iter().all(|b| !b.editable && b.reason == Some(Refusal::Encrypted)));
-    let edit = BlockEdit { page: 0, index: 0, fingerprint: 0, text: "x".into(), family: None };
+    let edit = BlockEdit { page: 0, index: 0, fingerprint: 0, text: "x".into(), family: None, marks: None };
     assert!(document.with_block_edit(&edit).is_err());
 
     // Chrome draws these fixtures' variable fonts as Type 3, which is not

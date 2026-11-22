@@ -97,6 +97,14 @@ export type BlockRefusal =
   | "encrypted"
   | "unsupported";
 
+/** Bold and italic set on a stretch of a paragraph's new text: UTF-16 offsets. */
+export interface BlockMark {
+  start: number;
+  end: number;
+  bold: boolean;
+  italic: boolean;
+}
+
 /** A stretch of a paragraph's text in one style. */
 export interface StyledRun {
   /** UTF-16 offsets into the paragraph's text. */
@@ -690,6 +698,8 @@ export interface Backend {
       fingerprint: number;
       text: string;
       family?: "sans" | "naskh";
+      /** Bold and italic as the editor set them (ADR 0025); absent keeps each character's own. */
+      marks?: BlockMark[];
     },
   ): Promise<BlockEditOutcome>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
