@@ -20,6 +20,7 @@ pub mod render;
 pub mod search;
 pub mod store;
 pub mod text;
+pub mod typeset;
 pub mod view;
 
 pub use bitmap::{BMP_HEADER_LEN, Bitmap};
