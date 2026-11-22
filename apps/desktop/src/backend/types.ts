@@ -71,8 +71,13 @@ export interface ParagraphBlock {
   font: string;
   /** The paragraph's own font can set new Latin text. */
   fontReusable: boolean;
-  /** More than one font, size or colour was found; editing sets it in one. */
-  flattened: boolean;
+  /**
+   * It holds more than one style (font, size, colour): editing keeps them,
+   * and typed text takes the style of the text before it (ADR 0024).
+   */
+  styled: boolean;
+  /** Its styled runs, covering `text` in logical order. */
+  runs: StyledRun[];
   editable: boolean;
   /** Why it is not editable: what a press on it says. */
   reason: BlockRefusal | null;
@@ -91,6 +96,19 @@ export type BlockRefusal =
   | "rotated"
   | "encrypted"
   | "unsupported";
+
+/** A stretch of a paragraph's text in one style. */
+export interface StyledRun {
+  /** UTF-16 offsets into the paragraph's text. */
+  start: number;
+  end: number;
+  /** The PDF's font name. */
+  font: string;
+  bold: boolean;
+  italic: boolean;
+  size: number;
+  color: [number, number, number];
+}
 
 /** A paragraph edited in place: the usual outcome, and what became of its font. */
 export interface BlockEditOutcome extends EditOutcome {

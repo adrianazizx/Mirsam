@@ -99,7 +99,7 @@ export function NoteEditor({ documentId }: { documentId: number }) {
                 ? t("block.substituted", { font: block.font })
                 : t("block.ownFont", { font: block.font })}
             </p>
-            {block.flattened ? <p className={styles.fontNote}>{t("block.flattened")}</p> : null}
+            {block.styled ? <p className={styles.fontNote}>{t("block.styled")}</p> : null}
             <label className={styles.family}>
               {t("textStyle.family")}
               <select

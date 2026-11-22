@@ -506,7 +506,7 @@
     "placeholder": "Type the text…",
     "ownFont": "Set in the paragraph's own font ({{font}}) where it has the letters.",
     "substituted": "Font substituted: the paragraph is set in a bundled font instead of {{font}}.",
-    "flattened": "This paragraph mixes fonts, sizes or colours; editing sets it in one.",
+    "styled": "Its bold, italic, sizes and colours are kept; text you type takes the style of the text before it.",
     "familyAuto": "Automatic"
   }
 }

@@ -19,10 +19,10 @@ beforeEach(async () => {
 });
 
 /** The editor for the mock page's paragraph, opened as the Edit tool opens it. */
-async function open(rtl: boolean) {
+async function open(rtl: boolean, styled = false) {
   const [block] = await backend.pageTextBlocks(1, 0);
   if (!block) throw new Error("the mock has a paragraph");
-  await act(() => runCommand("text.editBlock", { page: 0, block: { ...block, rtl } }));
+  await act(() => runCommand("text.editBlock", { page: 0, block: { ...block, rtl, styled } }));
   render(
     <I18nextProvider i18n={i18n}>
       <NoteEditor documentId={1} />
@@ -59,5 +59,14 @@ describe.each([
     );
     expect(selectActiveDocument(useAppStore.getState())?.modified).toBe(true);
     edit.mockRestore();
+  });
+
+  it("says a styled paragraph keeps its styles, and only then", async () => {
+    useAppStore.setState({ locale });
+    applyLocale(locale);
+    await open(rtl, true);
+    const note = () => screen.getByTestId("block-font").textContent ?? "";
+    expect(note()).toContain(i18n.t("block.styled"));
+    expect(/italic|المائلة/.test(note())).toBe(true);
   });
 });

@@ -426,6 +426,166 @@ fn text_drawn_with_kerning_and_line_operators_is_read_and_replaced_cleanly() {
     assert!(page_text(&edited, 0).contains("Goodbye") && !page_text(&edited, 0).contains("Hello"));
 }
 
+// ------------------------------------------------------------- styled runs
+
+/// A one-page file with Helvetica (F1), Helvetica-Bold (F2) and
+/// Helvetica-Oblique (F3), each with metrics.
+fn styled_pdf(content: &str) -> Vec<u8> {
+    let widths = |w: &str| vec![w; 95].join(" ");
+    let font = |name: &str, w: &str| {
+        format!(
+            "<< /Type /Font /Subtype /Type1 /BaseFont /{name} /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths [{}] >>",
+            widths(w)
+        )
+    };
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 400] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R /F3 7 0 R >> >> >>".into(),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        font("Helvetica", "556"),
+        font("Helvetica-Bold", "611"),
+        font("Helvetica-Oblique", "556"),
+    ];
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1)
+            .as_bytes(),
+    );
+    pdf
+}
+
+/// Two lines: "due" bold, "first" red, "without delay" italic.
+const STYLED: &str = "BT /F1 12 Tf 14 TL 50 300 Td (The rent is ) Tj /F2 12 Tf (due) Tj /F1 12 Tf ( on the ) Tj 1 0 0 rg (first) Tj 0 0 0 rg ( day of each) Tj T* (month, ) Tj /F3 12 Tf (without delay) Tj /F1 12 Tf (, by transfer.) Tj ET\n";
+
+/// A block's runs: (text, font, bold, italic, red).
+fn runs_of(block: &TextBlock) -> Vec<(String, String, bool, bool, bool)> {
+    let units: Vec<u16> = block.text.encode_utf16().collect();
+    block
+        .runs
+        .iter()
+        .map(|r| {
+            (
+                String::from_utf16_lossy(&units[r.start..r.end]),
+                r.font.clone(),
+                r.bold,
+                r.italic,
+                r.color[0] > 0.5,
+            )
+        })
+        .collect()
+}
+
+/// The run holding `needle`, as (font, bold, italic, red).
+fn run_with(block: &TextBlock, needle: &str) -> (String, bool, bool, bool) {
+    let runs = runs_of(block);
+    runs.iter()
+        .find(|(text, ..)| text.contains(needle))
+        .map(|(_, font, bold, italic, red)| (font.clone(), *bold, *italic, *red))
+        .unwrap_or_else(|| panic!("no run holds {needle:?}: {runs:#?}"))
+}
+
+#[test]
+fn a_paragraphs_bold_italic_and_coloured_words_are_read_as_runs() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    assert_eq!(block.text, "The rent is due on the first day of each month, without delay, by transfer.");
+    assert!(block.styled && block.lines == 2, "{block:?}");
+    let plain = |text: &str| (text.to_string(), "Helvetica".to_string(), false, false, false);
+    assert_eq!(
+        runs_of(&block),
+        vec![
+            plain("The rent is "),
+            ("due ".into(), "Helvetica-Bold".into(), true, false, false),
+            plain("on the "),
+            ("first ".into(), "Helvetica".into(), false, false, true),
+            plain("day of each month, "),
+            ("without delay".into(), "Helvetica-Oblique".into(), false, true, false),
+            plain(", by transfer."),
+        ]
+    );
+}
+
+#[test]
+fn editing_a_styled_paragraph_in_its_own_fonts_keeps_every_run() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    // Typed over the bold word, and after the italic one.
+    let new = block.text.replace("due", "payable").replace("delay", "delay or excuse");
+    let (edited, outcome, update) = edit_to(&document, &block, 0, &new);
+    assert_eq!(outcome.substituted, None, "each run in its own font");
+    assert!(!String::from_utf8_lossy(&update).contains("FontFile"), "no font was embedded");
+    let after = block_with(&edited, 0, "The rent is payable");
+    // Still one paragraph, though a line of it is now mostly italic.
+    assert_eq!(normalize(&after.text), normalize(&new));
+    assert_eq!(after.lines, 3);
+    assert_eq!(run_with(&after, "payable"), ("Helvetica-Bold".into(), true, false, false));
+    assert_eq!(run_with(&after, "first"), ("Helvetica".into(), false, false, true));
+    assert_eq!(run_with(&after, "or excuse"), ("Helvetica-Oblique".into(), false, true, false));
+    assert_eq!(run_with(&after, "transfer"), ("Helvetica".into(), false, false, false));
+    assert!(page_text(&edited, 0).contains(&normalize(&new)));
+    qpdf_check(&edited.bytes(), "styled-own.pdf");
+}
+
+#[test]
+fn a_substituted_paragraph_keeps_bold_italic_size_and_colour_and_keeps_them_on_the_next_edit() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let new = block.text.replace("first", "fifth");
+    let edit = BlockEdit {
+        page: 0,
+        index: block.index,
+        fingerprint: block.fingerprint,
+        text: new.clone(),
+        family: Some(FontFamily::Sans),
+    };
+    let (edited, _, outcome) = document.with_block_edit(&edit).expect("edits");
+    assert_eq!(outcome.substituted.as_ref().map(|s| s.font.as_str()), Some("IBMPlexSans"));
+    let after = block_with(&edited, 0, "The rent is due");
+    assert_eq!(normalize(&after.text), normalize(&new));
+    assert_eq!(run_with(&after, "due"), ("IBMPlexSans-Bold".into(), true, false, false));
+    assert_eq!(run_with(&after, "fifth"), ("IBMPlexSans".into(), false, false, true));
+    // No italic face is bundled: the run is slanted, under a name that says so.
+    assert_eq!(run_with(&after, "without delay"), ("IBMPlexSans-Oblique".into(), false, true, false));
+    assert!(page_text(&edited, 0).contains(&normalize(&new)));
+
+    // Edited again (by name now, the bundled faces themselves): nothing is lost.
+    let again_text = after.text.replace("transfer", "bank transfer");
+    let (again, ..) = edit_to(&edited, &after, 0, &again_text);
+    let third = block_with(&again, 0, "The rent is due");
+    assert_eq!(normalize(&third.text), normalize(&again_text));
+    assert_eq!(run_with(&third, "due"), ("IBMPlexSans-Bold".into(), true, false, false));
+    assert_eq!(run_with(&third, "fifth"), ("IBMPlexSans".into(), false, false, true));
+    assert_eq!(run_with(&third, "without delay"), ("IBMPlexSans-Oblique".into(), false, true, false));
+    qpdf_check(&again.bytes(), "styled-substitute.pdf");
+}
+
+#[test]
+fn arabic_typed_over_a_bold_word_is_set_in_a_bold_arabic_face() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let new = block.text.replace("due", "مستحق");
+    let (edited, outcome, _) = edit_to(&document, &block, 0, &new);
+    assert!(outcome.substituted.is_some(), "Arabic needs a bundled face");
+    let after = block_with(&edited, 0, "مستحق");
+    assert_eq!(normalize(&after.text), normalize(&new));
+    let (font, bold, ..) = run_with(&after, "مستحق");
+    assert!(bold && font.contains("Arabic"), "{font}");
+    let (font, bold, ..) = run_with(&after, "The rent is");
+    assert!(!bold, "{font}");
+    assert!(run_with(&after, "first").3, "still red");
+}
+
 // ------------------------------------------------------------------ refusals
 
 #[test]

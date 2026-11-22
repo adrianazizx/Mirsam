@@ -15,6 +15,8 @@
 //!    paragraph.
 //!
 //! Direction, alignment, line pitch, size, and colour are read off the lines.
+//! Each character keeps the style it was drawn in (font, size, colour), so a
+//! paragraph is also a list of styled runs in logical order (ADR 0024).
 //! The module knows nothing of PDF syntax: it works on [`Atom`]s.
 
 use serde::Serialize;
@@ -32,6 +34,50 @@ pub(crate) struct Atom {
     /// Fonts that are the same font have the same key.
     pub(crate) font: usize,
     pub(crate) color: [f32; 3],
+}
+
+/// How a stretch of text was drawn: its font (a key into the page's fonts),
+/// size as displayed, and fill colour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RunStyle {
+    pub(crate) font: usize,
+    pub(crate) size: f32,
+    pub(crate) color: [f32; 3],
+}
+
+impl RunStyle {
+    fn of(atom: &Atom) -> Self {
+        // Rounded, so glyphs of one run compare equal.
+        let round = |v: f32, step: f32| (v / step).round() * step;
+        RunStyle {
+            font: atom.font,
+            size: round(atom.size, 0.01),
+            color: atom.color.map(|c| round(c, 1.0 / 255.0)),
+        }
+    }
+}
+
+/// A stretch of a line's or a block's text in one style: a byte range of
+/// its text, in logical order.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Run {
+    pub(crate) range: std::ops::Range<usize>,
+    pub(crate) style: RunStyle,
+}
+
+/// Runs from characters and their styles: consecutive equal styles merged.
+fn runs_of(chars: &[(char, RunStyle)]) -> (String, Vec<Run>) {
+    let mut text = String::new();
+    let mut runs: Vec<Run> = Vec::new();
+    for &(c, style) in chars {
+        let start = text.len();
+        text.push(c);
+        match runs.last_mut() {
+            Some(run) if run.style == style => run.range.end = text.len(),
+            _ => runs.push(Run { range: start..text.len(), style }),
+        }
+    }
+    (text, runs)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -60,8 +106,8 @@ pub(crate) struct Block {
     pub(crate) font: usize,
     /// Baseline to baseline; `None` for a single line.
     pub(crate) pitch: Option<f32>,
-    /// Several fonts, sizes, or colours were seen: editing sets it in one.
-    pub(crate) mixed: bool,
+    /// Its text in styled runs, in logical order (cover `text`).
+    pub(crate) runs: Vec<Run>,
     /// The operators that drew it, in drawing order.
     pub(crate) shown: Vec<usize>,
     /// Some operator that drew it also drew other text.
@@ -79,6 +125,8 @@ pub(crate) struct Line {
     pub(crate) text: String,
     pub(crate) rtl: bool,
     pub(crate) shown: Vec<usize>,
+    /// Its text in styled runs, in logical order.
+    pub(crate) runs: Vec<Run>,
 }
 
 const COLUMN_GAP_EMS: f32 = 2.0;
@@ -229,23 +277,24 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
     shown.dedup();
 
     // Spaces where the gap is wide enough to be one.
-    let mut visual: Vec<(String, Class)> = Vec::new();
+    let mut visual: Vec<(String, Class, RunStyle)> = Vec::new();
     for (i, unit) in units.iter().enumerate() {
+        let style = RunStyle::of(&atoms[unit.atom]);
         if i > 0 {
             let gap = unit.x0 - units[i - 1].x1;
             let spaced = unit.text.trim().is_empty() || units[i - 1].text.trim().is_empty();
             if gap > SPACE_GAP_EMS * size && !spaced {
-                visual.push((" ".into(), Class::N));
+                visual.push((" ".into(), Class::N, style));
             }
         }
-        visual.push((unit.text.clone(), class_of(&unit.text)));
+        visual.push((unit.text.clone(), class_of(&unit.text), style));
     }
-    let letters = |wanted: Class| visual.iter().filter(|(_, c)| *c == wanted).count();
+    let letters = |wanted: Class| visual.iter().filter(|(_, c, _)| *c == wanted).count();
     let rtl = letters(Class::R) > letters(Class::L);
 
     // Neutrals take the class of the strong text on both sides, else the line's.
     let paragraph = if rtl { Class::R } else { Class::L };
-    let mut classes: Vec<Class> = visual.iter().map(|(_, c)| *c).collect();
+    let mut classes: Vec<Class> = visual.iter().map(|(_, c, _)| *c).collect();
     let mut i = 0;
     while i < classes.len() {
         if classes[i] != Class::N {
@@ -263,21 +312,22 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
         i = end;
     }
     // Runs of one class, then logical order.
-    let mut runs: Vec<(Class, Vec<&str>)> = Vec::new();
-    for ((text, _), class) in visual.iter().zip(&classes) {
+    let mut runs: Vec<(Class, Vec<(&str, RunStyle)>)> = Vec::new();
+    for ((text, _, style), class) in visual.iter().zip(&classes) {
         match runs.last_mut() {
-            Some((c, items)) if c == class => items.push(text),
-            _ => runs.push((*class, vec![text])),
+            Some((c, items)) if c == class => items.push((text, *style)),
+            _ => runs.push((*class, vec![(text, *style)])),
         }
     }
     if rtl {
         runs.reverse();
     }
-    let mut text = String::new();
+    let mut chars: Vec<(char, RunStyle)> = Vec::new();
     for (class, items) in runs {
-        let items: Vec<&str> = if class == Class::R { items.into_iter().rev().collect() } else { items };
-        for item in items {
-            text.push_str(item);
+        let items: Vec<(&str, RunStyle)> =
+            if class == Class::R { items.into_iter().rev().collect() } else { items };
+        for (item, style) in items {
+            chars.extend(item.chars().map(|c| (c, style)));
         }
     }
     let _ = first;
@@ -288,6 +338,7 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
     };
     let key = most_common(units.iter().map(|u| color_key(atoms[u.atom].color)));
     let color = units.iter().map(|u| atoms[u.atom].color).find(|c| color_key(*c) == key).unwrap_or([0.0; 3]);
+    let (text, runs) = runs_of(&collapse_spaces(&chars));
     Line {
         color,
         x0: units.iter().map(|u| u.x0).fold(f32::MAX, f32::min),
@@ -295,23 +346,29 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
         baseline: atoms[units[0].atom].baseline,
         size,
         font,
-        text: collapse_spaces(&text),
+        text,
         rtl,
         shown,
+        runs,
     }
 }
 
-fn collapse_spaces(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut previous_space = false;
-    for c in text.chars() {
-        let space = c == ' ' || c == '\u{a0}';
-        if !(space && previous_space) {
-            out.push(c);
+/// Runs of spaces become one, the ends are trimmed, and every space takes
+/// the style of the character before it in logical order (as typing would).
+fn collapse_spaces(chars: &[(char, RunStyle)]) -> Vec<(char, RunStyle)> {
+    let space = |c: char| c == ' ' || c == '\u{a0}';
+    let mut out: Vec<(char, RunStyle)> = Vec::with_capacity(chars.len());
+    for &(c, style) in chars {
+        if space(c) && out.last().is_none_or(|&(p, _)| space(p)) {
+            continue;
         }
-        previous_space = space;
+        let style = if space(c) { out.last().map_or(style, |&(_, s)| s) } else { style };
+        out.push((c, style));
     }
-    out.trim().to_string()
+    while out.last().is_some_and(|&(c, _)| space(c)) {
+        out.pop();
+    }
+    out
 }
 
 fn most_common(values: impl Iterator<Item = i64>) -> i64 {
@@ -352,7 +409,11 @@ fn group(lines: Vec<Line>) -> Vec<Block> {
 fn fits(group: &[Line], previous: &Line, line: &Line) -> bool {
     let dy = line.baseline - previous.baseline;
     let size = previous.size.max(1.0);
-    if dy <= 0.5 * size || (line.size - previous.size).abs() > 0.12 * size || line.font != previous.font {
+    // One font in common: a line mostly in a paragraph's italic is still of
+    // it; a bold heading over body text shares none.
+    let shares_a_font = line.font == previous.font
+        || line.runs.iter().any(|r| previous.runs.iter().any(|p| p.style.font == r.style.font));
+    if dy <= 0.5 * size || (line.size - previous.size).abs() > 0.12 * size || !shares_a_font {
         return false;
     }
     // Distance: one pitch, as the paragraph has set it.
@@ -398,13 +459,21 @@ fn block_of(lines: Vec<Line>) -> Block {
         let rtl_lines = lines.iter().filter(|l| l.rtl).count();
         rtl_lines * 2 > n || (rtl_lines * 2 == n && lines[0].rtl)
     };
-    let text = lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join(" ");
+    // Lines joined by a space in the style of the line it ends.
+    let mut chars: Vec<(char, RunStyle)> = Vec::new();
+    for line in &lines {
+        if let Some(&(_, style)) = chars.last() {
+            chars.push((' ', style));
+        }
+        for run in &line.runs {
+            chars.extend(line.text[run.range.clone()].chars().map(|c| (c, run.style)));
+        }
+    }
+    let (text, runs) = runs_of(&chars);
     let pitch = (n > 1).then(|| (lines[n - 1].baseline - lines[0].baseline) / (n - 1) as f32);
     let mut shown: Vec<usize> = lines.iter().flat_map(|l| l.shown.iter().copied()).collect();
     shown.sort_unstable();
     shown.dedup();
-    let mixed =
-        lines.iter().any(|l| (l.size - size).abs() > 0.6 || l.font != font || l.color != lines[0].color);
 
     // Alignment from the lines' edges. The first line may be indented.
     let tolerance = 0.5 * size + 0.5;
@@ -464,7 +533,7 @@ fn block_of(lines: Vec<Line>) -> Block {
         color: lines_color,
         font,
         pitch,
-        mixed,
+        runs,
         shown,
         shared: false,
     }
@@ -484,6 +553,64 @@ mod tests {
             .enumerate()
             .map(|(i, c)| atom(&c.to_string(), x + 5.0 * i as f32, x + 5.0 * (i + 1) as f32, baseline, shown))
             .collect()
+    }
+
+    /// `row`, in font `font` and colour `color`.
+    fn styled(text: &str, x: f32, baseline: f32, font: usize, color: [f32; 3]) -> Vec<Atom> {
+        row(text, x, baseline, font).into_iter().map(|a| Atom { font, color, ..a }).collect()
+    }
+
+    /// A block's runs as (text, font, red?) triples.
+    fn runs(block: &Block) -> Vec<(&str, usize, bool)> {
+        block
+            .runs
+            .iter()
+            .map(|r| (&block.text[r.range.clone()], r.style.font, r.style.color[0] > 0.5))
+            .collect()
+    }
+
+    #[test]
+    fn styles_become_runs_in_logical_order_and_spaces_take_the_style_before_them() {
+        // "The rent is due" with "rent" in font 1, at 5 pt a glyph and a space's gap between words.
+        let black = [0.0; 3];
+        let mut atoms = styled("The", 10.0, 100.0, 0, black);
+        atoms.extend(styled("rent", 30.0, 100.0, 1, black));
+        atoms.extend(styled("is", 55.0, 100.0, 0, black));
+        atoms.extend(styled("due", 70.0, 100.0, 0, black));
+        let blocks = analyze(atoms);
+        assert_eq!(blocks[0].text, "The rent is due");
+        assert_eq!(runs(&blocks[0]), vec![("The ", 0, false), ("rent ", 1, false), ("is due", 0, false)]);
+
+        // Arabic drawn left to right, its middle word red: "يدفع الإيجار شهريا".
+        let red = [1.0, 0.0, 0.0];
+        let mut atoms = styled("ايرهش", 10.0, 100.0, 0, black);
+        let visual: String = "الإيجار".chars().rev().collect();
+        atoms.extend(styled(&visual, 45.0, 100.0, 0, red));
+        atoms.extend(styled("عفدي", 90.0, 100.0, 0, black));
+        let blocks = analyze(atoms);
+        assert_eq!(blocks[0].text, "يدفع الإيجار شهريا");
+        assert_eq!(runs(&blocks[0]), vec![("يدفع ", 0, false), ("الإيجار ", 0, true), ("شهريا", 0, false)]);
+    }
+
+    #[test]
+    fn a_paragraph_joins_its_lines_runs() {
+        let black = [0.0; 3];
+        // A bold word ending the first line (the line's font is its most common).
+        let mut atoms = styled("first", 10.0, 100.0, 0, black);
+        atoms.extend(styled("of", 45.0, 100.0, 1, black));
+        atoms.extend(styled("three", 10.0, 112.0, 0, black));
+        atoms.extend(styled("four", 40.0, 112.0, 0, black));
+        atoms.extend(styled("five", 10.0, 124.0, 0, black));
+        let blocks = analyze(atoms);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, "first of three four five");
+        // The space ending a line takes that line's last style.
+        assert_eq!(
+            runs(&blocks[0]),
+            vec![("first ", 0, false), ("of ", 1, false), ("three four five", 0, false)]
+        );
+        let covered: usize = blocks[0].runs.iter().map(|r| r.range.len()).sum();
+        assert_eq!(covered, blocks[0].text.len());
     }
 
     #[test]

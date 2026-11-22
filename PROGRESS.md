@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 11, with session M5-a merged from `main`).
+Last updated: 2026-11-22 (session 12, with session M5-a merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -419,6 +419,13 @@ Plan, in order:
         - such text is listed as refused areas, so no new text lands on top of it;
         - the automatic substitute is the closest of five bundled faces (Noto Naskh Arabic and
           Noto Sans Arabic added), by name, serif flag, and the font's own `/Widths`.
+      - Session 12 (ADR 0024): **styled runs.**
+        - Bold, italic, sizes and colours inside a paragraph are kept through edits.
+        - Typed text takes the style before it; typing over a word keeps its style.
+        - Each run is written in its own font when it can be, else in a bundled face at its
+          weight (bold faces added), slanted for italic.
+        - Still to do: changing a run's style while editing (the native field has no bold
+          button), and weights other than regular and bold.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -487,6 +494,35 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 12 — 2026-11-22 (Milestone 3: styled runs in edited paragraphs, ADR 0024)
+
+- **Reading:**
+  - Every character of a paragraph keeps its font, size and colour through the
+    visual-to-logical reorder.
+  - The UI gets the runs (UTF-16 offsets, font, bold, italic, size, colour) and a `styled`
+    flag.
+  - Lines group into a paragraph when they share any font, not only the dominant one: a mostly
+    italic line no longer splits a paragraph.
+- **Editing:**
+  - The field's plain text is mapped onto the old runs by a character LCS.
+  - Kept characters keep their style; typing over a word takes its style; other typing takes
+    the style before it (after it at the start).
+- **Writing:**
+  - When every run's own font has codes for its text: each run in its font, with font and
+    colour switching inside the line, and justification at spaces.
+  - Otherwise, the closest bundled face per original font at the run's weight:
+    - bold faces added (Plex Sans and the Noto VFs at 700, Amiri Bold, Plex Sans Arabic
+      SemiBold);
+    - per-span fallbacks of the same weight in `typeset`;
+    - spans no longer carry a font across a style boundary;
+    - italic slanted 12° under an oblique name, so it reads back italic.
+- **Tests:**
+  - Unit tests for runs and restyling.
+  - Four integration tests on a Helvetica / Bold / Oblique page with a red word: runs read;
+    own-font edit; substituted edit kept over a second edit; Arabic over a bold word in a
+    bold Arabic face.
+  - A UI test of the styled note in English and Arabic.
 
 ### Session 11 — 2026-11-22 (Milestone 3: main's in-place editor kept; reasons and closer substitutes ported)
 

@@ -165,3 +165,8 @@ Ported from a parallel implementation on PR #8, which this design replaced (see 
   - Unit tests: a page font with Noto Naskh's Latin widths and an unknown name gets Noto Naskh,
     over Amiri; with Noto Sans Arabic's, Noto Sans Arabic; by name, Amiri; a serif with an
     unknown name, a Naskh face.
+
+**Superseded in part by ADR 0024:**
+- bold, italic, sizes and colours inside a paragraph are now kept as styled runs, through
+  edits;
+- "mixed styles become one style" no longer holds.
