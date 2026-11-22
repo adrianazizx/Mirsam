@@ -278,7 +278,7 @@ async fn print_with_platform(
 /// A window like the main one (tauri.conf.json) showing the same UI.
 pub fn create_window(app: &AppHandle, label: &str) -> CommandResult<()> {
     tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
-        .title("Safha")
+        .title("Mirsam")
         .inner_size(1280.0, 820.0)
         .min_inner_size(880.0, 560.0)
         .build()

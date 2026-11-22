@@ -23,7 +23,7 @@ PDF="$ROOT/fixtures/out/derived/bilingual-1000-pages.pdf"
 [[ -f "$PDF" ]] || { echo "missing $PDF: run node fixtures/generate.mjs" >&2; exit 2; }
 case "$BUILD" in
   debug) ;;
-  release) export SAFHA_SELFTEST_APP="$ROOT/target/release/bundle/macos/Safha.app/Contents/MacOS/safha-desktop" ;;
+  release) export SAFHA_SELFTEST_APP="$ROOT/target/release/bundle/macos/Mirsam.app/Contents/MacOS/safha-desktop" ;;
   *) echo "build must be debug or release" >&2; exit 2 ;;
 esac
 

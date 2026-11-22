@@ -31,7 +31,9 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    says to ask.
 5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
    zoom? Probably a setting; which default? (ADR 0003.)
-6. **Product name and bundle identifier.** `Safha` / `app.safha.desktop` are placeholders.
+6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
+   `app.mirsam.desktop`. Before the first signed release it should be the reverse of a domain you
+   own; changing it later moves where the app keeps its state (recents, session, positions).
 7. **Shell PATH.** Homebrew's rustup is keg-only. To use `cargo` in your own terminal:
    `export PATH=/opt/homebrew/opt/rustup/bin:$PATH` (not added to `~/.zshrc` for you).
 8. **More fixture producers and OCR baselines need installs** (none done without asking):
@@ -298,6 +300,22 @@ parallel with M2 and merged by pull request at the owner's request.
 - [ ] Performance hardening
 
 ## Session log
+
+### Rename to Mirsam — 2026-11-22
+
+The owner chose the name **Mirsam** (مرسام). Renamed everything a user or reader sees: window
+titles, `productName` (the macOS bundle is now `Mirsam.app`), `app.name` and the
+`engine_unavailable` message in `en.json` and `ar.json`, the bundle identifier
+(`app.mirsam.desktop`, so the app starts with empty state once), README, CLAUDE.md, the spec
+header, two ADRs, and the bundle paths in `scripts/selftest.sh` and
+`scripts/scroll-benchmark.sh`. The Arabic word صفحة ("page") stays wherever it means a page.
+
+**Not renamed yet, on purpose:** code identifiers — the crates `safha-core`, `safha-ocr-eval` and
+`safha-desktop` (and their directories), `safha_core` imports, `SAFHA_*` environment variables,
+the `safha:` URI scheme and CSP entry, the npm package `safha-desktop`. `m2-organize` and the OCR
+branch have committed and uncommitted work inside those crates, so renaming them now would make
+every one of their files conflict. Do it in one change once those branches have merged, and
+update CLAUDE.md, the spec header and the README note when it is done.
 
 ### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
 
