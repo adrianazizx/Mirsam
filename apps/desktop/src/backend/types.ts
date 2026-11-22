@@ -769,6 +769,69 @@ export function isCancelled(value: unknown): boolean {
   return isBackendError(value) && value.code === "cancelled";
 }
 
+/** What an OCR package does in the pipeline (ADR 0030, ADR 0034). */
+export type OcrRole = "primary" | "ensemble" | "draft" | "runtime";
+
+export type OcrPackageState =
+  | { kind: "notInstalled" }
+  /** Part of it is downloaded; downloading again resumes. */
+  | { kind: "partial"; received: number }
+  | { kind: "installed" }
+  /** Another version is installed; downloading replaces it. */
+  | { kind: "outdated"; version: string };
+
+/** A model (or the runtime) as the settings panel lists it. Sizes in bytes. */
+export interface OcrPackage {
+  id: string;
+  role: OcrRole;
+  /** Its own name (not translated). */
+  name: string;
+  version: string;
+  /** SPDX expression. */
+  licence: string;
+  homepage: string;
+  downloadSize: number;
+  /** An upper bound of the disk space it takes once installed. */
+  installedSize: number;
+  state: OcrPackageState;
+  /** OCR cannot run without it. */
+  required: boolean;
+  /** A download of it is running (also after a window reload). */
+  downloading: boolean;
+}
+
+export type OcrAccelerator = "metal" | "cuda" | "vulkan";
+
+export interface OcrHardware {
+  os: string;
+  arch: string;
+  accelerators: OcrAccelerator[];
+  /** The GPU backend the installed runtime would use; null: the CPU (slow). */
+  runtimeGpu: OcrAccelerator | null;
+  /** Installed memory in bytes, when known. */
+  memory: number | null;
+}
+
+export interface OcrModels {
+  packages: OcrPackage[];
+  hardware: OcrHardware;
+  /** False when there is nowhere to install (no app data folder). */
+  available: boolean;
+}
+
+export type OcrPhase = "checking" | "downloading" | "unpacking" | "installing";
+
+export type OcrModelUpdate =
+  | { kind: "progress"; phase: OcrPhase; received: number; total: number }
+  | { kind: "installed" }
+  /** Stopped by the user; what arrived is kept to resume. */
+  | { kind: "cancelled" }
+  /** `needed` and `available` (bytes) come with `model_disk_full`. */
+  | { kind: "failed"; code: string; needed: number | null; available: number | null };
+
+/** A download moved on (sent to every window). */
+export type OcrModelEvent = { id: string } & OcrModelUpdate;
+
 export interface Backend {
   appInfo(): Promise<AppInfo>;
   /** Shows the native picker. Resolves to null when the user cancels. */
@@ -1092,4 +1155,17 @@ export interface Backend {
   webviewRssKb(): Promise<number | null>;
   /** Writes a progress line to the shell's log during a self-test; devtools builds only. */
   selftestLog(message: string): Promise<void>;
+  /** The OCR models offered here, what is installed, and the hardware (ADR 0034). */
+  ocrModels(): Promise<OcrModels>;
+  /**
+   * Starts downloading and installing a package and returns at once; progress
+   * and the outcome arrive through `onOcrModelProgress`. Rejects with
+   * `model_busy` while it is already downloading.
+   */
+  downloadOcrModel(id: string): Promise<void>;
+  /** Stops a download; what arrived is kept to resume. */
+  cancelOcrModelDownload(id: string): Promise<void>;
+  /** Removes a package and any partial download of it; `model_busy` while it downloads. */
+  deleteOcrModel(id: string): Promise<void>;
+  onOcrModelProgress(listener: (event: OcrModelEvent) => void): Promise<() => void>;
 }

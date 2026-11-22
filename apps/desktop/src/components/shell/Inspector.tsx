@@ -3,6 +3,7 @@ import { formatNumber } from "../../i18n";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
 import { FormsPanel } from "../forms/FormsPanel";
 import { SignPanel } from "../forms/SignPanel";
+import { OcrPanel } from "../ocr/OcrPanel";
 import { ProtectPanel } from "../protect/ProtectPanel";
 import styles from "./Inspector.module.css";
 
@@ -26,9 +27,15 @@ export function Inspector() {
   return (
     <aside className={styles.inspector} aria-label={t("inspector.title")} data-testid="inspector">
       <h2 className={styles.title}>
-        {t(document && TOOL_PANELS.includes(tool) ? `tools.${tool}` : "inspector.title")}
+        {t(
+          tool === "ocr" || (document && TOOL_PANELS.includes(tool))
+            ? `tools.${tool}`
+            : "inspector.title",
+        )}
       </h2>
-      {document && tool === "protect" ? (
+      {tool === "ocr" ? (
+        <OcrPanel />
+      ) : document && tool === "protect" ? (
         <ProtectPanel key={document.id} document={document} />
       ) : document && tool === "forms" ? (
         <FormsPanel key={document.id} documentId={document.id} />

@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M7 packaging: PDFium bundled on every platform, installers checked, fuzzing; merged with `main` after the viewer and shell side track).
+Last updated: 2026-11-23 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`, merged with `main` after M7 packaging).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -24,7 +24,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
    dependency tree (Unicode data, ICU4X), so they cannot be avoided on this stack — but the spec
-   says to ask.
+   says to ask. **`MIT-0`: approved by the owner (2026-11-22)**, with the llama.cpp runtime
+   (item 20).
 5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
    zoom? Probably a setting; which default? (ADR 0003.)
 6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
@@ -106,6 +107,14 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     are 11.7 MiB. Ship the AppImage anyway (the budget then reads "excluding a bundled web
     engine"), or ship deb and rpm only (and perhaps a Flatpak later, which shares the GNOME runtime)?
     Until you decide, `scripts/bundle.mjs` reports it as a known exception instead of failing.
+20. ~~May the llama.cpp runtime's builds ship?~~ **Decided (2026-11-22): yes** (ADR 0034).
+    - **What was approved:** llama.cpp's own `llama-server` builds (release `b12359`): Metal,
+      CPU, and Vulkan with a CPU fallback. Outside spec §10's list, they compile in sheredom
+      `subprocess.h` (Unlicense) and miniaudio (Unlicense OR MIT-0), and carry an unaudited web
+      UI.
+    - **Conditions:** the server always runs with `--no-webui`, and no CUDA build ships (NVIDIA's
+      CUDA runtime licence).
+    - **Now:** the runtime is in the download catalog.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -585,7 +594,22 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       each word has a probability and a status, and `review_list` gives the pages needing
       review. The UI is not built yet.
 - [ ] Searchable-PDF output in logical order
-- [ ] Model download manager; hardware acceleration
+- [~] Model download manager; hardware acceleration (ADR 0034, branch `pomidor/m4-model-downloads-ef1050`):
+  - **Engine:** `safha_core::models`. A pinned catalog (Nuqta 4B and 0.8B GGUF by revision, size
+    and SHA-256). Resumable HTTPS downloads with retries, checksum, a disk-space check, cancel,
+    atomic install into `<app data>/ocr-models`, delete, and a status query. tar.gz and zip
+    runtime archives are unpacked safely.
+  - **Hardware:** Metal, CUDA, Vulkan and memory are detected and reported.
+  - **UI:** Settings (Cmd/Ctrl+,) lists the models with size, licence, state and progress. The
+    OCR tool's inspector panel shows the model's state. The first OCR use without the model asks
+    to download it and explains its size.
+  - **Runtime:** the llama.cpp runtime (`b12359`; Metal, CPU, and Vulkan with CPU fallback; no
+    CUDA) is a required package, with the owner's licence approval (item 20).
+  - **Gaps:**
+    - Acceleration is reported, not yet used by recognition.
+    - Windows memory detection and the Windows/Linux archive paths are untested on those OSes
+      (CI builds them).
+    - Signing a downloaded `llama-server` is open (M7).
 - [ ] Benchmark gate in CI
 - [ ] Exit test: targets and ship gates in spec §8 met on `ocr-eval/`
 
@@ -662,6 +686,71 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 side track — 2026-11-22 (OCR model download manager; branch `pomidor/m4-model-downloads-ef1050`)
+
+- **ADR 0034.** 0033 is taken by the reconcile work on `pomidor/m4-reconcile`.
+- **Engine (`safha_core::models`):**
+  - **`Catalog`:** the Nuqta 4B (5.5 GB) and 0.8B (1.1 GB) Q8_0 GGUF files and their vision
+    encoders, pinned to the revisions ADR 0030 measured. `runtime_package` defines llama.cpp
+    `b12359` for six platforms: Metal on Apple silicon, CPU on Intel Macs, Vulkan with CPU
+    fallback on Windows and Linux; no CUDA, because of NVIDIA's runtime licence. The owner
+    approved its licences (item 20; MIT-0 settles that part of item 4), on condition of
+    `--no-webui` and no CUDA. It is in the catalog as a required package.
+  - **`ModelStore`:**
+    - Status: not installed, partial, installed, outdated.
+    - Install: resumable `.part` files named by SHA-256, the whole file hashed, a disk-space
+      check, cancel, staging, then a receipt and a rename into place.
+    - Delete and clean.
+  - **`Downloader`:** ureq with rustls (ring) and the OS trust store (`rustls-native-certs`).
+    Ranges, redirects, retries with backoff, and timeouts.
+    - `rustls-platform-verifier` was tried first and dropped: its wasm32-only
+      `webpki-root-certs` is CDLA-licensed, and `cargo deny` checks every target.
+  - **Archives:** tar.gz through `tar`, zip through our own small reader. Escapes are refused.
+  - **`Hardware::detect`:** accelerators and memory.
+- **Shell (`models.rs`):**
+  - **Commands:** `ocr_models`, `download_ocr_model` (on a thread),
+    `cancel_ocr_model_download`, `delete_ocr_model`.
+  - **Progress:** `ocr-model-progress` events, throttled to 150 ms.
+  - **Folder:** `SAFHA_MODELS_DIR` overrides the models' folder.
+- **UI:**
+  - **Settings dialog:** `app.settings`, Cmd/Ctrl+,.
+  - **OCR models section:** progress bar, Download, Resume, Update, Cancel, Delete with confirm.
+  - **OCR tool's inspector panel.**
+  - **First-use prompt:** `ocr.recognize` asks to download the model, then opens Settings to
+    show the download.
+  - **Recognition itself** shows "arrives in a coming update" until the pipeline commands land.
+  - **Store and strings:** an `ocrModels` store, 8 commands, en/ar strings, and a mock backend
+    whose downloads take a few timer steps.
+- **Licences checked:**
+  - Nuqta GGUF and the Qwen3.5 base models: Apache-2.0.
+  - llama.cpp builds: approved by the owner (item 20).
+  - New crates: ureq, rustls, ring, rustls-native-certs, tar, flate2, fs4. All MIT, Apache-2.0
+    or ISC; `cargo deny` passes.
+- **Tests:**
+  - **Rust:** 28 unit tests in `models`, against a local HTTP server and archive fixtures. No
+    model is downloaded.
+  - **Live check:** an `--ignored` test fetched and resumed a 1.1 MB file through Hugging Face's
+    CDN.
+  - **Shell:** 2 tests.
+  - **UI:** 12 tests (prompt, download, cancel and resume, delete, failures, busy, Arabic RTL,
+    inspector).
+  - **Browser build:** seen in English (light) and Arabic (dark).
+- **Not done / not checked:**
+  - A real multi-GB download end to end in the app.
+  - Windows and Linux runs.
+  - A native-speaker review of the new Arabic strings (owner item 11).
+- **Merged with `main` after M5-c and the M4 pipeline** (PRs #12, #15, #16), and again after
+  Milestone 3 closed (PR #8), and after M6-a and the M5 fill-resize fix (PRs #14, #20; module
+  lists, app-store fields, dialogs, locale keys and the session log), and after the viewer and
+  shell side track (PR #22): the models' folder now sits in the state directory this copy holds
+  (ADR 0046), so two copies of the app never download into the same folder. Then again after
+  M5's Fill & Sign colours and page moves (#23, #24) and M7 packaging (#17); M7's new owner
+  items 17–19 moved the licence decision to item 20.
+  - **Conflicts were additions on both sides:** dependencies (ureq gains `rustls-no-provider`
+    for HTTPS), the `lib.rs` modules, registry arguments and error codes, locale keys, the
+    inspector's panels, and the ADR index.
+
 
 ### M7 packaging — 2026-11-22/23 (PDFium bundled everywhere, installers checked, fuzzing; branch `pomidor/m7-packaging-abe03e`, PR #17)
 

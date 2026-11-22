@@ -63,7 +63,9 @@
       "toggleGallery": "Design gallery",
       "commandPalette": "All commands…",
       "quitDiscarding": "Quit without saving",
-      "cancelClose": "Keep open"
+      "cancelClose": "Keep open",
+      "settings": "Settings…",
+      "closeSettings": "Close settings"
     },
     "tabs": {
       "next": "Next tab",
@@ -238,6 +240,16 @@
       "compress": "Compress",
       "saveCompressed": "Save compressed copy",
       "cancel": "Close dialog"
+    },
+    "ocr": {
+      "recognize": "Recognize text (OCR)…"
+    },
+    "ocrModels": {
+      "downloadRequired": "Download the OCR model",
+      "dismissPrompt": "Not now",
+      "download": "Download OCR model",
+      "cancel": "Cancel model download",
+      "delete": "Delete OCR model"
     }
   },
   "viewer": {
@@ -292,7 +304,15 @@
     "store_unavailable": "Mirsam's local storage is unavailable, so signatures cannot be kept.",
     "no_image": "Choose an image for the watermark first.",
     "image_unreadable": "That image can't be used. Choose a PNG or JPEG file under 50 MB.",
-    "compress_stale": "The document changed after it was compressed. Compress it again."
+    "compress_stale": "The document changed after it was compressed. Compress it again.",
+    "model_unknown": "This OCR model is not offered in this version of Mirsam.",
+    "model_busy": "That model is downloading. Cancel the download first.",
+    "model_unavailable": "OCR models cannot be installed: Mirsam has no data folder on this computer.",
+    "model_download_failed": "The download stopped. Check the internet connection and try again: it continues where it stopped.",
+    "model_checksum_mismatch": "The downloaded file was not the expected one, so it was deleted. Try again.",
+    "model_disk_full": "There is not enough free disk space for the OCR model.",
+    "model_archive_invalid": "The OCR engine could not be unpacked. Try again.",
+    "model_install_failed": "The OCR model could not be installed. Check that there is free disk space and try again."
   },
   "gallery": {
     "title": "Design gallery",
@@ -402,7 +422,8 @@
     },
     "exportedImages": "{{count}} image files were written.",
     "exportedText": "The text was saved as {{name}}.",
-    "compressedSaved": "The compressed copy was saved as {{name}}."
+    "compressedSaved": "The compressed copy was saved as {{name}}.",
+    "ocrNotYet": "The OCR model is installed. Recognizing pages arrives in a coming update."
   },
   "split": {
     "title": "Split into files",
@@ -780,5 +801,65 @@
       "details": "Images reduced: {{images}}. Unused objects removed: {{objects}}.",
       "kept": "{{count}} images were kept as they are (JPEG and other formats are not reduced yet)."
     }
+  },
+  "settings": {
+    "title": "Settings",
+    "done": "Done"
+  },
+  "ocrModels": {
+    "heading": "OCR models",
+    "intro": "Text recognition runs on this computer, so your documents never leave it. Each model is downloaded once and kept until you delete it.",
+    "loading": "Loading…",
+    "unavailable": "Models cannot be installed: Mirsam has no data folder on this computer.",
+    "role": {
+      "primary": "Reads the page. Needed for OCR.",
+      "ensemble": "A second reader that double-checks numbers and unclear words. Optional.",
+      "runtime": "Runs the models on this computer. Needed for OCR.",
+      "draft": "A quick first reading, replaced by the full one."
+    },
+    "size": "Download: {{size}}",
+    "licence": "Licence:",
+    "status": {
+      "notInstalled": "Not installed",
+      "installed": "Installed",
+      "outdated": "A newer version is available",
+      "partial": "Paused: {{received}} of {{total}} downloaded",
+      "checking": "Checking what was already downloaded…",
+      "downloading": "Downloading: {{received}} of {{total}}",
+      "unpacking": "Unpacking…",
+      "installing": "Installing…"
+    },
+    "progress": "Download of {{name}}",
+    "actions": {
+      "download": "Download",
+      "resume": "Resume",
+      "update": "Update",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "keep": "Keep"
+    },
+    "confirmDelete": "Delete {{name}}? Using it again means downloading {{size}}.",
+    "diskFull": "Not enough disk space: it needs {{needed}} free, and {{available}} is free.",
+    "hardware": {
+      "metal": "Acceleration: the GPU, through Metal.",
+      "vulkan": "Acceleration: the graphics card, through Vulkan.",
+      "none": "No graphics acceleration Mirsam can use was found, so OCR runs on the processor: expect a few minutes a page.",
+      "memory": "Memory: {{size}}."
+    }
+  },
+  "ocrPrompt": {
+    "title": "Download the OCR model?",
+    "body": "Mirsam reads scanned pages with {{name}}, which runs on this computer: your documents never leave it.",
+    "size": "It is a one-time download of {{size}}, kept until you delete it in Settings.",
+    "resumed": "{{received}} of it is already downloaded.",
+    "slow": "This computer has no graphics acceleration Mirsam can use, so OCR will be slow: a few minutes a page.",
+    "download": "Download",
+    "later": "Not now"
+  },
+  "ocrPanel": {
+    "ready": "The OCR model is installed.",
+    "missing": "The OCR model is not installed yet. It is a {{size}} download.",
+    "recognize": "Recognize text",
+    "manage": "Manage OCR models…"
   }
 }

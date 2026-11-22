@@ -293,6 +293,9 @@ export interface AppState {
   /** The last compression's sizes, for the document it was made from. */
   compressed: { documentId: number; report: CompressReport } | null;
   setCompressed(compressed: { documentId: number; report: CompressReport } | null): void;
+  /** The settings dialog is open (OCR models, ADR 0034). */
+  settingsOpen: boolean;
+  setSettingsOpen(open: boolean): void;
   setGalleryOpen(open: boolean): void;
   setPaletteOpen(open: boolean): void;
   /** Applies settings read from the shell's store at startup. */
@@ -498,6 +501,10 @@ export const useAppStore = create<AppState>((set, get) => {
     splitPrompt: false,
     setSplitPrompt(open) {
       set({ splitPrompt: open });
+    },
+    settingsOpen: false,
+    setSettingsOpen(settingsOpen) {
+      set({ settingsOpen });
     },
     outputDialog: null,
     setOutputDialog(dialog) {

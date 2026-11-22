@@ -11,6 +11,7 @@ mod editing;
 mod error;
 mod forms;
 mod instance;
+mod models;
 mod navigation;
 mod output;
 #[cfg(target_os = "linux")]
@@ -102,6 +103,10 @@ macro_rules! product_commands {
             commands::save_session,
             commands::settings,
             commands::set_setting,
+            models::ocr_models,
+            models::download_ocr_model,
+            models::cancel_ocr_model_download,
+            models::delete_ocr_model,
             navigation::document_outline,
             navigation::page_labels,
             navigation::page_text,
@@ -154,6 +159,8 @@ pub fn run() {
                     move |documents| commands::open_arrivals(&handle, documents),
                 );
             }
+            // OCR models, downloaded on demand into the same directory (ADR 0034).
+            app.manage(models::ModelsState::new(models::models_root(state_dir.as_deref())));
             #[cfg(feature = "devtools")]
             diagnostics::prepare_window(app);
             Ok(())

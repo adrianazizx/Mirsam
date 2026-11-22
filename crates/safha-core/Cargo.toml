@@ -35,13 +35,24 @@ icu_properties = "2.4"
 subsetter = "0.2.6"
 read-fonts = "0.47.0"
 # OCR (ADR 0032): llama-server runs as a child process and is spoken to over
-# localhost HTTP. ureq without default features: blocking, plain HTTP, no TLS
-# (MIT OR Apache-2.0). Page images go to it as base64 PNGs.
-ureq = { version = "3.5.2", default-features = false }
+# localhost HTTP, blocking, through ureq (MIT OR Apache-2.0). Page images go to
+# it as base64 PNGs. The model downloads (models/, ADR 0034) use ureq too, over
+# HTTPS: rustls on ring with the operating system's trust store, read by
+# rustls-native-certs (rustls-platform-verifier would pull in a CDLA-licensed
+# root list for wasm32). Localhost requests stay plain HTTP.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
 base64 = "0.23.1"
 # PNG (MIT OR Apache-2.0): image signatures (ADR 0045), OCR page images (ADR 0032),
 # page export and image watermarks (ADR 0050).
 png = "0.18"
+# The llama.cpp runtime's .tar.gz builds are unpacked by tar on flate2
+# (miniz_oxide); its Windows .zip builds by models/archive.rs. fs4 asks the OS
+# for free disk space without `unsafe` here. All MIT OR Apache-2.0.
+flate2 = "1.1.11"
+tar = { version = "0.4.46", default-features = false }
+fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 serde_json = { workspace = true }
 
 [lints]
