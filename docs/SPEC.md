@@ -496,7 +496,7 @@ The KITAB-Bench benchmark is a useful public reference for Arabic OCR and docume
 | First page visible after opening a 100-page text PDF | ≤ 300 ms |
 | Scrolling / zooming | 60 fps, no blank pages longer than 100 ms |
 | Typing latency while editing text | ≤ 32 ms per keystroke |
-| 1,000-page document | Opens without loading all pages; memory stays bounded (< 500 MB) |
+| 1,000-page document | Opens without loading all pages; memory stays bounded (the app's own process < 500 MB; the system webview's processes are measured but not budgeted) |
 | In-document search, 500 pages | ≤ 1 s after first index |
 | Installer size (without OCR models) | ≤ 60 MB |
 

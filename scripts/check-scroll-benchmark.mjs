@@ -14,17 +14,17 @@
 //     random jumps across the document it is timed by the viewer's own events
 //     (jump -> preview drawn, plus one frame to reach the screen), which is
 //     valid even when the window was hidden.
-//   - Memory bounded under 500 MB on the 1,000-page document: shell process
-//     RSS, and shell plus webview processes where the webview can be measured.
+//   - Memory bounded under 500 MB on the 1,000-page document: the app's own
+//     (shell) process RSS. The webview's processes are measured and printed
+//     but not budgeted (owner decision, session 6; ADR 0011).
 //
 // Frame and blank-time numbers are only meaningful when the window was on
 // screen the whole time; a run without real animation frames fails as invalid.
 //
 // --ci: for hosted CI runners, which are virtual machines without a real GPU
-// running a debug build. Frame timing and the shell + webview total (whose
-// budget is an open owner decision, PROGRESS.md item 12) are reported as
-// warnings there; blank time, jump-to-preview time, and the shell's own memory
-// still fail the run. The frame budgets are enforced on real hardware.
+// running a debug build. Frame timing is reported as warnings there; blank
+// time, jump-to-preview time, and the shell's memory still fail the run. The
+// frame budgets are enforced on real hardware.
 //
 // Usage: node scripts/check-scroll-benchmark.mjs <out-dir> [--ci]
 
@@ -124,15 +124,6 @@ const shellPeak = Math.max(
   memory.afterIdle2s.shellRssMb ?? 0,
 );
 check(shellPeak < BUDGET.memoryMb, `shell RSS ${shellPeak} MB`);
-for (const [label, point] of [
-  ["after jumps", memory.afterJumps],
-  ["at end", memory.atEnd],
-]) {
-  if (point.webviewRssMb !== null && point.shellRssMb !== null) {
-    const total = point.shellRssMb + point.webviewRssMb;
-    check(total < BUDGET.memoryMb, `shell + webview RSS ${total.toFixed(0)} MB ${label}`, true);
-  }
-}
 
 for (const warning of warnings) {
   // A GitHub Actions annotation: shown on the run and the pull request.

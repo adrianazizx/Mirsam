@@ -46,11 +46,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     measured (ADR 0005).
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
-12. **Does the 500 MB memory budget include WebKit?** On the 1,000-page benchmark (release build)
-    the shell stays under the budget at 339 MB, but the shell and WebKit together reach 726 MB.
-    WebKit alone needs about 155 MB with just one page on screen. A budget for the shell only, or
-    a separate one for the webview (say 400 MB), is achievable today; 500 MB in total is not
-    without deeper work. ADR 0011 has the numbers. Which do you want?
+12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
+    process only.** It measures 339 MB in the release benchmark. The webview's processes
+    (387 MB more) are measured and printed but not budgeted. The spec's §11 and the benchmark
+    checker are updated.
 13. **Try Print once (Cmd/Ctrl+P).** On macOS and Windows, printing goes through the platform's
     own PDF viewer (ADR 0012): a window shows the PDF and the system print panel opens over it.
     No session so far could see the screen, so it is unverified. If you see a blank window, or
@@ -120,7 +119,7 @@ by anything found so far.
   the store holds them; `localStorage` keeps a copy for the first frame only.
 - No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
 
-## M1 — Viewer (P0 viewing) — in progress on branch `m1-viewer`
+## M1 — Viewer (P0 viewing) — done; merged from `m1-viewer` with the open items below
 
 - [x] Render scheduler: one render thread, priority queue, cancellation by viewport generation,
       64 MiB byte-capped LRU keyed by (document, revision, page, scale, rect), previews then tiles
@@ -166,8 +165,8 @@ by anything found so far.
       CI: first page 99–155 ms on virtual machines (ADR 0011, session 6 amendment). The memory
       experiment is WebKit-on-macOS only.
 - [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
-      pinch-out (above), and memory if WebKit counts (owner question 12). Session 6 tested three
-      causes of the pinch-out drops; none was it (ADR 0011).
+      pinch-out (above). Memory is within budget: the app's process, by the owner's decision.
+      Session 6 tested three causes of the pinch-out drops; none was it (ADR 0011).
 - [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures):
       - Pages with a trustworthy text layer: 69 of 70 blocks verbatim, and every word of their
         ground truth is found by search as typed (542 words, `tests/search.rs`).
@@ -196,13 +195,29 @@ Test status at the end of session 6:
 - **End to end:** self-tests pass on macOS, Linux and Windows in English/light and Arabic/dark.
   The scroll benchmark ran visibly in a debug build (pinch-out 7 dropped frames).
 
-Remaining M1 work:
+M1 closed in session 6 at the owner's go-ahead, with these items carried forward:
 
 - confirm printing on screen on macOS and Windows (owner item 13);
-- pinch-out frames (needs WebKit's own profiler);
-- the memory budget decision (owner item 12).
+- pinch-out frames (needs WebKit's own profiler).
 
-## M2 — Annotate and organize
+## M2 — Annotate and organize — started in session 6 on branch `m2-organize`
+
+Plan, in order: every later slice edits documents, so the editing model and saving come first.
+
+1. **[SPIKE] Editing model** (ADR 0014). Each edit is an incremental update written by our own
+   writer, and undo pops the last one. The alternative is PDFium's edit API plus a full save.
+   The spike tries both on the corpus and validates each with PDFium and `qpdf --check`. It
+   checks fidelity (outline, forms, signatures) and cost.
+2. **Page organizer:** rotate, delete, reorder, duplicate, insert blank, with undo and redo; a
+   page grid in the UI.
+3. **Safe save:** Save and Save As (temp file → validate → atomic rename). The original is never
+   written in place; signed files are saved incrementally.
+4. **Merge, insert from another PDF, extract, split.**
+5. **Markup** (highlight, underline, strikethrough, squiggly) from the text selection, as
+   standard annotations with appearance streams.
+6. **Notes, text boxes, ink** (RTL-aware text entry).
+7. **Autosave and recovery.**
+8. **Comments panel** (P1, if time allows in M2).
 
 - [ ] Markup, notes, text boxes, ink
 - [ ] Comments panel
