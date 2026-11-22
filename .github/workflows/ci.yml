@@ -1,9 +1,29 @@
 name: CI
 
+# Changes to documentation alone run nothing. THIRD_PARTY_LICENSES.md is
+# generated from the dependencies and checked by the licence job, so it counts
+# as code. "Run workflow" on the Actions tab runs everything on any branch.
+#
+# Standard runners are free while the repository is public. If it goes private
+# again, minutes come out of a small monthly allowance and a macOS minute costs
+# about ten Linux ones. Then drop macOS from pull requests first (the Test
+# matrix and the macOS shell self-test): development happens on a Mac, and
+# pushes to main would still cover it.
 on:
   push:
     branches: [main]
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**.md"
+      - "THIRD_PARTY_LICENSES.md"
   pull_request:
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**.md"
+      - "THIRD_PARTY_LICENSES.md"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

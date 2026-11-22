@@ -13,8 +13,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
-   and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
+2. **The code is on GitHub** as the public repository `adrianazizx/Mirsam` (public since
+   2026-11-22): `main` (Milestone 0) and `m1-viewer` (Milestone 1), open as pull request #1 with
+   Auto-fix on. It has no licence file, so the code is all rights reserved until you choose one
+   (spec D2).
 3. **CI on pull request #1:**
    - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
      including printing through GTK on Linux.
@@ -263,6 +265,17 @@ Remaining M1 work:
 - [ ] Performance hardening
 
 ## Session log
+
+### CI: docs-only changes skip the build — 2026-11-22
+
+- **The repository went public** on 2026-11-22, so standard GitHub-hosted runners are free and
+  CI keeps all three platforms on every pull request.
+- **Documentation-only changes** (`docs/`, Markdown files other than `THIRD_PARTY_LICENSES.md`)
+  run nothing. "Run workflow" on the Actions tab runs everything on any branch.
+- **If the repository goes private again:** CI draws on a $12 monthly Actions allowance (GitHub
+  Free), and macOS minutes cost about ten Linux ones. The nine runs on 2026-11-22 used about
+  $4.90, 60% of it on macOS. Drop macOS from pull requests first; keep the runs on `main`,
+  because they build the caches that pull requests reuse.
 
 ### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
 
