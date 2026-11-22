@@ -62,6 +62,32 @@
   outline-offset: calc(-1 * var(--focus-ring-width));
 }
 
+/* A colour swatch; `--swatch` is the document colour it stands for. */
+.swatch {
+  box-sizing: border-box;
+  inline-size: var(--size-swatch);
+  block-size: var(--size-swatch);
+  border: var(--border-width-thick) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--swatch);
+  cursor: default;
+}
+
+.swatch[data-selected] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 var(--border-width) var(--color-bg-surface) inset;
+}
+
+.swatch[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}
+
+.swatch[data-disabled] {
+  /* As the buttons are when disabled (Button.module.css). */
+  opacity: 0.45;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;

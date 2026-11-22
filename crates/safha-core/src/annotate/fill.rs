@@ -52,6 +52,16 @@ pub(crate) fn kind_of_stamp(name: &[u8]) -> Option<AnnotationKind> {
     }
 }
 
+/// Which mark a `/Stamp` of ours draws, by its `/Name`.
+pub(crate) fn mark_kind_of(name: &[u8]) -> Option<MarkKind> {
+    match name {
+        CHECK => Some(MarkKind::Check),
+        CROSS => Some(MarkKind::Cross),
+        DOT => Some(MarkKind::Dot),
+        _ => None,
+    }
+}
+
 /// A `/DA` for fill text: its size and colour, read back when it changes.
 pub(crate) fn da(size: f32, [r, g, b]: [f32; 3]) -> String {
     format!("/Helv {} Tf {} {} {} rg", num(size), num(r), num(g), num(b))

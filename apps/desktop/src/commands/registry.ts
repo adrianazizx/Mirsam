@@ -31,6 +31,7 @@ import {
   selectActiveDocument,
   useAppStore,
 } from "../state/appStore";
+import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
 import {
   addMark,
@@ -150,6 +151,8 @@ export interface CommandArg {
   signature?: number;
   /** `signature.saveTyped`: the family it is set in. */
   family?: "sans" | "naskh";
+  /** `fill.color`: one of the document colours (`state/colors.ts`). */
+  colorId?: string;
 }
 
 /** A new mark's side, in points (the engine's `Mark::DEFAULT_SIZE`). */
@@ -232,6 +235,7 @@ export type CommandId =
   | "fill.dot"
   | "fill.signature"
   | "fill.place"
+  | "fill.color"
   | "fill.move"
   | "fill.moveLeft"
   | "fill.moveRight"
@@ -1544,7 +1548,8 @@ const DECLARED: Command[] = [
       const active = selectActiveDocument(store());
       if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
       const { page, x, y } = arg;
-      const { fillTool, fillSignature, signatures, locale } = store();
+      const { fillTool, fillSignature, signatures, locale, fillColor } = store();
+      const color = rgbOf(fillColor);
       getViewer(active.id)?.clearSelection();
       switch (fillTool) {
         case "text":
@@ -1560,7 +1565,7 @@ const DECLARED: Command[] = [
         case "date": {
           store().applyEdit(
             active.id,
-            await backend.addFillText(active.id, page, x, y, fillDate(locale)),
+            await backend.addFillText(active.id, page, x, y, fillDate(locale), undefined, color),
           );
           store().setFill(null);
           return;
@@ -1570,7 +1575,15 @@ const DECLARED: Command[] = [
         case "dot": {
           // Centred on the press; the tool stays, to tick several boxes.
           const half = FILL_MARK_SIZE / 2;
-          const outcome = await backend.addFillMark(active.id, page, x - half, y - half, fillTool);
+          const outcome = await backend.addFillMark(
+            active.id,
+            page,
+            x - half,
+            y - half,
+            fillTool,
+            undefined,
+            color,
+          );
           store().applyEdit(active.id, outcome);
           return;
         }
@@ -1625,6 +1638,29 @@ const DECLARED: Command[] = [
       run: () => nudgeFill(dx * NUDGE_MORE, dy * NUDGE_MORE),
     },
   ]),
+  {
+    // The colour new Fill & Sign text and marks take; the selected one is recoloured (ADR 0045).
+    id: "fill.color",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const choice = DOCUMENT_COLORS.find((color) => color.id === arg?.colorId);
+      if (!choice) return;
+      store().setFillColor(choice.id as DocumentColorId);
+      const active = selectActiveDocument(store());
+      const selected = active?.selectedAnnotation;
+      if (!active || !selected || (selected.kind !== "fillText" && selected.kind !== "mark"))
+        return;
+      const outcome = await backend.setAnnotationColor(
+        active.id,
+        selected.page,
+        selected.index,
+        rgbOf(choice.id),
+      );
+      getViewer(active.id)?.reselectAfterRefresh(selected);
+      store().applyEdit(active.id, outcome);
+    },
+  },
   { id: "fill.larger", isEnabled: hasFillSelected, run: () => resizeFill(FILL_STEP) },
   { id: "fill.smaller", isEnabled: hasFillSelected, run: () => resizeFill(1 / FILL_STEP) },
   { id: "signatures.load", paletteHidden: true, run: loadSignatures },
@@ -1829,7 +1865,15 @@ const DECLARED: Command[] = [
           pending.kind === "pageText"
             ? await backend.addText(active.id, page, x, y, width, text, store().textStyle)
             : pending.kind === "fillText"
-              ? await backend.addFillText(active.id, page, x, y, text)
+              ? await backend.addFillText(
+                  active.id,
+                  page,
+                  x,
+                  y,
+                  text,
+                  undefined,
+                  rgbOf(store().fillColor),
+                )
               : pending.kind === "textBox"
                 ? await backend.addTextBox(active.id, page, x, y, width, text)
                 : await backend.addNote(active.id, page, x, y, text);
@@ -2197,6 +2241,7 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "fill.dot": "annotate",
   "fill.signature": "annotate",
   "fill.place": "annotate",
+  "fill.color": "annotate",
   "fill.move": "annotate",
   "fill.moveLeft": "annotate",
   "fill.moveRight": "annotate",

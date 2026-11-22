@@ -582,7 +582,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - Moved by dragging (a dashed outline shows where it lands) or with the arrow keys (1 pt, Shift
     10 pt). Resized by dragging a corner handle (in proportion, about the opposite corner) or in
     25% steps; text keeps its size for later changes.
-  - **Gaps:** no moving to another page; fixed colours and sizes.
+  - Text, dates and marks in black, blue, red or green, chosen in the Sign panel; choosing one also
+    recolours the selected text or mark.
+  - **Gaps:** no moving to another page; fixed starting sizes.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -865,6 +867,19 @@ encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11b
     edge). 196 UI tests pass.
   - **Checked in the browser preview:** a drawn signature selected, then enlarged by its
     bottom-right handle.
+- **Colours for Fill & Sign text and marks** (added on request; its own PR, after the resize one):
+  - **Choosing:** the Sign panel offers the Edit tool's four document colours (moved to
+    `state/colors.ts`, shared). New text, dates and marks take the chosen one (`fill.color`;
+    `add_fill_text` and `add_fill_mark` take a colour).
+  - **Recolouring:** with a text or mark selected, choosing a colour recolours it:
+    `AnnotationEdit::SetColor`, through the shell's `set_annotation_color`, as one undo step. Its
+    appearance is drawn again in the same box, `/C` and the text's `/DA` are updated, and the colour
+    survives a later change of text. Signatures refuse it.
+  - **Tests:** a Rust test recolours text and a cross in a plain and an encrypted file (red pixels
+    in their boxes, the same boxes, the text read back flattened, the colour kept after changing the
+    text, a signature refused). A UI test covers new items in the chosen colour, recolouring the
+    selection, signatures left alone, and the swatches in English and Arabic. 446 Rust and 207 UI
+    tests pass.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 

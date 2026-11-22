@@ -26,6 +26,7 @@ import type { TextStyle } from "../../backend";
 import { runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
+import { DOCUMENT_COLORS } from "../../state/colors";
 import selectStyles from "../ui/CommandSelect.module.css";
 import { Tooltip } from "../ui/Tooltip";
 import styles from "./TextToolbar.module.css";
@@ -33,16 +34,8 @@ import styles from "./TextToolbar.module.css";
 /** Sizes offered, in points. */
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
 
-/**
- * Colours offered for new text. They are the document's colours (written into
- * the PDF), not the UI's, so they are data here rather than design tokens.
- */
-export const TEXT_COLORS: { id: string; rgb: [number, number, number] }[] = [
-  { id: "black", rgb: [0, 0, 0] },
-  { id: "blue", rgb: [0.05, 0.28, 0.63] },
-  { id: "red", rgb: [0.72, 0.11, 0.11] },
-  { id: "green", rgb: [0.1, 0.45, 0.22] },
-];
+/** Colours offered for new text (shared with Fill & Sign). */
+export const TEXT_COLORS = DOCUMENT_COLORS;
 
 const ALIGNS: { id: TextStyle["align"]; icon: ReactNode; mirror: boolean }[] = [
   { id: "start", icon: <TextAlignStart />, mirror: true },
@@ -59,7 +52,7 @@ const DIRECTIONS: { id: TextStyle["direction"]; icon: ReactNode }[] = [
 ];
 
 const setStyle = (textStyle: Partial<TextStyle>) => void runCommand("text.setStyle", { textStyle });
-const same = (a: [number, number, number], b: [number, number, number]) =>
+const same = (a: readonly number[], b: readonly number[]) =>
   a.every((value, i) => Math.abs(value - (b[i] ?? 0)) < 1e-6);
 
 /**
@@ -122,7 +115,7 @@ export function TextToolbar() {
         value={color}
         onChange={(id) => {
           const choice = TEXT_COLORS.find((candidate) => candidate.id === id);
-          if (choice) setStyle({ color: choice.rgb });
+          if (choice) setStyle({ color: [...choice.rgb] });
         }}
         className={styles.group}
       >

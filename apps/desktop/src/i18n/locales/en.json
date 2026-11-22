@@ -207,7 +207,8 @@
       "moveLeftMore": "Move left 10 points",
       "moveRightMore": "Move right 10 points",
       "moveUpMore": "Move up 10 points",
-      "moveDownMore": "Move down 10 points"
+      "moveDownMore": "Move down 10 points",
+      "color": "Set the colour of Fill & Sign text and marks"
     },
     "signatures": {
       "load": "Load signatures"
@@ -643,7 +644,9 @@
       "image": "signature image"
     },
     "keptLocally": "Signatures are kept on this device only.",
-    "notPermitted": "This file's permissions do not allow adding to its pages. Its owner password lifts that."
+    "notPermitted": "This file's permissions do not allow adding to its pages. Its owner password lifts that.",
+    "color": "Colour",
+    "colorHint": "New text, dates and marks take this colour. Choosing one also recolours the selected text or mark."
   },
   "signature": {
     "title": "New signature",

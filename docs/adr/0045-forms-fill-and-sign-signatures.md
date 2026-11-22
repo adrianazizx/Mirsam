@@ -121,6 +121,14 @@ What each item draws:
 - **Dates** are text: today's date as the UI language writes it, with Western digits in the Arabic
   UI (`formatTag`, the open digits question in PROGRESS.md).
 - **Marks** are vector paths in a 100-unit box.
+- **Colour:** text, dates and marks are placed in one of the four document colours the Edit tool
+  offers (black, blue, red, green; `state/colors.ts`), black by default.
+  - Choosing a colour in the Sign panel applies to the next items. With a text or a mark selected,
+    it also recolours that one (`AnnotationEdit::SetColor`, one undo step). The appearance is drawn
+    again in the new colour, in the same box, and `/C` and fill text's `/DA` are updated, so later
+    changes keep the colour.
+  - Signatures keep their own ink (dark blue for drawn and typed, the image's own colours), and
+    refuse `SetColor`.
 
 Every item stands upright on a turned page, as a text box does. Its appearance is turned back by the
 page's `/Rotate`, and changed text keeps its displayed top-left corner.
@@ -218,7 +226,8 @@ paper in both themes (`--color-ink` on `--color-page-paper`, a new contrast pair
   - **Fill & Sign:**
     - An item moves only on its own page; dragging it onto another page stops at the edge.
     - Handles resize in proportion only; text cannot be reflowed into a different shape.
-    - Fill text and marks are black, at 11 pt and 14 pt.
+    - Fill text and marks are placed at 11 pt and 14 pt (then resized as above).
+    - The panel shows the colour chosen for new items, not the selected item's own colour.
   - **Signatures and the shell:**
     - Typed-signature previews use the webview's fonts (Amiri where the system has it). The PDF is
       set in the bundled Amiri.
