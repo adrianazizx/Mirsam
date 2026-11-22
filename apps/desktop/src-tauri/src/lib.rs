@@ -7,6 +7,7 @@
 mod commands;
 #[cfg(feature = "devtools")]
 mod diagnostics;
+mod editing;
 mod error;
 mod navigation;
 #[cfg(target_os = "linux")]
@@ -32,6 +33,9 @@ macro_rules! product_commands {
             commands::new_window,
             commands::move_to_new_window,
             commands::print_document,
+            editing::edit_pages,
+            editing::undo_edit,
+            editing::redo_edit,
             commands::unlock_document,
             commands::cancel_unlock,
             commands::close_document,

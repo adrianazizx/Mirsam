@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Instant;
 
 use safha_core::Document;
+use safha_core::edit::EditHistory;
 use safha_core::render::{DocumentId, RenderConfig, RenderService};
 use safha_core::search::IndexCache;
 use safha_core::store::Store;
@@ -41,6 +42,9 @@ pub struct OpenFile {
     pub index: Arc<IndexCache>,
     /// Label of the window whose tab shows it.
     pub window: String,
+    /// The document's edits, for undo and redo (ADR 0014). Its lock also
+    /// keeps a document's edits in sequence.
+    pub history: Arc<Mutex<EditHistory>>,
 }
 
 /// One window's tabs, as its UI last reported them (for the session).
@@ -129,12 +133,35 @@ impl AppState {
             name,
             index: Arc::new(IndexCache::new()),
             window: window.to_string(),
+            history: Arc::new(Mutex::new(EditHistory::new(document.bytes()))),
         };
         lock(&self.documents).insert(id, file);
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.open_document(lane.render_id(id), document.clone());
         }
         (id, document)
+    }
+
+    /// The document's edit history; lock it before reading the document to
+    /// edit, so edits apply one after another.
+    pub fn history(&self, id: u32) -> Option<Arc<Mutex<EditHistory>>> {
+        lock(&self.documents).get(&id).map(|file| Arc::clone(&file.history))
+    }
+
+    /// Shows another revision of an open document (after an edit, an undo, or
+    /// a redo): renders, the search index, and text layers start over.
+    pub fn replace_revision(&self, id: u32, document: Document) -> Option<Arc<Document>> {
+        let document = Arc::new(document);
+        {
+            let mut documents = lock(&self.documents);
+            let file = documents.get_mut(&id)?;
+            file.document = Arc::clone(&document);
+            file.index = Arc::new(IndexCache::new());
+        }
+        for lane in [Lane::Main, Lane::Thumbnails] {
+            self.render.replace_document(lane.render_id(id), document.clone());
+        }
+        Some(document)
     }
 
     pub fn document(&self, id: u32) -> Option<Arc<Document>> {
@@ -304,7 +331,7 @@ pub fn display_name(path: &Path) -> String {
     path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
