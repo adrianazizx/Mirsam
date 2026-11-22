@@ -1,7 +1,8 @@
 # 0005 — Writing text: our own shaping pipeline, emitted through PDFium's CID-font API
 
-Status: Accepted for adding new text (Milestone 0 spike). One check remains before it is
-extended to in-place editing — see "Before M3 commits". Date: 2026-11-22.
+Status: Accepted (Milestone 0 spike), **amended 2026-11-22 (M3)**: PDFium's content regeneration
+proved lossy, so text is now emitted by our own writer — see the amendment at the end. Date:
+2026-11-22.
 
 ## Question
 
@@ -123,3 +124,63 @@ text only.
 Two fonts (both static TrueType); one line per input; no line breaking or script itemization;
 two extractors; `qpdf --check` only (no PDF/A or PDF/UA validation); debug-build timings only.
 Variable fonts, CFF fonts, Nastaliq-style cursive attachment, and kashida are untested.
+
+## Amendment, 2026-11-22 (M3): content regeneration is lossy; text goes through our own writer
+
+The check required by "Before M3 commits" was run: `spikes/pdfium-regenerate/` (README there has
+the method and every number). Five edits per page — mark one text object dirty, delete it,
+remove and reinsert it, replace it with a box, append a box — across the 33 corpus pages that
+open plus a hand-written stress page. Each result was regenerated with `FPDFPage_GenerateContent`,
+saved, reopened, and compared with the page PDFium rendered from its in-memory objects before
+saving.
+
+**Regeneration silently damages untouched content on 27 of 34 pages** (`qpdf --check` passes on
+all of them):
+
+- **Type 3 fonts:** every text object is written as `q … BT <matrix> Tm` with no font, no glyphs,
+  no `ET`, no `Q`. All text disappears and the reopened page has no objects. Chrome writes Type 3
+  for the corpus's variable fonts, so 19 pages are hit.
+- **Simple fonts sharing a `/BaseFont`** (CoreText's per-encoding subsets of one face) are merged
+  into one resource: Arabic is redrawn with the wrong encoding, as tofu (7 pages).
+- **Operators lost** on the stress page: inline images, `sh`, text render mode 7 (text clipping),
+  `Tc`/`Tw`/`Tz`, and `BX`/`EX` sections.
+- **What survives** where fonts are not affected: clip paths, z-order (reinsert and replace),
+  marked content (MCIDs, optional content with its `/Properties`, `/ActualText`, artifacts),
+  form XObjects, transparency, colours.
+- **Appending is safe:** the existing stream is left byte for byte and a new one is added. This
+  is all the M0 spike exercised.
+
+M2 has since decided (ADR 0014, ADR 0015) that every edit is an incremental update written by
+our own code, that undo is a stack of those updates, and that signed files are saved by
+appending them. PDFium's edit route cannot produce an update: its only output is a full rewrite
+(`save_to_bytes`).
+
+### Decision (replaces decision 2; decisions 1, 3 and 5 stand)
+
+1. **PDFium never regenerates a page's content.** No delete, replace or modify of existing page
+   objects through its edit API, on any page.
+2. **Text is written by our own content-stream writer, as incremental updates** (ADR 0014):
+   - new text: font objects (Type 0 / CIDFontType2, our subset, our ToUnicode, CIDToGIDMap)
+     plus a new content stream appended to the page's `/Contents`, and the page dictionary with
+     merged `/Resources`;
+   - in-place edits: the page's stream copied byte for byte except the text-showing operators
+     of the edited block, with the new text emitted at the same point in the stream, so it keeps
+     its z-order, clip and marked-content context.
+   Decision 4's "planned second backend" becomes the only one. It builds on M2's
+   `safha_core::pdf` reader and writer, not on `lopdf` (finding 5 still stands).
+3. **PDFium's role:** render, extract, verify (render and extract every write in tests), and the
+   full rewrite of unsigned files on save (ADR 0015), which serializes objects and regenerates
+   nothing.
+4. **The text pipeline's output stays backend-neutral:** positioned glyph runs from the layout
+   engine (ADR 0020). The PDFium CID route remains a fallback that consumes the same runs, should
+   the own writer ever be blocked.
+
+### Consequences
+
+- The writer must handle what PDFium's route gave for free: font dictionaries, the CIDToGIDMap,
+  and resource-name collisions. The M0 spike's Route B already wrote all of these with output
+  identical to PDFium's (finding 3), so the recipe is known.
+- **Encrypted files:** new objects in an update to an encrypted file must be encrypted with the
+  file's key. M2's writer does not encrypt (it only rewrites existing objects). Until it does,
+  text edits on encrypted files are refused with `edit_unsupported`.
+- Text gains the undo stack and signature-safe saves that page edits already have.

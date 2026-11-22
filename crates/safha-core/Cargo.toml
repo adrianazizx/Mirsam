@@ -26,6 +26,14 @@ aes = "0.9"
 md-5 = "0.11"
 sha2 = "0.11"
 getrandom = "0.3"
+# Text layout for writing (ADR 0020). harfrust: the maintained HarfBuzz port (MIT);
+# ICU4X (Unicode-3.0, already in the tree through harfrust and Tauri) for UAX #14
+# line breaks, grapheme clusters, and the Script / Script_Extensions properties.
+harfrust = "0.16.1"
+icu_segmenter = { version = "2.4", default-features = false, features = ["compiled_data"] }
+icu_properties = "2.4"
+subsetter = "0.2.6"
+read-fonts = "0.47.0"
 
 [lints]
 workspace = true
