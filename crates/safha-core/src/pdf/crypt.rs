@@ -43,6 +43,14 @@ pub(crate) struct Crypt {
     key: Vec<u8>,
     strings: Method,
     streams: Method,
+    /// Which password unlocked the file: the owner's (every permission), or
+    /// the user's.
+    pub(crate) owner: bool,
+    /// The security handler's revision (2–6) and its `/P` permissions.
+    pub(crate) revision: i64,
+    pub(crate) permissions: u32,
+    /// Whether the document's metadata stream is encrypted too.
+    encrypt_metadata: bool,
 }
 
 impl std::fmt::Debug for Crypt {
@@ -50,6 +58,14 @@ impl std::fmt::Debug for Crypt {
         // Never the key.
         f.debug_struct("Crypt").field("strings", &self.strings).field("streams", &self.streams).finish()
     }
+}
+
+/// How a file's data is encrypted, for display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Cipher {
+    Rc4,
+    Aes128,
+    Aes256,
 }
 
 impl Crypt {
@@ -107,7 +123,9 @@ impl Crypt {
         };
 
         let wrong = || Error::EditUnsupported("its password could not be confirmed for writing");
-        let key = match revision {
+        let encrypt_metadata = !matches!(dict.get(b"EncryptMetadata"), Some(Object::Bool(false)));
+        let permissions = int(b"P").ok_or_else(unsupported)? as u32;
+        let (key, owner_auth) = match revision {
             2..=4 => {
                 let id = match file.trailer.get(b"ID").and_then(Object::as_array).and_then(|id| id.first()) {
                     Some(Object::Str(id)) => id.clone(),
@@ -118,23 +136,74 @@ impl Crypt {
                     key_length,
                     owner: &owner,
                     user: &user,
-                    permissions: int(b"P").ok_or_else(unsupported)?,
+                    permissions: permissions as i64,
                     id: &id,
-                    encrypt_metadata: !matches!(dict.get(b"EncryptMetadata"), Some(Object::Bool(false))),
+                    encrypt_metadata,
                 };
-                let typed = latin1(password).ok_or_else(wrong)?;
-                legacy.user_key(&padded(&typed)).or_else(|| legacy.owner_key(&typed)).ok_or_else(wrong)?
+                legacy_passwords(password)
+                    .into_iter()
+                    .find_map(|typed| {
+                        legacy
+                            .user_key(&padded(&typed))
+                            .map(|key| (key, false))
+                            .or_else(|| legacy.owner_key(&typed).map(|key| (key, true)))
+                    })
+                    .ok_or_else(wrong)?
             }
             5 | 6 => {
-                let typed = password.as_bytes();
-                let typed = &typed[..typed.len().min(127)];
                 let (owner_e, user_e) =
                     (string(b"OE").ok_or_else(unsupported)?, string(b"UE").ok_or_else(unsupported)?);
-                modern_key(revision, typed, &owner, &user, &owner_e, &user_e).ok_or_else(wrong)?
+                password_bytes(password)
+                    .into_iter()
+                    .find_map(|typed| modern_key(revision, &typed, &owner, &user, &owner_e, &user_e))
+                    .ok_or_else(wrong)?
             }
             _ => return Err(unsupported()),
         };
-        Ok(Some(Self { key, strings, streams }))
+        Ok(Some(Self { key, strings, streams, owner: owner_auth, revision, permissions, encrypt_metadata }))
+    }
+
+    pub(crate) fn cipher(&self) -> Cipher {
+        match self.streams {
+            Method::AesV3 => Cipher::Aes256,
+            Method::AesV2 => Cipher::Aes128,
+            _ => Cipher::Rc4,
+        }
+    }
+
+    /// Decrypts, in place, every string in `object` (the value of object
+    /// `number`). `None` when a string is not valid ciphertext.
+    pub(crate) fn decrypt_strings(&self, number: u32, generation: u16, object: &mut Object) -> Option<()> {
+        match object {
+            Object::Str(bytes) => *bytes = self.reverse(self.strings, number, generation, bytes)?,
+            Object::Array(items) => {
+                for item in items {
+                    self.decrypt_strings(number, generation, item)?;
+                }
+            }
+            Object::Dict(Dict(entries)) => {
+                for (_, value) in entries {
+                    self.decrypt_strings(number, generation, value)?;
+                }
+            }
+            _ => {}
+        }
+        Some(())
+    }
+
+    /// The data of stream `number` as read, decrypted. The metadata stream of
+    /// a file that leaves it in the clear is returned as it is.
+    pub(crate) fn decrypt_stream_of(
+        &self,
+        number: u32,
+        generation: u16,
+        dict: &Dict,
+        data: &[u8],
+    ) -> Option<Vec<u8>> {
+        if !self.encrypt_metadata && dict.get(b"Type").and_then(Object::as_name) == Some(b"Metadata") {
+            return Some(data.to_vec());
+        }
+        self.reverse(self.streams, number, generation, data)
     }
 
     /// Encrypts, in place, every string in `object` (the value of object
@@ -203,6 +272,185 @@ impl Crypt {
             Method::AesV3 => aes_decrypt(&self.key, data),
         }
     }
+}
+
+/// A new file's security handler: the one that encrypts it, and the
+/// `/Encrypt` dictionary that lets a reader unlock it.
+pub(crate) struct NewHandler {
+    pub(crate) crypt: Crypt,
+    pub(crate) dict: Dict,
+}
+
+fn random<const N: usize>() -> Result<[u8; N]> {
+    let mut out = [0u8; N];
+    getrandom::fill(&mut out)
+        .map_err(|_| Error::EditUnsupported("the system has no source of randomness"))?;
+    Ok(out)
+}
+
+fn entry(key: &str, value: Object) -> (Vec<u8>, Object) {
+    (key.as_bytes().to_vec(), value)
+}
+
+fn crypt_filter(method: &str, length: i64) -> Object {
+    Object::Dict(Dict(vec![entry(
+        "StdCF",
+        Object::Dict(Dict(vec![
+            entry("AuthEvent", Object::Name(b"DocOpen".to_vec())),
+            entry("CFM", Object::Name(method.as_bytes().to_vec())),
+            entry("Length", Object::Int(length)),
+        ])),
+    )]))
+}
+
+/// Makes the handler for a file protected with `user` and `owner` passwords
+/// (an empty user password lets anyone open it; an empty owner password is
+/// replaced by a random one nobody knows, so the permissions hold) and
+/// `permissions` (the `/P` value). `id` is the first element of the file's
+/// `/ID`.
+///
+/// `Aes256` is revision 6 (ISO 32000-2): a random 256-bit file key that the
+/// passwords only wrap, so changing a password never needs the file
+/// re-encrypted. `Aes128` is revision 4 (ISO 32000-1): the key derives from
+/// the user password; its passwords must be ASCII.
+pub(crate) fn new_handler(
+    cipher: Cipher,
+    user: &str,
+    owner: &str,
+    permissions: u32,
+    id: &[u8],
+) -> Result<NewHandler> {
+    let p = Object::Int(i64::from(permissions as i32));
+    let filter = entry("Filter", Object::Name(b"Standard".to_vec()));
+    match cipher {
+        Cipher::Aes256 => {
+            let key: [u8; 32] = random()?;
+            let normalised = |text: &str| {
+                let mut bytes = normalise_password(text).into_bytes();
+                truncate_utf8(&mut bytes, 127);
+                bytes
+            };
+            let user = normalised(user);
+            let owner = if owner.is_empty() { random::<32>()?.to_vec() } else { normalised(owner) };
+            let zero = [0u8; 16];
+            let wrap = |intermediate: [u8; 32]| cbc_encrypt(&intermediate, zero, &key).unwrap_or_default();
+
+            let (u_validation, u_salt): ([u8; 8], [u8; 8]) = (random()?, random()?);
+            let mut u = hash_r6(6, &user, &u_validation, &[]).to_vec();
+            u.extend_from_slice(&u_validation);
+            u.extend_from_slice(&u_salt);
+            let ue = wrap(hash_r6(6, &user, &u_salt, &[]));
+
+            let (o_validation, o_salt): ([u8; 8], [u8; 8]) = (random()?, random()?);
+            let mut o = hash_r6(6, &owner, &o_validation, &u).to_vec();
+            o.extend_from_slice(&o_validation);
+            o.extend_from_slice(&o_salt);
+            let oe = wrap(hash_r6(6, &owner, &o_salt, &u));
+
+            // /Perms: the permissions again, encrypted, so a reader can tell
+            // when /P was tampered with.
+            let mut perms = [0u8; 16];
+            perms[..4].copy_from_slice(&permissions.to_le_bytes());
+            perms[4..8].fill(0xFF);
+            perms[8] = b'T';
+            perms[9..12].copy_from_slice(b"adb");
+            perms[12..].copy_from_slice(&random::<4>()?);
+            let mut block = Array::from(perms);
+            Aes256::new_from_slice(&key)
+                .map_err(|_| Error::EditUnsupported("bad key"))?
+                .encrypt_block(&mut block);
+
+            let dict = Dict(vec![
+                filter,
+                entry("V", Object::Int(5)),
+                entry("R", Object::Int(6)),
+                entry("Length", Object::Int(256)),
+                entry("CF", crypt_filter("AESV3", 32)),
+                entry("StmF", Object::Name(b"StdCF".to_vec())),
+                entry("StrF", Object::Name(b"StdCF".to_vec())),
+                entry("O", Object::Str(o)),
+                entry("U", Object::Str(u)),
+                entry("OE", Object::Str(oe)),
+                entry("UE", Object::Str(ue)),
+                entry("P", p),
+                entry("Perms", Object::Str(block.to_vec())),
+            ]);
+            let crypt = Crypt {
+                key: key.to_vec(),
+                strings: Method::AesV3,
+                streams: Method::AesV3,
+                owner: true,
+                revision: 6,
+                permissions,
+                encrypt_metadata: true,
+            };
+            Ok(NewHandler { crypt, dict })
+        }
+        Cipher::Aes128 => {
+            if !user.is_ascii() || !owner.is_ascii() {
+                return Err(Error::EditUnsupported("AES-128 passwords must be ASCII; use AES-256"));
+            }
+            let owner = if owner.is_empty() { hex(&random::<16>()?) } else { owner.to_owned() };
+            // Algorithm 3: /O hides the user password under the owner's.
+            let mut hash = Md5::digest(padded(owner.as_bytes())).to_vec();
+            for _ in 0..50 {
+                hash = Md5::digest(&hash).to_vec();
+            }
+            let owner_key = &hash[..16];
+            let mut o = padded(user.as_bytes()).to_vec();
+            for i in 0..20u8 {
+                o = rc4(&xored(owner_key, i), &o);
+            }
+            // Algorithm 2: the file key.
+            let legacy = Legacy {
+                revision: 4,
+                key_length: 16,
+                owner: &o,
+                user: &[],
+                permissions: i64::from(permissions as i32),
+                id,
+                encrypt_metadata: true,
+            };
+            let key = legacy.key(&padded(user.as_bytes()));
+            // Algorithm 5: /U, which lets a reader check the user password.
+            let mut hasher = Md5::new();
+            hasher.update(PADDING);
+            hasher.update(id);
+            let mut u = hasher.finalize().to_vec();
+            for i in 0..20u8 {
+                u = rc4(&xored(&key, i), &u);
+            }
+            u.extend_from_slice(&random::<16>()?);
+
+            let dict = Dict(vec![
+                filter,
+                entry("V", Object::Int(4)),
+                entry("R", Object::Int(4)),
+                entry("Length", Object::Int(128)),
+                entry("CF", crypt_filter("AESV2", 16)),
+                entry("StmF", Object::Name(b"StdCF".to_vec())),
+                entry("StrF", Object::Name(b"StdCF".to_vec())),
+                entry("O", Object::Str(o)),
+                entry("U", Object::Str(u)),
+                entry("P", p),
+            ]);
+            let crypt = Crypt {
+                key,
+                strings: Method::AesV2,
+                streams: Method::AesV2,
+                owner: true,
+                revision: 4,
+                permissions,
+                encrypt_metadata: true,
+            };
+            Ok(NewHandler { crypt, dict })
+        }
+        Cipher::Rc4 => Err(Error::EditUnsupported("RC4 is not offered for new files")),
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// The entries revisions 2–4 derive the key from.
@@ -287,14 +535,14 @@ fn modern_key(
     user: &[u8],
     owner_e: &[u8],
     user_e: &[u8],
-) -> Option<Vec<u8>> {
+) -> Option<(Vec<u8>, bool)> {
     let (owner, user) = (owner.get(..48)?, user.get(..48)?);
     let (o_hash, o_check, o_key) = (&owner[..32], &owner[32..40], &owner[40..48]);
     let (u_hash, u_check, u_key) = (&user[..32], &user[32..40], &user[40..48]);
-    let (intermediate, encrypted) = if hash_r6(revision, typed, o_check, user) == o_hash {
-        (hash_r6(revision, typed, o_key, user), owner_e)
+    let (intermediate, encrypted, is_owner) = if hash_r6(revision, typed, o_check, user) == o_hash {
+        (hash_r6(revision, typed, o_key, user), owner_e, true)
     } else if hash_r6(revision, typed, u_check, &[]) == u_hash {
-        (hash_r6(revision, typed, u_key, &[]), user_e)
+        (hash_r6(revision, typed, u_key, &[]), user_e, false)
     } else {
         return None;
     };
@@ -308,7 +556,7 @@ fn modern_key(
         key.extend(block.iter().zip(previous).map(|(a, b)| a ^ b));
         previous.copy_from_slice(chunk);
     }
-    Some(key)
+    Some((key, is_owner))
 }
 
 /// Algorithm 2.B (revision 6), or the single SHA-256 of revision 5.
@@ -346,8 +594,69 @@ fn hash_r6(revision: i64, password: &[u8], salt: &[u8], extra: &[u8]) -> [u8; 32
     out
 }
 
-/// A password typed for revisions 2–4: PDFDocEncoding, which agrees with
-/// Latin-1 for the characters people type.
+/// The byte strings a typed password may stand for in revisions 5 and 6: as
+/// typed (UTF-8), and normalised the way the standard asks (ISO 32000-2,
+/// 7.6.4.3.3: SASLprep, RFC 4013). Files written by tools that skip the
+/// normalisation open with the first, files written by ones that do it with
+/// the second. At most 127 bytes count.
+pub(crate) fn password_bytes(typed: &str) -> Vec<Vec<u8>> {
+    let mut out: Vec<Vec<u8>> = vec![typed.as_bytes().to_vec()];
+    let normalised = normalise_password(typed);
+    if normalised != typed {
+        out.push(normalised.into_bytes());
+    }
+    for bytes in &mut out {
+        truncate_utf8(bytes, 127);
+    }
+    out.dedup();
+    out
+}
+
+/// A password as the standard asks it be stored: SASLprep's mapping and NFKC
+/// (the characters it prohibits are accepted, not refused: a password that
+/// mixes Arabic and Latin letters is still a password). Non-ASCII spaces
+/// become U+0020; the characters "commonly mapped to nothing" (soft hyphen,
+/// joiners, variation selectors, the byte order mark) are dropped.
+pub(crate) fn normalise_password(password: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    password
+        .chars()
+        .filter(|c| {
+            !matches!(c, '\u{00AD}' | '\u{034F}' | '\u{1806}' | '\u{180B}'..='\u{180D}' | '\u{200B}'..='\u{200D}'
+                | '\u{2060}' | '\u{FE00}'..='\u{FE0F}' | '\u{FEFF}')
+        })
+        .map(|c| if c != ' ' && c.is_whitespace() { ' ' } else { c })
+        .nfkc()
+        .collect()
+}
+
+/// Cuts at a character boundary at or below `max` bytes.
+fn truncate_utf8(bytes: &mut Vec<u8>, max: usize) {
+    if bytes.len() <= max {
+        return;
+    }
+    let mut end = max;
+    while end > 0 && (bytes[end] & 0xC0) == 0x80 {
+        end -= 1;
+    }
+    bytes.truncate(end);
+}
+
+/// The byte strings a typed password may stand for in revisions 2–4:
+/// PDFDocEncoding (which agrees with Latin-1 for the characters people type),
+/// or UTF-8, which is what some tools write.
+fn legacy_passwords(typed: &str) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    if let Some(bytes) = latin1(typed) {
+        out.push(bytes);
+    }
+    let utf8 = typed.as_bytes().to_vec();
+    if !out.contains(&utf8) {
+        out.push(utf8);
+    }
+    out
+}
+
 fn latin1(password: &str) -> Option<Vec<u8>> {
     password.chars().map(|c| u8::try_from(u32::from(c)).ok()).collect()
 }
@@ -497,7 +806,15 @@ mod tests {
         for (streams, key) in
             [(Method::Rc4, vec![1u8; 5]), (Method::AesV2, vec![2u8; 16]), (Method::AesV3, vec![3u8; 32])]
         {
-            let crypt = Crypt { key, strings: streams, streams };
+            let crypt = Crypt {
+                key,
+                strings: streams,
+                streams,
+                owner: true,
+                revision: 4,
+                permissions: 0,
+                encrypt_metadata: true,
+            };
             let encrypted = crypt.encrypt_stream(12, 0, b"q 1 0 0 rg 0 0 10 10 re f Q");
             assert_ne!(encrypted, b"q 1 0 0 rg 0 0 10 10 re f Q");
             assert_eq!(
@@ -515,8 +832,46 @@ mod tests {
     }
 
     #[test]
+    fn passwords_are_normalised_the_way_the_standard_asks() {
+        // NFKC: presentation forms become the letters, a decomposed accent composes.
+        assert_eq!(normalise_password("ﻛﻠﻤﺔ"), "كلمة");
+        assert_eq!(normalise_password("scho\u{308}n"), "sch\u{f6}n");
+        // A no-break space maps to a space; a zero-width joiner and a soft hyphen to nothing.
+        assert_eq!(normalise_password("a\u{a0}b\u{200d}c\u{ad}"), "a bc");
+        // Typed and normalised forms are both tried, once each; ASCII is one.
+        assert_eq!(password_bytes("abc"), vec![b"abc".to_vec()]);
+        assert_eq!(password_bytes("scho\u{308}n").len(), 2);
+        // At most 127 bytes, cut on a character boundary.
+        let long = "ك".repeat(100);
+        assert!(password_bytes(&long).iter().all(|b| b.len() <= 127 && std::str::from_utf8(b).is_ok()));
+    }
+
+    #[test]
+    fn a_new_aes_256_handler_unlocks_with_its_passwords() {
+        let made = new_handler(Cipher::Aes256, "user", "owner", 0xFFFF_FFFC, b"id").expect("makes");
+        let get = |key: &str| match made.dict.get(key.as_bytes()) {
+            Some(Object::Str(bytes)) => bytes.clone(),
+            other => panic!("{key}: {other:?}"),
+        };
+        let (o, u, oe, ue) = (get("O"), get("U"), get("OE"), get("UE"));
+        let (key, owner) = modern_key(6, b"user", &o, &u, &oe, &ue).expect("user password unlocks");
+        assert!(!owner && key == made.crypt.key);
+        let (key, owner) = modern_key(6, b"owner", &o, &u, &oe, &ue).expect("owner password unlocks");
+        assert!(owner && key == made.crypt.key);
+        assert!(modern_key(6, b"other", &o, &u, &oe, &ue).is_none());
+    }
+
+    #[test]
     fn identity_filters_leave_data_alone() {
-        let crypt = Crypt { key: vec![1; 16], strings: Method::Identity, streams: Method::Identity };
+        let crypt = Crypt {
+            key: vec![1; 16],
+            strings: Method::Identity,
+            streams: Method::Identity,
+            owner: true,
+            revision: 4,
+            permissions: 0,
+            encrypt_metadata: true,
+        };
         let mut object = Object::Array(vec![Object::Str(b"abc".to_vec())]);
         crypt.encrypt_strings(5, 0, &mut object);
         assert_eq!(object, Object::Array(vec![Object::Str(b"abc".to_vec())]));
