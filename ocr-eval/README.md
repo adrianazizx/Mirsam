@@ -1,6 +1,7 @@
 # OCR evaluation set
 
 Method, gates, and the first baseline: [docs/adr/0006-ocr-evaluation.md](../docs/adr/0006-ocr-evaluation.md).
+Set v2, table-cell scoring, and the M4 engine benchmark: [docs/adr/0030-ocr-engines.md](../docs/adr/0030-ocr-engines.md).
 The rule from the spec: **accuracy → reading order → robustness → speed → model size**, and the
 default pipeline must beat plain Tesseract and the leading commercial editors in every Arabic
 category before M4 can close.
@@ -19,14 +20,30 @@ Exit status 1 means a gate failed or a category regressed against the baseline.
 | Path | What |
 |---|---|
 | `generate.mjs` | Sample matrix: content × Arabic face × scan condition → category. Bump `SET_VERSION` when samples or truth change. |
+| `content/` | OCR-only pages (forms), in the same format as `fixtures/content/` but kept out of the PDF fixture corpus. |
 | `fields.json` | Numbers, dates, and IDs per content file that must be recognized exactly. |
 | `targets.json` | Gates per category (the spec's initial targets; only ever tightened). |
 | `scans/` | Real scans with human-verified truth. **Empty — this is the set's biggest gap.** |
-| `engines/apple-vision.swift` | Reference engine: the OCR built into macOS. |
-| `baselines/` | Stored reports, for regression checks and for the M4 comparison. |
+| `engines/apple-vision.swift` | Reference engine: the OCR built into macOS. Other engines' runners are in `spikes/ocr-engines/`. |
+| `baselines/` | Stored reports, one per engine and set version (`<engine>.set-v<N>.json`), for regression checks and the M4 comparison. |
 | `out/` | Generated; not committed. |
 
-Categories in set v1: `clean-arabic-300dpi`, `clean-english-300dpi`, `mixed-arabic-english`,
-`degraded-arabic`, `numbers-dates-ids` (gated); `other-typefaces`, `diacritized`, `tables-forms`,
-`degraded-mixed` (tracked). Still missing from the spec's list: phone photos, stamps and
-letterheads, typewriter faces, handwriting — all of which need real images.
+Categories in set v2 (47 samples): `clean-arabic-300dpi`, `clean-english-300dpi`,
+`mixed-arabic-english`, `degraded-arabic`, `numbers-dates-ids` (gated); `other-typefaces`,
+`diacritized`, `tables-forms`, `degraded-mixed`, `degraded-arabic-severe` (tracked).
+
+Set v2 added, without changing any v1 sample:
+
+- **Severe scan conditions**, built from SVG filters in Chrome: a 100 dpi fax with thinned,
+  broken strokes and specks; a second-generation photocopy (ink bleed, mottled grey paper, 2°
+  skew); faded toner; and a phone photo of a curved page (perspective, wavy lines, uneven light).
+  Arabic prose under these is the `degraded-arabic-severe` category; mixed lines and tables get
+  them too. v1's `degraded-arabic` stays as it was, and so does its gate.
+- **An Arabic-only form** (`content/form-leave-request.json`): a label/value table with
+  Arabic-Indic IDs and dates.
+- **Table cells.** Table samples list their cells (`cells` in the manifest, row by row in reading
+  order). The scorer reports the share of cells read exactly and the number read but out of order,
+  beside page CER, which cannot tell a misread table from a misordered one.
+
+Still missing from the spec's list: real phone photos, stamps and letterheads, typewriter faces,
+handwriting, all of which need real images. The severe conditions are synthetic too.

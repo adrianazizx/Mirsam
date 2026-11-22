@@ -69,7 +69,7 @@ fn run() -> Result<bool, String> {
                 missing.push(sample.id.clone());
                 String::new()
             });
-        scores.push(score_sample(&truth, &hypothesis, &sample.fields));
+        scores.push(score_sample(&truth, &hypothesis, &sample.fields, &sample.cells));
     }
     let report = evaluate(&args.engine, &manifest, scores, missing);
 
@@ -80,20 +80,27 @@ fn run() -> Result<bool, String> {
         manifest.samples.len()
     );
     println!(
-        "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6}",
-        "category", "n", "CER", "WER", "CER-base", "fields", "order"
+        "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6} {:>8} {:>7}",
+        "category", "n", "CER", "WER", "CER-base", "fields", "order", "cells", "c-order"
     );
     for (name, score) in &report.categories {
         let fields = if score.fields_total > 0 { percent(score.field_accuracy) } else { "-".into() };
+        let (cells, cell_order) = if score.cells_total > 0 {
+            (percent(score.cell_accuracy), score.cell_order_errors.to_string())
+        } else {
+            ("-".into(), "-".into())
+        };
         println!(
-            "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6}",
+            "{:<26} {:>4} {:>8} {:>8} {:>9} {:>8} {:>6} {:>8} {:>7}",
             name,
             score.samples,
             percent(score.cer),
             percent(score.wer),
             percent(score.cer_base),
             fields,
-            score.order_errors
+            score.order_errors,
+            cells,
+            cell_order
         );
     }
     if !report.missing.is_empty() {
