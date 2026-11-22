@@ -142,8 +142,8 @@ by anything found so far.
       - windows: New Window (Cmd/Ctrl+N) and Move Tab to New Window; a window's documents close
         with it; the session restores every window; settings follow across windows.
       Checked in the real app: the self-test opens a second window
-- [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 83/118 corpus blocks verbatim
-      (was 46), 67/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for OCR;
+- [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 85/118 corpus blocks verbatim
+      (was 46), 69/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for OCR;
       identical text on pages rotated 0/90/180/270°
 - [x] Selection and copy (ADR 0010) — selects visually, copies logically; word/line/page
       selection, floating Copy button, Edit-menu copy. In the real app, select-all on page 1 copies
@@ -163,8 +163,10 @@ by anything found so far.
 - [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures): checked by the
       self-test one file per run; not yet a corpus-wide UI check.
 
-Known extraction gaps (floors in `crates/safha-core/tests/text.rs`): a neutral between two LTR runs
-inside RTL text (`(64-bit)`), one split Amiri cluster, the bilingual table's heading direction.
+Known extraction gap (floors in `crates/safha-core/tests/text.rs`): `(64-bit)` inside an Arabic
+line comes out `(bit-64)`. The two are drawn identically, and the same file's `INV-2026-00417`
+needs the other reading (ADR 0008, session 6 amendment). Everything else missed is on pages
+flagged for OCR.
 
 To re-measure (screen unlocked; the release bundle sometimes opens hidden, and such a run is
 rejected as invalid, so run it again):

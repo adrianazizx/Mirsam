@@ -4,7 +4,9 @@
 # The UI side is apps/desktop/src/benchmarks/scroll.ts; budgets are asserted by
 # scripts/check-scroll-benchmark.mjs.
 #
-# Usage: scripts/scroll-benchmark.sh <out-dir> [debug|release]
+# Usage: scripts/scroll-benchmark.sh <out-dir> [debug|release] [--ci]
+#   --ci: frame and webview-memory budgets warn instead of failing (hosted
+#         runners have no real GPU; see scripts/check-scroll-benchmark.mjs)
 #   debug:   needs cargo build -p safha-desktop --features devtools
 #   release: needs (cd apps/desktop && pnpm tauri build --features devtools --bundles app)
 #
@@ -27,4 +29,4 @@ esac
 
 SAFHA_SELFTEST_SPIKE=scroll SAFHA_SELFTEST_TIMEOUT="${SAFHA_SELFTEST_TIMEOUT:-240}" \
   "$ROOT/scripts/selftest.sh" "$PDF" "$OUT" en light
-node "$ROOT/scripts/check-scroll-benchmark.mjs" "$OUT"
+node "$ROOT/scripts/check-scroll-benchmark.mjs" "$OUT" "${@:3}"

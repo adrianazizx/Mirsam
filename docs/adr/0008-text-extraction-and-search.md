@@ -76,7 +76,8 @@ text). `DocumentIndex` extracts every page once, cancellably.
 | Index / search 1,000 pages (release, `examples/search_bench.rs`) | — | 1.09 s / 18 ms; index ≈ 34 MB resident |
 
 All Chrome Naskh and Plex fixtures, the two-column contract, and CoreText's Plex page come out
-exact. Remaining misses on trustworthy pages, recorded as floors in `crates/safha-core/tests/text.rs`:
+exact. Remaining misses on trustworthy pages, recorded as floors in `crates/safha-core/tests/text.rs`
+(the session 6 amendment below fixes the last two):
 
 - `(64-bit)` inside an Arabic line comes out as `bit-64(`: a neutral between two left-to-right
   runs inside right-to-left text has more than one logical source for the same visual order, and
@@ -106,6 +107,47 @@ and crop boxes that do not start at the origin.
 Regression tests: `tests/text.rs` (floors per fixture, OCR flagging, directions, span integrity,
 damaged files, 1,000-page speed) and `tests/search.rs`; `examples/fixture_report.rs --verbose`
 shows every miss.
+
+### Amendment (session 6): three of the remaining misses fixed, one ambiguity documented
+
+The M1 exit test asks for correct Arabic copy and search on every §6.6 fixture. On the pages
+whose text layer is trustworthy, three misses were left. Each was diagnosed from the glyphs
+PDFium reports and the page's content stream:
+
+- **The split Amiri cluster.** Fixed.
+  - Cause: Chrome draws the waw and the hamza-below alef of `وَإِنَّ` from origins only
+    0.05 pt apart, with the waw's ink to the right. Ordering by origin put the alef first.
+  - Fix: units whose origins lie within 0.05 em of each other are ordered by their ink centres.
+    Only exactly equal ones fall back to stream order.
+- **The bilingual table's heading.** Fixed.
+  - Cause: no other block overlaps the heading, so it formed its own column and gave no
+    alignment signal. Its strong characters also tie, 13 Arabic to 13 Latin, and a tie meant
+    left to right.
+  - Fix: a block's direction now comes from the first signal that decides it:
+    1. alignment within its column;
+    2. a *clear* majority of strong characters (twice as many of one kind);
+    3. alignment within the page's text area (the heading ends at its right edge);
+    4. the page's majority.
+- **Brackets.** Fixed.
+  - Bracket pairs are now given their drawn shapes in *visual* order, where a pair always
+    looks like `(…)`. They are mirrored after reordering where they sit at a right-to-left
+    level (UAX #9 rule L4).
+  - Before, the pairs were repaired after reordering. That failed when one bracket was mapped
+    as typed and the other as drawn around left-to-right text: `bit-64( 2024)!`.
+  - Unpaired brackets keep their mapping, as before.
+- **`(64-bit)` inside an Arabic line comes out `(bit-64)`.** Not fixable from what the page
+  shows.
+  - Typed `64-bit` and typed `bit-64` are drawn identically in a right-to-left paragraph (UAX #9
+    rule W7 makes the second one a single left-to-right run).
+  - The same file's `INV-2026-00417` needs the other reading, and it is the more common shape
+    (codes such as `COVID-19` and `ISO-9001`).
+  - Chrome does draw each bidi run as its own `BT … ET`, which would tell the two apart.
+    PDFium makes one text object per `Tj`, so that boundary is lost. Reading it would mean
+    parsing content streams ourselves for one producer. Not done.
+
+Results: 85 / 118 blocks verbatim on the whole corpus (was 83), and **69 / 70 on pages with a
+trustworthy mapping** (was 67). Every miss left is either the ambiguity above or on a page
+flagged for OCR.
 
 ## Consequences
 

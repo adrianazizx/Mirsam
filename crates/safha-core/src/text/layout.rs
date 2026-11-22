@@ -501,17 +501,25 @@ fn build_lines(units: &[Unit], p: Params) -> Vec<Line> {
 }
 
 /// Visual (left-to-right) order: by origin, which producers place at the
-/// glyph's left edge. Units drawn from the very same origin (one cluster split
-/// by a vertical offset) keep stream order: logical, so for right-to-left
-/// letters the later one is further left.
+/// glyph's left edge.
+///
+/// Origins closer than a twentieth of an em belong to glyphs drawn with no
+/// advance between them: a cluster the shaper positioned by offsets (Amiri
+/// draws `وَإِ` from two origins 0.05 pt apart, the waw to the right). Their
+/// ink says which is where. Units drawn from the very same origin with the
+/// same ink centre (one cluster split by a vertical offset) keep stream order:
+/// logical, so for right-to-left letters the later one is further left.
 fn visual_order(units: &[Unit], members: &mut [usize]) {
     members.sort_by(|&a, &b| {
         let (ua, ub) = (&units[a], &units[b]);
-        if (ua.origin_x - ub.origin_x).abs() < 0.01 {
+        let near = 0.05 * ua.size.max(ub.size);
+        if (ua.origin_x - ub.origin_x).abs() >= near.max(0.01) {
+            ua.origin_x.total_cmp(&ub.origin_x)
+        } else if (ua.center_x() - ub.center_x()).abs() >= 0.01 {
+            ua.center_x().total_cmp(&ub.center_x())
+        } else {
             let (ia, ib) = (ua.first_index, ub.first_index);
             if is_rtl_char(ua.key) && is_rtl_char(ub.key) { ib.cmp(&ia) } else { ia.cmp(&ib) }
-        } else {
-            ua.origin_x.total_cmp(&ub.origin_x)
         }
     });
 }
@@ -753,38 +761,59 @@ fn build_blocks(mut segments: Vec<Segment>, p: Params) -> Vec<Block> {
     blocks
 }
 
-/// A block's direction: from alignment when its lines show one (an RTL
-/// paragraph's lines hug the right edge of its column), else from the majority
-/// of strongly directional characters.
+/// A block's direction, from the first signal that decides it:
+///
+/// 1. alignment within its column (an RTL paragraph's lines hug the right
+///    edge of the column);
+/// 2. a clear majority of strongly directional characters (twice as many of
+///    one direction as of the other);
+/// 3. alignment within the page's text area (a heading set alone above a
+///    table forms its own column, but still starts at the page's right edge);
+/// 4. the majority on the whole page.
 fn assign_directions(blocks: &mut [Block], p: Params) {
     let extents: Vec<(f32, f32)> = blocks.iter().map(|b| (b.left(), b.right())).collect();
+    let page =
+        extents.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |acc, e| (acc.0.min(e.0), acc.1.max(e.1)));
+    let (page_rtl, page_ltr) = blocks.iter().fold((0, 0), |(r, l), b| {
+        let (br, bl) = b.strong();
+        (r + br, l + bl)
+    });
+    let majority = |rtl: usize, ltr: usize| match rtl.cmp(&ltr) {
+        std::cmp::Ordering::Greater => Some(Direction::Rtl),
+        std::cmp::Ordering::Less => Some(Direction::Ltr),
+        std::cmp::Ordering::Equal => None,
+    };
+
     for (i, block) in blocks.iter_mut().enumerate() {
         let own = extents[i];
         // The column: every block that shares this block's horizontal range.
-        let (left, right) = extents
+        let column = extents
             .iter()
             .filter(|other| overlap(own, **other) > 0.0)
             .fold(own, |acc, other| (acc.0.min(other.0), acc.1.max(other.1)));
-
         let tolerance = p.align_tolerance * block.size();
-        let (mut rtl_votes, mut ltr_votes) = (0, 0);
-        for segment in &block.segments {
-            let left_gap = segment.bounds.left - left;
-            let right_gap = right - segment.bounds.right;
-            if right_gap <= tolerance && left_gap > 2.0 * tolerance {
-                rtl_votes += 1;
-            } else if left_gap <= tolerance && right_gap > 2.0 * tolerance {
-                ltr_votes += 1;
+        let aligned = |(left, right): (f32, f32)| {
+            let (mut rtl, mut ltr) = (0, 0);
+            for segment in &block.segments {
+                let left_gap = segment.bounds.left - left;
+                let right_gap = right - segment.bounds.right;
+                if right_gap <= tolerance && left_gap > 2.0 * tolerance {
+                    rtl += 1;
+                } else if left_gap <= tolerance && right_gap > 2.0 * tolerance {
+                    ltr += 1;
+                }
             }
-        }
-        let (rtl_strong, ltr_strong) = block.strong();
-        block.direction = if rtl_votes != ltr_votes {
-            if rtl_votes > ltr_votes { Direction::Rtl } else { Direction::Ltr }
-        } else if rtl_strong > ltr_strong {
-            Direction::Rtl
-        } else {
-            Direction::Ltr
+            majority(rtl, ltr)
         };
+        let (rtl_strong, ltr_strong) = block.strong();
+        let clear = (rtl_strong.max(ltr_strong) >= 2 * rtl_strong.min(ltr_strong))
+            .then(|| majority(rtl_strong, ltr_strong))
+            .flatten();
+        block.direction = aligned(column)
+            .or(clear)
+            .or_else(|| aligned(page))
+            .or_else(|| majority(page_rtl, page_ltr))
+            .unwrap_or(Direction::Ltr);
     }
 }
 
@@ -911,40 +940,40 @@ fn is_closing(c: char) -> bool {
     matches!(c, ')' | ']' | '}' | '»' | '\u{FD3F}')
 }
 
-/// Repairs brackets and quotation marks that a producer mapped the wrong way.
+fn single(cluster: &Cluster) -> Option<char> {
+    let mut chars = cluster.text.chars();
+    let c = chars.next()?;
+    chars.next().is_none().then_some(c)
+}
+
+/// Gives bracket pairs their drawn shapes, in visual order, and returns the
+/// positions of the brackets that form pairs.
 ///
-/// A bracket next to right-to-left text is drawn mirrored, and producers
-/// disagree about whether it maps to the character typed or the shape drawn —
-/// some do both on one line, giving `)…)` or `“…“`. Scanning in logical order,
-/// unmatched closers come in pairs where the first should open; unmatched
-/// openers come in pairs where the second should close; a closer before an
-/// opener (`)…(`) swaps both. A lone unmatched bracket (`1)` in a list) is
-/// left alone.
-fn repair_pairs(clusters: &mut [(Cluster, bool)]) {
-    fn single(cluster: &Cluster) -> Option<char> {
-        let mut chars = cluster.text.chars();
-        let c = chars.next()?;
-        chars.next().is_none().then_some(c)
-    }
-    let flip = |c: char| match c {
-        '\u{201C}' => '\u{201D}',
-        '\u{201D}' => '\u{201C}',
-        '\u{2018}' => '\u{2019}',
-        '\u{2019}' => '\u{2018}',
-        other => mirror(other),
+/// Whatever the direction, a pair is drawn `(…)` from left to right: next to
+/// right-to-left text each bracket is drawn mirrored. Producers disagree about
+/// whether such a glyph maps to the character typed or the shape drawn, and
+/// some do both on one line, giving `)…)`. Unmatched closers come in pairs
+/// where the first is drawn opening; unmatched openers in pairs where the
+/// second is drawn closing; a closer before an opener (`)…(`, both mapped as
+/// typed) swaps both. A lone bracket (`1)` in a list) keeps its mapping.
+fn bracket_shapes(clusters: &mut [Cluster]) -> Vec<usize> {
+    let scan = |clusters: &[Cluster]| {
+        let (mut open, mut stray_closers, mut pairs) = (Vec::new(), Vec::new(), Vec::new());
+        for (i, cluster) in clusters.iter().enumerate() {
+            match single(cluster) {
+                Some(c) if is_opening(c) => open.push(i),
+                Some(c) if is_closing(c) => match open.pop() {
+                    Some(opener) => pairs.extend([opener, i]),
+                    None => stray_closers.push(i),
+                },
+                _ => {}
+            }
+        }
+        (open, stray_closers, pairs)
     };
 
-    // Brackets: a stack per line.
-    let (mut open, mut stray_closers) = (Vec::new(), Vec::new());
-    for (i, (cluster, _)) in clusters.iter().enumerate() {
-        match single(cluster) {
-            Some(c) if is_opening(c) => open.push(i),
-            Some(c) if is_closing(c) && open.pop().is_none() => stray_closers.push(i),
-            _ => {}
-        }
-    }
+    let (mut open, mut stray_closers, _) = scan(clusters);
     let mut flips = Vec::new();
-    // `)…(`: both mapped as drawn.
     if let (Some(&closer), Some(&opener)) = (stray_closers.last(), open.first())
         && stray_closers.len() % 2 == 1
         && open.len() % 2 == 1
@@ -957,24 +986,29 @@ fn repair_pairs(clusters: &mut [(Cluster, bool)]) {
     flips.extend(stray_closers.as_chunks::<2>().0.iter().map(|[first, _]| *first));
     flips.extend(open.as_chunks::<2>().0.iter().map(|[_, second]| *second));
     for i in flips {
-        let cluster = &mut clusters[i].0;
+        let cluster = &mut clusters[i];
         if let Some(c) = single(cluster) {
-            cluster.text = flip(c).to_string();
+            cluster.text = mirror(c).to_string();
+            cluster.key = mirror(c);
         }
     }
+    scan(clusters).2
+}
 
-    // Curly quotes: alternate opening and closing.
+/// Curly quotation marks mapped the wrong way (`“…“`), in logical order: two
+/// of a kind on a line are one pair, opening then closing.
+fn repair_quotes(clusters: &mut [Cluster]) {
     for (opening, closing) in [('\u{201C}', '\u{201D}'), ('\u{2018}', '\u{2019}')] {
         let positions: Vec<usize> = clusters
             .iter()
             .enumerate()
-            .filter(|(_, (cluster, _))| matches!(single(cluster), Some(c) if c == opening || c == closing))
+            .filter(|(_, cluster)| matches!(single(cluster), Some(c) if c == opening || c == closing))
             .map(|(i, _)| i)
             .collect();
-        let all_same = positions.iter().all(|&i| single(&clusters[i].0) == single(&clusters[positions[0]].0));
+        let all_same = positions.iter().all(|&i| single(&clusters[i]) == single(&clusters[positions[0]]));
         if positions.len() == 2 && all_same {
-            clusters[positions[0]].0.text = opening.to_string();
-            clusters[positions[1]].0.text = closing.to_string();
+            clusters[positions[0]].text = opening.to_string();
+            clusters[positions[1]].text = closing.to_string();
         }
     }
 }
@@ -986,9 +1020,15 @@ fn repair_pairs(clusters: &mut [(Cluster, bool)]) {
 /// because for the character classes it depends on the reordering is its own
 /// inverse. Each cluster moves as a unit, so a ligature's letters and a
 /// letter's marks keep their (already logical) internal order.
+///
+/// Bracket pairs go in with their drawn shapes and come out mirrored where
+/// they sit at a right-to-left level (UAX #9, rule L4), which turns a drawn
+/// `)` at the start of an Arabic parenthesis back into the `(` typed.
 fn logical_line(segment: Segment, direction: Direction) -> TextLine {
     let bounds = segment.bounds;
-    let visual: String = segment.clusters.iter().map(|c| c.key).collect();
+    let mut visual_clusters = segment.clusters;
+    let paired = bracket_shapes(&mut visual_clusters);
+    let visual: String = visual_clusters.iter().map(|c| c.key).collect();
     let base = match direction {
         Direction::Ltr => Level::ltr(),
         Direction::Rtl => Level::rtl(),
@@ -998,14 +1038,24 @@ fn logical_line(segment: Segment, direction: Direction) -> TextLine {
     let levels: Vec<Level> = info.reordered_levels_per_char(0..visual.len());
     let order = ParagraphBidiInfo::reorder_visual(&levels);
 
-    let mut clusters: Vec<(Cluster, bool)> =
-        order.into_iter().map(|i| (segment.clusters[i].clone(), levels[i].is_rtl())).collect();
-
-    repair_pairs(&mut clusters);
+    let mut clusters: Vec<Cluster> = order
+        .into_iter()
+        .map(|i| {
+            let mut cluster = visual_clusters[i].clone();
+            if levels[i].is_rtl()
+                && paired.contains(&i)
+                && let Some(c) = single(&cluster)
+            {
+                cluster.text = mirror(c).to_string();
+            }
+            cluster
+        })
+        .collect();
+    repair_quotes(&mut clusters);
 
     let mut text = String::new();
     let mut spans = Vec::with_capacity(clusters.len());
-    for (cluster, _) in clusters {
+    for cluster in clusters {
         let start = text.len();
         text.push_str(&cluster.text);
         spans.push(TextSpan { start, end: text.len(), rect: cluster.rect });
@@ -1202,5 +1252,49 @@ mod tests {
         // visual left to right: "(" "صن" ")" as the *drawn* shapes.
         let glyphs = line(&["(صن)"], 700.0, 300.0, 0.0, 12.0, 0);
         assert_eq!(text(&glyphs), "(نص)");
+    }
+
+    #[test]
+    fn mirrored_brackets_mapped_as_typed_are_restored() {
+        // The same, from a producer that maps each glyph to the character typed:
+        // the left glyph (drawn "(") maps to ")".
+        let glyphs = line(&[")صن("], 700.0, 300.0, 0.0, 12.0, 0);
+        assert_eq!(text(&glyphs), "(نص)");
+    }
+
+    #[test]
+    fn brackets_mapped_both_ways_around_latin_in_arabic_are_restored() {
+        // Logical "نصوص (abc)!" in an Arabic line; drawn "!(abc) صوصن". Chrome maps
+        // the left bracket as typed and the right one as drawn: both come out ")".
+        let glyphs = line(&["!)abc)", "صوصن"], 700.0, 300.0, 4.0, 12.0, 0);
+        assert_eq!(text(&glyphs), "نصوص (abc)!");
+    }
+
+    #[test]
+    fn a_cluster_drawn_from_one_origin_is_ordered_by_its_ink() {
+        // "وإ" (waw then alef with hamza below): the shaper drew both from origins
+        // 0.05 pt apart, the waw's ink to the right. Stream order says alef first.
+        let mut alef = g(0, 'إ', 100.0, 1.5, 700.0, 12.0);
+        alef.left = 100.1;
+        let mut waw = g(1, 'و', 99.95, 1.5, 700.0, 12.0);
+        waw.left = 101.5;
+        waw.right = 103.0;
+        let before = line(&["ن"], 700.0, 94.0, 0.0, 12.0, 2);
+        let mut glyphs = vec![alef, waw];
+        glyphs.extend(before);
+        assert_eq!(text(&glyphs), "وإن");
+    }
+
+    #[test]
+    fn a_heading_alone_in_its_column_takes_the_page_edge_it_hugs() {
+        // "عنوان — Title", as many Arabic as Latin letters, ends at the right edge
+        // of the page's text area; the table cells below do not overlap it.
+        let mut glyphs = line(&["Title", "—", "ناونع"], 760.0, 450.0, 4.0, 12.0, 0);
+        let heading_right = glyphs.iter().map(|g| g.right).fold(0.0, f32::max);
+        glyphs.extend(line(&["ب"], 730.0, heading_right - 6.0, 0.0, 12.0, 100));
+        glyphs.extend(line(&["12"], 730.0, 72.0, 0.0, 12.0, 200));
+        let page = analyze(&glyphs, &[]);
+        assert_eq!(page.blocks[0].direction, Direction::Rtl);
+        assert_eq!(page.blocks[0].lines[0].text, "عنوان — Title");
     }
 }

@@ -35,14 +35,13 @@ const FLOORS: &[(&str, usize)] = &[
     ("chrome/ar-lam-alef", 5),
     ("chrome/ar-plain", 4),
     ("chrome/ar-sans", 3),
-    // One line of fully vocalized Amiri: "وَإِنَّ" comes out "إِوَنَّ".
-    ("chrome/ar-vocalized", 3),
+    ("chrome/ar-vocalized", 4),
     ("chrome/contract-two-column", 10),
     ("chrome/en-paragraphs", 4),
-    // "(64-bit)" inside an Arabic line: visual order alone cannot tell it from "(bit-64)".
+    // "(64-bit)" inside an Arabic line comes out "(bit-64)": the two are drawn
+    // identically, and "INV-2026" in the same file needs the other reading (ADR 0008).
     ("chrome/mixed-inline", 7),
-    // A heading read left to right.
-    ("chrome/table-bilingual", 16),
+    ("chrome/table-bilingual", 17),
     ("coretext/ar-sans", 3),
     ("coretext/en-paragraphs", 4),
     ("qpdf/linearized", 4),

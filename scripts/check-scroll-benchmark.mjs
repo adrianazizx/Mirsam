@@ -20,7 +20,13 @@
 // Frame and blank-time numbers are only meaningful when the window was on
 // screen the whole time; a run without real animation frames fails as invalid.
 //
-// Usage: node scripts/check-scroll-benchmark.mjs <out-dir>
+// --ci: for hosted CI runners, which are virtual machines without a real GPU
+// running a debug build. Frame timing and the shell + webview total (whose
+// budget is an open owner decision, PROGRESS.md item 12) are reported as
+// warnings there; blank time, jump-to-preview time, and the shell's own memory
+// still fail the run. The frame budgets are enforced on real hardware.
+//
+// Usage: node scripts/check-scroll-benchmark.mjs <out-dir> [--ci]
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -34,12 +40,15 @@ const BUDGET = {
   memoryMb: 500,
 };
 
-const [outDir] = process.argv.slice(2);
+const [outDir, ...flags] = process.argv.slice(2);
+const ci = flags.includes("--ci");
 const report = JSON.parse(readFileSync(path.join(outDir, "report.json"), "utf8"));
 const r = report.results;
 const failures = [];
-const check = (ok, message) => {
-  if (!ok) failures.push(message);
+const warnings = [];
+/** `soft`: a budget that only real hardware can judge (see --ci above). */
+const check = (ok, message, soft = false) => {
+  if (!ok) (ci && soft ? warnings : failures).push(message);
 };
 
 if (r.spike !== "scroll") {
@@ -91,12 +100,17 @@ if (valid) {
   // A p95 over a short idle phase (~20 frames) is its second-slowest frame;
   // short phases count through the dropped-frame share below instead.
   for (const p of r.phases.filter((phase) => phase.frames >= BUDGET.p95MinFrames)) {
-    check(p.p95FrameMs <= BUDGET.p95FrameMs, `${p.name}: p95 frame ${p.p95FrameMs} ms > ${BUDGET.p95FrameMs} ms`);
+    check(
+      p.p95FrameMs <= BUDGET.p95FrameMs,
+      `${p.name}: p95 frame ${p.p95FrameMs} ms > ${BUDGET.p95FrameMs} ms`,
+      true,
+    );
   }
   const share = summary.droppedFrames / Math.max(1, summary.frames);
   check(
     share <= BUDGET.droppedFrameShare,
     `${summary.droppedFrames} of ${summary.frames} frames dropped (over ${BUDGET.droppedFrameMs} ms, ${(share * 100).toFixed(1)}%)`,
+    true,
   );
   check(summary.maxBlankMs <= BUDGET.blankMs, `a page stayed blank for ${summary.maxBlankMs} ms`);
 }
@@ -116,16 +130,20 @@ for (const [label, point] of [
 ]) {
   if (point.webviewRssMb !== null && point.shellRssMb !== null) {
     const total = point.shellRssMb + point.webviewRssMb;
-    check(total < BUDGET.memoryMb, `shell + webview RSS ${total.toFixed(0)} MB ${label}`);
+    check(total < BUDGET.memoryMb, `shell + webview RSS ${total.toFixed(0)} MB ${label}`, true);
   }
 }
 
+for (const warning of warnings) {
+  // A GitHub Actions annotation: shown on the run and the pull request.
+  console.log(`::warning title=Scroll benchmark (CI runner)::${warning}`);
+}
 if (failures.length > 0) {
   console.error(`scroll benchmark FAILED:\n  ${failures.join("\n  ")}`);
   process.exit(1);
 }
 console.log(
-  `scroll benchmark ok: worst p95 ${summary.worstP95FrameMs} ms, longest frame ${summary.longestFrameMs} ms, ` +
+  `scroll benchmark ${warnings.length > 0 ? `ok on its hard budgets, ${warnings.length} warnings` : "ok"}: worst p95 ${summary.worstP95FrameMs} ms, longest frame ${summary.longestFrameMs} ms, ` +
     `${summary.framesOver20Ms}/${summary.frames} frames over 20 ms, max blank ${summary.maxBlankMs} ms, ` +
     `shell RSS ≤ ${shellPeak} MB`,
 );
