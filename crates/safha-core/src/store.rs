@@ -61,8 +61,24 @@ pub struct SessionWindow {
     pub active: Option<usize>,
 }
 
+/// A document's unsaved edits, kept as a recovery file (ADR 0040): what
+/// the file belongs to. The bytes are in `recovery::RecoveryFiles`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecoveryEntry {
+    /// The recovery file's name (see `RecoveryFiles`).
+    pub key: String,
+    /// The file the document was opened from (and is saved back to).
+    pub path: PathBuf,
+    pub name: String,
+    /// When the recovery file was last written (Unix seconds).
+    pub saved_at: i64,
+    /// The original's size and modification time when the document was
+    /// opened, to tell whether it changed since.
+    pub original: Option<crate::recovery::FileStamp>,
+}
+
 /// Bumped whenever `migrate` gains a step.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const MAX_RECENTS: i64 = 200;
 
 pub struct Store {
@@ -190,6 +206,57 @@ impl Store {
         })
     }
 
+    /// Records (or updates) a recovery file's entry; `saved_at` is set to now.
+    pub fn save_recovery(&self, entry: &RecoveryEntry) -> StoreResult<()> {
+        let (len, modified) = match entry.original {
+            Some(stamp) => (Some(i64::try_from(stamp.len).unwrap_or(i64::MAX)), Some(stamp.modified)),
+            None => (None, None),
+        };
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO recovery (key, path, name, saved_at, original_len, original_modified)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(key) DO UPDATE SET path = excluded.path, name = excluded.name,
+                   saved_at = excluded.saved_at, original_len = excluded.original_len,
+                   original_modified = excluded.original_modified",
+                params![entry.key, key_of(&entry.path), entry.name, now(), len, modified],
+            )
+            .map(drop)
+        })
+    }
+
+    /// Every recovery entry, most recently written first.
+    pub fn recoveries(&self) -> StoreResult<Vec<RecoveryEntry>> {
+        self.with(|db| {
+            let mut statement = db.prepare(
+                "SELECT key, path, name, saved_at, original_len, original_modified FROM recovery
+                 ORDER BY saved_at DESC, key",
+            )?;
+            let rows = statement.query_map([], |row| {
+                let len: Option<i64> = row.get(4)?;
+                let modified: Option<i64> = row.get(5)?;
+                Ok(RecoveryEntry {
+                    key: row.get(0)?,
+                    path: PathBuf::from(row.get::<_, String>(1)?),
+                    name: row.get(2)?,
+                    saved_at: row.get(3)?,
+                    original: match (len, modified) {
+                        (Some(len), Some(modified)) => Some(crate::recovery::FileStamp {
+                            len: u64::try_from(len).unwrap_or(0),
+                            modified,
+                        }),
+                        _ => None,
+                    },
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
+    pub fn forget_recovery(&self, key: &str) -> StoreResult<()> {
+        self.with(|db| db.execute("DELETE FROM recovery WHERE key = ?1", params![key]).map(drop))
+    }
+
     /// Replaces the saved session atomically.
     pub fn save_session(&self, session: &Session) -> StoreResult<()> {
         let mut connection = self.connection.lock().unwrap_or_else(PoisonError::into_inner);
@@ -305,6 +372,22 @@ fn migrate(db: &Connection) -> StoreResult<()> {
              COMMIT;",
         )?;
     }
+    if version < 3 {
+        // Recovery files of documents with unsaved edits (ADR 0040).
+        db.execute_batch(
+            "BEGIN;
+             CREATE TABLE recovery (
+                 key TEXT PRIMARY KEY,
+                 path TEXT NOT NULL,
+                 name TEXT NOT NULL,
+                 saved_at INTEGER NOT NULL,
+                 original_len INTEGER,
+                 original_modified INTEGER
+             );
+             PRAGMA user_version = 3;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -325,6 +408,30 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("safha-store-test-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("creates");
         dir
+    }
+
+    #[test]
+    fn recovery_entries_are_kept_until_forgotten() {
+        let dir = scratch();
+        let store = Store::in_memory().expect("opens");
+        let path = temp_file(&dir, "عقد.pdf");
+        let stamp = crate::recovery::FileStamp::of(&path);
+        let entry = RecoveryEntry {
+            key: "1-7".into(),
+            path: path.clone(),
+            name: "عقد.pdf".into(),
+            saved_at: 0,
+            original: stamp,
+        };
+        store.save_recovery(&entry).expect("saves");
+        store.save_recovery(&entry).expect("updates");
+        let listed = store.recoveries().expect("lists");
+        assert_eq!(listed.len(), 1);
+        assert_eq!((listed[0].key.as_str(), listed[0].name.as_str()), ("1-7", "عقد.pdf"));
+        assert_eq!(listed[0].original, stamp);
+        assert!(listed[0].saved_at > 0);
+        store.forget_recovery("1-7").expect("forgets");
+        assert!(store.recoveries().expect("lists").is_empty());
     }
 
     #[test]

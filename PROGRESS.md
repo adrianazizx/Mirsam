@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 7).
+Last updated: 2026-11-22 (session 8).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -232,7 +232,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
    - ~~**Text boxes**~~ **done (ADR 0019):** shaped by M3's `typeset`, drawn with embedded
      IBM Plex subsets by the new `pdf::text` writer. They stand upright on turned pages, and
      their height fits the text.
-7. **Autosave and recovery.**
+7. ~~**Autosave and recovery**~~ **done (ADR 0040):** a modified document's current bytes go
+   to a recovery file 2 seconds after its last change. At the next start the app offers to
+   restore or discard them.
 8. **Comments panel** (P1, if time allows in M2).
 
 - [~] Markup, notes, text boxes, ink:
@@ -261,7 +263,16 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       - signed files are saved incrementally;
       - `qpdf --check` runs in tests (qpdf is not bundled);
       - unsaved changes are marked on the tab, and the app asks before closing them.
-- [ ] Autosave and recovery
+- [x] Autosave and recovery (ADR 0040):
+      - each modified document's current revision is written to `<state dir>/recovery/` 2 s
+        after its last change, atomically;
+      - removed on save, on undo back to the saved revision, and on closing or quitting
+        without saving;
+      - at startup a dialog offers each one: restore (undo goes back to the original when it
+        is unchanged; Save asks where when it changed) or discard, or decide later;
+      - encrypted documents stay encrypted, and restoring asks for the password.
+      - Gap: running a single copy of the app is not enforced. A second copy started while
+        the first runs would offer the first one's recovery files.
 
 ## M3 — Text engine — groundwork merged to `main` ahead of M2
 
@@ -349,6 +360,28 @@ parallel with M2 and merged by pull request at the owner's request.
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery)
+
+- **Autosave (ADR 0040):**
+  - After each edit, undo or redo, a modified document's current bytes (a valid PDF: the file
+    as opened plus each edit's incremental update) are written to a recovery file 2 seconds
+    later. A burst of edits writes once.
+  - The state store's new `recovery` table (schema 3) records each file's original path, name,
+    time, and the original's size and modification time.
+  - The file goes away when the document is saved, undone back to its saved revision, or closed
+    or quit without saving.
+- **Recovery:**
+  - The first window's startup lists recovery files no open document holds. A dialog offers
+    each: Restore, Discard, or Decide later (offered again at the next start).
+  - A restored document opens modified. When the original is unchanged, undo goes back to it;
+    when it changed or is gone, Save asks for a new file (`save_as_required`).
+  - An encrypted recovery file uses the usual password prompt; a wrong password asks again.
+  - Save-and-close no longer closes the tab when that Save As is cancelled.
+- **Self-test:** after a page is duplicated the document has a recovery file, and undo back to
+  the file removes it (a devtools command, `selftest_has_recovery_file`).
+- **Tests:** 247 Rust and 146 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark), autosave included.
 
 ### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes, text boxes)
 

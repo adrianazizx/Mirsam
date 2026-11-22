@@ -353,6 +353,11 @@ pub struct SaveOutcome {
 #[tauri::command]
 pub async fn save_document(state: State<'_, AppState>, document_id: u32) -> CommandResult<SaveOutcome> {
     let path = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    // A recovered document whose original changed since (ADR 0040): Save
+    // would overwrite the newer file. The UI asks where instead.
+    if state.save_as_first(document_id) {
+        return Err(CommandError::new("save_as_required", "the original changed since"));
+    }
     save_to(&state, document_id, path)
 }
 
@@ -382,6 +387,22 @@ pub async fn save_document_as(
 }
 
 fn save_to(state: &AppState, document_id: u32, path: PathBuf) -> CommandResult<SaveOutcome> {
+    let outcome = save_locked(state, document_id, path)?;
+    // Saved: its recovery file goes (ADR 0040).
+    crate::recovery::write_now(state, document_id)?;
+    Ok(outcome)
+}
+
+#[cfg(test)]
+pub(crate) fn save_to_for_tests(
+    state: &AppState,
+    document_id: u32,
+    path: PathBuf,
+) -> CommandResult<SaveOutcome> {
+    save_to(state, document_id, path)
+}
+
+fn save_locked(state: &AppState, document_id: u32, path: PathBuf) -> CommandResult<SaveOutcome> {
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
@@ -529,6 +550,10 @@ pub fn close_window_discarding(window: WebviewWindow, state: State<'_, AppState>
 #[tauri::command]
 pub fn quit_discarding(app: AppHandle, state: State<'_, AppState>) {
     state.confirm_quit();
+    // The user chose to lose the changes: nothing to recover next time.
+    for key in state.recovery_keys() {
+        crate::recovery::forget(&state, &key);
+    }
     app.exit(0);
 }
 

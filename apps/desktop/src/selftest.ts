@@ -153,6 +153,8 @@ async function navigationChecks(documentId: number) {
     const pagesAfterEdit = (await backend.pageSizes(documentId)).length;
     const editMs = Math.round(performance.now() - started);
     const repainted = (await repaint) !== null;
+    // Autosave (ADR 0040): the unsaved change is kept in a recovery file.
+    const recoveryAfterEdit = await recoveryFile(documentId, true);
     // Closing the window now must ask first (ADR 0015) and leave it open.
     let closePrompted = false;
     if (isTauri()) {
@@ -166,6 +168,8 @@ async function navigationChecks(documentId: number) {
     }
     await runCommand("edit.undo");
     const pagesAfterUndo = (await backend.pageSizes(documentId)).length;
+    // Back to the file as opened: nothing left to recover.
+    const recoveryAfterUndo = await recoveryFile(documentId, false);
 
     // The page organizer, when there is more than one page: its grid draws,
     // and moving the first page later puts it second.
@@ -201,6 +205,8 @@ async function navigationChecks(documentId: number) {
       closePrompted,
       organizer,
       modifiedAfterUndo: open?.modified ?? null,
+      recoveryAfterEdit,
+      recoveryAfterUndo,
       revision: open?.revision ?? null,
     };
   })();
@@ -319,6 +325,19 @@ function countPixels(documentId: number, match: (r: number, g: number, b: number
     }
   }
   return count;
+}
+
+/**
+ * Whether the document has a recovery file, polled until it is `expected`
+ * (autosaves wait for edits to pause, ADR 0040), or null outside devtools.
+ */
+async function recoveryFile(documentId: number, expected: boolean): Promise<boolean | null> {
+  const deadline = performance.now() + 10_000;
+  for (;;) {
+    const kept = await backend.hasRecoveryFile(documentId);
+    if (kept === null || kept === expected || performance.now() > deadline) return kept;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 }
 
 async function notesAndInkChecks(documentId: number) {

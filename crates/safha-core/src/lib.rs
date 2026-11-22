@@ -20,6 +20,7 @@ mod engine;
 mod error;
 pub mod outline;
 mod pdf;
+pub mod recovery;
 pub mod render;
 pub mod save;
 pub mod search;

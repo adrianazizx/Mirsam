@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use safha_core::Document;
 use safha_core::edit::EditHistory;
+use safha_core::recovery::{FileStamp, RecoveryFiles};
 use safha_core::render::{DocumentId, RenderConfig, RenderService};
 use safha_core::search::IndexCache;
 use safha_core::store::Store;
@@ -45,6 +46,22 @@ pub struct OpenFile {
     /// The document's edits, for undo and redo (ADR 0014). Its lock also
     /// keeps a document's edits in sequence.
     pub history: Arc<Mutex<EditHistory>>,
+    /// Names its recovery file while it has unsaved changes (ADR 0040).
+    pub recovery_key: String,
+    /// The original file's size and time when it was opened.
+    pub original: Option<FileStamp>,
+    /// Restored from a recovery file whose original changed since: Save
+    /// would overwrite someone else's version, so the first save is Save As.
+    pub save_as_first: bool,
+}
+
+/// What autosave needs of a document.
+pub struct AutosaveTarget {
+    pub history: Arc<Mutex<EditHistory>>,
+    pub key: String,
+    pub path: PathBuf,
+    pub name: String,
+    pub original: Option<FileStamp>,
 }
 
 /// One window's tabs, as its UI last reported them (for the session).
@@ -66,6 +83,17 @@ pub struct AppState {
     documents: Mutex<HashMap<u32, OpenFile>>,
     /// Files waiting for a password, by token.
     locked: Mutex<HashMap<u32, PathBuf>>,
+    /// Recovery files waiting for a password, by token (their keys).
+    locked_recoveries: Mutex<HashMap<u32, String>>,
+    /// Recovery files from the last listing, by token (their keys).
+    recoveries: Mutex<HashMap<u32, String>>,
+    /// Bumped by each change to a document: an autosave writes only for the
+    /// latest (ADR 0040).
+    autosave: Mutex<HashMap<u32, u64>>,
+    /// Where documents with unsaved changes are kept (ADR 0040).
+    recovery: OnceLock<RecoveryFiles>,
+    /// The running app, for autosaves scheduled after a change; absent in tests.
+    app: OnceLock<tauri::AppHandle>,
     /// Recent files from the last listing, by token: the UI names a recent
     /// file by token, never by path.
     recents: Mutex<HashMap<u32, PathBuf>>,
@@ -95,6 +123,11 @@ impl AppState {
             started_up: AtomicBool::new(false),
             documents: Mutex::new(HashMap::new()),
             locked: Mutex::new(HashMap::new()),
+            locked_recoveries: Mutex::new(HashMap::new()),
+            recoveries: Mutex::new(HashMap::new()),
+            autosave: Mutex::new(HashMap::new()),
+            recovery: OnceLock::new(),
+            app: OnceLock::new(),
             recents: Mutex::new(HashMap::new()),
             next_id: AtomicU32::new(1),
             windows: Mutex::new(vec![(MAIN_WINDOW.to_string(), WindowTabs::default())]),
@@ -114,6 +147,71 @@ impl AppState {
         self.store.get()
     }
 
+    pub fn set_recovery(&self, files: RecoveryFiles) {
+        let _ = self.recovery.set(files);
+    }
+
+    pub fn set_app(&self, app: tauri::AppHandle) {
+        let _ = self.app.set(app);
+    }
+
+    pub fn recovery(&self) -> Option<&RecoveryFiles> {
+        self.recovery.get()
+    }
+
+    /// Marks a change to a document; the number an autosave waits on.
+    pub fn bump_autosave(&self, id: u32) -> u64 {
+        let mut generations = lock(&self.autosave);
+        let generation = generations.entry(id).or_insert(0);
+        *generation += 1;
+        *generation
+    }
+
+    pub fn autosave_generation(&self, id: u32) -> Option<u64> {
+        lock(&self.autosave).get(&id).copied()
+    }
+
+    pub fn autosave_target(&self, id: u32) -> Option<AutosaveTarget> {
+        lock(&self.documents).get(&id).map(|file| AutosaveTarget {
+            history: Arc::clone(&file.history),
+            key: file.recovery_key.clone(),
+            path: file.path.clone(),
+            name: file.name.clone(),
+            original: file.original,
+        })
+    }
+
+    /// The recovery keys of open documents.
+    pub fn recovery_keys(&self) -> HashSet<String> {
+        lock(&self.documents).values().map(|file| file.recovery_key.clone()).collect()
+    }
+
+    /// A token for a listed recovery file (the UI never sees its path).
+    pub fn remember_recovery(&self, key: String) -> u32 {
+        let token = self.next_token();
+        lock(&self.recoveries).insert(token, key);
+        token
+    }
+
+    pub fn recovery_key(&self, token: u32) -> Option<String> {
+        lock(&self.recoveries).get(&token).cloned()
+    }
+
+    pub fn lock_pending_recovery(&self, key: String) -> u32 {
+        let token = self.next_token();
+        lock(&self.locked_recoveries).insert(token, key);
+        token
+    }
+
+    pub fn pending_recovery(&self, token: u32) -> Option<String> {
+        lock(&self.locked_recoveries).get(&token).cloned()
+    }
+
+    /// Whether the document must be saved somewhere new before anywhere else.
+    pub fn save_as_first(&self, id: u32) -> bool {
+        lock(&self.documents).get(&id).is_some_and(|file| file.save_as_first)
+    }
+
     /// True on the first call only: the UI's first startup request restores the
     /// session; a reload of the UI re-attaches to what is already open.
     pub fn begin_startup(&self) -> bool {
@@ -130,16 +228,53 @@ impl AppState {
     }
 
     pub fn insert_document(&self, document: Document, path: PathBuf, window: &str) -> (u32, Arc<Document>) {
+        let history = EditHistory::new(document.bytes());
+        let original = FileStamp::of(&path);
+        self.insert_with(document, path, window, history, None, original, false)
+    }
+
+    /// Opens a document restored from a recovery file (ADR 0040), keeping the
+    /// file's key.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_restored(
+        &self,
+        document: Document,
+        path: PathBuf,
+        window: &str,
+        history: EditHistory,
+        key: String,
+        original: Option<FileStamp>,
+        save_as_first: bool,
+    ) -> (u32, Arc<Document>) {
+        self.insert_with(document, path, window, history, Some(key), original, save_as_first)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_with(
+        &self,
+        document: Document,
+        path: PathBuf,
+        window: &str,
+        history: EditHistory,
+        key: Option<String>,
+        original: Option<FileStamp>,
+        save_as_first: bool,
+    ) -> (u32, Arc<Document>) {
         let id = self.next_token();
         let document = Arc::new(document);
         let name = display_name(&path);
+        // Unique across runs: a crashed run's recovery files keep their names.
+        let millis = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_millis());
         let file = OpenFile {
             document: Arc::clone(&document),
             path,
             name,
             index: Arc::new(IndexCache::new()),
             window: window.to_string(),
-            history: Arc::new(Mutex::new(EditHistory::new(document.bytes()))),
+            history: Arc::new(Mutex::new(history)),
+            recovery_key: key.unwrap_or_else(|| format!("{millis}-{}-{id}", std::process::id())),
+            original,
+            save_as_first,
         };
         lock(&self.documents).insert(id, file);
         for lane in [Lane::Main, Lane::Thumbnails] {
@@ -167,6 +302,10 @@ impl AppState {
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.replace_document(lane.render_id(id), document.clone());
         }
+        // Every edit, undo, and redo ends here: keep the recovery file current.
+        if let Some(app) = self.app.get() {
+            crate::recovery::changed(app, id);
+        }
         Some(document)
     }
 
@@ -184,10 +323,13 @@ impl AppState {
 
     /// After Save As: the document now is the file at `path`. Returns its
     /// display name.
+    /// The document was saved to `path`: from now on it is that file.
     pub fn set_path(&self, id: u32, path: PathBuf) -> Option<String> {
         let mut documents = lock(&self.documents);
         let file = documents.get_mut(&id)?;
         file.name = display_name(&path);
+        file.original = FileStamp::of(&path);
+        file.save_as_first = false;
         file.path = path;
         Some(file.name.clone())
     }
@@ -342,6 +484,16 @@ impl AppState {
     pub fn remove_document(&self, id: u32) -> bool {
         let Some(file) = lock(&self.documents).remove(&id) else { return false };
         file.index.cancel();
+        // Closed: saved, or its changes discarded. Either way it has nothing to recover.
+        lock(&self.autosave).remove(&id);
+        if let Some(files) = self.recovery() {
+            files.remove(&file.recovery_key);
+        }
+        if let Some(store) = self.store()
+            && let Err(err) = store.forget_recovery(&file.recovery_key)
+        {
+            eprintln!("safha: could not forget a recovery file: {err}");
+        }
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.close_document(lane.render_id(id));
         }
@@ -360,6 +512,7 @@ impl AppState {
 
     pub fn forget_pending(&self, token: u32) {
         lock(&self.locked).remove(&token);
+        lock(&self.locked_recoveries).remove(&token);
     }
 
     /// Replaces the recent-file tokens with a fresh listing.

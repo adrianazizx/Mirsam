@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
+import { setMockRecoveries } from "../backend/mock";
 import { paletteMatch } from "../components/palette/match";
 import { pageFromInput } from "../components/shell/StatusBar";
 import {
@@ -20,12 +21,14 @@ const key = (init: KeyboardEventInit & { target?: EventTarget }) => {
 
 beforeEach(() => {
   localStorage.clear();
+  setMockRecoveries([]);
   useAppStore.setState({
     locale: "en",
     documents: [],
     activeDocumentId: null,
     errorCode: null,
     unlocks: [],
+    recoveries: [],
     leftPanel: null,
     activeTool: "select",
   });
@@ -197,5 +200,76 @@ describe("password prompt", () => {
     });
     expect(useAppStore.getState().unlocks).toHaveLength(0);
     expect(selectActiveDocument(useAppStore.getState())?.name).toBe("سري — Confidential.pdf");
+  });
+});
+
+describe("recovering unsaved changes", () => {
+  const savedAt = Date.UTC(2026, 10, 22, 9, 30) / 1000;
+
+  it("offers each document once, restores one with its changes, and discards the other", async () => {
+    setMockRecoveries([
+      { token: 11, name: "عقد إيجار — Lease Agreement.pdf", savedAt, originalChanged: false },
+      { token: 12, name: "draft.pdf", savedAt, originalChanged: true },
+    ]);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Recover unsaved changes?" })).toBeTruthy();
+    expect(screen.getByText("draft.pdf")).toBeTruthy();
+    // Only the entry whose original changed says it is saved as a new file.
+    expect(screen.getAllByText(/has changed since/)).toHaveLength(1);
+    expect(screen.getAllByText(/^Last change /)).toHaveLength(2);
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Restore" })[0] as HTMLElement);
+    });
+    const restored = selectActiveDocument(useAppStore.getState());
+    expect(restored?.modified).toBe(true);
+    expect(restored?.canUndo).toBe(true);
+    expect(useAppStore.getState().recoveries.map((entry) => entry.token)).toEqual([12]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    });
+    expect(useAppStore.getState().recoveries).toHaveLength(0);
+    expect(screen.queryByRole("heading", { name: "Recover unsaved changes?" })).toBeNull();
+  });
+
+  it("asks for an encrypted recovery file's password, again after a wrong one", async () => {
+    setMockRecoveries([
+      { token: 21, name: "سري — Confidential.pdf", savedAt, originalChanged: false },
+    ]);
+    render(<App />);
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+    });
+    expect(useAppStore.getState().unlocks[0]?.recovery).toBe(true);
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "wrong" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    });
+    expect(useAppStore.getState().unlocks[0]?.retry).toBe(true);
+    expect(useAppStore.getState().unlocks[0]?.recovery).toBe(true);
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "1234" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    });
+    expect(useAppStore.getState().unlocks).toHaveLength(0);
+    const restored = selectActiveDocument(useAppStore.getState());
+    expect(restored?.name).toBe("سري — Confidential.pdf");
+    expect(restored?.modified).toBe(true);
+  });
+
+  it("keeps them for the next start when the answer is later, in Arabic too", async () => {
+    setMockRecoveries([{ token: 31, name: "draft.pdf", savedAt, originalChanged: true }]);
+    render(<App />);
+    act(() => useAppStore.getState().setLocale("ar"));
+    expect(
+      await screen.findByRole("heading", { name: "استعادة التغييرات غير المحفوظة؟" }),
+    ).toBeTruthy();
+    expect(screen.getByText(/^آخر تغيير /)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "لاحقًا" }));
+    });
+    expect(useAppStore.getState().recoveries).toHaveLength(0);
+    expect(useAppStore.getState().documents).toHaveLength(0);
   });
 });

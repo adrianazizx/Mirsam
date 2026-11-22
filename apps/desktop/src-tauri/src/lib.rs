@@ -12,6 +12,7 @@ mod error;
 mod navigation;
 #[cfg(target_os = "linux")]
 mod print_linux;
+mod recovery;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
@@ -50,6 +51,10 @@ macro_rules! product_commands {
             editing::extract_pages,
             editing::split_document,
             editing::quit_discarding,
+            recovery::recoveries,
+            recovery::restore_recovery,
+            recovery::unlock_recovery,
+            recovery::discard_recovery,
             commands::unlock_document,
             commands::cancel_unlock,
             commands::close_document,
@@ -81,6 +86,7 @@ pub fn run() {
         // Tiles: BMP images fetched by the webview (ADR 0011).
         .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
         .setup(|app| {
+            app.state::<AppState>().set_app(app.handle().clone());
             open_store(app);
             #[cfg(feature = "devtools")]
             diagnostics::prepare_window(app);
@@ -127,6 +133,7 @@ pub fn run() {
             diagnostics::render_stats,
             diagnostics::window_labels,
             diagnostics::selftest_request_close,
+            diagnostics::selftest_has_recovery_file,
             diagnostics::webview_rss_kb,
             diagnostics::selftest_log,
             diagnostics::selftest_config,
@@ -174,6 +181,8 @@ fn open_store(app: &tauri::App) {
         Ok(store) => app.state::<AppState>().set_store(store),
         Err(err) => eprintln!("safha: could not open the state store in {}: {err}", dir.display()),
     }
+    // Recovery files of documents with unsaved changes, beside the store (ADR 0040).
+    recovery::open_files(&app.state::<AppState>(), &dir);
 }
 
 /// A PDF handed to us at launch: the first command-line argument that is not a

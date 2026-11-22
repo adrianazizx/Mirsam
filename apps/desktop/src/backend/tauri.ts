@@ -13,6 +13,7 @@ import {
   type RecentFile,
   type RenderedPage,
   type RenderStats,
+  type RestoreOutcome,
   type SaveOutcome,
   type SearchResults,
   type SelftestConfig,
@@ -185,6 +186,12 @@ export const tauriBackend: Backend = {
     invoke<void>("selftest_report", { report: { results, canvasPng } }),
   renderStats: async () => ((await hasDevtools()) ? invoke<RenderStats>("render_stats") : null),
   windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
+  restoreRecovery: (token) => invoke<RestoreOutcome>("restore_recovery", { token }),
+  unlockRecovery: (token, password) =>
+    invoke<RestoreOutcome>("unlock_recovery", { token, password }),
+  discardRecovery: (token) => invoke<void>("discard_recovery", { token }),
+  hasRecoveryFile: async (id) =>
+    (await hasDevtools()) ? invoke<boolean>("selftest_has_recovery_file", { id }) : null,
   shellRssKb: async () => ((await hasDevtools()) ? invoke<number | null>("spike_rss_kb") : null),
   selftestLog: async (message) => {
     if (await hasDevtools()) await invoke<void>("selftest_log", { message });

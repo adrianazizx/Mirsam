@@ -5,6 +5,7 @@ import type {
   OutlineItem,
   PageSize,
   RecentFile,
+  RecoveryInfo,
   SaveOutcome,
   SearchHit,
   SearchOptions,
@@ -119,6 +120,8 @@ export interface PendingUnlock {
   name: string;
   /** The last password was wrong. */
   retry: boolean;
+  /** A recovery file's password, not a file's (ADR 0040). */
+  recovery?: boolean;
 }
 
 export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
@@ -143,6 +146,9 @@ export interface AppState {
   pendingNote: PendingNote | null;
   documents: OpenDocument[];
   activeDocumentId: number | null;
+  /** Unsaved changes an earlier session left, waiting for restore or discard (ADR 0040). */
+  recoveries: RecoveryInfo[];
+  setRecoveries(recoveries: RecoveryInfo[]): void;
   /** Encrypted files waiting for a password; the first one is being asked for. */
   unlocks: PendingUnlock[];
   /** Recent files for the start screen; null until loaded. */
@@ -325,6 +331,10 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTool: "select",
     commentTool: "note",
     pendingNote: null,
+    recoveries: [],
+    setRecoveries(recoveries) {
+      set({ recoveries });
+    },
     documents: [],
     activeDocumentId: null,
     unlocks: [],
@@ -379,9 +389,9 @@ export const useAppStore = create<AppState>((set, get) => {
         selectedAnnotation: null,
         revision: 0,
         paint: 0,
-        canUndo: false,
+        canUndo: info.canUndo ?? false,
         canRedo: false,
-        modified: false,
+        modified: info.modified ?? false,
         selectedPages: [],
       };
       set((state) => ({

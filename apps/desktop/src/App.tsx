@@ -11,6 +11,7 @@ import {
 } from "./commands/registry";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { AppShell } from "./components/shell/AppShell";
+import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
 import { applyLocale, formatTag } from "./i18n";
 import {
@@ -133,8 +134,10 @@ export function App() {
     let cancelled = false;
     backend
       .startup()
-      .then(({ documents, active }) => {
+      .then(({ documents, active, recoveries }) => {
         for (const outcome of documents) acceptOutcome(outcome, { activate: false });
+        // Unsaved changes an earlier session left (ADR 0040).
+        if (recoveries?.length) useAppStore.getState().setRecoveries(recoveries);
         const store = useAppStore.getState();
         const first = store.documents[0];
         const target = active ?? (store.activeDocumentId === null ? first?.id : undefined);
@@ -179,6 +182,7 @@ export function App() {
     <I18nProvider locale={formatTag(locale)}>
       <AppShell />
       <UnsavedChangesDialog />
+      <RecoveryDialog />
       <SplitDialog />
     </I18nProvider>
   );

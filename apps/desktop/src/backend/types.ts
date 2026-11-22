@@ -84,6 +84,26 @@ export interface DocumentInfo {
    */
   readingDirection?: "ltr" | "rtl" | null;
   pageLayout?: "single" | "continuous" | "spread" | "book" | null;
+  /** Restored from a recovery file with unsaved changes (ADR 0040). */
+  modified?: boolean;
+  canUndo?: boolean;
+}
+
+/** Unsaved changes an earlier session left, kept in a recovery file (ADR 0040). */
+export interface RecoveryInfo {
+  /** Names it in `restoreRecovery` and `discardRecovery`; the UI never sees paths. */
+  token: number;
+  name: string;
+  /** When its latest change was kept (Unix seconds). */
+  savedAt: number;
+  /** The original changed or went away since: the recovered version is saved as a new file. */
+  originalChanged: boolean;
+}
+
+/** What restoring a recovery file led to, and the tab it replaced (the original, reopened). */
+export interface RestoreOutcome {
+  outcome: OpenOutcome;
+  replaced: number | null;
 }
 
 /** A document's remembered position (safha_core::store::ViewState). */
@@ -107,6 +127,8 @@ export interface Startup {
   documents: OpenOutcome[];
   /** The document to show first. */
   active: number | null;
+  /** Unsaved changes an earlier session left, offered once at the app's start. */
+  recoveries?: RecoveryInfo[];
 }
 
 export interface RecentFile {
@@ -409,6 +431,14 @@ export interface Backend {
     index: number,
     contents: string,
   ): Promise<EditOutcome>;
+  /** Opens a recovery file as a document with unsaved changes; an encrypted one asks first. */
+  restoreRecovery(token: number): Promise<RestoreOutcome>;
+  /** Tries the password of an encrypted recovery file (the token its restore gave). */
+  unlockRecovery(token: number, password: string): Promise<RestoreOutcome>;
+  /** Deletes a recovery file the user does not want. */
+  discardRecovery(token: number): Promise<void>;
+  /** Whether a document's changes are kept in a recovery file; devtools builds only (the self-test). */
+  hasRecoveryFile(documentId: number): Promise<boolean | null>;
   /** Removes annotations of one page (with their pop-ups and replies) in one undo step. */
   removeAnnotations(documentId: number, page: number, indices: number[]): Promise<EditOutcome>;
   /** The page's annotations of the kinds the app writes. */

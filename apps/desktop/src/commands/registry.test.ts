@@ -113,6 +113,31 @@ describe("command registry", () => {
     expect(shortcutLabel("file.saveAs", true)).toBe("⇧⌘S");
   });
 
+  it("saves a recovered document whose original changed as a new file", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240, modified: true });
+    const save = vi
+      .spyOn(backend, "saveDocument")
+      .mockRejectedValue({ code: "save_as_required", message: "the original changed" });
+    const saveAs = vi.spyOn(backend, "saveDocumentAs");
+    try {
+      await runCommand("file.save");
+      expect(saveAs).toHaveBeenCalledWith(1);
+      expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+        name: "Copy.pdf",
+        modified: false,
+      });
+
+      // Cancelling the picker keeps the tab open with its changes.
+      useAppStore.getState().addDocument({ id: 2, name: "b.pdf", pageCount: 3, modified: true });
+      saveAs.mockResolvedValueOnce(null);
+      await runCommand("file.saveAndClose", { documentId: 2 });
+      expect(selectActiveDocument(useAppStore.getState())).toMatchObject({ id: 2, modified: true });
+    } finally {
+      save.mockRestore();
+      saveAs.mockRestore();
+    }
+  });
+
   it("asks before closing a tab with unsaved changes", async () => {
     useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
     useAppStore.getState().addDocument({ id: 2, name: "b.pdf", pageCount: 12 });

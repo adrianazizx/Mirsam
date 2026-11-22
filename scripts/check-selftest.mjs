@@ -107,6 +107,9 @@ if (nav) {
     }
     check(editing.pagesAfterUndo === editing.pagesBefore, `undo left ${editing.pagesAfterUndo} pages`);
     check(editing.modifiedAfterUndo === false, "undo back to the file still counts as modified");
+    // Autosave (ADR 0040): an unsaved change gets a recovery file; undo back to the file removes it.
+    check(editing.recoveryAfterEdit === true, "the unsaved change was not kept in a recovery file");
+    check(editing.recoveryAfterUndo === false, "undo back to the file left its recovery file");
   }
 }
 
@@ -149,7 +152,8 @@ if (nav) {
     const e = nav.editing;
     console.log(
       `  editing: duplicate ${e.pagesBefore} → ${e.pagesAfterEdit} pages in ${e.editMs} ms, ` +
-        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}, close asked ${e.closePrompted}` +
+        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}, close asked ${e.closePrompted}, ` +
+        `recovery file kept ${e.recoveryAfterEdit} then removed ${e.recoveryAfterUndo === false}` +
         (e.organizer ? `; organizer: ${e.organizer.gridImages} pages drawn, move ${e.organizer.moved}` : ""),
     );
   }

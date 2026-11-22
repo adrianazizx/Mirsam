@@ -4,6 +4,7 @@ import {
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
+  type RestoreOutcome,
   type StrokePoint,
 } from "../backend";
 import {
@@ -89,6 +90,7 @@ export interface CommandArg {
   strokes?: StrokePoint[][];
   /** `ink.erase`: the ink annotations touched, by index. */
   indices?: number[];
+  /** `recovery.restore`, `recovery.discard`: the recovery file's token (`token` above). */
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -124,6 +126,9 @@ export type CommandId =
   | "markup.strikeOut"
   | "markup.squiggly"
   | "annotation.delete"
+  | "recovery.restore"
+  | "recovery.discard"
+  | "recovery.later"
   | "comment.note"
   | "comment.textBox"
   | "textBox.place"
@@ -336,6 +341,46 @@ function reportError(error: unknown) {
   store().setError(code);
 }
 
+/**
+ * Puts a restored recovery file in a tab (ADR 0040), dropping the tab of its
+ * original that it replaces, or queues its password prompt.
+ */
+function acceptRestore(restored: RestoreOutcome) {
+  if (restored.replaced !== null) store().removeDocument(restored.replaced);
+  const { outcome } = restored;
+  if (outcome.kind === "opened") {
+    store().addDocument(outcome.document);
+  } else {
+    store().pushUnlock({
+      token: outcome.token,
+      name: outcome.name,
+      retry: outcome.retry,
+      recovery: true,
+    });
+  }
+}
+
+/**
+ * Saves a document to its file. A recovered document whose original changed
+ * since (ADR 0040) asks where instead. False when the user cancelled that.
+ */
+async function saveDocument(id: number): Promise<boolean> {
+  try {
+    store().applySave(id, await backend.saveDocument(id));
+    return true;
+  } catch (error) {
+    if (!isBackendError(error) || error.code !== "save_as_required") throw error;
+    const outcome = await backend.saveDocumentAs(id);
+    if (outcome) store().applySave(id, outcome);
+    return outcome !== null;
+  }
+}
+
+/** The recovery file `token` is dealt with: it leaves the list. */
+function settleRecovery(token: number) {
+  store().setRecoveries(store().recoveries.filter((entry) => entry.token !== token));
+}
+
 /** Puts an opened file in a tab, or queues its password prompt. */
 export function acceptOutcome(outcome: OpenOutcome, options?: { activate?: boolean }) {
   if (outcome.kind === "opened") {
@@ -492,8 +537,7 @@ const COMMANDS: Command[] = [
     async run(arg) {
       const id = arg?.documentId;
       if (id === undefined) return;
-      store().applySave(id, await backend.saveDocument(id));
-      await runCommand("file.close", { documentId: id, force: true });
+      if (await saveDocument(id)) await runCommand("file.close", { documentId: id, force: true });
     },
   },
   {
@@ -525,7 +569,7 @@ const COMMANDS: Command[] = [
     isEnabled: (state) => selectActiveDocument(state)?.modified ?? false,
     async run() {
       const active = selectActiveDocument(store());
-      if (active) store().applySave(active.id, await backend.saveDocument(active.id));
+      if (active) await saveDocument(active.id);
     },
   },
   {
@@ -752,6 +796,18 @@ const COMMANDS: Command[] = [
     async run(arg) {
       const pending = store().unlocks[0];
       if (!pending || arg?.password === undefined) return;
+      if (pending.recovery) {
+        const restored = await backend.unlockRecovery(pending.token, arg.password);
+        const { outcome } = restored;
+        if (outcome.kind === "opened") {
+          store().resolveUnlock(null);
+          if (restored.replaced !== null) store().removeDocument(restored.replaced);
+          store().addDocument(outcome.document);
+        } else {
+          store().resolveUnlock({ ...outcome, recovery: true });
+        }
+        return;
+      }
       const outcome = await backend.unlockDocument(pending.token, arg.password);
       if (outcome.kind === "opened") {
         store().resolveUnlock(null);
@@ -869,6 +925,34 @@ const COMMANDS: Command[] = [
       const outcome = await backend.removeAnnotations(active.id, selected.page, [selected.index]);
       store().applyEdit(active.id, outcome);
     },
+  },
+  {
+    id: "recovery.restore",
+    paletteHidden: true,
+    isEnabled: (state) => state.recoveries.length > 0,
+    async run(arg) {
+      if (arg?.token === undefined) return;
+      const restored = await backend.restoreRecovery(arg.token);
+      settleRecovery(arg.token);
+      acceptRestore(restored);
+    },
+  },
+  {
+    id: "recovery.discard",
+    paletteHidden: true,
+    isEnabled: (state) => state.recoveries.length > 0,
+    async run(arg) {
+      if (arg?.token === undefined) return;
+      await backend.discardRecovery(arg.token);
+      settleRecovery(arg.token);
+    },
+  },
+  {
+    // Offered again at the next start.
+    id: "recovery.later",
+    paletteHidden: true,
+    isEnabled: (state) => state.recoveries.length > 0,
+    run: () => store().setRecoveries([]),
   },
   { id: "comment.note", isEnabled: hasDocument, run: () => chooseCommentTool("note") },
   { id: "comment.textBox", isEnabled: hasDocument, run: () => chooseCommentTool("textBox") },

@@ -260,6 +260,21 @@ impl EditHistory {
         Self { base, steps: Vec::new(), applied: 0, saved: Some(0) }
     }
 
+    /// A document restored from a recovery file (ADR 0040) whose original
+    /// is unchanged: one step from the file as saved to the recovered
+    /// revision, so it is modified and undo goes back to the original.
+    pub fn recovered(original: Arc<[u8]>, recovered: Arc<[u8]>) -> Self {
+        let mut history = Self::new(original);
+        history.push_snapshot(recovered);
+        history
+    }
+
+    /// A recovered revision with nothing to go back to (its original changed
+    /// or is gone): modified, until it is saved somewhere.
+    pub fn unsaved(recovered: Arc<[u8]>) -> Self {
+        Self { base: recovered, steps: Vec::new(), applied: 0, saved: None }
+    }
+
     /// Records an update appended to the current revision that changed pages.
     pub fn push(&mut self, update: Vec<u8>) {
         self.record(Step::Update(update, Change::Pages));
@@ -562,6 +577,21 @@ mod tests {
         );
         history.push_snapshot(Arc::from(&b"whole"[..]));
         assert_eq!((history.undo_change(), history.redo_change()), (Some(Change::Pages), None));
+    }
+
+    #[test]
+    fn a_recovered_document_is_modified_and_undoes_to_its_original() {
+        let history = EditHistory::recovered(Arc::from(&b"original"[..]), Arc::from(&b"recovered"[..]));
+        assert_eq!(&*history.current(), b"recovered");
+        assert!(history.is_modified() && history.can_undo());
+        let mut history = history;
+        assert_eq!(history.undo().as_deref(), Some(&b"original"[..]));
+        assert!(!history.is_modified());
+
+        let mut alone = EditHistory::unsaved(Arc::from(&b"recovered"[..]));
+        assert!(alone.is_modified() && !alone.can_undo());
+        alone.mark_saved();
+        assert!(!alone.is_modified());
     }
 
     #[test]

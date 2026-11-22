@@ -11,6 +11,7 @@ import type {
   PageSize,
   Priority,
   RecentFile,
+  RecoveryInfo,
   RenderedPage,
   SearchHit,
   SearchOptions,
@@ -559,10 +560,40 @@ let recents: RecentFile[] = [
 
 const opened = (document: DocumentInfo): OpenOutcome => ({ kind: "opened", document });
 
+/** Recovery files the mock's startup offers; tests set them. */
+let mockRecoveries: RecoveryInfo[] = [];
+export function setMockRecoveries(list: RecoveryInfo[]): void {
+  mockRecoveries = list;
+}
+
 export const mockBackend: Backend = {
   appInfo: async () => ({ version: "0.0.1-mock", devtools: false }),
   openDocumentDialog: async () => opened(SAMPLE),
-  startup: async () => ({ documents: [], active: null }),
+  startup: async () => ({ documents: [], active: null, recoveries: [...mockRecoveries] }),
+  // A restored recovery file reopens with unsaved changes; the locked sample's asks first.
+  restoreRecovery: async (token) => {
+    const entry = mockRecoveries.find((candidate) => candidate.token === token);
+    mockRecoveries = mockRecoveries.filter((candidate) => candidate.token !== token);
+    if (entry?.name === LOCKED.name) {
+      return {
+        outcome: { kind: "needsPassword", token: 2, name: LOCKED.name, retry: false },
+        replaced: null,
+      };
+    }
+    const canUndo = !entry?.originalChanged;
+    return { outcome: opened({ ...SAMPLE, modified: true, canUndo }), replaced: null };
+  },
+  unlockRecovery: async (_token, password) => ({
+    outcome:
+      password === LOCKED_PASSWORD
+        ? opened({ ...LOCKED, modified: true, canUndo: true })
+        : { kind: "needsPassword", token: 2, name: LOCKED.name, retry: true },
+    replaced: null,
+  }),
+  discardRecovery: async (token) => {
+    mockRecoveries = mockRecoveries.filter((entry) => entry.token !== token);
+  },
+  hasRecoveryFile: async () => null,
   unlockDocument: async (_token, password) =>
     password === LOCKED_PASSWORD
       ? opened(LOCKED)

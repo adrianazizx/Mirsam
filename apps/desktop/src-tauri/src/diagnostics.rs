@@ -78,6 +78,18 @@ pub fn selftest_request_close(window: tauri::WebviewWindow) -> CommandResult<()>
     window.close().map_err(|err| CommandError::new("window_error", err.to_string()))
 }
 
+/// Whether a document's unsaved changes are kept in a recovery file that the
+/// store lists, for the self-test's autosave check (ADR 0040).
+#[tauri::command]
+pub fn selftest_has_recovery_file(state: tauri::State<'_, crate::state::AppState>, id: u32) -> bool {
+    let Some(key) = state.autosave_target(id).map(|target| target.key) else { return false };
+    let listed = state
+        .store()
+        .and_then(|store| store.recoveries().ok())
+        .is_some_and(|entries| entries.iter().any(|entry| entry.key == key));
+    listed && state.recovery().is_some_and(|files| files.exists(&key))
+}
+
 /// Labels of the open windows, for the self-test's multi-window check.
 #[tauri::command]
 pub fn window_labels(app: AppHandle) -> Vec<String> {

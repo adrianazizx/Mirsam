@@ -85,6 +85,11 @@
     "annotation": {
       "delete": "Delete annotation"
     },
+    "recovery": {
+      "restore": "Restore",
+      "discard": "Discard",
+      "later": "Decide later"
+    },
     "comment": {
       "note": "Add note",
       "textBox": "Add text box",
@@ -255,6 +260,15 @@
     "closeAnyway": "Close without saving",
     "quitAnyway": "Quit without saving",
     "cancel": "Cancel"
+  },
+  "recovery": {
+    "title": "Recover unsaved changes?",
+    "message": "Mirsam closed before these documents were saved. Their latest changes were kept.",
+    "changed": "The original file has changed since. Save the recovered version as a new file.",
+    "savedAt": "Last change {{time}}",
+    "restore": "Restore",
+    "discard": "Discard",
+    "later": "Decide later"
   },
   "pages": {
     "organizer": "Organize the pages of {{name}}",
