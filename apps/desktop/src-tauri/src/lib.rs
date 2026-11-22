@@ -11,6 +11,7 @@ mod error;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
+mod viewer;
 
 use std::time::Instant;
 
@@ -30,20 +31,29 @@ pub fn run() {
         commands::app_info,
         commands::open_document_dialog,
         commands::take_startup_document,
-        commands::page_size,
-        commands::render_page,
         commands::close_document,
+        viewer::page_sizes,
+        viewer::render_tile,
+        viewer::update_viewport,
     ]);
     #[cfg(feature = "devtools")]
     let builder = builder
+        .setup(|app| {
+            diagnostics::prepare_window(app);
+            Ok(())
+        })
         .register_asynchronous_uri_scheme_protocol("safha-tile", spike_tiles::protocol)
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::open_document_dialog,
             commands::take_startup_document,
-            commands::page_size,
-            commands::render_page,
             commands::close_document,
+            viewer::page_sizes,
+            viewer::render_tile,
+            viewer::update_viewport,
+            diagnostics::render_stats,
+            diagnostics::webview_rss_kb,
+            diagnostics::selftest_log,
             diagnostics::selftest_config,
             diagnostics::selftest_report,
             spike_tiles::spike_tile_raw,

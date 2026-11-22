@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use safha_core::Document;
+use safha_core::render::{RenderConfig, RenderService};
 
 pub struct AppState {
     /// Process start, for the self-test's cold-start timing.
@@ -13,6 +14,8 @@ pub struct AppState {
     startup_document: Mutex<Option<PathBuf>>,
     documents: Mutex<HashMap<u32, Arc<Document>>>,
     next_document_id: AtomicU32,
+    /// The one render thread and tile cache for every open document.
+    pub render: RenderService,
 }
 
 impl AppState {
@@ -22,6 +25,7 @@ impl AppState {
             startup_document: Mutex::new(startup_document),
             documents: Mutex::new(HashMap::new()),
             next_document_id: AtomicU32::new(1),
+            render: RenderService::new(render_config()),
         }
     }
 
@@ -44,4 +48,16 @@ impl AppState {
     pub fn remove_document(&self, id: u32) -> bool {
         self.documents.lock().unwrap_or_else(PoisonError::into_inner).remove(&id).is_some()
     }
+}
+
+/// Render settings. The tile cache size can be overridden with
+/// `SAFHA_TILE_CACHE_MB` until the settings store exists (Milestone 1).
+fn render_config() -> RenderConfig {
+    let mut config = RenderConfig::default();
+    if let Some(megabytes) =
+        std::env::var("SAFHA_TILE_CACHE_MB").ok().and_then(|value| value.parse::<usize>().ok())
+    {
+        config.cache_bytes = megabytes.saturating_mul(1024 * 1024);
+    }
+    config
 }

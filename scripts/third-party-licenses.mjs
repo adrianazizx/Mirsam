@@ -31,6 +31,8 @@ const ALLOWED = new Set([
   "CC0-1.0",
   "0BSD",
   "OFL-1.1",
+  // SQLite's public-domain dedication. Pending the owner's confirmation (PROGRESS.md).
+  "blessing",
 ]);
 
 /** Components that ship in the app but come from neither Cargo nor npm. */
@@ -41,6 +43,13 @@ const BUNDLED = [
     license: "BSD-3-Clause AND Apache-2.0",
     source: "https://pdfium.googlesource.com/pdfium/",
     note: "Its own third-party notices ship in third_party/pdfium/<platform>/licenses/.",
+  },
+  {
+    name: "SQLite",
+    version: "bundled by libsqlite3-sys",
+    license: "blessing",
+    source: "https://sqlite.org/copyright.html",
+    note: "Compiled into the app from source by rusqlite's `bundled` feature; public domain.",
   },
   ...[
     ["Amiri", "https://github.com/aliftype/amiri"],

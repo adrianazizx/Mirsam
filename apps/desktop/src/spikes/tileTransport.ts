@@ -143,7 +143,7 @@ async function loadWasmEngine() {
       buffer,
       tile.width * tile.height * 4,
     );
-    use({ width: tile.width, height: tile.height, renderMicros, rgba });
+    use({ width: tile.width, height: tile.height, renderMicros, fromCache: false, rgba });
     module._FPDFBitmap_Destroy(bitmap);
   };
 

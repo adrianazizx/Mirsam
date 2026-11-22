@@ -131,6 +131,8 @@ jobs:
         run: scripts/selftest.sh fixtures/out/coretext/contract-two-column.pdf selftest-out/ar ar dark
       - name: Check the reports
         run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+      - name: Scroll and zoom budgets, 1,000-page document (spec section 11)
+        run: scripts/scroll-benchmark.sh selftest-out/scroll debug
       - uses: actions/upload-artifact@v4
         if: always()
         with:

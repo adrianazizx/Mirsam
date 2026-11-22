@@ -59,3 +59,13 @@ pub fn manifest() -> Manifest {
 pub fn normalize_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+/// The form both sides are compared in: NFC, whitespace collapsed.
+pub fn comparable(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    normalize_whitespace(&text.nfc().collect::<String>())
+}
+
+pub fn without_spaces(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
+}

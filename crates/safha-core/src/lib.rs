@@ -12,8 +12,15 @@ mod bitmap;
 mod document;
 mod engine;
 mod error;
+pub mod outline;
+pub mod render;
+pub mod search;
+pub mod store;
+pub mod text;
 
 pub use bitmap::Bitmap;
+pub use document::LoadedPage;
 pub use document::{Document, PageSize, TileRequest};
 pub use engine::{Engine, PdfiumSource};
 pub use error::{Error, Result};
+pub use render::RenderService;

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pdfium_render::prelude::{
     PdfBitmap, PdfBitmapFormat, PdfColor, PdfDocument, PdfPage, PdfPageIndex, PdfRenderConfig,
 };
@@ -53,6 +55,28 @@ impl Document {
         Ok(PageSize { width: rect.width().value, height: rect.height().value })
     }
 
+    /// Sizes of every page, in order, read without loading any page's content,
+    /// so a viewer can lay out a long document before rendering anything.
+    pub fn page_sizes(&self) -> Result<Vec<PageSize>> {
+        Ok(self
+            .inner
+            .pages()
+            .page_sizes()?
+            .iter()
+            .map(|rect| PageSize { width: rect.width().value, height: rect.height().value })
+            .collect())
+    }
+
+    /// Parses one page and keeps it open, so several tiles can be rendered from
+    /// it without re-parsing its content each time (parsing costs more than
+    /// rasterizing a 512 px tile of a typical text page). The page holds a
+    /// reference to the document, which therefore stays open at least as long.
+    pub fn load_page(self: &Arc<Self>, index: usize) -> Result<LoadedPage> {
+        let page = self.page(index)?;
+        let size = PageSize { width: page.width().value, height: page.height().value };
+        Ok(LoadedPage { page, size, index, _document: Arc::clone(self) })
+    }
+
     /// Renders the whole page at `scale` device pixels per point.
     pub fn render_page(&self, index: usize, scale: f32) -> Result<Bitmap> {
         let size = self.page_size(index)?;
@@ -63,41 +87,10 @@ impl Document {
     /// Renders one tile of a page. The tile must lie entirely inside the scaled
     /// page; callers clamp edge tiles to the page bounds.
     pub fn render_tile(&self, index: usize, tile: TileRequest) -> Result<Bitmap> {
-        if tile.width == 0 || tile.height == 0 {
-            return Err(Error::InvalidRenderRequest("tile has zero area"));
-        }
-        if tile.width > MAX_BITMAP_SIDE || tile.height > MAX_BITMAP_SIDE {
-            return Err(Error::InvalidRenderRequest("tile exceeds the maximum bitmap size"));
-        }
-
+        validate_tile_size(&tile)?;
         let page = self.page(index)?;
         let size = PageSize { width: page.width().value, height: page.height().value };
-        let (page_w, page_h) = scaled_page_pixels(size, tile.scale)?;
-
-        if tile.x.checked_add(tile.width).is_none_or(|right| right > page_w)
-            || tile.y.checked_add(tile.height).is_none_or(|bottom| bottom > page_h)
-        {
-            return Err(Error::InvalidRenderRequest("tile extends past the page"));
-        }
-
-        let mut bitmap = PdfBitmap::empty(to_i32(tile.width)?, to_i32(tile.height)?, PdfBitmapFormat::BGRA)?;
-        let config = PdfRenderConfig::new()
-            .set_fixed_size(to_i32(page_w)?, to_i32(page_h)?)
-            // A negative origin slides the full-size page under the tile-sized bitmap.
-            // pdfium-render only honours the origin on its form-data render path
-            // (FPDF_RenderPageBitmap); the matrix path ignores it, so form data
-            // rendering must stay enabled here.
-            .set_origin(-to_i32(tile.x)?, -to_i32(tile.y)?)
-            .render_form_data(true)
-            .render_annotations(true)
-            .clear_before_rendering(true)
-            .set_clear_color(PdfColor::WHITE);
-        page.render_into_bitmap_with_config(&mut bitmap, &config)?;
-
-        // `PdfRenderConfig` renders with reversed byte order by default, so the
-        // raw buffer is already RGBA.
-        Bitmap::from_rgba(tile.width, tile.height, bitmap.as_raw_bytes())
-            .ok_or_else(|| Error::Pdfium("PDFium returned a bitmap of unexpected size".into()))
+        render_tile_of(&page, size, tile)
     }
 
     /// The page's text exactly as PDFium reports it.
@@ -107,6 +100,27 @@ impl Document {
     /// will be a separate API; this one exists for diagnostics and fixtures.
     pub fn page_text_raw(&self, index: usize) -> Result<String> {
         Ok(self.page(index)?.text()?.all())
+    }
+
+    /// The document outline (bookmarks), as a tree.
+    pub fn outline(&self) -> Vec<crate::outline::OutlineItem> {
+        crate::outline::read(&self.inner)
+    }
+
+    /// The page's label (e.g. "iv", "A-3") when the document defines labels.
+    /// Loads the page, so ask for visible pages, not all of them.
+    pub fn page_label(&self, index: usize) -> Result<Option<String>> {
+        Ok(self.page(index)?.label().map(str::to_string))
+    }
+
+    /// The page's text in logical reading order, with per-character geometry
+    /// for selection (spec section 6.1). See [`crate::text`].
+    pub fn page_text(&self, index: usize) -> Result<crate::text::PageText> {
+        let page = self.page(index)?;
+        let text = page.text()?;
+        let glyphs = crate::text::collect_glyphs(&text);
+        let spaces = crate::text::collect_space_marks(&page, &text);
+        Ok(crate::text::analyze(&glyphs, &spaces))
     }
 
     fn page(&self, index: usize) -> Result<PdfPage<'static>> {
@@ -126,6 +140,92 @@ impl std::fmt::Debug for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Document").field("page_count", &self.page_count()).finish()
     }
+}
+
+/// One page of a [`Document`], parsed once and kept open for rendering
+/// (see [`Document::load_page`]).
+pub struct LoadedPage {
+    // Declared before `_document` so the page is closed before the document.
+    page: PdfPage<'static>,
+    size: PageSize,
+    index: usize,
+    _document: Arc<Document>,
+}
+
+impl LoadedPage {
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn size(&self) -> PageSize {
+        self.size
+    }
+
+    /// Same contract as [`Document::render_tile`].
+    pub fn render_tile(&self, tile: TileRequest) -> Result<Bitmap> {
+        validate_tile_size(&tile)?;
+        render_tile_of(&self.page, self.size, tile)
+    }
+}
+
+impl std::fmt::Debug for LoadedPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoadedPage").field("index", &self.index).field("size", &self.size).finish()
+    }
+}
+
+fn validate_tile_size(tile: &TileRequest) -> Result<()> {
+    if tile.width == 0 || tile.height == 0 {
+        return Err(Error::InvalidRenderRequest("tile has zero area"));
+    }
+    if tile.width > MAX_BITMAP_SIDE || tile.height > MAX_BITMAP_SIDE {
+        return Err(Error::InvalidRenderRequest("tile exceeds the maximum bitmap size"));
+    }
+    Ok(())
+}
+
+fn render_tile_of(page: &PdfPage<'_>, size: PageSize, tile: TileRequest) -> Result<Bitmap> {
+    let (page_w, page_h) = scaled_page_pixels(size, tile.scale)?;
+
+    if tile.x.checked_add(tile.width).is_none_or(|right| right > page_w)
+        || tile.y.checked_add(tile.height).is_none_or(|bottom| bottom > page_h)
+    {
+        return Err(Error::InvalidRenderRequest("tile extends past the page"));
+    }
+
+    // PDFium renders straight into our buffer: no engine-side allocation and no
+    // copy per tile. A 4-byte format's rows need no padding, so the buffer is
+    // exactly the `Bitmap` layout.
+    let byte_len = (tile.width as usize)
+        .checked_mul(tile.height as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(Error::InvalidRenderRequest("tile exceeds the maximum bitmap size"))?;
+    let mut pixels = vec![0u8; byte_len];
+    {
+        let mut bitmap = PdfBitmap::from_bytes(
+            to_i32(tile.width)?,
+            to_i32(tile.height)?,
+            PdfBitmapFormat::BGRA,
+            &mut pixels,
+        )?;
+        let config = PdfRenderConfig::new()
+            .set_fixed_size(to_i32(page_w)?, to_i32(page_h)?)
+            // A negative origin slides the full-size page under the tile-sized bitmap.
+            // pdfium-render only honours the origin on its form-data render path
+            // (FPDF_RenderPageBitmap); the matrix path ignores it, so form data
+            // rendering must stay enabled here.
+            .set_origin(-to_i32(tile.x)?, -to_i32(tile.y)?)
+            .render_form_data(true)
+            .render_annotations(true)
+            .clear_before_rendering(true)
+            .set_clear_color(PdfColor::WHITE);
+        page.render_into_bitmap_with_config(&mut bitmap, &config)?;
+    }
+
+    // `PdfRenderConfig` renders with reversed byte order by default, so the
+    // buffer is already RGBA.
+    Bitmap::from_rgba(tile.width, tile.height, pixels)
+        .ok_or_else(|| Error::Pdfium("PDFium returned a bitmap of unexpected size".into()))
 }
 
 fn scaled_page_pixels(size: PageSize, scale: f32) -> Result<(u32, u32)> {

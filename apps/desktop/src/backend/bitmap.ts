@@ -1,11 +1,14 @@
 import type { RenderedPage } from "./types";
 
-/** Bytes of little-endian header before the pixels: width, height, render µs, reserved. */
+/** Bytes of little-endian header before the pixels: width, height, render µs, flags. */
 export const BITMAP_HEADER_LEN = 16;
 
+/** Header flag bit: served from the engine's tile cache (src-tauri/src/viewer.rs). */
+export const FLAG_FROM_CACHE = 1;
+
 /**
- * Decodes a `render_page` response without copying the pixels: the returned
- * `rgba` is a view over the response buffer.
+ * Decodes a bitmap response without copying the pixels: the returned `rgba`
+ * is a view over the response buffer.
  */
 export function decodeBitmap(buffer: ArrayBuffer): RenderedPage {
   if (buffer.byteLength < BITMAP_HEADER_LEN) {
@@ -15,6 +18,7 @@ export function decodeBitmap(buffer: ArrayBuffer): RenderedPage {
   const width = header.getUint32(0, true);
   const height = header.getUint32(4, true);
   const renderMicros = header.getUint32(8, true);
+  const flags = header.getUint32(12, true);
   const pixelBytes = width * height * 4;
   if (width === 0 || height === 0 || buffer.byteLength !== BITMAP_HEADER_LEN + pixelBytes) {
     throw new Error("bitmap response does not match its declared size");
@@ -23,6 +27,7 @@ export function decodeBitmap(buffer: ArrayBuffer): RenderedPage {
     width,
     height,
     renderMicros,
+    fromCache: (flags & FLAG_FROM_CACHE) !== 0,
     rgba: new Uint8ClampedArray(buffer, BITMAP_HEADER_LEN, pixelBytes),
   };
 }

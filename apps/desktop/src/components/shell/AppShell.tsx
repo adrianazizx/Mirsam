@@ -2,8 +2,8 @@ import type { Key } from "react-aria-components";
 import { TabPanel, Tabs } from "react-aria-components";
 import { Gallery } from "../../gallery/Gallery";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
+import { DocumentView } from "../viewer/DocumentView";
 import { EmptyState } from "../viewer/EmptyState";
-import { PageView } from "../viewer/PageView";
 import styles from "./AppShell.module.css";
 import { ErrorBanner } from "./ErrorBanner";
 import { Inspector } from "./Inspector";
@@ -18,14 +18,16 @@ import { ToolRail } from "./ToolRail";
  * arrangement mirrors when the root direction is RTL.
  */
 export function AppShell() {
-  const activeDocument = useAppStore(selectActiveDocument);
+  // Only which document is active: the shell must not re-render as the
+  // current page or zoom of that document changes.
+  const activeDocumentId = useAppStore((state) => selectActiveDocument(state)?.id ?? null);
   const activateDocument = useAppStore((state) => state.activateDocument);
   const galleryOpen = useAppStore((state) => state.galleryOpen);
 
   return (
     <Tabs
       className={styles.shell}
-      selectedKey={activeDocument?.id ?? null}
+      selectedKey={activeDocumentId}
       onSelectionChange={(key: Key) => {
         if (typeof key === "number") activateDocument(key);
       }}
@@ -36,9 +38,9 @@ export function AppShell() {
         <ErrorBanner />
         {galleryOpen ? (
           <Gallery />
-        ) : activeDocument ? (
-          <TabPanel id={activeDocument.id} className={styles.panel}>
-            <PageView document={activeDocument} />
+        ) : activeDocumentId !== null ? (
+          <TabPanel id={activeDocumentId} className={styles.panel}>
+            <DocumentView documentId={activeDocumentId} />
           </TabPanel>
         ) : (
           <EmptyState />

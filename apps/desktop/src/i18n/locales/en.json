@@ -27,7 +27,14 @@
       "actualSize": "Actual size",
       "fitWidth": "Fit width",
       "nextPage": "Next page",
-      "previousPage": "Previous page"
+      "previousPage": "Previous page",
+      "goToPage": "Go to page…",
+      "modeContinuous": "Continuous",
+      "modeSingle": "Single page",
+      "modeSpread": "Two pages",
+      "modeBook": "Book (cover alone)",
+      "pagesLeftToRight": "Pages left to right",
+      "pagesRightToLeft": "Pages right to left"
     },
     "app": {
       "toggleTheme": "Switch theme",
@@ -39,11 +46,16 @@
     "emptyTitle": "Open a PDF to get started",
     "emptyBody": "Your files stay on this device.",
     "canvasLabel": "Page {{page}} of {{name}}",
-    "rendering": "Rendering page…"
+    "pagesLabel": "Pages of {{name}}"
   },
   "status": {
-    "pageOf": "Page {{page}} of {{count}}",
-    "zoom": "Zoom {{percent}}%"
+    "zoom": "Zoom {{percent}}%",
+    "pageNumber": "Page number",
+    "pageCount": "of {{count}}",
+    "viewMode": "Page layout",
+    "pageOrder": "Page order",
+    "orderLtr": "Left to right",
+    "orderRtl": "Right to left"
   },
   "inspector": {
     "title": "Document",

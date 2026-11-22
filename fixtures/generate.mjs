@@ -65,6 +65,8 @@ const PRODUCERS = {
           // CI containers run as root, where Chrome refuses its sandbox.
           ...(process.env.CI ? ["--no-sandbox"] : []),
           "--no-pdf-header-footer",
+          // Headings become the PDF outline (bookmarks).
+          "--generate-pdf-document-outline",
           `--user-data-dir=${path.join(workDir, "chrome-profile")}`,
           `--print-to-pdf=${outFile}`,
           pathToFileURL(htmlFile).href,
@@ -216,6 +218,25 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
   add("bilingual-1000-pages.pdf", {
     pages: pageCount(derived("bilingual-1000-pages.pdf")),
     description: "1,000 pages alternating chrome/contract-two-column and chrome/mixed-inline.",
+  });
+
+  // Page labels: roman front matter, then arabic numbering from 1.
+  const three = derived("three-pages.tmp.pdf");
+  execFileSync(qpdf, [
+    "--empty",
+    "--pages",
+    src("en-paragraphs"),
+    src("mixed-inline"),
+    src("contract-two-column"),
+    "--",
+    three,
+  ]);
+  execFileSync(qpdf, [three, "--set-page-labels", "1:r", "2:D", "--", derived("page-labels.pdf")]);
+  rmSync(three);
+  add("page-labels.pdf", {
+    pages: 3,
+    pageLabels: ["i", "1", "2"],
+    description: "Three pages labelled i, 1, 2 (qpdf --set-page-labels).",
   });
 
   // A file cut off mid-stream: opening it must fail cleanly or recover, never crash.

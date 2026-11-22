@@ -1,6 +1,7 @@
 import { backend } from "./backend";
-import { PAGE_PAINTED_EVENT, type PagePaintedDetail } from "./components/viewer/PageView";
 import { useAppStore } from "./state/appStore";
+import { PAGE_PAINTED_EVENT, type PagePaintedDetail } from "./viewer/events";
+import { getViewer } from "./viewer/registry";
 
 /**
  * Resolves on the next animation frame. A webview whose window is occluded or
@@ -17,11 +18,65 @@ export function nextFrame(): Promise<void> {
   });
 }
 
+/** Resolves with the first painted event for `page`, or null after `timeoutMs`. */
+export function waitForPagePainted(
+  page: number,
+  timeoutMs: number,
+): Promise<PagePaintedDetail | null> {
+  return new Promise((resolve) => {
+    const onPainted = (event: Event) => {
+      const detail = (event as CustomEvent<PagePaintedDetail>).detail;
+      if (detail.page !== page) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener(PAGE_PAINTED_EVENT, onPainted);
+      resolve(detail);
+    };
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener(PAGE_PAINTED_EVENT, onPainted);
+      resolve(null);
+    }, timeoutMs);
+    window.addEventListener(PAGE_PAINTED_EVENT, onPainted);
+  });
+}
+
+/**
+ * Draws page `page` as it is on screen — its full-resolution tiles at their
+ * positions — into one canvas of the whole page's pixel size, and measures the
+ * ink in the tiled area.
+ */
+function compositePage(documentId: number, painted: PagePaintedDetail) {
+  const viewer = getViewer(documentId);
+  if (!viewer) return null;
+  const { tiles } = viewer.pageCanvases(painted.page);
+  const canvas = document.createElement("canvas");
+  canvas.width = painted.width;
+  canvas.height = painted.height;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  let ink = 0;
+  let pixels = 0;
+  for (const { canvas: tileCanvas, tile } of tiles) {
+    context.drawImage(tileCanvas, tile.x, tile.y);
+    const data = tileCanvas.getContext("2d")?.getImageData(0, 0, tile.width, tile.height).data;
+    if (!data) continue;
+    for (let i = 0; i < data.length; i += 4) {
+      if ((data[i] ?? 255) < 200 || (data[i + 1] ?? 255) < 200 || (data[i + 2] ?? 255) < 200) {
+        ink += 1;
+      }
+    }
+    pixels += data.length / 4;
+  }
+  return { canvas, tiles: tiles.length, inkRatio: pixels > 0 ? ink / pixels : null };
+}
+
 /**
  * UI half of the developer self-test (see src-tauri/src/diagnostics.rs).
- * When the shell says a self-test is requested, wait for the startup document's
- * first page to reach the canvas, then report what is actually on screen:
- * layout geometry, direction, and the canvas pixels themselves.
+ * When the shell says a self-test is requested, wait for the startup
+ * document's first page to be sharp on screen, then report what is actually
+ * there: layout geometry, directions, and the page's pixels themselves.
+ * With `SAFHA_SELFTEST_SPIKE=scroll`, run the scroll benchmark instead.
  */
 export async function runSelftestIfRequested(): Promise<void> {
   const config = await backend.selftestConfig();
@@ -31,17 +86,9 @@ export async function runSelftestIfRequested(): Promise<void> {
   store.setLocale(config.locale === "ar" ? "ar" : "en");
   store.setTheme(config.theme === "dark" ? "dark" : "light");
 
-  const painted = await new Promise<PagePaintedDetail | null>((resolve) => {
-    const timeout = window.setTimeout(() => resolve(null), 15_000);
-    window.addEventListener(
-      PAGE_PAINTED_EVENT,
-      (event) => {
-        window.clearTimeout(timeout);
-        resolve((event as CustomEvent<PagePaintedDetail>).detail);
-      },
-      { once: true },
-    );
-  });
+  void backend.selftestLog(`started (${document.visibilityState})`);
+  const painted = await waitForPagePainted(0, 15_000);
+  void backend.selftestLog(`first page painted: ${JSON.stringify(painted)}`);
   // Let layout settle after the paint (fit-width, fonts).
   await nextFrame();
   await nextFrame();
@@ -51,59 +98,53 @@ export async function runSelftestIfRequested(): Promise<void> {
     await backend.selftestReport(await runTileTransportSpike(painted.documentId), null);
     return;
   }
+  if (config.spike === "scroll" && painted) {
+    const { runScrollBenchmark } = await import("./benchmarks/scroll");
+    await backend.selftestReport(await runScrollBenchmark(painted), null);
+    return;
+  }
 
   const rect = (testId: string) => {
     const box = document.querySelector(`[data-testid="${testId}"]`)?.getBoundingClientRect();
     return box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null;
   };
-  const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="page-canvas"]');
   const state = useAppStore.getState();
-
-  let inkRatio: number | null = null;
-  if (canvas && canvas.width > 0) {
-    const pixels = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
-    if (pixels) {
-      let ink = 0;
-      for (let i = 0; i < pixels.length; i += 4) {
-        if (
-          (pixels[i] ?? 255) < 200 ||
-          (pixels[i + 1] ?? 255) < 200 ||
-          (pixels[i + 2] ?? 255) < 200
-        ) {
-          ink += 1;
-        }
-      }
-      inkRatio = ink / (pixels.length / 4);
-    }
-  }
+  const composite = painted ? compositePage(painted.documentId, painted) : null;
+  const viewerElement = document.querySelector('[data-testid="viewer"]');
 
   const results = {
     painted,
     locale: state.locale,
     dir: document.documentElement.dir,
+    viewerDirection: viewerElement ? getComputedStyle(viewerElement).direction : null,
     visibility: document.visibilityState,
     theme: document.documentElement.dataset.theme,
-    documents: state.documents.map(({ name, pageCount, zoom, pageSize }) => ({
+    documents: state.documents.map(({ name, pageCount, zoom, pageSize, viewMode, pageOrder }) => ({
       name,
       pageCount,
       zoom,
       pageSize,
+      viewMode,
+      pageOrder,
     })),
     errorCode: state.errorCode,
     window: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio },
     toolRail: rect("tool-rail"),
     inspector: rect("inspector"),
-    canvasCss: rect("page-canvas"),
-    canvasPixels: canvas ? { width: canvas.width, height: canvas.height } : null,
-    inkRatio,
+    viewerCss: rect("viewer"),
+    pageCss: rect("page-0"),
+    canvasPixels: composite
+      ? { width: composite.canvas.width, height: composite.canvas.height }
+      : null,
+    tiles: composite?.tiles ?? 0,
+    inkRatio: composite?.inkRatio ?? null,
+    viewer: painted ? getViewer(painted.documentId)?.snapshot() : null,
+    renderStats: await backend.renderStats(),
     uiReadyMs: performance.now(),
     fontsLoaded: [...document.fonts]
       .filter((font) => font.status === "loaded")
       .map((f) => f.family),
   };
 
-  await backend.selftestReport(
-    results,
-    canvas && canvas.width > 0 ? canvas.toDataURL("image/png") : null,
-  );
+  await backend.selftestReport(results, composite ? composite.canvas.toDataURL("image/png") : null);
 }

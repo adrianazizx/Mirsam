@@ -27,3 +27,22 @@
   min-inline-size: 84px;
   text-align: center;
 }
+
+.pageInput {
+  inline-size: var(--size-page-number-field);
+  block-size: calc(var(--size-hit) - var(--space-2));
+  padding-inline: var(--space-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.pageInput:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: 0;
+  border-color: transparent;
+}

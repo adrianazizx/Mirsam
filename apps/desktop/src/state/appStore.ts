@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { DocumentInfo, PageSize } from "../backend";
 import type { Locale } from "../i18n";
+import type { PageOrder, ViewMode } from "../viewer/layout";
 import { clampZoom } from "./zoom";
 
 export const TOOLS = [
@@ -18,13 +19,16 @@ export type ToolId = (typeof TOOLS)[number];
 export type ThemePreference = "system" | "light" | "dark";
 
 export interface OpenDocument extends DocumentInfo {
-  /** Zero-based index of the page in view. */
+  /** Zero-based index of the current page (the viewer reports it as the user scrolls). */
   page: number;
   zoomMode: "fit-width" | "custom";
   /** Effective zoom factor (1 = 100%). In fit-width mode the viewer keeps this current. */
   zoom: number;
-  /** Size of the page in view, once known. */
+  /** Size of the current page, once known. */
   pageSize: PageSize | null;
+  viewMode: ViewMode;
+  /** Which side the earlier page of a two-page spread sits on. Independent of the UI language. */
+  pageOrder: PageOrder;
 }
 
 export interface AppState {
@@ -105,6 +109,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       zoomMode: "fit-width",
       zoom: 1,
       pageSize: null,
+      viewMode: "continuous",
+      // TODO(M1): default to the document's /ViewerPreferences /Direction (R2L
+      // for many Arabic books). pdfium-render 0.9.6 binds FPDF_VIEWERREF_GetName
+      // only as an `unsafe fn` with no safe wrapper, and `unsafe` is denied in
+      // this workspace; reading it needs an upstream safe API or our own
+      // catalog parse in safha-core. Until then: left to right.
+      pageOrder: "ltr",
     };
     set((state) => ({
       documents: [...state.documents.filter((open) => open.id !== info.id), document],

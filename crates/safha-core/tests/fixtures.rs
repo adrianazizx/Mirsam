@@ -98,3 +98,61 @@ fn thousand_page_document_opens_without_touching_every_page() {
     // Generous ceiling (debug build, CI runners): opening must not scale with page count.
     assert!(opened.as_millis() < 1000, "open took {opened:?}");
 }
+
+#[test]
+fn reads_the_outline_in_both_languages() {
+    let manifest = manifest();
+    let fixture =
+        manifest.fixtures.iter().find(|f| f.name() == "chrome/contract-two-column").expect("exists");
+    let outline = engine().open_file(&fixture.file(), None).expect("opens").outline();
+    let titles: Vec<(&str, Option<usize>)> =
+        outline.iter().map(|item| (item.title.as_str(), item.page)).collect();
+    assert_eq!(titles, [("Lease Agreement", Some(0)), ("عقد إيجار", Some(0))]);
+    assert!(outline.iter().all(|item| item.top.is_some_and(|top| top > 700.0)), "{outline:?}");
+}
+
+#[test]
+fn reads_page_labels() {
+    let manifest = manifest();
+    let fixture = manifest.fixtures.iter().find(|f| f.id == "page-labels").expect("exists");
+    let document = engine().open_file(&fixture.file(), None).expect("opens");
+    let labels: Vec<Option<String>> = (0..3).map(|i| document.page_label(i).expect("label")).collect();
+    assert_eq!(labels, [Some("i".into()), Some("1".into()), Some("2".into())]);
+
+    // A document without labels has none.
+    let plain = manifest.fixtures.iter().find(|f| f.name() == "chrome/en-paragraphs").expect("exists");
+    assert_eq!(engine().open_file(&plain.file(), None).expect("opens").page_label(0).expect("label"), None);
+}
+
+/// PDFium's "last error" is process-wide: concurrent loads must still report
+/// their own failure, not each other's.
+#[test]
+fn concurrent_failed_opens_report_their_own_error() {
+    let manifest = manifest();
+    let encrypted = manifest.fixtures.iter().find(|f| f.id == "encrypted").expect("exists").file();
+    let truncated = manifest.fixtures.iter().find(|f| f.id == "truncated").expect("exists").file();
+    let encrypted_bytes = std::fs::read(&encrypted).expect("reads");
+    let garbage = b"%PDF-1.7\nnot really a pdf".to_vec();
+
+    std::thread::scope(|scope| {
+        for worker in 0..8 {
+            let encrypted_bytes = encrypted_bytes.clone();
+            let garbage = garbage.clone();
+            let truncated = truncated.clone();
+            scope.spawn(move || {
+                for _ in 0..300 {
+                    if worker % 2 == 0 {
+                        let result = engine().open_bytes(encrypted_bytes.clone(), None);
+                        assert!(matches!(result, Err(Error::PasswordRequired)), "encrypted: {result:?}");
+                    } else {
+                        let result = engine().open_bytes(garbage.clone(), None);
+                        assert!(matches!(result, Err(Error::InvalidPdf)), "garbage: {result:?}");
+                        // The truncated file may be recovered or rejected, but never as "password".
+                        let result = engine().open_file(&truncated, None);
+                        assert!(!matches!(result, Err(Error::PasswordRequired)), "truncated: {result:?}");
+                    }
+                }
+            });
+        }
+    });
+}

@@ -50,6 +50,38 @@ describe("command registry", () => {
     expect(selectActiveDocument(useAppStore.getState())?.zoomMode).toBe("fit-width");
   });
 
+  it("goes to a typed page, clamped to the document", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 10 });
+    await runCommand("view.goToPage", { page: 6 });
+    expect(selectActiveDocument(useAppStore.getState())?.page).toBe(6);
+    await runCommand("view.goToPage", { page: 400 });
+    expect(selectActiveDocument(useAppStore.getState())?.page).toBe(9);
+    expect(shortcutLabel("view.goToPage", true)).toBe("⇧⌘N");
+    expect(commandForEvent(key({ key: "N", ctrlKey: true, shiftKey: true }), false)?.id).toBe(
+      "view.goToPage",
+    );
+  });
+
+  it("switches view mode and spread page order", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 10 });
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      viewMode: "continuous",
+      pageOrder: "ltr",
+    });
+    await runCommand("view.modeBook");
+    await runCommand("view.pagesRightToLeft");
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      viewMode: "book",
+      pageOrder: "rtl",
+    });
+    await runCommand("view.modeSingle");
+    await runCommand("view.pagesLeftToRight");
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      viewMode: "single",
+      pageOrder: "ltr",
+    });
+  });
+
   it("switches language", async () => {
     useAppStore.setState({ locale: "en" });
     await runCommand("app.toggleLanguage");

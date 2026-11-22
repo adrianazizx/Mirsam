@@ -34,6 +34,11 @@
   --size-rail: 48px;
   --size-statusbar: 32px;
   --size-inspector: 272px;
+  /* Page viewer geometry, read by the viewer's layout code (src/viewer/layout.ts) */
+  --size-page-gap: var(--space-4); /* between rows of pages */
+  --size-spread-gap: var(--space-1); /* between the two pages of a spread */
+  --size-viewer-padding: var(--space-6); /* around the pages */
+  --size-page-number-field: 56px;
   --border-width: 1px;
   --focus-ring-width: 2px;
 

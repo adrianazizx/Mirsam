@@ -27,7 +27,14 @@
       "actualSize": "الحجم الفعلي",
       "fitWidth": "ملاءمة العرض",
       "nextPage": "الصفحة التالية",
-      "previousPage": "الصفحة السابقة"
+      "previousPage": "الصفحة السابقة",
+      "goToPage": "الانتقال إلى صفحة…",
+      "modeContinuous": "تمرير متصل",
+      "modeSingle": "صفحة واحدة",
+      "modeSpread": "صفحتان متقابلتان",
+      "modeBook": "كتاب (الغلاف منفردًا)",
+      "pagesLeftToRight": "الصفحات من اليسار إلى اليمين",
+      "pagesRightToLeft": "الصفحات من اليمين إلى اليسار"
     },
     "app": {
       "toggleTheme": "تبديل المظهر",
@@ -39,11 +46,16 @@
     "emptyTitle": "افتح ملف PDF للبدء",
     "emptyBody": "ملفاتك تبقى على هذا الجهاز.",
     "canvasLabel": "الصفحة {{page}} من {{name}}",
-    "rendering": "جارٍ عرض الصفحة…"
+    "pagesLabel": "صفحات {{name}}"
   },
   "status": {
-    "pageOf": "الصفحة {{page}} من {{count}}",
-    "zoom": "التكبير {{percent}}%"
+    "zoom": "التكبير {{percent}}%",
+    "pageNumber": "رقم الصفحة",
+    "pageCount": "من {{count}}",
+    "viewMode": "تخطيط الصفحات",
+    "pageOrder": "ترتيب الصفحات",
+    "orderLtr": "من اليسار",
+    "orderRtl": "من اليمين"
   },
   "inspector": {
     "title": "المستند",

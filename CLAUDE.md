@@ -29,6 +29,9 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | UI tests / types / lint | `cd apps/desktop && pnpm test` · `pnpm typecheck` · `pnpm lint` (`pnpm format` fixes) |
 | End-to-end shell check | `cargo build -p safha-desktop --features devtools && scripts/selftest.sh <pdf> <out> [en\|ar] [light\|dark]` then `node scripts/check-selftest.mjs <out> <ltr\|rtl>` |
 | Licence check | `cargo deny check licenses bans sources` · `node scripts/third-party-licenses.mjs [--check]` |
+| Scroll/zoom benchmark (window must be visible) | `scripts/scroll-benchmark.sh <out> debug\|release` then `node scripts/check-scroll-benchmark.mjs <out>` |
+| Page text / extraction report | `cargo run -p safha-core --example page_text -- f.pdf [page]` · `--example fixture_report [-- --verbose]` |
+| Release-mode tests | set `SAFHA_PDFIUM_DIR=$PWD/third_party/pdfium/<platform>/lib` (release builds don't search `third_party/`) |
 | Render a page to PNG | `cargo run -p safha-core --example render_png -- in.pdf out.png [page] [scale]` |
 | Text-extraction baseline | `cargo run -p safha-core --example fixture_report` |
 | OCR eval set + score | `node ocr-eval/generate.mjs` · `cargo run -p safha-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir> --engine <name> --targets ocr-eval/targets.json` |
@@ -59,7 +62,8 @@ third_party/pdfium/      downloaded binaries (git-ignored)
 - **Design tokens only.** No raw colours, sizes, or durations in components; add a token in
   `src/styles/tokens.css` (and its contrast pair in `tokens.test.ts`).
 - **Every user action is a command** in `src/commands/registry.ts`; buttons and shortcuts call
-  `runCommand`. No ad-hoc handlers that bypass it.
+  `runCommand`. No ad-hoc handlers that bypass it. Sole exception: continuous gestures (pinch,
+  Ctrl/Cmd+wheel zoom), which the viewer handles directly (ADR 0009).
 - **Every user-facing string** exists in both `en.json` and `ar.json` (a test enforces parity).
 - **The UI never touches the filesystem.** Files are opened by Rust commands; the UI gets ids and
   file names, not paths. Do not add Tauri fs/shell permissions.

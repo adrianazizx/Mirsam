@@ -17,7 +17,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 3. **CI has never run.** `.github/workflows/ci.yml` is written and its YAML parses, but there is
    no remote. Expect first-run fixes, especially on Windows and Linux.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
-   `CC0-1.0`, `0BSD`, and `MIT-0`. All are permissive and all arrive through Tauri's own
+   `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
+   `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
    dependency tree (Unicode data, ICU4X), so they cannot be avoided on this stack — but the spec
    says to ask.
 5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
@@ -98,25 +99,42 @@ by anything found so far.
 - Preferences live in `localStorage` until the SQLite store exists (M1).
 - No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
 
-## M1 — Viewer (P0 viewing)
+## M1 — Viewer (P0 viewing) — in progress on branch `m1-viewer`
 
-Starting points already in place: `Document::render_tile`, the command registry, the 1,000-page
-fixture, the extraction baseline (46/118 blocks verbatim), ADR 0004.
-
-- [ ] Render scheduler: one prioritized queue with cancellation, tile cache keyed by
-      (page, zoom, tile, revision), low-res preview then sharpen (PDFium is single-threaded per
-      process — ADR 0002)
-- [ ] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI
-- [ ] View modes: single / continuous / two-page / book; RTL page order; read `/Direction`
-- [ ] Thumbnails, outline, page labels, go-to-page
+- [x] Render scheduler: one render thread, priority queue, cancellation by viewport generation,
+      64 MiB byte-capped LRU keyed by (document, revision, page, scale, rect), previews then tiles
+      (ADR 0009)
+- [~] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI — built and self-tested in both
+      directions; **frame rate and scroll blank time not measured** (screen locked during the runs).
+      Random jumps in a hidden window: ~5 in 40 stall 210–260 ms before the preview appears
+      (delivery into WebKit, not rendering); WebKit's memory grows 250–370 MB over 40 jumps. Both
+      need a visible-window run before they count as problems (ADR 0009, "Open")
+- [~] View modes: single / continuous / two-page / book; RTL page order — done. Reading
+      `/ViewerPreferences /Direction` is not (needs an `unsafe` PDFium call)
+- [~] Thumbnails, outline, page labels, go-to-page — go-to-page done (accepts Arabic-Indic
+      digits); outline and page labels done in the core (`Document::outline()`,
+      `Document::page_label()`), no UI yet; thumbnails not started
 - [ ] Tabs (real: close, reorder), multiple windows
-- [ ] Bidi-aware text extraction (spec §6.1) and selection/copy in logical order
-- [ ] Search with Arabic normalization (spec §6.2)
-- [ ] Recents, session restore, per-file position (SQLite)
+- [~] Bidi-aware text extraction (spec §6.1) — core done (ADR 0008): 82/118 corpus blocks verbatim
+      (was 46), 66/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for
+      OCR. Selection/copy UI not started (spans with glyph boxes are ready for it)
+- [~] Search with Arabic normalization (spec §6.2) — core done: tashkeel/tatweel, alef forms, ى/ي,
+      optional ة/ه, digit styles, presentation forms, case, whole word, regex; 500 pages in 10 ms
+      after indexing (release). No search UI yet
+- [~] Recents, session restore, per-file position (SQLite) — core done: `safha_core::store`
+      (bundled SQLite, WAL, schema versioning, refuses newer schemas); not wired to the shell/UI yet
 - [ ] Reading themes (sepia, night); command palette; printing
 - [ ] Open password-protected PDFs (the engine already accepts a password; the UI has no prompt)
 - [ ] Re-run the tile-transport spike on Windows and Linux
 - [ ] Exit test: 1,000-page bilingual PDF at 60 fps; Arabic copy and search correct on all fixtures
+
+Known extraction gaps (floors in `crates/safha-core/tests/text.rs`): a neutral between two LTR runs
+inside RTL text (`(64-bit)`), one split Amiri cluster, the bilingual table's heading direction.
+
+**Needs you:** run the scroll benchmark with the screen unlocked and the app window visible —
+`cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh /tmp/scroll debug`
+(and `release`), then `node scripts/check-scroll-benchmark.mjs /tmp/scroll`. It refuses to report
+numbers from a hidden window.
 
 ## M2 — Annotate and organize
 
@@ -179,6 +197,24 @@ fixture, the extraction baseline (46/118 blocks verbatim), ADR 0004.
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 2 — 2026-11-22 (Milestone 1 started)
+
+Branch `m1-viewer`. Text extraction and search in the core (ADR 0008); outline and page labels;
+the local state store (recents, view state, settings, session);
+Chrome fixtures now carry outlines; new `derived/page-labels.pdf`. The tiled viewer is being built in
+parallel by a background agent (render service in `safha-core/src/render/`, UI viewer).
+
+Things that were not obvious:
+
+- Chrome writes Arabic in visual order inside `/ReversedChars`, one `/ActualText` span per letter,
+  dots as separate glyphs, and a space glyph at every word break. PDFium's character list drops
+  most of those spaces; its page-object list still has them, at the right positions.
+- `PdfPageTextObject::text()` in pdfium-render rebuilds the page's whole text analysis per call
+  (11 s to index 500 pages); `PdfPageText::for_object` on one shared text page takes 0.54 s.
+- Release builds do not look in `third_party/pdfium`; set `SAFHA_PDFIUM_DIR` to run release tests.
+- PDFium reports a multi-letter Arabic glyph's letters reversed on Chrome pages but not CoreText's;
+  Arabic joining rules (a backward-only letter cannot start a ligature) tell the two apart.
 
 ### Session 1 — 2026-11-22
 
