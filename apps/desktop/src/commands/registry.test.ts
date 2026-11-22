@@ -41,6 +41,45 @@ describe("command registry", () => {
     vi.restoreAllMocks();
   });
 
+  it("edits pages, then undoes and redoes, starting the views over each time", async () => {
+    // The mock backend's sample document (id 1) has 240 pages.
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    useAppStore.getState().updateDocument(1, { page: 4 });
+    useAppStore.getState().updateSearch(1, { query: "x", status: "done" });
+    expect(isCommandEnabled("edit.undo")).toBe(false);
+
+    await runCommand("pages.duplicate");
+    let doc = selectActiveDocument(useAppStore.getState());
+    expect(doc).toMatchObject({
+      pageCount: 241,
+      revision: 1,
+      canUndo: true,
+      modified: true,
+      page: 4,
+    });
+    expect(doc?.search.status).toBe("idle");
+    expect(isCommandEnabled("edit.undo")).toBe(true);
+
+    await runCommand("edit.undo");
+    doc = selectActiveDocument(useAppStore.getState());
+    expect(doc).toMatchObject({ pageCount: 240, revision: 2, canUndo: false, canRedo: true });
+    expect(doc?.modified).toBe(false);
+
+    await runCommand("edit.redo");
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      pageCount: 241,
+      canRedo: false,
+    });
+    await runCommand("edit.undo");
+    expect(shortcutLabel("edit.redo", true)).toBe("⇧⌘Z");
+  });
+
+  it("keeps the last page: deleting needs two", () => {
+    useAppStore.getState().addDocument({ id: 7, name: "one.pdf", pageCount: 1 });
+    expect(isCommandEnabled("pages.delete")).toBe(false);
+    expect(isCommandEnabled("pages.rotateClockwise")).toBe(true);
+  });
+
   it("disables document commands until a document is open", async () => {
     expect(isCommandEnabled("view.zoomIn")).toBe(false);
     await runCommand("view.zoomIn");

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   DocumentInfo,
+  EditOutcome,
   OutlineItem,
   PageSize,
   RecentFile,
@@ -71,6 +72,12 @@ export interface OpenDocument extends DocumentInfo {
   search: SearchState;
   /** Whether text is selected in this document's page view. */
   hasSelection: boolean;
+  /** Bumped by every edit, undo, and redo: views showing pages start over. */
+  revision: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Differs from the file as opened or last saved. */
+  modified: boolean;
 }
 
 export interface PendingUnlock {
@@ -119,6 +126,12 @@ export interface AppState {
   /** Moves a tab to `index` in tab order (reading order). */
   moveDocument(id: number, index: number): void;
   updateDocument(id: number, patch: Partial<Omit<OpenDocument, keyof DocumentInfo>>): void;
+  /**
+   * Takes the document to the revision an edit, undo, or redo left it at.
+   * Page numbers may have moved, so the outline, labels, search hits, and
+   * selection are dropped and reload; the current page stays where it can.
+   */
+  applyEdit(id: number, outcome: EditOutcome): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
   pushUnlock(unlock: PendingUnlock): void;
   /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
@@ -296,6 +309,10 @@ export const useAppStore = create<AppState>((set, get) => {
         outline: null,
         search: IDLE_SEARCH,
         hasSelection: false,
+        revision: 0,
+        canUndo: false,
+        canRedo: false,
+        modified: false,
       };
       set((state) => ({
         documents: [...state.documents, document],
@@ -338,6 +355,28 @@ export const useAppStore = create<AppState>((set, get) => {
           next.zoom = clampZoom(next.zoom);
           return next;
         }),
+      }));
+    },
+    applyEdit(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id
+            ? {
+                ...open,
+                pageCount: outcome.pageCount,
+                page: Math.min(open.page, Math.max(0, outcome.pageCount - 1)),
+                pageSize: null,
+                labels: null,
+                outline: null,
+                search: IDLE_SEARCH,
+                hasSelection: false,
+                revision: open.revision + 1,
+                canUndo: outcome.canUndo,
+                canRedo: outcome.canRedo,
+                modified: outcome.modified,
+              }
+            : open,
+        ),
       }));
     },
     updateSearch(id, patch) {

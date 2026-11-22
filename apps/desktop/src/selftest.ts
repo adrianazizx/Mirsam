@@ -129,6 +129,29 @@ async function navigationChecks(documentId: number) {
   );
   const thumbnails = document.querySelectorAll('[data-testid="thumbnails"] button').length;
 
+  // Editing (ADR 0014): duplicate the page, see the new revision painted,
+  // then undo back to the file as opened.
+  const editing = await (async () => {
+    const pagesBefore = (await backend.pageSizes(documentId)).length;
+    const started = performance.now();
+    await runCommand("pages.duplicate");
+    const pagesAfterEdit = (await backend.pageSizes(documentId)).length;
+    const editMs = Math.round(performance.now() - started);
+    const repainted = (await waitForPagePainted(0, 10_000)) !== null;
+    await runCommand("edit.undo");
+    const pagesAfterUndo = (await backend.pageSizes(documentId)).length;
+    const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
+    return {
+      pagesBefore,
+      pagesAfterEdit,
+      pagesAfterUndo,
+      editMs,
+      repainted,
+      modifiedAfterUndo: open?.modified ?? null,
+      revision: open?.revision ?? null,
+    };
+  })();
+
   // A second window opens, and the shell has both.
   await runCommand("window.new");
   let windows: string[] | null = null;
@@ -156,6 +179,7 @@ async function navigationChecks(documentId: number) {
     labels: labels?.slice(0, 5) ?? null,
     thumbnailDrawn,
     thumbnails,
+    editing,
     windows,
   };
 }

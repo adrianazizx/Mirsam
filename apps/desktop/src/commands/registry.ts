@@ -1,4 +1,4 @@
-import { backend, isBackendError, type OpenOutcome } from "../backend";
+import { backend, isBackendError, type OpenOutcome, type PageEdit } from "../backend";
 import {
   type AppState,
   type LeftPanel,
@@ -83,6 +83,13 @@ export type CommandId =
   | "tabs.moveToNewWindow"
   | "window.new"
   | "edit.copy"
+  | "edit.undo"
+  | "edit.redo"
+  | "pages.rotateClockwise"
+  | "pages.rotateCounterclockwise"
+  | "pages.delete"
+  | "pages.duplicate"
+  | "pages.insertBlank"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -123,6 +130,25 @@ const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
+const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
+const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
+const hasPages = (count: number) => (state: AppState) =>
+  (selectActiveDocument(state)?.pageCount ?? 0) >= count;
+
+/** Applies a page edit to the active document (ADR 0014). */
+async function editActive(edit: (active: OpenDocument) => PageEdit): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  store().applyEdit(active.id, await backend.editPages(active.id, edit(active)));
+}
+
+async function stepActive(step: "undo" | "redo"): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  const outcome =
+    step === "undo" ? await backend.undoEdit(active.id) : await backend.redoEdit(active.id);
+  store().applyEdit(active.id, outcome);
+}
 
 /** Makes `page` current and scrolls the viewer to it. */
 function navigateTo(active: OpenDocument, page: number) {
@@ -161,7 +187,14 @@ function setReadingTheme(theme: ReadingTheme) {
 }
 
 /** Error codes with their own message under `errors.`; anything else is "generic". */
-const KNOWN_ERRORS = ["invalid_pdf", "engine_unavailable", "file_missing", "print_failed"];
+const KNOWN_ERRORS = [
+  "invalid_pdf",
+  "engine_unavailable",
+  "file_missing",
+  "print_failed",
+  "edit_unsupported",
+  "invalid_edit",
+];
 
 function reportError(error: unknown) {
   const code = isBackendError(error) && KNOWN_ERRORS.includes(error.code) ? error.code : "generic";
@@ -312,6 +345,51 @@ const COMMANDS: Command[] = [
       store().removeDocument(id);
       await backend.closeDocument(id);
     },
+  },
+  {
+    id: "edit.undo",
+    shortcut: { key: "z", mod: true },
+    isEnabled: canUndo,
+    run: () => stepActive("undo"),
+  },
+  {
+    id: "edit.redo",
+    shortcut: { key: "z", mod: true, shift: true },
+    isEnabled: canRedo,
+    run: () => stepActive("redo"),
+  },
+  {
+    id: "pages.rotateClockwise",
+    isEnabled: hasDocument,
+    run: () => editActive((active) => ({ kind: "rotate", pages: [active.page], quarterTurns: 1 })),
+  },
+  {
+    id: "pages.rotateCounterclockwise",
+    isEnabled: hasDocument,
+    run: () => editActive((active) => ({ kind: "rotate", pages: [active.page], quarterTurns: -1 })),
+  },
+  {
+    id: "pages.delete",
+    // A document keeps at least one page.
+    isEnabled: hasPages(2),
+    run: () => editActive((active) => ({ kind: "delete", pages: [active.page] })),
+  },
+  {
+    id: "pages.duplicate",
+    isEnabled: hasDocument,
+    run: () => editActive((active) => ({ kind: "duplicate", pages: [active.page] })),
+  },
+  {
+    id: "pages.insertBlank",
+    isEnabled: hasDocument,
+    // After the current page, the size of the current page (A4 until it is known).
+    run: () =>
+      editActive((active) => ({
+        kind: "insertBlank",
+        at: active.page + 1,
+        width: active.pageSize?.width ?? 595,
+        height: active.pageSize?.height ?? 842,
+      })),
   },
   {
     id: "file.print",

@@ -58,6 +58,15 @@ if (nav) {
   }
   check(nav.thumbnailDrawn, "no thumbnail was drawn");
   check((nav.windows?.length ?? 0) >= 2, `a new window did not open (windows: ${JSON.stringify(nav.windows)})`);
+  // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
+  const editing = nav.editing;
+  check(editing !== undefined && editing !== null, "no editing results");
+  if (editing) {
+    check(editing.pagesAfterEdit === editing.pagesBefore + 1, `duplicating gave ${editing.pagesAfterEdit} pages`);
+    check(editing.repainted, "the edited document was not painted");
+    check(editing.pagesAfterUndo === editing.pagesBefore, `undo left ${editing.pagesAfterUndo} pages`);
+    check(editing.modifiedAfterUndo === false, "undo back to the file still counts as modified");
+  }
 }
 
 if (failures.length > 0) {
@@ -76,4 +85,11 @@ if (nav) {
       `"${nav.query}": ${nav.searchHits} hits in ${nav.searchMs.toFixed(0)} ms; ` +
       `outline ${nav.outlineItems} items; ${nav.thumbnails} thumbnails mounted; windows ${JSON.stringify(nav.windows)}`,
   );
+  if (nav.editing) {
+    const e = nav.editing;
+    console.log(
+      `  editing: duplicate ${e.pagesBefore} → ${e.pagesAfterEdit} pages in ${e.editMs} ms, ` +
+        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}`,
+    );
+  }
 }

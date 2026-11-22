@@ -28,7 +28,8 @@ function readSpacing(element: HTMLElement): ViewerSpacing {
 /** The remembered position is written this long after the reader stops moving. */
 const SAVE_DELAY_MS = 800;
 /** Documents whose page labels were asked for (once per open). */
-const labelsRequested = new Set<number>();
+/** `id@revision` of each document revision whose page labels were requested. */
+const labelsRequested = new Set<string>();
 
 /**
  * The scrolling page area for one document. React owns only this container;
@@ -54,6 +55,10 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         hasSelection: open?.hasSelection ?? false,
       };
     }),
+  );
+  // A new revision (an edit, undo, or redo) rebuilds the view from its pages.
+  const revision = useAppStore(
+    (state) => state.documents.find((open) => open.id === id)?.revision ?? 0,
   );
   const hits = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.search.hits ?? null,
@@ -133,8 +138,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
     };
     container.addEventListener("scroll", onScroll, { passive: true });
 
-    if (current.labels === null && !labelsRequested.has(id)) {
-      labelsRequested.add(id);
+    const labelKey = `${id}@${revision}`;
+    if (current.labels === null && !labelsRequested.has(labelKey)) {
+      labelsRequested.add(labelKey);
       backend.pageLabels(id).then(
         (labels) => {
           if (labels) useAppStore.getState().updateDocument(id, { labels });
@@ -154,7 +160,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       viewerRef.current = null;
       setToolbarHost(null);
     };
-  }, [id]);
+  }, [id, revision]);
 
   useEffect(() => {
     viewerRef.current?.setView({ zoomMode, zoom, viewMode, pageOrder });

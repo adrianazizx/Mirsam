@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   type AppInfo,
   type Backend,
+  type EditOutcome,
   isBackendError,
   type OpenOutcome,
   type OutlineItem,
@@ -137,6 +138,9 @@ export const tauriBackend: Backend = {
   },
   newWindow: () => invoke<void>("new_window"),
   printDocument: (documentId) => invoke<void>("print_document", { documentId }),
+  editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
+  undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
+  redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>
     listen<{ key: string; value: string }>("settings-changed", (event) =>

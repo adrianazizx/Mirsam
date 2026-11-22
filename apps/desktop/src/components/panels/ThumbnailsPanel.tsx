@@ -17,6 +17,10 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
   const page = useAppStore((state) => state.documents.find((open) => open.id === id)?.page ?? 0);
+  // A new revision (an edit, undo, or redo) rebuilds the strip from the document's pages.
+  const revision = useAppStore(
+    (state) => state.documents.find((open) => open.id === id)?.revision ?? 0,
+  );
   const labels = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.labels ?? null,
   );
@@ -38,6 +42,7 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
     };
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new revision rebuilds the strip
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -63,7 +68,7 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
       strip.destroy();
       stripRef.current = null;
     };
-  }, [id]);
+  }, [id, revision]);
 
   useEffect(() => {
     stripRef.current?.setCurrent(page);

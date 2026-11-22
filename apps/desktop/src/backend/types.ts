@@ -5,6 +5,26 @@ export interface AppInfo {
   devtools: boolean;
 }
 
+/** A change to a document's pages. Page numbers are zero-based, before the edit. */
+export type PageEdit =
+  | { kind: "rotate"; pages: number[]; quarterTurns: number }
+  | { kind: "delete"; pages: number[] }
+  /** The pages keep their order and the first lands at index `to` of the result. */
+  | { kind: "move"; pages: number[]; to: number }
+  /** An empty page of `width` × `height` points before index `at`. */
+  | { kind: "insertBlank"; at: number; width: number; height: number }
+  /** Each copy goes right after its page. */
+  | { kind: "duplicate"; pages: number[] };
+
+/** The document after an edit, an undo, or a redo. */
+export interface EditOutcome {
+  pageCount: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Differs from the file as opened or last saved. */
+  modified: boolean;
+}
+
 export interface DocumentInfo {
   id: number;
   /** File name only; the UI never sees filesystem paths. */
@@ -308,6 +328,10 @@ export interface Backend {
    * (ADR 0012; unverified on screen so far).
    */
   printDocument(documentId: number): Promise<void>;
+  /** Applies a page edit; the document is then at a new revision (ADR 0014). */
+  editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
+  undoEdit(documentId: number): Promise<EditOutcome>;
+  redoEdit(documentId: number): Promise<EditOutcome>;
   /** Gives the document's tab to a new window; the caller drops its own tab. */
   moveToNewWindow(documentId: number): Promise<void>;
   /**

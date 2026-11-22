@@ -1,10 +1,12 @@
 import type {
   Backend,
   DocumentInfo,
+  EditOutcome,
   KeptRequest,
   Lane,
   OpenOutcome,
   OutlineItem,
+  PageEdit,
   PageSize,
   Priority,
   RecentFile,
@@ -161,12 +163,63 @@ function fold(text: string, options: SearchOptions): string {
   return folded;
 }
 
+/** Pages of each edited mock document, as original page numbers (-1: blank), with undo and redo. */
+const edits = new Map<number, { states: number[][]; at: number; saved: number }>();
+
+function basePageCount(documentId: number): number {
+  return documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount;
+}
+
+/** The document's current pages as original page numbers. */
+function pagesOf(documentId: number): number[] {
+  const history = edits.get(documentId);
+  return (
+    history?.states[history.at] ?? Array.from({ length: basePageCount(documentId) }, (_, i) => i)
+  );
+}
+
+function applyEdit(pages: number[], edit: PageEdit): number[] {
+  const chosen = new Set("pages" in edit ? edit.pages : []);
+  if ([...chosen].some((page) => page < 0 || page >= pages.length)) {
+    throw { code: "page_out_of_range", detail: "page out of range" };
+  }
+  switch (edit.kind) {
+    case "rotate":
+      return pages;
+    case "delete": {
+      const kept = pages.filter((_, i) => !chosen.has(i));
+      if (kept.length === 0) throw { code: "invalid_edit", detail: "a document keeps one page" };
+      return kept;
+    }
+    case "move": {
+      const moved = pages.filter((_, i) => chosen.has(i));
+      const rest = pages.filter((_, i) => !chosen.has(i));
+      const at = Math.min(edit.to, rest.length);
+      return [...rest.slice(0, at), ...moved, ...rest.slice(at)];
+    }
+    case "insertBlank":
+      return [...pages.slice(0, edit.at), -1, ...pages.slice(edit.at)];
+    case "duplicate":
+      return pages.flatMap((page, i) => (chosen.has(i) ? [page, page] : [page]));
+  }
+}
+
+function outcome(documentId: number): EditOutcome {
+  const history = edits.get(documentId);
+  return {
+    pageCount: pagesOf(documentId).length,
+    canUndo: (history?.at ?? 0) > 0,
+    canRedo: history ? history.at < history.states.length - 1 : false,
+    modified: history ? history.at !== history.saved : false,
+  };
+}
+
 function search(documentId: number, query: string, options: SearchOptions): SearchHit[] {
   const needle = fold(query, options)
     .replace(/\uFFFF/g, "")
     .trim();
   if (!needle) throw { code: "invalid_query", detail: "empty" };
-  const pageCount = documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount;
+  const pageCount = pagesOf(documentId).length;
   const hits: SearchHit[] = [];
   for (let page = 0; page < pageCount; page += 1) {
     const layer = textLayer(page);
@@ -405,10 +458,27 @@ export const mockBackend: Backend = {
     }
   },
   pageSizes: async (documentId) =>
-    Array.from(
-      { length: documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount },
-      (_, page) => sizeOf(page),
+    pagesOf(documentId).map((original) =>
+      original < 0 ? { width: 595, height: 842 } : sizeOf(original),
     ),
+  editPages: async (documentId, edit) => {
+    const history = edits.get(documentId) ?? { states: [pagesOf(documentId)], at: 0, saved: 0 };
+    const next = applyEdit(pagesOf(documentId), edit);
+    history.states = [...history.states.slice(0, history.at + 1), next];
+    history.at += 1;
+    edits.set(documentId, history);
+    return outcome(documentId);
+  },
+  undoEdit: async (documentId) => {
+    const history = edits.get(documentId);
+    if (history && history.at > 0) history.at -= 1;
+    return outcome(documentId);
+  },
+  redoEdit: async (documentId) => {
+    const history = edits.get(documentId);
+    if (history && history.at < history.states.length - 1) history.at += 1;
+    return outcome(documentId);
+  },
   documentOutline: async (documentId) => (documentId === SAMPLE.id ? OUTLINE : []),
   pageLabels: async () => null,
   pageText: async (_documentId, page) => textLayer(page),
