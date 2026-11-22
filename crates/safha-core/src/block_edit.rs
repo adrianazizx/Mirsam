@@ -30,21 +30,45 @@ use std::rc::Rc;
 use serde::Serialize;
 use unicode_normalization::UnicodeNormalization;
 
-use crate::blocks::{Atom, Block, BlockAlign, analyze};
+use crate::blocks::{Atom, Block, BlockAlign, RunStyle, analyze};
 use crate::edit::{Leaf, PageTree, Start, set};
 use crate::error::{Error, Result};
-use crate::fonts::{FontFamily, for_text};
+use crate::fonts::{FontFamily, bold_of, candidates, fallbacks, family_of, for_text, oblique_of};
 use crate::pdf::content::{Matrix, Op, Operand, ShowKind, Shown, interpret, tokenize};
 use crate::pdf::fontinfo::{FontInfo, stream_data};
-use crate::pdf::text::{draw_text, write_font};
+use crate::pdf::text::{NamedFont, Paint, draw_painted_text, write_font};
 use crate::pdf::write::Update;
 use crate::pdf::{Dict, File, Object};
+
 use crate::text_edit::{free_prefix, num, page_contents, placement};
-use crate::typeset::{Align, BaseDirection, FontFace, LineHeight, ParagraphStyle, Span, layout};
+use crate::typeset::{
+    Align, BaseDirection, FontFace, FontRequest, LineHeight, ParagraphStyle, Span, layout, match_font,
+};
 use crate::view::ViewTransform;
 
 /// Beyond a single line's own width, it may grow to the page's margin.
 const MARGIN: f32 = 36.0;
+
+/// Why text cannot be edited in place: what the UI tells someone who presses on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Refusal {
+    /// An operator that drew it also drew other text.
+    Shared,
+    /// Its codes do not give its text exactly (letters drawn with separate
+    /// dots that carry no text, CoreText's Arabic): it needs OCR.
+    Unreadable,
+    /// Its font cannot be read: Type 3, no `/ToUnicode`, an encoding this
+    /// reader does not follow, vertical writing.
+    Font,
+    /// It is not upright on the page as displayed.
+    Rotated,
+    /// The file is encrypted.
+    Encrypted,
+    /// It is drawn in a way the editor does not follow yet (stroked text, an
+    /// unusual text state, a content filter it cannot read).
+    Unsupported,
+}
 
 /// A paragraph found on a page, as the UI shows it.
 #[derive(Debug, Clone, Serialize)]
@@ -67,11 +91,58 @@ pub struct TextBlock {
     pub font: String,
     /// The block's own font can be used for new text (Latin characters it has codes for).
     pub font_reusable: bool,
-    /// More than one font, size or colour was found; editing sets it in one.
-    pub flattened: bool,
+    /// It holds more than one style (font, size, colour): editing keeps them,
+    /// and typed text takes the style of the text before it (ADR 0024).
+    pub styled: bool,
+    /// Its styled runs, covering `text` in logical order.
+    pub runs: Vec<StyledRun>,
     pub editable: bool,
     /// Why it is not editable.
-    pub reason: Option<&'static str>,
+    pub reason: Option<Refusal>,
+}
+
+/// A stretch of a paragraph's text in one style, as the UI shows it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StyledRun {
+    /// UTF-16 offsets into the paragraph's `text`.
+    pub start: usize,
+    pub end: usize,
+    /// The PDF's font, as `/BaseFont` names it (without a subset tag).
+    pub font: String,
+    pub bold: bool,
+    pub italic: bool,
+    /// Points, as displayed.
+    pub size: f32,
+    /// sRGB, 0–1.
+    pub color: [f32; 3],
+}
+
+impl TextBlock {
+    /// Text that cannot be edited, where it sits on the page as displayed:
+    /// a press there says why rather than placing new text over it.
+    fn refused(index: usize, [x0, x1, top, bottom]: [f32; 4], reason: Refusal) -> Self {
+        TextBlock {
+            index,
+            fingerprint: 0,
+            x: x0,
+            y: top,
+            width: x1 - x0,
+            height: bottom - top,
+            text: String::new(),
+            rtl: false,
+            align: BlockAlign::Left,
+            size: bottom - top,
+            color: [0.0; 3],
+            lines: 0,
+            font: String::new(),
+            font_reusable: false,
+            styled: false,
+            runs: Vec::new(),
+            editable: false,
+            reason: Some(reason),
+        }
+    }
 }
 
 /// What to put in a paragraph.
@@ -84,6 +155,107 @@ pub struct BlockEdit {
     pub text: String,
     /// The bundled family for the substitute; `None` chooses from the block's font.
     pub family: Option<FontFamily>,
+    /// Bold and italic as the editor set them on the new text (ADR 0025).
+    /// `None` keeps each character's own: its font's.
+    pub marks: Option<Vec<Mark>>,
+}
+
+/// Bold and italic set on a stretch of the new text in the editor: UTF-16
+/// offsets into it. Characters no mark covers are neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mark {
+    pub start: usize,
+    pub end: usize,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+/// How a run of the new text is to look: its style on the page (font, size,
+/// colour), and the bold and italic it is to have.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Look {
+    style: RunStyle,
+    bold: bool,
+    italic: bool,
+}
+
+/// `runs` of `text` with their bold and italic: from `marks` when the editor
+/// set them, else from each run's font. Split wherever either changes.
+fn looks(
+    text: &str,
+    runs: &[(Range<usize>, RunStyle)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+    marks: Option<&[Mark]>,
+) -> Vec<(Range<usize>, Look)> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    let mut out: Vec<(Range<usize>, Look)> = Vec::new();
+    let mut run = 0;
+    let mut unit = 0; // UTF-16 offset of the character
+    for (at, c) in text.char_indices() {
+        while run + 1 < runs.len() && runs[run].0.end <= at {
+            run += 1;
+        }
+        let Some(&(_, style)) = runs.get(run) else { break };
+        let (bold, italic) = match marks {
+            Some(marks) => marks
+                .iter()
+                .find(|m| m.start <= unit && unit < m.end)
+                .map_or((false, false), |m| (m.bold, m.italic)),
+            None => info(style.font).map_or((false, false), |f| (f.bold, f.italic)),
+        };
+        let look = Look { style, bold, italic };
+        let end = at + c.len_utf8();
+        match out.last_mut() {
+            Some((range, last)) if *last == look && range.end == at => range.end = end,
+            _ => out.push((at..end, look)),
+        }
+        unit += c.len_utf16();
+    }
+    out
+}
+
+/// A font's family, for finding its bold or italic among a page's fonts:
+/// the name before its style ("Helvetica-BoldOblique", "Arial,Bold"), without
+/// the "MT" and "PS" of some vendors' names.
+fn family_key(name: &str) -> String {
+    let base = name.split(['-', ',']).next().unwrap_or(name).to_ascii_lowercase();
+    for suffix in ["psmt", "mt", "ps"] {
+        if let Some(stripped) = base.strip_suffix(suffix)
+            && !stripped.is_empty()
+        {
+            return stripped.to_string();
+        }
+    }
+    base
+}
+
+/// Each run in a font the page already has, if every one can be: its own
+/// font when that has the bold and italic it is to have, else one of the
+/// page's fonts of the same family that has them (Helvetica-Bold for a
+/// Helvetica word made bold). Each must have codes for its run's text.
+fn own_fonts(
+    text: &str,
+    looks: &[(Range<usize>, Look)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+) -> Option<Vec<(Range<usize>, RunStyle)>> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    looks
+        .iter()
+        .map(|(range, look)| {
+            let run_text = &text[range.clone()];
+            let own = info(look.style.font)?;
+            let fits =
+                |f: &FontInfo| f.bold == look.bold && f.italic == look.italic && reusable_for(f, run_text);
+            let key = if fits(own) {
+                look.style.font
+            } else {
+                let family = family_key(&own.name);
+                (0..fonts.len())
+                    .find(|&k| info(k).is_some_and(|f| family_key(&f.name) == family && fits(f)))?
+            };
+            Some((range.clone(), RunStyle { font: key, ..look.style }))
+        })
+        .collect()
 }
 
 /// What an edit did.
@@ -94,6 +266,23 @@ pub struct EditedBlock {
     pub substituted: Option<Substitution>,
     /// The paragraph's lines after the edit.
     pub lines: usize,
+    /// What the new text is set in.
+    pub source: FontSource,
+}
+
+/// Where an edited paragraph's fonts came from (ADRs 0023, 0026).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FontSource {
+    /// The page's own fonts, by their codes: nothing embedded.
+    Page,
+    /// The page's own fonts' embedded programs, laid out again and embedded
+    /// as new subsets: the same glyphs, any script.
+    Embedded,
+    /// Bundled faces, substituted.
+    Bundled,
+    /// Nothing was written (the paragraph was removed).
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -101,6 +290,9 @@ pub struct EditedBlock {
 pub struct Substitution {
     pub from: String,
     pub to: FontFamily,
+    /// The face it is set in (a PostScript name): the closest bundled face
+    /// to the original when the family was not chosen (ADR 0023).
+    pub font: String,
 }
 
 struct StreamData {
@@ -117,6 +309,8 @@ struct PageRead {
     blocks: Vec<Block>,
     /// Where text that is not editable sits (x0, x1, top, bottom, displayed): growing text keeps off it.
     obstacles: Vec<[f32; 4]>,
+    /// Why each obstacle is not editable.
+    obstacle_reasons: Vec<Refusal>,
 }
 
 fn read_page(file: &File<'_>, tree: &PageTree, leaf: &Leaf, view: &ViewTransform) -> Result<PageRead> {
@@ -156,13 +350,13 @@ fn read_page(file: &File<'_>, tree: &PageTree, leaf: &Leaf, view: &ViewTransform
         }
     }
 
-    let (atoms, obstacles) = atoms_of(&shown, &fonts, view);
+    let (atoms, obstacles, obstacle_reasons) = atoms_of(&shown, &fonts, view);
     let mut blocks = analyze(atoms);
     // Eligible operators only: the block's text is rebuilt from these.
     for block in &mut blocks {
         block.shown.retain(|&i| shown.get(i).is_some());
     }
-    Ok(PageRead { items, streams, shown, fonts, blocks, obstacles })
+    Ok(PageRead { items, streams, shown, fonts, blocks, obstacles, obstacle_reasons })
 }
 
 /// Whether a text-showing operator can be read and written back, and where
@@ -171,10 +365,11 @@ fn atoms_of(
     shown: &[Shown],
     fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
     view: &ViewTransform,
-) -> (Vec<Atom>, Vec<[f32; 4]>) {
+) -> (Vec<Atom>, Vec<[f32; 4]>, Vec<Refusal>) {
     let view = Matrix(view.matrix());
     let mut atoms = Vec::new();
     let mut obstacles = Vec::new();
+    let mut reasons = Vec::new();
     for (index, s) in shown.iter().enumerate() {
         let m = s.tm.then(s.ctm).then(view);
         let [a, b, c, d, ..] = m.0;
@@ -196,6 +391,15 @@ fn atoms_of(
             let min = |f: fn(&(f64, f64)) -> f64| corners.iter().map(f).fold(f64::MAX, f64::min) as f32;
             let max = |f: fn(&(f64, f64)) -> f64| corners.iter().map(f).fold(f64::MIN, f64::max) as f32;
             obstacles.push([min(|p| p.0), max(|p| p.0), min(|p| p.1), max(|p| p.1)]);
+            reasons.push(if !upright {
+                Refusal::Rotated
+            } else if !s.font.as_ref().is_some_and(|f| f.usable()) {
+                Refusal::Font
+            } else if !s.glyphs.iter().all(|g| g.text.is_some()) {
+                Refusal::Unreadable
+            } else {
+                Refusal::Unsupported
+            });
             continue;
         }
         let key = fonts.iter().position(|(name, _)| *name == s.font_name).unwrap_or(0);
@@ -217,7 +421,37 @@ fn atoms_of(
             });
         }
     }
-    (atoms, obstacles)
+    (atoms, obstacles, reasons)
+}
+
+/// Obstacles of one reason that touch along a line (an em apart at most),
+/// joined: one area per run of unreadable text rather than one per glyph.
+fn refused_areas(obstacles: &[[f32; 4]], reasons: &[Refusal]) -> Vec<([f32; 4], Refusal)> {
+    const MAX_AREAS: usize = 20_000;
+    let mut areas: Vec<([f32; 4], Refusal)> = Vec::new();
+    for (&area, &reason) in obstacles.iter().zip(reasons).take(MAX_AREAS) {
+        let near = |[x0, x1, top, bottom]: [f32; 4], other: [f32; 4]| {
+            let em = (bottom - top).max(other[3] - other[2]);
+            top < other[3] && other[2] < bottom && x0 <= other[1] + em && other[0] <= x1 + em
+        };
+        match areas.iter_mut().find(|(other, r)| *r == reason && near(area, *other)) {
+            Some((other, _)) => {
+                *other = [
+                    other[0].min(area[0]),
+                    other[1].max(area[1]),
+                    other[2].min(area[2]),
+                    other[3].max(area[3]),
+                ];
+            }
+            None => areas.push((area, reason)),
+        }
+    }
+    areas
+}
+
+/// Whether the file is encrypted (its text is not read, ADR 0023).
+pub(crate) fn encrypted(bytes: &[u8]) -> Result<bool> {
+    Ok(Start::read(bytes)?.file.trailer.get(b"Encrypt").is_some())
 }
 
 fn fingerprint(block: &Block, shown: &[Shown]) -> u32 {
@@ -242,19 +476,36 @@ pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Ve
     let leaf =
         tree.leaves.get(page).ok_or(Error::PageOutOfRange { index: page, count: tree.leaves.len() })?;
     let read = read_page(&file, &tree, leaf, view)?;
-    Ok(read
+    let mut blocks: Vec<TextBlock> = read
         .blocks
         .iter()
         .enumerate()
         .map(|(index, block)| {
             let font = read.fonts.get(block.font).and_then(|(_, f)| f.clone());
             let reason = if block.shared {
-                Some("shares its text with other text")
+                Some(Refusal::Shared)
             } else if block.shown.is_empty() || !readable(&block.text) {
-                Some("cannot be read")
+                Some(Refusal::Unreadable)
             } else {
                 None
             };
+            let chars = styled_chars(block);
+            let text: String = chars.iter().map(|&(c, _)| c).collect();
+            let runs = style_runs(&chars)
+                .into_iter()
+                .map(|(range, style)| {
+                    let info = read.fonts.get(style.font).and_then(|(_, f)| f.as_deref());
+                    StyledRun {
+                        start: text[..range.start].encode_utf16().count(),
+                        end: text[..range.end].encode_utf16().count(),
+                        font: info.map(|f| f.name.clone()).unwrap_or_default(),
+                        bold: info.is_some_and(|f| f.bold),
+                        italic: info.is_some_and(|f| f.italic),
+                        size: style.size,
+                        color: style.color,
+                    }
+                })
+                .collect::<Vec<_>>();
             TextBlock {
                 index,
                 fingerprint: fingerprint(block, &read.shown),
@@ -262,7 +513,9 @@ pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Ve
                 y: block.top,
                 width: block.x1 - block.x0,
                 height: block.bottom - block.top,
-                text: block.text.nfkc().collect(),
+                styled: runs.len() > 1,
+                runs,
+                text,
                 rtl: block.rtl,
                 align: block.align,
                 size: block.size,
@@ -270,18 +523,136 @@ pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Ve
                 lines: block.lines.len(),
                 font: font.as_ref().map(|f| f.name.clone()).unwrap_or_default(),
                 font_reusable: font.is_some_and(|f| f.usable() && !f.vertical),
-                flattened: block.mixed,
                 editable: reason.is_none(),
                 reason,
             }
         })
-        .collect())
+        .collect();
+    // After the paragraphs, so their indices stay the ones an edit names.
+    for (area, reason) in refused_areas(&read.obstacles, &read.obstacle_reasons) {
+        blocks.push(TextBlock::refused(blocks.len(), area, reason));
+    }
+    Ok(blocks)
+}
+
+/// Text that cannot be read at all here, as refused areas: the page's
+/// blocks as PDFium reads them, each with `reason`.
+pub(crate) fn refused_page(areas: impl IntoIterator<Item = [f32; 4]>, reason: Refusal) -> Vec<TextBlock> {
+    areas.into_iter().enumerate().map(|(index, area)| TextBlock::refused(index, area, reason)).collect()
 }
 
 /// Text a font's codes gave up exactly: not dotless letters, which some
 /// producers draw with the dots as separate shapes that carry no text.
 fn readable(text: &str) -> bool {
     !text.chars().any(|c| matches!(c, '\u{066E}' | '\u{066F}' | '\u{06A1}' | '\u{06BA}'))
+}
+
+/// The block's text as the UI shows and edits it (compatibility forms
+/// folded, NFKC), each character with the style it was drawn in.
+fn styled_chars(block: &Block) -> Vec<(char, RunStyle)> {
+    block
+        .runs
+        .iter()
+        .flat_map(|run| block.text[run.range.clone()].nfkc().map(move |c| (c, run.style)))
+        .collect()
+}
+
+/// Runs of `chars`: byte ranges of their text, consecutive equal styles merged.
+fn style_runs(chars: &[(char, RunStyle)]) -> Vec<(Range<usize>, RunStyle)> {
+    let mut runs: Vec<(Range<usize>, RunStyle)> = Vec::new();
+    let mut at = 0;
+    for &(c, style) in chars {
+        let end = at + c.len_utf8();
+        match runs.last_mut() {
+            Some((range, last)) if *last == style => range.end = end,
+            _ => runs.push((at..end, style)),
+        }
+        at = end;
+    }
+    runs
+}
+
+/// Longest text whose kept characters are matched one by one; past it the
+/// middle is taken as replaced whole (a quadratic table stays small).
+const RESTYLE_CELLS: usize = 4_000_000;
+
+/// `new` (the edited text) in the styles of `old` (the text as it was):
+///
+/// - a character the edit kept keeps its style;
+/// - typed text that replaced some takes the first replaced character's
+///   style (typing over a bold word stays bold);
+/// - other typed text takes the style of the character before it, or the
+///   one after it at the start.
+///
+/// What was kept is found by a longest common subsequence of characters.
+fn restyle(old: &[(char, RunStyle)], new: &str) -> Vec<(char, RunStyle)> {
+    let new: Vec<char> = new.chars().collect();
+    let Some(&(_, first_style)) = old.first() else {
+        return Vec::new();
+    };
+    let prefix = old.iter().zip(&new).take_while(|((a, _), b)| a == *b).count();
+    let suffix =
+        old[prefix..].iter().rev().zip(new[prefix..].iter().rev()).take_while(|((a, _), b)| a == *b).count();
+    let (old_mid, new_mid) = (&old[prefix..old.len() - suffix], &new[prefix..new.len() - suffix]);
+
+    // Edit script over the middle: Some(i) keeps old_mid[i]; None is typed.
+    // Deletions are noted per gap, as the style typed text there takes.
+    let (n, m) = (old_mid.len(), new_mid.len());
+    let mut kept: Vec<Option<usize>> = vec![None; m];
+    let mut replaced_at: Vec<Option<RunStyle>> = vec![None; m + 1];
+    if n > 0 && m > 0 && (n + 1) * (m + 1) <= RESTYLE_CELLS {
+        let width = m + 1;
+        let mut table = vec![0u16; (n + 1) * width];
+        for i in (0..n).rev() {
+            for j in (0..m).rev() {
+                table[i * width + j] = if old_mid[i].0 == new_mid[j] {
+                    table[(i + 1) * width + j + 1] + 1
+                } else {
+                    table[(i + 1) * width + j].max(table[i * width + j + 1])
+                };
+            }
+        }
+        let (mut i, mut j) = (0, 0);
+        while i < n && j < m {
+            if old_mid[i].0 == new_mid[j] {
+                kept[j] = Some(i);
+                i += 1;
+                j += 1;
+            } else if table[(i + 1) * width + j] >= table[i * width + j + 1] {
+                // old_mid[i] was deleted, in the gap before new_mid[j].
+                replaced_at[j].get_or_insert(old_mid[i].1);
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        if i < n {
+            replaced_at[j].get_or_insert(old_mid[i].1);
+        }
+    } else if n > 0 {
+        replaced_at[0] = Some(old_mid[0].1);
+    }
+
+    let mut out: Vec<(char, RunStyle)> = old[..prefix].to_vec();
+    // The style of the next kept character, for typed text at the very start.
+    let next_kept =
+        kept.iter().flatten().next().map(|&i| old_mid[i].1).or(old.get(old.len() - suffix).map(|&(_, s)| s));
+    let mut gap_style: Option<RunStyle> = None;
+    for (j, &c) in new_mid.iter().enumerate() {
+        if let Some(style) = replaced_at[j] {
+            gap_style.get_or_insert(style);
+        }
+        let style = match kept[j] {
+            Some(i) => {
+                gap_style = None;
+                old_mid[i].1
+            }
+            None => gap_style.or_else(|| out.last().map(|&(_, s)| s)).or(next_kept).unwrap_or(first_style),
+        };
+        out.push((c, style));
+    }
+    out.extend_from_slice(&old[old.len() - suffix..]);
+    out
 }
 
 /// One change to a content stream's bytes.
@@ -317,6 +688,9 @@ pub fn edit_block_update(
         return Err(Error::InvalidEdit("text is edited at most 20,000 characters at a time"));
     }
     let text = edit.text.replace("\r\n", "\n").replace('\r', "\n");
+    // The new text in the old one's styles (ADR 0024).
+    let runs = style_runs(&restyle(&styled_chars(block), &text));
+    let looks = looks(&text, &runs, &read.fonts, edit.marks.as_deref());
 
     // ---- Removing: the block's operators.
     let removed: std::collections::HashSet<usize> = block.shown.iter().copied().collect();
@@ -405,7 +779,6 @@ pub fn edit_block_update(
         BlockAlign::Center => Align::Center,
         BlockAlign::Justify => Align::Justify,
     };
-    let [r, g, b] = block.color;
 
     let mut resources = tree
         .attribute(leaf, b"Resources")
@@ -421,39 +794,57 @@ pub fn edit_block_update(
     let mut update = Update::new(bytes);
     let mut inserted: Option<Vec<u8>> = None;
     let mut substituted = None;
+    let mut source = FontSource::None;
     let mut lines_after = 0;
 
     if !text.trim().is_empty() {
-        let reuse = font_info.as_ref().filter(|f| edit.family.is_none() && reusable_for(f, &text)).cloned();
-        let (local, matrix_top, lines) = if let Some(font) = reuse {
-            let pitch = block.pitch.unwrap_or(block.size * 1.2);
-            let (content, lines) =
-                reuse_content(&text, &font, &anchor.font_name, block.size, [r, g, b], width, pitch, align);
-            (content, first_baseline, lines)
-        } else {
-            let family = edit.family.unwrap_or_else(|| default_family(font_info.as_deref()));
-            let fonts = for_text(family, &text)?;
+        // Each run in its own font, when every one can set its text.
+        let reuse = if edit.family.is_none() { own_fonts(&text, &looks, &read.fonts) } else { None };
+        let style = ParagraphStyle {
+            direction: if block.rtl { BaseDirection::Rtl } else { BaseDirection::Ltr },
+            align,
+            width: Some(width),
+            line_height: block.pitch.map_or(LineHeight::Normal, LineHeight::Points),
+        };
+        // Lays `text` out in `fonts` and draws it; each font goes in as a new subset.
+        let mut set_text = |text: &str,
+                            fonts: &[NamedFont],
+                            spans: &[Span],
+                            paints: &[Paint]|
+         -> Result<(Vec<u8>, f32, usize)> {
             let faces: Vec<FontFace> = fonts.iter().map(|f| f.face.clone()).collect();
-            let style = ParagraphStyle {
-                direction: if block.rtl { BaseDirection::Rtl } else { BaseDirection::Ltr },
-                align,
-                width: Some(width),
-                line_height: block.pitch.map_or(LineHeight::Normal, LineHeight::Points),
-            };
-            let laid = layout(&text, &[Span::new(0..text.len(), 0, block.size)], &faces, &style)
-                .map_err(|e| Error::Typeset(e.code()))?;
+            let laid = layout(text, spans, &faces, &style).map_err(|e| Error::Typeset(e.code()))?;
             let prefix = free_prefix(&font_names);
-            let drawing = draw_text(&text, &laid, &fonts, (0.0, 0.0), [r, g, b], &prefix)?;
+            let drawing = draw_painted_text(text, &laid, fonts, (0.0, 0.0), paints, &prefix)?;
             for font in &drawing.fonts {
                 let number = write_font(&mut update, None, &mut next_number, font)?;
                 set(&mut font_names, font.resource.as_bytes(), Object::Ref(number, 0));
             }
             let top = first_baseline - laid.lines.first().map_or(0.0, |l| l.baseline);
+            Ok((drawing.content, top, laid.lines.len()))
+        };
+        let own_programs = if reuse.is_none() && edit.family.is_none() {
+            embedded_programs(&file, &text, &looks, &read.fonts)
+        } else {
+            None
+        };
+        let (local, matrix_top, lines) = if let Some(runs) = reuse {
+            source = FontSource::Page;
+            let pitch = block.pitch.unwrap_or(block.size * 1.2);
+            let (content, lines) = reuse_content(&text, &runs, &read.fonts, width, pitch, align);
+            (content, first_baseline, lines)
+        } else if let Some(own) = own_programs {
+            source = FontSource::Embedded;
+            set_text(&own.text, &own.fonts, &own.spans, &own.paints)?
+        } else {
+            source = FontSource::Bundled;
+            let set_in = substitutes(&text, &looks, &read.fonts, block.font, edit.family)?;
             substituted = Some(Substitution {
                 from: font_info.as_ref().map(|f| f.name.clone()).unwrap_or_default(),
-                to: family,
+                to: set_in.family,
+                font: set_in.font.clone(),
             });
-            (drawing.content, top, laid.lines.len())
+            set_text(&text, &set_in.fonts, &set_in.spans, &set_in.paints)?
         };
         lines_after = lines;
         let [pa, pb, pc, pd, pe, pf] = placement(view, box_x0, matrix_top)?;
@@ -550,7 +941,7 @@ pub fn edit_block_update(
     update.object(leaf.number, leaf.generation, &Object::Dict(page));
     let _ = inserted;
     let bytes = update.finish(form, file.trailer.clone(), section, next_number);
-    Ok((bytes, EditedBlock { substituted, lines: lines_after }))
+    Ok((bytes, EditedBlock { substituted, lines: lines_after, source }))
 }
 
 /// A resource name this app wrote its own fonts under (`MT0`, `MT2x1`, …).
@@ -595,8 +986,35 @@ fn box_of(blocks: &[Block], obstacles: &[[f32; 4]], index: usize, page_width: f3
     (x0, x1)
 }
 
-fn default_family(font: Option<&FontInfo>) -> FontFamily {
-    if font.is_some_and(|f| f.serif) { FontFamily::Naskh } else { FontFamily::Sans }
+/// The bundled face closest to the paragraph's own font for `text`, then
+/// the faces that fill its gaps, and the family it belongs with. The text's
+/// coverage decides first; then the name, the serif flag, and the widths of
+/// the font's letters that do not join (`typeset::match_font`), so a
+/// substitute keeps the lines where they broke as far as it can.
+fn closest_fonts(font: Option<&FontInfo>, text: &str) -> Result<(Vec<NamedFont>, FontFamily)> {
+    let mut request = FontRequest::from_pdf(font.map_or("", |f| f.name.as_str()), None, None, None, None);
+    if let Some(font) = font {
+        // A set serif flag says something; a clear one, from many producers, does not.
+        request.serif = font.serif.then_some(true);
+        request.italic = Some(font.italic);
+        if font.bold {
+            request.weight = Some(700.0);
+        }
+        request.widths = font.letter_widths();
+    }
+    let candidates = candidates()?;
+    let faces: Vec<FontFace> = candidates.iter().map(|c| c.face.clone()).collect();
+    let chosen = match_font(&request, text, &faces)
+        .and_then(|found| candidates.get(found.index).cloned())
+        .ok_or(Error::Typeset("no font to set the text in"))?;
+    let family = family_of(&chosen.name);
+    let mut fonts = vec![chosen];
+    for fallback in fallbacks()? {
+        if fonts.iter().all(|f| f.name != fallback.name) {
+            fonts.push(fallback);
+        }
+    }
+    Ok((fonts, family))
 }
 
 /// The paragraph's own font can set `text`: Latin characters it has codes for.
@@ -629,63 +1047,86 @@ fn pdf_name(name: &[u8]) -> String {
     out
 }
 
-/// Text set in a font the page already has: greedy lines by the font's own
-/// widths, aligned in a box `width` wide. In box space: origin at the first
-/// baseline's start, y up. Returns the operators and the number of lines.
-#[allow(clippy::too_many_arguments)]
+/// Lays `text` out in its runs' own fonts (each can set its run: Latin
+/// characters it has codes for) and draws it: words wrapped greedily by the
+/// fonts' widths, aligned or justified with `TJ` adjustments at the spaces.
+/// The font, size and colour change wherever a run does. Lines are `pitch`
+/// apart, the first baseline at y = 0. Returns the content and its line count.
 fn reuse_content(
     text: &str,
-    font: &FontInfo,
-    resource: &[u8],
-    size: f32,
-    color: [f32; 3],
+    runs: &[(Range<usize>, RunStyle)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
     width: f32,
     pitch: f32,
     align: Align,
 ) -> (Vec<u8>, usize) {
-    let word_width = |word: &str| -> f32 {
-        word.chars()
-            .filter_map(|c| font.encode(c))
-            .map(|bytes| {
-                let code = bytes.iter().fold(0u32, |acc, b| acc << 8 | u32::from(*b));
-                font.width(code) as f32 * size / 1000.0
-            })
-            .sum()
+    // Each character with the run it is in.
+    let mut chars: Vec<(char, usize)> = Vec::with_capacity(text.len());
+    for (index, (range, _)) in runs.iter().enumerate() {
+        chars.extend(text[range.clone()].chars().map(|c| (if c == '\u{a0}' { ' ' } else { c }, index)));
+    }
+    let font = |run: usize| fonts.get(runs[run].1.font).and_then(|(_, f)| f.as_deref());
+    let code = |c: char, run: usize| -> Option<Vec<u8>> { font(run).and_then(|f| f.encode(c)) };
+    let advance = |c: char, run: usize| -> f32 {
+        let (Some(f), Some(bytes)) = (font(run), code(c, run)) else { return 0.0 };
+        let code = bytes.iter().fold(0u32, |acc, b| acc << 8 | u32::from(*b));
+        f.width(code) as f32 * runs[run].1.size / 1000.0
     };
-    let space = word_width(" ");
-    // Lines of words; a hard break ends a paragraph.
-    let mut lines: Vec<(Vec<&str>, bool)> = Vec::new();
-    for paragraph in text.split('\n') {
-        let mut current: Vec<&str> = Vec::new();
+
+    // A line: words, each with the space before it (its run) after the first.
+    struct Word {
+        space: Option<usize>,
+        chars: Vec<(char, usize)>,
+    }
+    let mut lines: Vec<(Vec<Word>, bool)> = Vec::new();
+    for paragraph in chars.split(|&(c, _)| c == '\n') {
+        // Words, each with the first space before it (spaces in a row are one).
+        let mut words: Vec<Word> = Vec::new();
+        let mut space: Option<usize> = None;
+        let mut word: Vec<(char, usize)> = Vec::new();
+        for &(c, run) in paragraph {
+            if c == ' ' {
+                if !word.is_empty() {
+                    words.push(Word { space: space.take(), chars: std::mem::take(&mut word) });
+                }
+                space.get_or_insert(run);
+            } else {
+                word.push((c, run));
+            }
+        }
+        if !word.is_empty() {
+            words.push(Word { space: space.take(), chars: word });
+        }
+        let mut line: Vec<Word> = Vec::new();
         let mut used = 0.0f32;
-        for word in paragraph.split(' ').filter(|w| !w.is_empty()) {
-            let w = word_width(word);
-            let extra = if current.is_empty() { w } else { space + w };
-            if !current.is_empty() && used + extra > width {
-                lines.push((std::mem::take(&mut current), false));
+        for mut word in words {
+            let w: f32 = word.chars.iter().map(|&(c, run)| advance(c, run)).sum();
+            let gap = word.space.map_or(0.0, |run| advance(' ', run));
+            if !line.is_empty() && used + gap + w > width {
+                lines.push((std::mem::take(&mut line), false));
                 used = 0.0;
             }
-            used += if current.is_empty() { w } else { space + w };
-            current.push(word);
-        }
-        lines.push((current, true));
-    }
-    let mut out = String::new();
-    let [r, g, b] = color;
-    out.push_str(&format!("{} {} {} rg 0 Tc 0 Tw 100 Tz 0 Ts 0 Tr\n", num(r), num(g), num(b)));
-    let hex = |text: &str| -> String {
-        let mut s = String::new();
-        for c in text.chars() {
-            for byte in font.encode(c).unwrap_or_default() {
-                s.push_str(&format!("{byte:02X}"));
+            if line.is_empty() {
+                word.space = None;
+                used = w;
+            } else {
+                used += gap + w;
             }
+            line.push(word);
         }
-        s
-    };
+        lines.push((line, true));
+    }
+
+    let mut out = String::from("0 Tc 0 Tw 100 Tz 0 Ts 0 Tr\n");
     for (n, (words, last)) in lines.iter().enumerate() {
-        let natural: f32 =
-            words.iter().map(|w| word_width(w)).sum::<f32>() + space * words.len().saturating_sub(1) as f32;
-        let gaps = words.len().saturating_sub(1);
+        let natural: f32 = words
+            .iter()
+            .map(|w| {
+                w.space.map_or(0.0, |run| advance(' ', run))
+                    + w.chars.iter().map(|&(c, r)| advance(c, r)).sum::<f32>()
+            })
+            .sum();
+        let gaps = words.iter().filter(|w| w.space.is_some()).count();
         let (x, extra) = match align {
             Align::Right | Align::End => (width - natural, 0.0),
             Align::Center => ((width - natural) / 2.0, 0.0),
@@ -693,30 +1134,410 @@ fn reuse_content(
             _ => (0.0, 0.0),
         };
         let y = -(n as f32) * pitch;
-        out.push_str(&format!(
-            "BT {} {} Tf 1 0 0 1 {} {} Tm [",
-            pdf_name(resource),
-            num(size),
-            num(x),
-            num(y)
-        ));
-        for (i, word) in words.iter().enumerate() {
-            if i > 0 {
-                out.push_str(&format!("<{}>", hex(" ")));
-                if extra != 0.0 {
-                    out.push_str(&format!(" {} ", num(-extra * 1000.0 / size)));
+        out.push_str(&format!("BT 1 0 0 1 {} {} Tm\n", num(x), num(y)));
+        // Pieces of one run go in one `TJ`; a run change sets font and colour.
+        let mut current: Option<usize> = None;
+        let mut open = false;
+        let mut emit = |out: &mut String, run: usize, element: String| {
+            if current != Some(run) {
+                if open {
+                    out.push_str("] TJ\n");
                 }
+                let style = &runs[run].1;
+                let resource = fonts.get(style.font).map_or(&b""[..], |(name, _)| name.as_slice());
+                let [r, g, b] = style.color;
+                out.push_str(&format!(
+                    "{} {} Tf {} {} {} rg [",
+                    pdf_name(resource),
+                    num(style.size),
+                    num(r),
+                    num(g),
+                    num(b)
+                ));
+                current = Some(run);
+                open = true;
             }
-            out.push_str(&format!("<{}>", hex(word)));
+            out.push_str(&element);
+        };
+        let hex = |c: char, run: usize| -> String {
+            code(c, run).unwrap_or_default().iter().map(|b| format!("{b:02X}")).collect()
+        };
+        for word in words {
+            if let Some(run) = word.space {
+                let mut element = format!("<{}>", hex(' ', run));
+                if extra != 0.0 {
+                    element.push_str(&format!(" {} ", num(-extra * 1000.0 / runs[run].1.size)));
+                }
+                emit(&mut out, run, element);
+            }
+            for &(c, run) in &word.chars {
+                emit(&mut out, run, format!("<{}>", hex(c, run)));
+            }
         }
-        out.push_str("] TJ ET\n");
+        if open {
+            out.push_str("] TJ\n");
+        }
+        out.push_str("ET\n");
     }
     (out.into_bytes(), lines.len())
+}
+
+/// A paragraph set in its own fonts' embedded programs (ADR 0026): one face
+/// per page font it uses, with bundled faces after them for the spaces a
+/// subset may lack, a span and a paint per run, and the text as laid out
+/// (Arabic in presentation forms when a face has no `GSUB` to form it).
+struct Embedded {
+    fonts: Vec<NamedFont>,
+    spans: Vec<Span>,
+    paints: Vec<Paint>,
+    text: String,
+}
+
+/// Whether a font's embedding permissions (`OS/2.fsType`) let an edited
+/// document embed a new subset of it: installable or editable embedding, and
+/// subsetting allowed. A subset with no `OS/2` says nothing; the producer
+/// embedded it, and the new subset holds only glyphs it already held.
+fn may_reembed(face: &FontFace) -> bool {
+    permits_reembedding(face.embedding_permissions())
+}
+
+fn permits_reembedding(fs_type: Option<u16>) -> bool {
+    match fs_type {
+        None => true,
+        Some(fs) => {
+            let restricted = fs & 0x0002 != 0;
+            let preview_only = fs & 0x0004 != 0 && fs & 0x0008 == 0;
+            let whole_only = fs & 0x0100 != 0;
+            let bitmap_only = fs & 0x0200 != 0;
+            !(restricted || preview_only || whole_only || bitmap_only)
+        }
+    }
+}
+
+/// `text` (in runs `looks`) laid out in the page's own fonts' programs, if
+/// every run can be: its own font, or the one of its family with the bold and
+/// italic it is to have, with an embedded TrueType or OpenType program that
+/// may be embedded again, has every character (in presentation forms, when
+/// it has no `GSUB`), and places marks (`GPOS`) when there are any.
+fn embedded_programs(
+    file: &File<'_>,
+    text: &str,
+    looks: &[(Range<usize>, Look)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+) -> Option<Embedded> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    let mut faces: HashMap<usize, Option<FontFace>> = HashMap::new();
+    let mut face_of = |key: usize| -> Option<FontFace> {
+        faces
+            .entry(key)
+            .or_insert_with(|| info(key).and_then(|f| f.program_face(file)).filter(may_reembed))
+            .clone()
+    };
+    // Each run's page font.
+    let mut keys = Vec::with_capacity(looks.len());
+    for (_, look) in looks {
+        let own = info(look.style.font)?;
+        let styled = |f: &FontInfo| f.bold == look.bold && f.italic == look.italic;
+        let key = if styled(own) && face_of(look.style.font).is_some() {
+            look.style.font
+        } else {
+            let family = family_key(&own.name);
+            (0..fonts.len()).find(|&k| {
+                info(k).is_some_and(|f| family_key(&f.name) == family && styled(f)) && face_of(k).is_some()
+            })?
+        };
+        keys.push(key);
+    }
+
+    // Arabic in presentation forms when any face cannot form it itself.
+    let arabic = text.chars().any(|c| matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}'));
+    let forms = arabic && keys.iter().any(|&k| face_of(k).is_some_and(|f| !f.has_table(b"GSUB")));
+    let chosen: Vec<FontFace> = keys.iter().filter_map(|&k| face_of(k)).collect();
+    let (laid_text, sources) = if forms {
+        crate::typeset::presentation_forms_in(text, &|c| chosen.iter().any(|f| f.covers(c)))
+    } else {
+        (text.to_string(), text.char_indices().map(|(at, c)| at..at + c.len_utf8()).collect())
+    };
+
+    // Faces in first-use order, then the bundled ones for spaces.
+    let mut list: Vec<NamedFont> = Vec::new();
+    let mut index_of_key: HashMap<usize, usize> = HashMap::new();
+    for &key in &keys {
+        if index_of_key.contains_key(&key) {
+            continue;
+        }
+        let face = face_of(key)?;
+        index_of_key.insert(key, list.len());
+        list.push(NamedFont { face, name: std::borrow::Cow::Owned(info(key)?.name.clone()) });
+    }
+    list.extend(fallbacks().ok()?);
+
+    // Spans and paints over the laid-out text; every character must be the run's face's.
+    let mut spans: Vec<Span> = Vec::new();
+    let mut paints: Vec<Paint> = Vec::new();
+    let mut run = 0;
+    let mut at = 0;
+    for (c, source) in laid_text.chars().zip(&sources) {
+        while run + 1 < looks.len() && looks[run].0.end <= source.start {
+            run += 1;
+        }
+        let (_, look) = looks.get(run)?;
+        let face_index = index_of_key[&keys[run]];
+        let face = &list[face_index].face;
+        let mark = unicode_normalization::char::is_combining_mark(c);
+        if !c.is_whitespace() && (!face.covers(c) || (mark && !face.has_table(b"GPOS"))) {
+            return None;
+        }
+        let end = at + c.len_utf8();
+        match (spans.last_mut(), paints.last_mut()) {
+            (Some(span), Some(paint))
+                if span.font == face_index
+                    && paint.color == look.style.color
+                    && span.size == look.style.size =>
+            {
+                span.range.end = end;
+                paint.range.end = end;
+            }
+            _ => {
+                spans.push(Span::new(at..end, face_index, look.style.size));
+                paints.push(Paint { range: at..end, color: look.style.color, slant: false });
+            }
+        }
+        at = end;
+    }
+    Some(Embedded { fonts: list, spans, paints, text: laid_text })
+}
+
+/// What a substituted paragraph is set in: the faces (each run's original
+/// font's closest bundled face, or the chosen family, at the run's weight,
+/// with the faces that fill its gaps), a span and a paint per run, and the
+/// face and family the paragraph's own font became.
+struct Substitute {
+    fonts: Vec<NamedFont>,
+    spans: Vec<Span>,
+    paints: Vec<Paint>,
+    family: FontFamily,
+    font: String,
+}
+
+fn substitutes(
+    text: &str,
+    runs: &[(Range<usize>, Look)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+    dominant: usize,
+    family: Option<FontFamily>,
+) -> Result<Substitute> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    // Each original font's faces, once.
+    let mut chains: HashMap<usize, (Vec<NamedFont>, FontFamily)> = HashMap::new();
+    for (_, Look { style, .. }) in runs {
+        if chains.contains_key(&style.font) {
+            continue;
+        }
+        let its_text: String = runs
+            .iter()
+            .filter(|(_, look)| look.style.font == style.font)
+            .map(|(range, _)| &text[range.clone()])
+            .collect();
+        let chain = match family {
+            Some(family) => (for_text(family, text)?, family),
+            None => closest_fonts(info(style.font), &its_text)?,
+        };
+        chains.insert(style.font, chain);
+    }
+    let mut list: Vec<NamedFont> = Vec::new();
+    let mut index_of = |font: NamedFont| -> usize {
+        match list.iter().position(|f| f.name == font.name) {
+            Some(i) => i,
+            None => {
+                list.push(font);
+                list.len() - 1
+            }
+        }
+    };
+    let mut spans = Vec::with_capacity(runs.len());
+    let mut paints = Vec::with_capacity(runs.len());
+    for (range, look) in runs {
+        let Look { style, bold, italic } = *look;
+        let (chain, _) = &chains[&style.font];
+        let mut indices = Vec::with_capacity(chain.len());
+        for font in chain {
+            let font = if bold { bold_of(font)? } else { font.clone() };
+            indices.push(index_of(if italic { oblique_of(&font) } else { font }));
+        }
+        let mut span = Span::new(range.clone(), indices[0], style.size);
+        span.fallbacks = indices[1..].to_vec();
+        spans.push(span);
+        paints.push(Paint { range: range.clone(), color: style.color, slant: italic });
+    }
+    let (chain, family) = chains
+        .get(&dominant)
+        .or_else(|| runs.first().and_then(|(_, s)| chains.get(&s.style.font)))
+        .cloned()
+        .ok_or(Error::InvalidEdit("an empty paragraph"))?;
+    Ok(Substitute {
+        fonts: list,
+        spans,
+        paints,
+        family,
+        font: chain.first().map(|f| f.name.to_string()).unwrap_or_default(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page font standing for `face`: its Latin letters and digits at the
+    /// face's own advances, under a name no bundled face has.
+    fn widths_of(face: &str, serif: bool) -> FontInfo {
+        let fonts = candidates().expect("bundled");
+        let font = fonts.iter().find(|f| f.name == face).expect("bundled face");
+        let chars: Vec<(char, f64)> = "0123456789aehinoprstPS "
+            .chars()
+            .map(|c| (c, f64::from(font.face.advance(c).unwrap_or(0.0))))
+            .collect();
+        FontInfo::simple_for_test("ABCDEF+UnknownDocumentFont", serif, &chars)
+    }
+
+    #[test]
+    fn a_substitute_follows_the_widths_the_page_was_drawn_with() {
+        // Same widths as Noto Naskh Arabic, though not its name: chosen over
+        // Amiri, the default Naskh, and over the Sans faces.
+        let (fonts, family) =
+            closest_fonts(Some(&widths_of("NotoNaskhArabic-Regular", false)), "نص Pro 15").expect("fonts");
+        assert_eq!(fonts[0].name, "NotoNaskhArabic-Regular");
+        assert_eq!(family, FontFamily::Naskh);
+        let (fonts, family) =
+            closest_fonts(Some(&widths_of("NotoSansArabic-Regular", false)), "نص Pro 15").expect("fonts");
+        assert_eq!((fonts[0].name.as_ref(), family), ("NotoSansArabic-Regular", FontFamily::Sans));
+        // Plex Sans Arabic's Latin is Plex Sans's: text with Arabic takes the face that has it.
+        let (fonts, _) = closest_fonts(Some(&widths_of("IBMPlexSans", false)), "نص Pro").expect("fonts");
+        assert_eq!(fonts[0].name, "IBMPlexSansArabic");
+        // The fallbacks follow, once each.
+        assert_eq!(fonts.iter().filter(|f| f.name == "IBMPlexSansArabic").count(), 1);
+        assert!(fonts.iter().any(|f| f.name == "IBMPlexSans"));
+    }
+
+    #[test]
+    fn with_no_widths_a_substitute_goes_by_name_then_class() {
+        let named = FontInfo::simple_for_test("Amiri-Regular", false, &[]);
+        assert_eq!(closest_fonts(Some(&named), "نص").expect("fonts").0[0].name, "Amiri-Regular");
+        // A serif with an unknown name: a Naskh face.
+        let serif = FontInfo::simple_for_test("SomeSerif", true, &[]);
+        assert_eq!(closest_fonts(Some(&serif), "نص").expect("fonts").1, FontFamily::Naskh);
+        // Nothing known: still a face that has the text.
+        let (fonts, _) = closest_fonts(None, "نص").expect("fonts");
+        assert!(fonts[0].face.covers('ن'));
+    }
+
+    /// Text in two styles: `B` marks bold (font 1) characters of `pattern`.
+    fn styled(text: &str, pattern: &str) -> Vec<(char, RunStyle)> {
+        let style = |font| RunStyle { font, size: 12.0, color: [0.0; 3] };
+        text.chars().zip(pattern.chars()).map(|(c, p)| (c, style(usize::from(p == 'B')))).collect()
+    }
+
+    /// The pattern of `chars`: `B` where bold, `.` elsewhere.
+    fn pattern(chars: &[(char, RunStyle)]) -> String {
+        chars.iter().map(|(_, s)| if s.font == 1 { 'B' } else { '.' }).collect()
+    }
+
+    #[test]
+    fn an_edit_keeps_each_characters_style_and_typed_text_takes_its_neighbours() {
+        // `dots(n)` plain characters, `bold(n)` bold ones.
+        let dots = |n: usize| ".".repeat(n);
+        let bold = |n: usize| "B".repeat(n);
+        // "The rent is due monthly": "due" (12..15) bold.
+        let old = styled("The rent is due monthly", &format!("{}{}{}", dots(12), bold(3), dots(8)));
+        // A word typed after the bold one takes the style before it: the space's.
+        assert_eq!(
+            pattern(&restyle(&old, "The rent is due now monthly")),
+            format!("{}{}{}", dots(12), bold(3), dots(12))
+        );
+        // Typed onto the end of the bold word: bold.
+        assert_eq!(
+            pattern(&restyle(&old, "The rent is dues monthly")),
+            format!("{}{}{}", dots(12), bold(4), dots(8))
+        );
+        // Typed over the bold word: bold, whatever letters it shares with it.
+        assert_eq!(
+            pattern(&restyle(&old, "The rent is payable monthly")),
+            format!("{}{}{}", dots(12), bold(7), dots(8))
+        );
+        // Typed at the very start: the style of what follows.
+        let lead = styled("due today", &format!("{}{}", bold(3), dots(6)));
+        assert_eq!(pattern(&restyle(&lead, "Rent due today")), format!("{}{}", bold(8), dots(6)));
+        // Deleting keeps the rest as it was; emptying gives nothing.
+        assert_eq!(pattern(&restyle(&old, "The rent is monthly")), dots(19));
+        assert_eq!(pattern(&restyle(&old, "rent due")), format!("{}{}", dots(5), bold(3)));
+        assert!(restyle(&old, "").is_empty());
+        // Arabic, by characters: "يدفع الإيجار شهريا" with "الإيجار" bold, a word added after it.
+        let arabic = styled("يدفع الإيجار شهريا", &format!("{}{}{}", dots(5), bold(7), dots(6)));
+        assert_eq!(
+            pattern(&restyle(&arabic, "يدفع الإيجار كاملا شهريا")),
+            format!("{}{}{}", dots(5), bold(7), dots(12))
+        );
+    }
+
+    #[test]
+    fn a_fonts_embedding_permissions_decide_whether_it_is_embedded_again() {
+        // Installable, editable, and none stated: yes.
+        for fs in [None, Some(0), Some(0x0008)] {
+            assert!(permits_reembedding(fs), "{fs:?}");
+        }
+        // Restricted, preview and print only, no subsetting, bitmaps only: no.
+        for fs in [0x0002, 0x0004, 0x0104, 0x0108, 0x0208] {
+            assert!(!permits_reembedding(Some(fs)), "{fs:#06x}");
+        }
+    }
+
+    #[test]
+    fn a_fonts_family_is_its_name_before_its_style() {
+        for (a, b) in [
+            ("Helvetica", "Helvetica-BoldOblique"),
+            ("Arial", "Arial,Bold"),
+            ("ArialMT", "Arial-BoldMT"),
+            ("TimesNewRomanPSMT", "TimesNewRomanPS-BoldItalicMT"),
+            ("IBMPlexSans", "IBMPlexSans-Bold"),
+        ] {
+            assert_eq!(family_key(a), family_key(b), "{a} / {b}");
+        }
+        assert_ne!(family_key("Helvetica"), family_key("Times-Roman"));
+    }
+
+    #[test]
+    fn marks_set_bold_and_italic_by_utf16_offsets_and_split_runs() {
+        let style = RunStyle { font: 0, size: 12.0, color: [0.0; 3] };
+        // "𝐀" is two UTF-16 units: the mark after it starts at 3, not 5 (bytes).
+        let text = "𝐀 bold rest";
+        let runs = vec![(0..text.len(), style)];
+        let marks = [Mark { start: 3, end: 7, bold: true, italic: false }];
+        let looks = looks(text, &runs, &[], Some(&marks));
+        let parts: Vec<(&str, bool)> = looks.iter().map(|(r, l)| (&text[r.clone()], l.bold)).collect();
+        assert_eq!(parts, vec![("𝐀 ", false), ("bold", true), (" rest", false)]);
+    }
+
+    #[test]
+    fn unreadable_runs_join_into_one_area_per_line() {
+        // Three glyphs on one line, one on the next, one rotated beside them.
+        let obstacles = [
+            [10.0, 16.0, 0.0, 12.0],
+            [17.0, 23.0, 0.0, 12.0],
+            [24.0, 30.0, 1.0, 12.0],
+            [10.0, 16.0, 20.0, 32.0],
+            [31.0, 33.0, 0.0, 12.0],
+        ];
+        let reasons = [Refusal::Font, Refusal::Font, Refusal::Font, Refusal::Font, Refusal::Rotated];
+        let areas = refused_areas(&obstacles, &reasons);
+        assert_eq!(
+            areas,
+            vec![
+                ([10.0, 30.0, 0.0, 12.0], Refusal::Font),
+                ([10.0, 16.0, 20.0, 32.0], Refusal::Font),
+                ([31.0, 33.0, 0.0, 12.0], Refusal::Rotated),
+            ]
+        );
+    }
 
     #[test]
     fn our_font_names_are_told_from_the_pages() {
