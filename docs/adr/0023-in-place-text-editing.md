@@ -128,3 +128,99 @@ again at edit time and a block that changed is refused.
 - **Real app, English and Arabic:** an Arabic paragraph is found as one block in logical
   order, edited through the Edit tool's commands, read back, and undone.
 - Spikes: `spikes/editor-surface/` (ADR 0022).
+
+## Amendment (session 10): saying why, and a closer substitute
+
+Ported from a parallel implementation on PR #8, which this design replaced (see the merge
+`4b7926c`).
+
+- **Every refusal has a reason the UI can say** (`block_edit::Refusal`, a stable code):
+  - `shared`: drawn together with other text;
+  - `unreadable`: needs OCR (dotless letters drawn without text, CoreText's Arabic);
+  - `font`: a font that cannot be read (Type 3, no `/ToUnicode`, an unfollowed encoding);
+  - `rotated`;
+  - `encrypted`;
+  - `unsupported`: stroked text, an unusual text state, a filter the editor cannot read.
+
+  The notice for each is in English and Arabic.
+- **Text that is not a paragraph is listed too, as refused areas.** Obstacles of one reason
+  that touch along a line join into one area. They come after the paragraphs, so paragraph
+  indices are unchanged. When the page's content cannot be read at all (an encrypted file, an
+  unread filter), each block of its text as PDFium reads it is listed as refused. A press on
+  such text now says why, instead of placing new text over it.
+  - On Chrome's fixtures, whose fonts are Type 3, every line of text lies in a refused area
+    (`font`), and there are fewer than 40 areas per page.
+- **The automatic substitute is the closest bundled face, not a fixed family.**
+  - The candidates are IBM Plex Sans and Plex Sans Arabic, Amiri, and two newly bundled OFL
+    faces, Noto Naskh Arabic and Noto Sans Arabic.
+  - `typeset::match_font` ranks them by:
+    1. coverage of the text;
+    2. the font's name;
+    3. its serif flag (when set; a clear flag says nothing);
+    4. the `/Widths` of its letters and digits that do not join. An Arabic code's width is
+       one joined form's, which no isolated advance matches.
+  - The Sans/Naskh choice in the editor still overrides the automatic choice.
+  - The notice names the face used (`Substitution::font`), isolated from the sentence's
+    direction.
+  - Unit tests: a page font with Noto Naskh's Latin widths and an unknown name gets Noto Naskh,
+    over Amiri; with Noto Sans Arabic's, Noto Sans Arabic; by name, Amiri; a serif with an
+    unknown name, a Naskh face.
+
+**Superseded in part by ADR 0024:**
+- bold, italic, sizes and colours inside a paragraph are now kept as styled runs, through
+  edits;
+- "mixed styles become one style" no longer holds.
+
+## Amendment (session 15): tashkeel, read in place and removed with its paragraph
+
+What was wrong, and in which producers:
+
+- **Chrome gives a letter-and-marks cluster's text to a zero-width mark glyph** (the
+  "carrier") and none to the letter, which has the advance.
+  - The carrier sits where the mark does: above or below the line (5 pt for a hamza), often
+    over a neighbouring letter.
+  - So a zero-width unit left a gap that read as a space ("عل م ًا"). Ordered by its mark's
+    position, letters swapped ("كِاتَب"). Off the line, it formed a line of its own and its
+    letter went missing.
+- **This app draws each mark as a glyph of its own,** at its own height (a kasra 0.25 em
+  below). With lines grouped from the highest baseline down, marks below the line formed
+  lines of their own. Amiri anchors marks over neighbouring letters' advances, so nearest by
+  position attached them to the wrong letter.
+- **A mark's operator never joined its paragraph's.** Removing or re-setting a vocalised
+  paragraph left its marks on the page, both Chrome's and this app's.
+
+What `blocks` does now, before lines are grouped:
+
+1. **`seat_carriers`:** a zero-width glyph carrying text is followed in drawing order by the
+   textless glyphs of its cluster (other marks, then the letter). It takes the letter's box
+   and baseline, and those glyphs join it as marks.
+2. **`seat_marks`:** each mark's letter is one of the letters drawn either side of it, chosen
+   by drawing order.
+   - A right-to-left run drawn in visual order puts a cluster's mark first; shapers reverse a
+     right-to-left cluster's glyphs.
+   - Left-to-right text, and right-to-left text drawn in logical order, put it last.
+   - The run's direction and the way its letters advance say which applies. The mark takes
+     its letter's baseline and joins it; position decides only when drawing order cannot.
+3. **Every mark's operator is its paragraph's** (`Unit::shown` holds them), so an edit removes
+   it.
+
+Lines group into a paragraph by any font they share (ADR 0024).
+
+Measured against the fixtures' ground truth (editable paragraphs read exactly):
+
+| | Before | After |
+|---|---|---|
+| All fixtures | 26 of 126 | 33 of 126 |
+| Chrome's vocalised and Arabic paragraphs, and this app's own tashkeel in Amiri and IBM Plex Sans Arabic | many wrong | exact |
+
+The 126 include Type 3 and CoreText Arabic text, which is refused, not read.
+
+**Tests:**
+- Unit tests:
+  - a carrier and its letter;
+  - two textless letters under one carrier;
+  - marks above and below the line, each on its letter, with every operator the paragraph's.
+- `tests/block_edit.rs`:
+  - Chrome's vocalised page reads as its ground truth;
+  - removing a vocalised paragraph leaves no ink in its box, on Chrome's page and in this
+    app's own Naskh.

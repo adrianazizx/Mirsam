@@ -39,6 +39,9 @@ pub(crate) struct FontInfo {
     unicode: HashMap<u32, String>,
     /// Text → code, for the codes that stand for exactly one character.
     reverse: HashMap<char, u32>,
+    /// Where the embedded font program is (`/FontFile2`, or `/FontFile3`),
+    /// when it has one (ADR 0026).
+    program: Option<Object>,
 }
 
 impl FontInfo {
@@ -71,6 +74,7 @@ impl FontInfo {
             default_width: 1000.0,
             unicode: HashMap::new(),
             reverse: HashMap::new(),
+            program: None,
         };
 
         let mut descriptor = resolve(b"FontDescriptor").and_then(|d| d.as_dict().cloned());
@@ -128,6 +132,9 @@ impl FontInfo {
             info.bold = flags & 0x4_0000 != 0;
             info.embedded =
                 [b"FontFile".as_slice(), b"FontFile2", b"FontFile3"].iter().any(|k| d.get(k).is_some());
+            // TrueType, or OpenType (CFF or not) in `/FontFile3`; a Type 1
+            // program or bare CFF does not load as a face and is not used.
+            info.program = d.get(b"FontFile2").or_else(|| d.get(b"FontFile3")).cloned();
         }
         let lower = info.name.to_lowercase();
         info.bold |= lower.contains("bold") || lower.contains("black") || lower.contains("heavy");
@@ -186,6 +193,59 @@ impl FontInfo {
 
     pub(crate) fn text(&self, code: u32) -> Option<&str> {
         self.unicode.get(&code).map(String::as_str)
+    }
+
+    /// Advances of its letters and digits that do not join, in thousandths of
+    /// an em, from `/Widths` (or `/W`) through its codes' text: what a
+    /// substitute should come close to. Arabic and Hebrew letters are left
+    /// out: a code's width there is one joined form's.
+    pub(crate) fn letter_widths(&self) -> Vec<(char, f32)> {
+        use unicode_bidi::{BidiClass, bidi_class};
+        let mut widths: Vec<(char, f32)> = self
+            .unicode
+            .iter()
+            .filter_map(|(&code, text)| {
+                let mut chars = text.chars();
+                let (Some(c), None) = (chars.next(), chars.next()) else { return None };
+                let width = self.width(code) as f32;
+                (c.is_alphanumeric() && !matches!(bidi_class(c), BidiClass::R | BidiClass::AL) && width > 0.0)
+                    .then_some((c, width))
+            })
+            .collect();
+        widths.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        widths.dedup_by_key(|(c, _)| *c);
+        widths
+    }
+
+    /// A simple font with one code per character of `chars` (from 32 up), at
+    /// those widths: what a test needs to stand for a page's font.
+    #[cfg(test)]
+    pub(crate) fn simple_for_test(name: &str, serif: bool, chars: &[(char, f64)]) -> FontInfo {
+        let codes = (32u32..).zip(chars.iter().copied());
+        FontInfo {
+            name: name.to_string(),
+            kind: FontKind::Simple,
+            vertical: false,
+            embedded: true,
+            serif,
+            bold: false,
+            italic: false,
+            fixed: false,
+            first_char: 32,
+            widths: chars.iter().map(|&(_, w)| w).collect(),
+            cid_widths: HashMap::new(),
+            default_width: 0.0,
+            unicode: codes.clone().map(|(code, (c, _))| (code, c.to_string())).collect(),
+            reverse: codes.map(|(code, (c, _))| (c, code)).collect(),
+            program: None,
+        }
+    }
+
+    /// The font's embedded program as a face to lay text out with, when it
+    /// has one the layout engine can read (TrueType or OpenType).
+    pub(crate) fn program_face(&self, file: &File<'_>) -> Option<crate::typeset::FontFace> {
+        let data = stream_data(file, self.program.as_ref()?)?;
+        crate::typeset::FontFace::from_bytes(data, 0).ok()
     }
 
     /// Whether text in this font can be read and written back.
