@@ -21,14 +21,18 @@ fn engine() -> &'static Engine {
     Engine::global(&PdfiumSource::Auto).expect("PDFium is available (run scripts/fetch-pdfium.sh)")
 }
 
-fn fixture(name: &str) -> (Vec<u8>, Option<String>) {
+/// A fixture's bytes and password. `None` only for a producer the corpus
+/// records as unavailable here (CoreText exists only on macOS), which is
+/// reported; any other missing fixture fails the test.
+fn fixture(name: &str) -> Option<(Vec<u8>, Option<String>)> {
     let manifest = manifest();
-    let fixture = manifest
-        .fixtures
-        .iter()
-        .find(|f| f.name() == name)
-        .unwrap_or_else(|| panic!("fixture {name} missing: run `node fixtures/generate.mjs`"));
-    (std::fs::read(fixture.file()).expect("fixture readable"), fixture.password.clone())
+    let fixture = manifest.fixture_or_unavailable(name)?;
+    Some((std::fs::read(fixture.file()).expect("fixture readable"), fixture.password.clone()))
+}
+
+/// A fixture every platform's corpus has.
+fn fixture_everywhere(name: &str) -> (Vec<u8>, Option<String>) {
+    fixture(name).unwrap_or_else(|| panic!("fixture {name} missing: run `node fixtures/generate.mjs`"))
 }
 
 fn scratch(name: &str) -> PathBuf {
@@ -158,7 +162,8 @@ fn add_text_on(
 
 #[test]
 fn fixing_a_typo_in_english_keeps_the_font_and_moves_nothing_else() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
+    // CoreText English: its paragraphs are set in an embedded font with a ToUnicode map.
+    let Some((bytes, _)) = fixture("coretext/en-paragraphs") else { return };
     let document = engine().open_bytes(bytes, None).expect("opens");
     let before = render(&document, 0);
     let blocks_before = document.text_blocks(0).expect("blocks");
@@ -192,7 +197,8 @@ fn fixing_a_typo_in_english_keeps_the_font_and_moves_nothing_else() {
 
 #[test]
 fn a_two_line_paragraph_rewraps_inside_its_own_width() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
+    // CoreText English: its paragraphs are set in an embedded font with a ToUnicode map.
+    let Some((bytes, _)) = fixture("coretext/en-paragraphs") else { return };
     let document = engine().open_bytes(bytes, None).expect("opens");
     let block = block_with(&document, 0, "The office staff");
     assert_eq!(block.lines, 2);
@@ -214,7 +220,8 @@ fn a_two_line_paragraph_rewraps_inside_its_own_width() {
 
 #[test]
 fn removing_a_paragraph_takes_its_text_away_and_only_its_text() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
+    // CoreText English: its paragraphs are set in an embedded font with a ToUnicode map.
+    let Some((bytes, _)) = fixture("coretext/en-paragraphs") else { return };
     let document = engine().open_bytes(bytes, None).expect("opens");
     let before = page_text(&document, 0);
     let block = block_with(&document, 0, "Revenue rose");
@@ -235,7 +242,7 @@ const ARABIC: &str = "يستحق السداد خلال ثلاثين يوما م�
 
 #[test]
 fn inserting_a_word_in_the_middle_of_an_arabic_paragraph_rewraps_it_right_to_left() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
     let original = engine().open_bytes(bytes, None).expect("opens");
     let document = add_text(&original, ARABIC, FontFamily::Sans, 260.0, 560.0);
     let block = block_with(&document, 0, "يستحق السداد");
@@ -261,7 +268,7 @@ fn inserting_a_word_in_the_middle_of_an_arabic_paragraph_rewraps_it_right_to_lef
 
 #[test]
 fn a_mixed_sentence_keeps_its_order() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
     let original = engine().open_bytes(bytes, None).expect("opens");
     let sentence = "اشتريت 3 أجهزة iPhone 15 Pro بسعر 4,500 ريال للجهاز.";
     let document = add_text(&original, sentence, FontFamily::Sans, 400.0, 560.0);
@@ -275,7 +282,7 @@ fn a_mixed_sentence_keeps_its_order() {
 
 #[test]
 fn open_edit_save_reopen_edit_again_without_drift_or_duplicate_fonts() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
     let original = engine().open_bytes(bytes, None).expect("opens");
     let document = add_text(&original, ARABIC, FontFamily::Naskh, 260.0, 560.0);
     let first = block_with(&document, 0, "يستحق السداد");
@@ -307,7 +314,7 @@ fn open_edit_save_reopen_edit_again_without_drift_or_duplicate_fonts() {
 
 #[test]
 fn turned_pages_are_edited_as_they_are_displayed() {
-    let (bytes, _) = fixture("qpdf/rotated");
+    let (bytes, _) = fixture_everywhere("qpdf/rotated");
     let mut document = engine().open_bytes(bytes, None).expect("opens");
     let text = "تمت الموافقة على العقد بتاريخ ١٢ مارس ٢٠٢٦ من الإدارة المالية";
     for page in 0..4 {
@@ -423,8 +430,9 @@ fn text_drawn_with_kerning_and_line_operators_is_read_and_replaced_cleanly() {
 
 #[test]
 fn an_edit_of_text_that_changed_is_refused() {
-    let (bytes, _) = fixture("coretext/en-paragraphs");
-    let document = engine().open_bytes(bytes, None).expect("opens");
+    let document = engine()
+        .open_bytes(pdf("BT /F1 12 Tf 50 300 Td (Questions? Email us) Tj ET\n"), None)
+        .expect("opens");
     let block = block_with(&document, 0, "Questions? Email");
     let stale = BlockEdit {
         page: 0,
@@ -440,13 +448,13 @@ fn an_edit_of_text_that_changed_is_refused() {
 
 #[test]
 fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
-    let (bytes, password) = fixture("qpdf/encrypted");
+    let (bytes, password) = fixture_everywhere("qpdf/encrypted");
     let document = engine().open_bytes(bytes, password.as_deref()).expect("opens");
     assert!(matches!(document.text_blocks(0), Err(Error::EditUnsupported(_))));
 
     // CoreText's Arabic draws dotless letters with the dots as separate shapes
     // that carry no text: not read, so not offered.
-    let (bytes, _) = fixture("coretext/ar-plain");
+    let Some((bytes, _)) = fixture("coretext/ar-plain") else { return };
     let document = engine().open_bytes(bytes, None).expect("opens");
     let blocks = document.text_blocks(0).expect("blocks");
     assert!(
