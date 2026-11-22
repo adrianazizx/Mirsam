@@ -125,6 +125,12 @@ jobs:
         working-directory: apps/desktop
       - run: node fixtures/generate.mjs
       - run: cargo build -p safha-desktop --features devtools --locked
+      # The first launch of a freshly built binary on a fresh runner pays
+      # one-time costs (macOS checks the new executable, caches are cold): on
+      # the first CI run it took 461 ms to the first preview, the next launch
+      # 53 ms. Launch once unmeasured so the budget applies to the app.
+      - name: Warm-up launch (not checked)
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/warmup en light || true
       - name: English, light
         run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/en en light
       - name: Arabic, dark

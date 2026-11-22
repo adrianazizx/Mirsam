@@ -214,7 +214,12 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
   for (let i = 0; i < 500; i += 1) {
     pages.push(src("contract-two-column"), "1", src("mixed-inline"), "1");
   }
-  execFileSync(qpdf, ["--empty", "--pages", ...pages, "--", derived("bilingual-1000-pages.pdf")]);
+  // 2,000 arguments overflow Windows' command line; qpdf reads them from a file
+  // (`@file`, one argument per line) on every platform.
+  const pageArgs = derived("bilingual-1000-pages.args");
+  writeFileSync(pageArgs, `${["--empty", "--pages", ...pages, "--"].join("\n")}\n`);
+  execFileSync(qpdf, [`@${pageArgs}`, derived("bilingual-1000-pages.pdf")]);
+  rmSync(pageArgs);
   add("bilingual-1000-pages.pdf", {
     pages: pageCount(derived("bilingual-1000-pages.pdf")),
     description: "1,000 pages alternating chrome/contract-two-column and chrome/mixed-inline.",

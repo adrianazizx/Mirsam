@@ -54,11 +54,8 @@ fn extraction_meets_the_recorded_floors() {
     let manifest = manifest();
     let mut failures = Vec::new();
     for &(name, floor) in FLOORS {
-        let fixture = manifest
-            .fixtures
-            .iter()
-            .find(|f| f.name() == name)
-            .unwrap_or_else(|| panic!("fixture {name} missing from the corpus"));
+        // CoreText fixtures exist only where they could be made (macOS).
+        let Some(fixture) = manifest.fixture_or_unavailable(name) else { continue };
         let document = engine().open_file(&fixture.file(), fixture.password.as_deref()).expect("opens");
         let page = document.page_text(0).expect("extracts");
         let text = common::comparable(&page.text());
@@ -76,7 +73,7 @@ fn extraction_meets_the_recorded_floors() {
 fn broken_mappings_are_flagged_for_ocr() {
     let manifest = manifest();
     for &name in BROKEN_MAPPING {
-        let fixture = manifest.fixtures.iter().find(|f| f.name() == name).expect("fixture exists");
+        let Some(fixture) = manifest.fixture_or_unavailable(name) else { continue };
         let document = engine().open_file(&fixture.file(), None).expect("opens");
         let quality = document.page_text(0).expect("extracts").quality;
         assert!(matches!(quality, TextQuality::Suspect { .. }), "{name}: {quality:?}");
