@@ -33,18 +33,41 @@ use unicode_normalization::UnicodeNormalization;
 use crate::blocks::{Atom, Block, BlockAlign, analyze};
 use crate::edit::{Leaf, PageTree, Start, set};
 use crate::error::{Error, Result};
-use crate::fonts::{FontFamily, for_text};
+use crate::fonts::{FontFamily, candidates, fallbacks, family_of, for_text};
 use crate::pdf::content::{Matrix, Op, Operand, ShowKind, Shown, interpret, tokenize};
 use crate::pdf::fontinfo::{FontInfo, stream_data};
-use crate::pdf::text::{draw_text, write_font};
+use crate::pdf::text::{NamedFont, draw_text, write_font};
 use crate::pdf::write::Update;
 use crate::pdf::{Dict, File, Object};
 use crate::text_edit::{free_prefix, num, page_contents, placement};
-use crate::typeset::{Align, BaseDirection, FontFace, LineHeight, ParagraphStyle, Span, layout};
+use crate::typeset::{
+    Align, BaseDirection, FontFace, FontRequest, LineHeight, ParagraphStyle, Span, layout, match_font,
+};
 use crate::view::ViewTransform;
 
 /// Beyond a single line's own width, it may grow to the page's margin.
 const MARGIN: f32 = 36.0;
+
+/// Why text cannot be edited in place: what the UI tells someone who presses on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Refusal {
+    /// An operator that drew it also drew other text.
+    Shared,
+    /// Its codes do not give its text exactly (letters drawn with separate
+    /// dots that carry no text, CoreText's Arabic): it needs OCR.
+    Unreadable,
+    /// Its font cannot be read: Type 3, no `/ToUnicode`, an encoding this
+    /// reader does not follow, vertical writing.
+    Font,
+    /// It is not upright on the page as displayed.
+    Rotated,
+    /// The file is encrypted.
+    Encrypted,
+    /// It is drawn in a way the editor does not follow yet (stroked text, an
+    /// unusual text state, a content filter it cannot read).
+    Unsupported,
+}
 
 /// A paragraph found on a page, as the UI shows it.
 #[derive(Debug, Clone, Serialize)]
@@ -71,7 +94,33 @@ pub struct TextBlock {
     pub flattened: bool,
     pub editable: bool,
     /// Why it is not editable.
-    pub reason: Option<&'static str>,
+    pub reason: Option<Refusal>,
+}
+
+impl TextBlock {
+    /// Text that cannot be edited, where it sits on the page as displayed:
+    /// a press there says why rather than placing new text over it.
+    fn refused(index: usize, [x0, x1, top, bottom]: [f32; 4], reason: Refusal) -> Self {
+        TextBlock {
+            index,
+            fingerprint: 0,
+            x: x0,
+            y: top,
+            width: x1 - x0,
+            height: bottom - top,
+            text: String::new(),
+            rtl: false,
+            align: BlockAlign::Left,
+            size: bottom - top,
+            color: [0.0; 3],
+            lines: 0,
+            font: String::new(),
+            font_reusable: false,
+            flattened: false,
+            editable: false,
+            reason: Some(reason),
+        }
+    }
 }
 
 /// What to put in a paragraph.
@@ -101,6 +150,9 @@ pub struct EditedBlock {
 pub struct Substitution {
     pub from: String,
     pub to: FontFamily,
+    /// The face it is set in (a PostScript name): the closest bundled face
+    /// to the original when the family was not chosen (ADR 0023).
+    pub font: String,
 }
 
 struct StreamData {
@@ -117,6 +169,8 @@ struct PageRead {
     blocks: Vec<Block>,
     /// Where text that is not editable sits (x0, x1, top, bottom, displayed): growing text keeps off it.
     obstacles: Vec<[f32; 4]>,
+    /// Why each obstacle is not editable.
+    obstacle_reasons: Vec<Refusal>,
 }
 
 fn read_page(file: &File<'_>, tree: &PageTree, leaf: &Leaf, view: &ViewTransform) -> Result<PageRead> {
@@ -156,13 +210,13 @@ fn read_page(file: &File<'_>, tree: &PageTree, leaf: &Leaf, view: &ViewTransform
         }
     }
 
-    let (atoms, obstacles) = atoms_of(&shown, &fonts, view);
+    let (atoms, obstacles, obstacle_reasons) = atoms_of(&shown, &fonts, view);
     let mut blocks = analyze(atoms);
     // Eligible operators only: the block's text is rebuilt from these.
     for block in &mut blocks {
         block.shown.retain(|&i| shown.get(i).is_some());
     }
-    Ok(PageRead { items, streams, shown, fonts, blocks, obstacles })
+    Ok(PageRead { items, streams, shown, fonts, blocks, obstacles, obstacle_reasons })
 }
 
 /// Whether a text-showing operator can be read and written back, and where
@@ -171,10 +225,11 @@ fn atoms_of(
     shown: &[Shown],
     fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
     view: &ViewTransform,
-) -> (Vec<Atom>, Vec<[f32; 4]>) {
+) -> (Vec<Atom>, Vec<[f32; 4]>, Vec<Refusal>) {
     let view = Matrix(view.matrix());
     let mut atoms = Vec::new();
     let mut obstacles = Vec::new();
+    let mut reasons = Vec::new();
     for (index, s) in shown.iter().enumerate() {
         let m = s.tm.then(s.ctm).then(view);
         let [a, b, c, d, ..] = m.0;
@@ -196,6 +251,15 @@ fn atoms_of(
             let min = |f: fn(&(f64, f64)) -> f64| corners.iter().map(f).fold(f64::MAX, f64::min) as f32;
             let max = |f: fn(&(f64, f64)) -> f64| corners.iter().map(f).fold(f64::MIN, f64::max) as f32;
             obstacles.push([min(|p| p.0), max(|p| p.0), min(|p| p.1), max(|p| p.1)]);
+            reasons.push(if !upright {
+                Refusal::Rotated
+            } else if !s.font.as_ref().is_some_and(|f| f.usable()) {
+                Refusal::Font
+            } else if !s.glyphs.iter().all(|g| g.text.is_some()) {
+                Refusal::Unreadable
+            } else {
+                Refusal::Unsupported
+            });
             continue;
         }
         let key = fonts.iter().position(|(name, _)| *name == s.font_name).unwrap_or(0);
@@ -217,7 +281,37 @@ fn atoms_of(
             });
         }
     }
-    (atoms, obstacles)
+    (atoms, obstacles, reasons)
+}
+
+/// Obstacles of one reason that touch along a line (an em apart at most),
+/// joined: one area per run of unreadable text rather than one per glyph.
+fn refused_areas(obstacles: &[[f32; 4]], reasons: &[Refusal]) -> Vec<([f32; 4], Refusal)> {
+    const MAX_AREAS: usize = 20_000;
+    let mut areas: Vec<([f32; 4], Refusal)> = Vec::new();
+    for (&area, &reason) in obstacles.iter().zip(reasons).take(MAX_AREAS) {
+        let near = |[x0, x1, top, bottom]: [f32; 4], other: [f32; 4]| {
+            let em = (bottom - top).max(other[3] - other[2]);
+            top < other[3] && other[2] < bottom && x0 <= other[1] + em && other[0] <= x1 + em
+        };
+        match areas.iter_mut().find(|(other, r)| *r == reason && near(area, *other)) {
+            Some((other, _)) => {
+                *other = [
+                    other[0].min(area[0]),
+                    other[1].max(area[1]),
+                    other[2].min(area[2]),
+                    other[3].max(area[3]),
+                ];
+            }
+            None => areas.push((area, reason)),
+        }
+    }
+    areas
+}
+
+/// Whether the file is encrypted (its text is not read, ADR 0023).
+pub(crate) fn encrypted(bytes: &[u8]) -> Result<bool> {
+    Ok(Start::read(bytes)?.file.trailer.get(b"Encrypt").is_some())
 }
 
 fn fingerprint(block: &Block, shown: &[Shown]) -> u32 {
@@ -242,16 +336,16 @@ pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Ve
     let leaf =
         tree.leaves.get(page).ok_or(Error::PageOutOfRange { index: page, count: tree.leaves.len() })?;
     let read = read_page(&file, &tree, leaf, view)?;
-    Ok(read
+    let mut blocks: Vec<TextBlock> = read
         .blocks
         .iter()
         .enumerate()
         .map(|(index, block)| {
             let font = read.fonts.get(block.font).and_then(|(_, f)| f.clone());
             let reason = if block.shared {
-                Some("shares its text with other text")
+                Some(Refusal::Shared)
             } else if block.shown.is_empty() || !readable(&block.text) {
-                Some("cannot be read")
+                Some(Refusal::Unreadable)
             } else {
                 None
             };
@@ -275,7 +369,18 @@ pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Ve
                 reason,
             }
         })
-        .collect())
+        .collect();
+    // After the paragraphs, so their indices stay the ones an edit names.
+    for (area, reason) in refused_areas(&read.obstacles, &read.obstacle_reasons) {
+        blocks.push(TextBlock::refused(blocks.len(), area, reason));
+    }
+    Ok(blocks)
+}
+
+/// Text that cannot be read at all here, as refused areas: the page's
+/// blocks as PDFium reads them, each with `reason`.
+pub(crate) fn refused_page(areas: impl IntoIterator<Item = [f32; 4]>, reason: Refusal) -> Vec<TextBlock> {
+    areas.into_iter().enumerate().map(|(index, area)| TextBlock::refused(index, area, reason)).collect()
 }
 
 /// Text a font's codes gave up exactly: not dotless letters, which some
@@ -431,8 +536,10 @@ pub fn edit_block_update(
                 reuse_content(&text, &font, &anchor.font_name, block.size, [r, g, b], width, pitch, align);
             (content, first_baseline, lines)
         } else {
-            let family = edit.family.unwrap_or_else(|| default_family(font_info.as_deref()));
-            let fonts = for_text(family, &text)?;
+            let (fonts, family) = match edit.family {
+                Some(family) => (for_text(family, &text)?, family),
+                None => closest_fonts(font_info.as_deref(), &text)?,
+            };
             let faces: Vec<FontFace> = fonts.iter().map(|f| f.face.clone()).collect();
             let style = ParagraphStyle {
                 direction: if block.rtl { BaseDirection::Rtl } else { BaseDirection::Ltr },
@@ -452,6 +559,7 @@ pub fn edit_block_update(
             substituted = Some(Substitution {
                 from: font_info.as_ref().map(|f| f.name.clone()).unwrap_or_default(),
                 to: family,
+                font: fonts.first().map(|f| f.name.to_string()).unwrap_or_default(),
             });
             (drawing.content, top, laid.lines.len())
         };
@@ -595,8 +703,35 @@ fn box_of(blocks: &[Block], obstacles: &[[f32; 4]], index: usize, page_width: f3
     (x0, x1)
 }
 
-fn default_family(font: Option<&FontInfo>) -> FontFamily {
-    if font.is_some_and(|f| f.serif) { FontFamily::Naskh } else { FontFamily::Sans }
+/// The bundled face closest to the paragraph's own font for `text`, then
+/// the faces that fill its gaps, and the family it belongs with. The text's
+/// coverage decides first; then the name, the serif flag, and the widths of
+/// the font's letters that do not join (`typeset::match_font`), so a
+/// substitute keeps the lines where they broke as far as it can.
+fn closest_fonts(font: Option<&FontInfo>, text: &str) -> Result<(Vec<NamedFont>, FontFamily)> {
+    let mut request = FontRequest::from_pdf(font.map_or("", |f| f.name.as_str()), None, None, None, None);
+    if let Some(font) = font {
+        // A set serif flag says something; a clear one, from many producers, does not.
+        request.serif = font.serif.then_some(true);
+        request.italic = Some(font.italic);
+        if font.bold {
+            request.weight = Some(700.0);
+        }
+        request.widths = font.letter_widths();
+    }
+    let candidates = candidates()?;
+    let faces: Vec<FontFace> = candidates.iter().map(|c| c.face.clone()).collect();
+    let chosen = match_font(&request, text, &faces)
+        .and_then(|found| candidates.get(found.index).cloned())
+        .ok_or(Error::Typeset("no font to set the text in"))?;
+    let family = family_of(chosen.name);
+    let mut fonts = vec![chosen];
+    for fallback in fallbacks()? {
+        if fonts.iter().all(|f| f.name != fallback.name) {
+            fonts.push(fallback);
+        }
+    }
+    Ok((fonts, family))
 }
 
 /// The paragraph's own font can set `text`: Latin characters it has codes for.
@@ -717,6 +852,71 @@ fn reuse_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page font standing for `face`: its Latin letters and digits at the
+    /// face's own advances, under a name no bundled face has.
+    fn widths_of(face: &str, serif: bool) -> FontInfo {
+        let fonts = candidates().expect("bundled");
+        let font = fonts.iter().find(|f| f.name == face).expect("bundled face");
+        let chars: Vec<(char, f64)> = "0123456789aehinoprstPS "
+            .chars()
+            .map(|c| (c, f64::from(font.face.advance(c).unwrap_or(0.0))))
+            .collect();
+        FontInfo::simple_for_test("ABCDEF+UnknownDocumentFont", serif, &chars)
+    }
+
+    #[test]
+    fn a_substitute_follows_the_widths_the_page_was_drawn_with() {
+        // Same widths as Noto Naskh Arabic, though not its name: chosen over
+        // Amiri, the default Naskh, and over the Sans faces.
+        let (fonts, family) =
+            closest_fonts(Some(&widths_of("NotoNaskhArabic-Regular", false)), "نص Pro 15").expect("fonts");
+        assert_eq!(fonts[0].name, "NotoNaskhArabic-Regular");
+        assert_eq!(family, FontFamily::Naskh);
+        let (fonts, family) =
+            closest_fonts(Some(&widths_of("NotoSansArabic-Regular", false)), "نص Pro 15").expect("fonts");
+        assert_eq!((fonts[0].name, family), ("NotoSansArabic-Regular", FontFamily::Sans));
+        // Plex Sans Arabic's Latin is Plex Sans's: text with Arabic takes the face that has it.
+        let (fonts, _) = closest_fonts(Some(&widths_of("IBMPlexSans", false)), "نص Pro").expect("fonts");
+        assert_eq!(fonts[0].name, "IBMPlexSansArabic");
+        // The fallbacks follow, once each.
+        assert_eq!(fonts.iter().filter(|f| f.name == "IBMPlexSansArabic").count(), 1);
+        assert!(fonts.iter().any(|f| f.name == "IBMPlexSans"));
+    }
+
+    #[test]
+    fn with_no_widths_a_substitute_goes_by_name_then_class() {
+        let named = FontInfo::simple_for_test("Amiri-Regular", false, &[]);
+        assert_eq!(closest_fonts(Some(&named), "نص").expect("fonts").0[0].name, "Amiri-Regular");
+        // A serif with an unknown name: a Naskh face.
+        let serif = FontInfo::simple_for_test("SomeSerif", true, &[]);
+        assert_eq!(closest_fonts(Some(&serif), "نص").expect("fonts").1, FontFamily::Naskh);
+        // Nothing known: still a face that has the text.
+        let (fonts, _) = closest_fonts(None, "نص").expect("fonts");
+        assert!(fonts[0].face.covers('ن'));
+    }
+
+    #[test]
+    fn unreadable_runs_join_into_one_area_per_line() {
+        // Three glyphs on one line, one on the next, one rotated beside them.
+        let obstacles = [
+            [10.0, 16.0, 0.0, 12.0],
+            [17.0, 23.0, 0.0, 12.0],
+            [24.0, 30.0, 1.0, 12.0],
+            [10.0, 16.0, 20.0, 32.0],
+            [31.0, 33.0, 0.0, 12.0],
+        ];
+        let reasons = [Refusal::Font, Refusal::Font, Refusal::Font, Refusal::Font, Refusal::Rotated];
+        let areas = refused_areas(&obstacles, &reasons);
+        assert_eq!(
+            areas,
+            vec![
+                ([10.0, 30.0, 0.0, 12.0], Refusal::Font),
+                ([10.0, 16.0, 20.0, 32.0], Refusal::Font),
+                ([31.0, 33.0, 0.0, 12.0], Refusal::Rotated),
+            ]
+        );
+    }
 
     #[test]
     fn our_font_names_are_told_from_the_pages() {

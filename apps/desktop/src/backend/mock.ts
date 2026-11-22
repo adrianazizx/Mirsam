@@ -836,7 +836,13 @@ export const mockBackend: Backend = {
       ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
       textChanged: true,
       substituted:
-        arabic || edit.family ? { from: "IBMPlexSans-Regular", to: edit.family ?? "sans" } : null,
+        arabic || edit.family
+          ? {
+              from: "IBMPlexSans-Regular",
+              to: edit.family ?? "sans",
+              font: edit.family === "naskh" ? "Amiri-Regular" : "IBMPlexSansArabic",
+            }
+          : null,
       lines: Math.max(1, Math.ceil(edit.text.length / 50)),
     };
   },

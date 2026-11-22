@@ -6,6 +6,10 @@
 //!   Arabic, the UI's own families (ADR 0019).
 //! - **Naskh:** Amiri, a classical Naskh with matching Latin letters.
 //!
+//! Noto Naskh Arabic and Noto Sans Arabic are bundled too: candidates, with
+//! the faces above, when a paragraph edited in place needs a substitute for
+//! its own font (ADR 0023).
+//!
 //! Each family lists the text's own script's face first and falls back to
 //! the others for characters it lacks.
 
@@ -30,6 +34,8 @@ struct Bundled {
     plex: NamedFont,
     plex_arabic: NamedFont,
     amiri: NamedFont,
+    noto_naskh: NamedFont,
+    noto_sans_arabic: NamedFont,
 }
 
 fn bundled() -> Result<&'static Bundled> {
@@ -40,7 +46,15 @@ fn bundled() -> Result<&'static Bundled> {
             let plex = face(include_bytes!("../../../assets/fonts/IBMPlexSans-VF.ttf"))?
                 .with_variations(&[(*b"wght", 400.0), (*b"wdth", 100.0)])
                 .map_err(|err| err.code())?;
+            let noto_naskh = face(include_bytes!("../../../assets/fonts/NotoNaskhArabic-VF.ttf"))?
+                .with_variations(&[(*b"wght", 400.0)])
+                .map_err(|err| err.code())?;
+            let noto_sans_arabic = face(include_bytes!("../../../assets/fonts/NotoSansArabic-VF.ttf"))?
+                .with_variations(&[(*b"wght", 400.0), (*b"wdth", 100.0)])
+                .map_err(|err| err.code())?;
             Ok(Bundled {
+                noto_naskh: NamedFont { face: noto_naskh, name: "NotoNaskhArabic-Regular" },
+                noto_sans_arabic: NamedFont { face: noto_sans_arabic, name: "NotoSansArabic-Regular" },
                 plex: NamedFont { face: plex, name: "IBMPlexSans" },
                 plex_arabic: NamedFont {
                     face: face(include_bytes!("../../../assets/fonts/IBMPlexSansArabic-Regular.ttf"))?,
@@ -54,6 +68,31 @@ fn bundled() -> Result<&'static Bundled> {
         })
         .as_ref()
         .map_err(|code| Error::Typeset(code))
+}
+
+/// Every bundled face, for matching a PDF's font against (ADR 0023).
+pub(crate) fn candidates() -> Result<Vec<NamedFont>> {
+    let fonts = bundled()?;
+    Ok([&fonts.plex, &fonts.plex_arabic, &fonts.amiri, &fonts.noto_naskh, &fonts.noto_sans_arabic]
+        .into_iter()
+        .cloned()
+        .collect())
+}
+
+/// The faces that fill gaps in any other: IBM Plex Sans and Plex Sans Arabic.
+pub(crate) fn fallbacks() -> Result<Vec<NamedFont>> {
+    let fonts = bundled()?;
+    Ok(vec![fonts.plex.clone(), fonts.plex_arabic.clone()])
+}
+
+/// The family a bundled face belongs with: Naskh for the Naskh faces (and
+/// Amiri), Sans for the rest.
+pub(crate) fn family_of(name: &str) -> FontFamily {
+    if name.starts_with("Amiri") || name.starts_with("NotoNaskh") {
+        FontFamily::Naskh
+    } else {
+        FontFamily::Sans
+    }
 }
 
 /// Whether the text's first strong character is right to left (UAX #9 P2).

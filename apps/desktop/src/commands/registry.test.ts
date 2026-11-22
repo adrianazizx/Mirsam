@@ -218,7 +218,11 @@ describe("command registry", () => {
         1,
         expect.objectContaining({ text: "فقرة جديدة", family: "naskh" }),
       );
-      expect(useAppStore.getState().notice).toMatchObject({ key: "fontSubstituted" });
+      // The face it was set in is named, isolated from the sentence's direction.
+      expect(useAppStore.getState().notice).toMatchObject({
+        key: "fontSubstituted",
+        values: { to: "\u2068Amiri-Regular\u2069" },
+      });
     } finally {
       edit.mockRestore();
       useAppStore.getState().setNotice(null);

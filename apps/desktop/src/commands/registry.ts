@@ -1123,9 +1123,12 @@ const COMMANDS: Command[] = [
           });
           store().applyEdit(active.id, done);
           if (done.substituted) {
+            // Font names come from the document: isolated, as <bdi> would.
+            const isolate = (name: string) => `\u2068${name}\u2069`;
+            const { from, font } = done.substituted;
             store().setNotice({
-              key: "fontSubstituted",
-              values: { from: done.substituted.from, to: done.substituted.to },
+              key: from ? "fontSubstituted" : "fontSubstitutedUnnamed",
+              values: { from: isolate(from), to: isolate(font) },
             });
           }
           return;

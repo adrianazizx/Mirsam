@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use common::manifest;
-use safha_core::block_edit::{BlockEdit, EditedBlock, TextBlock};
+use safha_core::block_edit::{BlockEdit, EditedBlock, Refusal, TextBlock};
 use safha_core::fonts::FontFamily;
 use safha_core::save::save;
 use safha_core::text_edit::NewText;
@@ -448,12 +448,37 @@ fn an_edit_of_text_that_changed_is_refused() {
 
 #[test]
 fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
+    // Encrypted: the content is not read, but where its text is, a press says why.
     let (bytes, password) = fixture_everywhere("qpdf/encrypted");
     let document = engine().open_bytes(bytes, password.as_deref()).expect("opens");
-    assert!(matches!(document.text_blocks(0), Err(Error::EditUnsupported(_))));
+    let blocks = document.text_blocks(0).expect("blocks");
+    assert!(!blocks.is_empty(), "the page's text is listed");
+    assert!(blocks.iter().all(|b| !b.editable && b.reason == Some(Refusal::Encrypted)));
+    let edit = BlockEdit { page: 0, index: 0, fingerprint: 0, text: "x".into(), family: None };
+    assert!(document.with_block_edit(&edit).is_err());
+
+    // Chrome draws these fixtures' variable fonts as Type 3, which is not
+    // read: refused as one area per run of text, not one per glyph.
+    let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let blocks = document.text_blocks(0).expect("blocks");
+    let fonts: Vec<&TextBlock> = blocks.iter().filter(|b| b.reason == Some(Refusal::Font)).collect();
+    assert!(!fonts.is_empty() && fonts.len() < 40, "{} areas", fonts.len());
+    let text = document.page_text(0).expect("text");
+    let view = document.view_transform(0).expect("view");
+    // Every line of the page's text lies in some refused area.
+    for line in text.blocks.iter().flat_map(|b| &b.lines) {
+        let shown = view.rect(line.bounds);
+        let (x, y) = (shown.x + shown.width / 2.0, shown.y + shown.height / 2.0);
+        assert!(
+            fonts.iter().any(|b| x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height),
+            "{:?} is in no refused area",
+            line.text
+        );
+    }
 
     // CoreText's Arabic draws dotless letters with the dots as separate shapes
-    // that carry no text: not read, so not offered.
+    // that carry no text: not read, so not offered, and said to need OCR.
     let Some((bytes, _)) = fixture("coretext/ar-plain") else { return };
     let document = engine().open_bytes(bytes, None).expect("opens");
     let blocks = document.text_blocks(0).expect("blocks");
@@ -462,4 +487,5 @@ fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
         "{:?}",
         blocks.iter().map(|b| &b.text).collect::<Vec<_>>()
     );
+    assert!(blocks.iter().any(|b| b.reason == Some(Refusal::Unreadable)));
 }

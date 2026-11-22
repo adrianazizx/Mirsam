@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 9).
+Last updated: 2026-11-22 (session 11).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -407,6 +407,12 @@ Plan, in order:
       - Gaps (ADR 0023 "Honest limits"): bold/italic, indents and tabs, mixed styles flatten,
         no kerning in reused fonts, forms/encrypted/Type 3, installed-font substitutes, the
         editor field does not yet sit over the paragraph in its own width and size.
+      - Session 11 (ADR 0023 amendment):
+        - a press on text that cannot be edited says why, in English and Arabic: shared, needs
+          OCR, an unreadable font (Type 3), rotated, encrypted, or unsupported;
+        - such text is listed as refused areas, so no new text lands on top of it;
+        - the automatic substitute is the closest of five bundled faces (Noto Naskh Arabic and
+          Noto Sans Arabic added), by name, serif flag, and the font's own `/Widths`.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -468,6 +474,34 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 11 — 2026-11-22 (Milestone 3: main's in-place editor kept; reasons and closer substitutes ported)
+
+- **Two implementations met.**
+  - PR #8 (`m3-text`) and PR #9 (merged into `main`) each built M3's editor-surface spike,
+    page analysis and in-place editing, with opposite surface decisions: our own canvas, or a
+    native text field.
+  - At the owner's choice, `m3-text` merged `main` keeping main's tree whole (`4b7926c`); the
+    branch's own three commits stay in history only.
+  - What main lacked was then ported onto its design.
+- **Refusal reasons:**
+  - `block_edit::Refusal` replaces English strings: shared, unreadable (needs OCR), font,
+    rotated, encrypted, unsupported.
+  - Text that is not a paragraph (Type 3 fonts, rotated text, all text of encrypted pages) is
+    listed as refused areas after the paragraphs.
+  - A press there shows the reason, in English and Arabic, instead of placing new text on top.
+    On Chrome's Type 3 fixtures every line is covered.
+- **Closer substitutes:**
+  - Noto Naskh Arabic and Noto Sans Arabic are bundled.
+  - With the Plex and Amiri faces, they are ranked by `match_font`: coverage, name, serif
+    flag, and the font's `/Widths` for letters that do not join.
+  - The notice names the face, isolated from the sentence's direction.
+  - Sans and Naskh stay as the user's override.
+- **Tests:**
+  - Rust: 306 tests (new unit tests for width matching and area joining, and the refusal test
+    extended to encrypted and Type 3 pages).
+  - UI: 159 tests (a press on refused text; the substitute notice).
+  - Real-app self-test: English (light) and Arabic (dark, two fixtures).
 
 ### M4 side track — 2026-11-22 (OCR engine benchmark, branch `pomidor/m4-ocr-benchmark-f94419`)
 

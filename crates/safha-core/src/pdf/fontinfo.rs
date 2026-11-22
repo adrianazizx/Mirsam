@@ -188,6 +188,51 @@ impl FontInfo {
         self.unicode.get(&code).map(String::as_str)
     }
 
+    /// Advances of its letters and digits that do not join, in thousandths of
+    /// an em, from `/Widths` (or `/W`) through its codes' text: what a
+    /// substitute should come close to. Arabic and Hebrew letters are left
+    /// out: a code's width there is one joined form's.
+    pub(crate) fn letter_widths(&self) -> Vec<(char, f32)> {
+        use unicode_bidi::{BidiClass, bidi_class};
+        let mut widths: Vec<(char, f32)> = self
+            .unicode
+            .iter()
+            .filter_map(|(&code, text)| {
+                let mut chars = text.chars();
+                let (Some(c), None) = (chars.next(), chars.next()) else { return None };
+                let width = self.width(code) as f32;
+                (c.is_alphanumeric() && !matches!(bidi_class(c), BidiClass::R | BidiClass::AL) && width > 0.0)
+                    .then_some((c, width))
+            })
+            .collect();
+        widths.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        widths.dedup_by_key(|(c, _)| *c);
+        widths
+    }
+
+    /// A simple font with one code per character of `chars` (from 32 up), at
+    /// those widths: what a test needs to stand for a page's font.
+    #[cfg(test)]
+    pub(crate) fn simple_for_test(name: &str, serif: bool, chars: &[(char, f64)]) -> FontInfo {
+        let codes = (32u32..).zip(chars.iter().copied());
+        FontInfo {
+            name: name.to_string(),
+            kind: FontKind::Simple,
+            vertical: false,
+            embedded: true,
+            serif,
+            bold: false,
+            italic: false,
+            fixed: false,
+            first_char: 32,
+            widths: chars.iter().map(|&(_, w)| w).collect(),
+            cid_widths: HashMap::new(),
+            default_width: 0.0,
+            unicode: codes.clone().map(|(code, (c, _))| (code, c.to_string())).collect(),
+            reverse: codes.map(|(code, (c, _))| (c, code)).collect(),
+        }
+    }
+
     /// Whether text in this font can be read and written back.
     pub(crate) fn usable(&self) -> bool {
         self.kind != FontKind::Unsupported && !self.vertical && !self.unicode.is_empty()

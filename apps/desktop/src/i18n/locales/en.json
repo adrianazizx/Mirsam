@@ -296,7 +296,15 @@
     "extracted": "The pages were saved as {{name}}.",
     "split": "The document was split into {{count}} files.",
     "fontSubstituted": "Font substituted: {{from}} → {{to}}.",
-    "textNotEditable": "This text cannot be edited here."
+    "fontSubstitutedUnnamed": "Font substituted: set in {{to}}.",
+    "textNotEditable": {
+      "shared": "This text is drawn together with other text, so it can't be edited on its own yet.",
+      "unreadable": "This text can't be read reliably, so it can't be edited. Run OCR on it first.",
+      "font": "This text's font can't be read for editing yet.",
+      "rotated": "Rotated text can't be edited yet.",
+      "encrypted": "Text in encrypted files can't be edited yet.",
+      "unsupported": "This text is drawn in a way that can't be edited yet."
+    }
   },
   "split": {
     "title": "Split into files",
