@@ -13,10 +13,17 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **Git history is local only.** Milestone 0 is on `main`, Milestone 1 work on `m1-viewer`; there
-   is no remote, so nothing is backed up beyond this machine (and OneDrive's copy of `.git`).
-3. **CI has never run.** `.github/workflows/ci.yml` is written and its YAML parses, but there is
-   no remote. Expect first-run fixes, especially on Windows and Linux.
+2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
+   and `m1-viewer` (Milestone 1). CI runs on pushes to `main` and on pull requests, so Milestone 1
+   is checked by CI only once a pull request from `m1-viewer` is open.
+3. **CI's first run** (on `main`) failed in three ways, all fixed on `m1-viewer` but not yet seen
+   green in CI:
+   - a type error that this machine's typecheck could not see;
+   - Windows checking files out with CRLF line endings, which the formatters reject;
+   - the licence report naming a platform-specific package.
+
+   The macOS self-test job passed. The Rust steps on Linux and Windows have not run yet: they come
+   after the failing step.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
@@ -54,7 +61,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — workflow written; **never executed** (no remote yet)
+- [~] CI on Windows/macOS/Linux — runs on GitHub. The first run failed before the Rust steps
+      (fixes in session 4; see owner item 3). The macOS self-test job passes
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -277,6 +285,13 @@ Things that were not obvious:
   next run despite the fresh state store. Settings missing from the store now fall back to their
   defaults, and changes made before the store answers are kept.
 - The release bundle opened hidden in 3 of 5 benchmark launches, with the screen unlocked.
+- **This machine's typecheck had been too lenient since Milestone 0.** `scripts/dev-setup.sh` puts
+  pnpm's packages outside the OneDrive folder; from there, library type files cannot find
+  `@types/react`, so every React Aria component was typed `(props: any) => any`. CI's fresh
+  install caught a `Tabs` prop error this machine missed. `tsconfig.json` now maps `react` to the
+  app's own types, and the two setups agree. This is also why React Aria callbacks seemed to need
+  explicit parameter types under TypeScript 7.
+- Windows needs `.gitattributes` (`eol=lf`), or the formatters reject a CRLF checkout.
 
 ### Session 3 — 2026-11-22 (Milestone 1: navigation, search, selection)
 

@@ -14,6 +14,9 @@ import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import { ToolRail } from "./ToolRail";
 
+/** The selected key while no document is open: matches no tab. */
+const NO_TAB = "none";
+
 /**
  * The window layout from docs/SPEC.md section 4: tabs across the top, tool rail
  * at the inline start, page canvas in the middle, inspector at the inline end,
@@ -40,7 +43,9 @@ export function AppShell() {
        */}
       <Tabs
         className={styles.tabs}
-        selectedKey={activeDocumentId}
+        // Tabs takes a key, not null; with no document open, one no tab has
+        // (keeps the component controlled rather than switching modes).
+        selectedKey={activeDocumentId ?? NO_TAB}
         onSelectionChange={(key: Key) => {
           if (typeof key === "number") activateDocument(key);
         }}

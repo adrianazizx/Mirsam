@@ -1,0 +1,17 @@
+# Keep LF line endings on every platform. Windows checkouts otherwise convert
+# text to CRLF, and the formatters (Biome, rustfmt) then reject every file.
+* text=auto eol=lf
+
+# Binary files, never converted.
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.dylib binary
+*.dll binary
+*.so binary

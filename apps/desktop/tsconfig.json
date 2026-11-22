@@ -16,7 +16,18 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    // Library declaration files resolve `react` from where their package
+    // really lives. scripts/dev-setup.sh puts pnpm's packages outside this
+    // folder (it is cloud-synced), where `@types/react` cannot be found, and
+    // every React Aria component silently became `(props: any) => any`.
+    // Point all of them at this app's React types, as a plain install does.
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

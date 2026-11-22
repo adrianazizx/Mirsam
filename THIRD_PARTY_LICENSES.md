@@ -524,7 +524,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | @swc/helpers | 0.5.24 | Apache-2.0 | https://swc.rs |
 | @tauri-apps/api | 2.12.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri#readme |
 | @types/react | 19.3.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react |
-| @typescript/typescript-darwin-arm64 | 7.0.2 | Apache-2.0 | https://www.typescriptlang.org/ |
+| @typescript/typescript-<platform> | 7.0.2 | Apache-2.0 | https://www.typescriptlang.org/ |
 | aria-hidden | 1.2.6 | MIT | https://github.com/theKashey/aria-hidden#readme |
 | client-only | 0.0.1 | MIT | https://reactjs.org/ |
 | clsx | 2.1.1 | MIT | https://github.com/lukeed/clsx#readme |

@@ -104,15 +104,35 @@ function npmPackages() {
       maxBuffer: 256 * 1024 * 1024,
     }),
   );
-  return Object.entries(listing).flatMap(([license, packages]) =>
+  const rows = Object.entries(listing).flatMap(([license, packages]) =>
     packages.flatMap((pkg) =>
       (pkg.versions ?? [pkg.version]).map((version) => ({
-        name: pkg.name,
+        name: platformNeutral(pkg.name),
         version,
         license,
         source: pkg.homepage ?? `https://www.npmjs.com/package/${pkg.name}`,
       })),
     ),
+  );
+  // One row per package, whichever platform's binary this machine installed.
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = `${row.name}@${row.version}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Native binaries ship as one package per platform (`@typescript/typescript-
+ * darwin-arm64`, `…-linux-x64`, …) and pnpm installs only this machine's. Named
+ * neutrally, the report is the same on every OS, so CI can check it anywhere.
+ */
+function platformNeutral(name) {
+  return name.replace(
+    /-(darwin|linux|win32|freebsd|android)-(arm64|x64|ia32|arm)(-(gnu|musl|msvc|gnueabihf))?$/,
+    "-<platform>",
   );
 }
 
