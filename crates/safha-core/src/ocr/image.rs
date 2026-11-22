@@ -91,6 +91,21 @@ impl OcrImage {
         &self.rgb
     }
 
+    /// The rectangle `x0..x1`, `y0..y1`, clamped to the image.
+    pub fn crop(&self, x0: u32, y0: u32, x1: u32, y1: u32) -> Result<Self, OcrError> {
+        let (x1, y1) = (x1.min(self.width), y1.min(self.height));
+        if x0 >= x1 || y0 >= y1 {
+            return Err(OcrError::Image("empty crop"));
+        }
+        let row = self.width as usize * 3;
+        let mut rgb = Vec::with_capacity((x1 - x0) as usize * (y1 - y0) as usize * 3);
+        for y in y0..y1 {
+            let start = y as usize * row + x0 as usize * 3;
+            rgb.extend_from_slice(&self.rgb[start..start + (x1 - x0) as usize * 3]);
+        }
+        Self::from_rgb(x1 - x0, y1 - y0, rgb)
+    }
+
     /// Resizes with Pillow's Lanczos filter (`Image.resize(size, Image.LANCZOS)`).
     pub fn resize(&self, width: u32, height: u32) -> Result<Self, OcrError> {
         if width == 0 || height == 0 {
@@ -285,6 +300,16 @@ mod tests {
         let image = gradient(31, 17);
         let bytes = image.encode_png().expect("encoded");
         assert_eq!(OcrImage::decode_png(&bytes).expect("decoded"), image);
+    }
+
+    #[test]
+    fn crops_and_clamps() {
+        let image = gradient(10, 8);
+        let crop = image.crop(2, 3, 5, 7).expect("crop");
+        assert_eq!((crop.width(), crop.height()), (3, 4));
+        assert_eq!(&crop.rgb()[..3], &image.rgb()[(3 * 10 + 2) * 3..(3 * 10 + 2) * 3 + 3]);
+        assert_eq!(image.crop(8, 6, 99, 99).expect("clamped").width(), 2);
+        assert!(image.crop(5, 5, 5, 6).is_err());
     }
 
     #[test]
