@@ -27,7 +27,7 @@ all of this lives in Rust.
   - **Packages.** A package is what the user installs or deletes as one item (a model with its
     encoder; the runtime). Each has a role: primary, ensemble, draft or runtime. OCR needs the
     primary and the runtime.
-- **Store layout** (`<app data>/ocr-models`, or `SAFHA_MODELS_DIR`):
+- **Store layout** (`ocr-models` in the app's state directory, or `SAFHA_MODELS_DIR`):
   - **Installed packages:** `<id>/` holds the files and a receipt, `.mirsam-package.json`. The
     receipt is written last, inside the staging folder. A package counts as installed only when
     its receipt is there and its files are.
@@ -74,9 +74,9 @@ all of this lives in Rust.
     `cancel_ocr_model_download`, `delete_ocr_model`.
   - **Progress:** `ocr-model-progress` events to every window, at most every 150 ms.
   - **One download per package.** A second request gets `model_busy`. This is tracked inside
-    the process; the single-copy work (ADR 0046, on the viewer-shell branch) keeps a second copy
-    of the app from downloading the same file. Without it, the worst case is a shared part file
-    that fails its checksum and is deleted.
+    the process. The store lives in the state directory this copy of the app holds, and ADR 0046
+    allows one running copy per state directory, so no other copy writes there. A copy that
+    could not claim the directory has no store, and reports `model_unavailable`.
 - **UI.**
   - **Settings** (Cmd/Ctrl+,): a dialog whose first section is the OCR models. Each row shows the
     name, role, size, licence and state; a progress bar; Download, Resume, Update, Cancel, and

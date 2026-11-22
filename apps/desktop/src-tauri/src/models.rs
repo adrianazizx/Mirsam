@@ -5,7 +5,7 @@
 //! package ids, sizes and states, never paths.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -236,12 +236,14 @@ pub async fn delete_ocr_model(app: AppHandle, id: String) -> CommandResult<()> {
     .await
 }
 
-/// Where models are installed: `SAFHA_MODELS_DIR` (self-tests, development),
-/// else `ocr-models` in the app data directory.
-pub fn models_root(app: &tauri::App) -> Option<PathBuf> {
+/// Where models are installed: `SAFHA_MODELS_DIR` (development), else
+/// `ocr-models` in the state directory this copy of the app holds (ADR 0046),
+/// so two copies never download into the same folder. `None` when this copy
+/// holds no state directory.
+pub fn models_root(state_dir: Option<&Path>) -> Option<PathBuf> {
     std::env::var_os("SAFHA_MODELS_DIR")
         .map(PathBuf::from)
-        .or_else(|| app.path().app_data_dir().ok().map(|dir| dir.join("ocr-models")))
+        .or_else(|| state_dir.map(|dir| dir.join("ocr-models")))
 }
 
 #[cfg(test)]

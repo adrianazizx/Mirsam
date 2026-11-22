@@ -592,7 +592,9 @@ async function notesAndInkChecks(documentId: number) {
  * When the shell says a self-test is requested, wait for the startup
  * document's first page to be sharp on screen, then report what is actually
  * there: layout geometry, directions, and the page's pixels themselves.
- * With `SAFHA_SELFTEST_SPIKE=scroll`, run the scroll benchmark instead.
+ * With `SAFHA_SELFTEST_SPIKE=scroll`, run the scroll benchmark instead
+ * (`scroll:zoom`: its zoom gestures only, three times over, for quick work on
+ * zooming; that report is not a budget check).
  */
 export async function runSelftestIfRequested(): Promise<void> {
   const config = await backend.selftestConfig();
@@ -611,6 +613,27 @@ export async function runSelftestIfRequested(): Promise<void> {
   await nextFrame();
   await nextFrame();
 
+  if (config.spike === "handoff" && painted) {
+    // scripts/instance-selftest.sh starts a second copy with another
+    // document once this one runs; it must arrive here as a new active tab
+    // (ADR 0046).
+    void backend.selftestLog("waiting for a document from a second copy");
+    const deadline = performance.now() + 30_000;
+    while (useAppStore.getState().documents.length < 2 && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const state = useAppStore.getState();
+    await backend.selftestReport(
+      {
+        spike: "handoff",
+        documents: state.documents.map((open) => open.name),
+        active: state.documents.find((open) => open.id === state.activeDocumentId)?.name ?? null,
+        errorCode: state.errorCode,
+      },
+      null,
+    );
+    return;
+  }
   if (config.spike === "tile-transport" && painted) {
     const { runTileTransportSpike } = await import("./spikes/tileTransport");
     await backend.selftestReport(await runTileTransportSpike(painted.documentId), null);
@@ -647,9 +670,10 @@ export async function runSelftestIfRequested(): Promise<void> {
     }
     return;
   }
-  if (config.spike === "scroll" && painted) {
+  if ((config.spike === "scroll" || config.spike === "scroll:zoom") && painted) {
     const { runScrollBenchmark } = await import("./benchmarks/scroll");
-    await backend.selftestReport(await runScrollBenchmark(painted), null);
+    const zoomOnly = config.spike === "scroll:zoom";
+    await backend.selftestReport(await runScrollBenchmark(painted, { zoomOnly }), null);
     return;
   }
 

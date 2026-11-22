@@ -26,6 +26,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8"
+thiserror = { workspace = true }
+# The single-instance lock (ADR 0046): the hand-off token, and the app data
+# directory before Tauri starts (the same crate Tauri resolves it with).
+getrandom = "0.3"
+dirs = "7"
 base64 = { version = "0.22", optional = true }
 
 # Printing on Linux (ADR 0013). Tauri already builds on GTK 3 there; this is the

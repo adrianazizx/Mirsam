@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use super::{AnnotationKind, Appearance, Content, check_color, check_contents, in_range, num, text_string};
 use crate::error::{Error, Result};
 use crate::fonts::{FontFamily, for_text};
-use crate::pdf::image::{image_size, image_to_embed};
+use crate::pdf::image::{ImageLimits, image_size, image_to_embed};
 use crate::pdf::text::draw_text;
 use crate::pdf::{Dict, Object};
 use crate::typeset::{Align, BaseDirection, FontFace, LineHeight, ParagraphStyle, Span, TextLayout, layout};
@@ -34,6 +34,13 @@ const SIGNATURE: &[u8] = b"MirsamSignature";
 const PADDING: f32 = 1.0;
 /// The largest image signature file, in bytes.
 pub const MAX_SIGNATURE_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+/// How large an image signature may be: 4,096 pixels on each side (ADR 0045).
+const SIGNATURE_IMAGE: ImageLimits = ImageLimits {
+    max_side: 4096,
+    max_pixels: 4096 * 4096,
+    too_large: "an image is 1 to 4,096 pixels on each side",
+    unreadable: "only PNG and JPEG images can be used",
+};
 /// Limits for drawn signatures, as for ink.
 const MAX_STROKES: usize = 1_000;
 const MAX_POINTS: usize = 100_000;
@@ -357,7 +364,7 @@ impl Signature {
                 if data.len() > MAX_SIGNATURE_IMAGE_BYTES {
                     return Err(Error::InvalidEdit("a signature image is at most 8 MB"));
                 }
-                image_size(data).map(|_| ())
+                image_size(data, &SIGNATURE_IMAGE).map(|_| ())
             }
         }
     }
@@ -375,7 +382,7 @@ impl Signature {
                 (laid.width + 2.0 * PADDING, laid.height + 2.0 * PADDING)
             }
             Signature::Image(data) => {
-                let (width, height) = image_size(data)?;
+                let (width, height) = image_size(data, &SIGNATURE_IMAGE)?;
                 (width as f32, height as f32)
             }
         })
@@ -425,7 +432,7 @@ impl Signature {
                 appearance
             }
             Signature::Image(data) => {
-                let image = image_to_embed(data, "Im0")?;
+                let image = image_to_embed(data, "Im0", &SIGNATURE_IMAGE)?;
                 let content = format!("q {} 0 0 {} 0 0 cm /Im0 Do Q\n", num(size.0), num(size.1));
                 let mut appearance = fitted(rect, rotate, size, content.into_bytes());
                 appearance.images = vec![image];
