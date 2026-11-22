@@ -27,6 +27,44 @@ export function formatNumber(value: number, locale: Locale, options?: Intl.Numbe
   return new Intl.NumberFormat(formatTag(locale), options).format(value);
 }
 
+/**
+ * A size for people, in decimal units as file managers show them: "5.5 GB",
+ * "205 MB".
+ */
+export function formatBytes(bytes: number, locale: Locale): string {
+  if (bytes >= 1e9) {
+    return formatNumber(bytes / 1e9, locale, {
+      style: "unit",
+      unit: "gigabyte",
+      maximumFractionDigits: 1,
+    });
+  }
+  const megabytes = bytes / 1e6;
+  return formatNumber(megabytes, locale, {
+    style: "unit",
+    unit: "megabyte",
+    maximumFractionDigits: megabytes < 10 ? 1 : 0,
+  });
+}
+
+/** Installed memory, in the binary gigabytes it is sold in: "16 GB". */
+export function formatMemory(bytes: number, locale: Locale): string {
+  return formatNumber(bytes / 2 ** 30, locale, {
+    style: "unit",
+    unit: "gigabyte",
+    maximumFractionDigits: 0,
+  });
+}
+
+/**
+ * Isolates text of either direction inside a translated sentence (U+2068 …
+ * U+2069), the in-string equivalent of `<bdi>`: a Latin model name stays
+ * whole, and its punctuation does not jump, in an Arabic sentence.
+ */
+export function isolate(text: string): string {
+  return `\u2068${text}\u2069`;
+}
+
 export const i18n = i18next.createInstance();
 
 void i18n.use(initReactI18next).init({

@@ -34,11 +34,23 @@ icu_segmenter = { version = "2.4", default-features = false, features = ["compil
 icu_properties = "2.4"
 subsetter = "0.2.6"
 read-fonts = "0.47.0"
+# OCR model downloads (models/, ADR 0034). HTTPS through ureq, blocking, with
+# rustls on ring and the operating system's trust store read by
+# rustls-native-certs (no bundled root list; rustls-platform-verifier would pull
+# in a CDLA-licensed root list for wasm32); all MIT / Apache-2.0 / ISC. flate2 (on miniz_oxide) and tar unpack the
+# llama.cpp runtime's .tar.gz builds; its Windows .zip builds are read by
+# models/archive.rs. fs4 asks the OS for free disk space without `unsafe` here.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls-no-provider"] }
+rustls-native-certs = "0.8.5"
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+flate2 = "1.1.11"
+tar = { version = "0.4.46", default-features = false }
+fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 png = "0.18"
-serde_json = { workspace = true }
 unicode-normalization = "0.1.26"

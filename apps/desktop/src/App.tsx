@@ -6,11 +6,14 @@ import {
   commandForEvent,
   isCommandEnabled,
   isEditableTarget,
+  refreshOcrModels,
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
+import { OcrModelPrompt } from "./components/ocr/OcrModelPrompt";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
+import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { AppShell } from "./components/shell/AppShell";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
@@ -21,6 +24,7 @@ import {
   setSettingsWriter,
   useAppStore,
 } from "./state/appStore";
+import { useOcrModels } from "./state/ocrModels";
 import { getViewer } from "./viewer/registry";
 
 /**
@@ -96,6 +100,31 @@ export function App() {
         else unlisten();
       })
       .catch((error: unknown) => console.warn("cannot follow other windows' settings", error));
+    return () => {
+      live = false;
+      stop();
+    };
+  }, []);
+
+  // OCR model downloads run in the shell; every window follows their progress
+  // (ADR 0034). An outcome reloads the listing, which is the truth.
+  useEffect(() => {
+    let stop = () => {};
+    let live = true;
+    backend
+      .onOcrModelProgress((event) => {
+        useOcrModels.getState().applyEvent(event);
+        if (event.kind !== "progress") {
+          refreshOcrModels().catch((error: unknown) =>
+            console.warn("OCR models unavailable", error),
+          );
+        }
+      })
+      .then((unlisten) => {
+        if (live) stop = unlisten;
+        else unlisten();
+      })
+      .catch((error: unknown) => console.warn("cannot follow OCR model downloads", error));
     return () => {
       live = false;
       stop();
@@ -186,6 +215,8 @@ export function App() {
       <RecoveryDialog />
       <SplitDialog />
       <RedactDialog />
+      <SettingsDialog />
+      <OcrModelPrompt />
     </I18nProvider>
   );
 }

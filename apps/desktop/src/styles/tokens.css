@@ -52,6 +52,8 @@
   --size-note-text: 96px; /* its text field's height */
   --size-palette-row: 36px;
   --size-unlock-panel: 400px;
+  --size-settings: 640px; /* the settings dialog's width */
+  --size-progress: 6px; /* a progress bar's thickness */
   --size-selection-toolbar-span: 480px;
   --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
   --size-swatch: 22px; /* a colour choice */

@@ -25,6 +25,7 @@ import {
   useAppStore,
 } from "../state/appStore";
 import type { CommentFilter, CommentSort } from "../state/comments";
+import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
 import {
   addMark,
   MIN_MARK_SIDE,
@@ -131,6 +132,8 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /** `ocrModels.download`, `.cancel`, `.delete`: the OCR package (ADR 0034). */
+  modelId?: string;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -255,7 +258,15 @@ export type CommandId =
   | "app.toggleTheme"
   | "app.toggleLanguage"
   | "app.toggleGallery"
-  | "app.commandPalette";
+  | "app.commandPalette"
+  | "app.settings"
+  | "app.closeSettings"
+  | "ocr.recognize"
+  | "ocrModels.downloadRequired"
+  | "ocrModels.dismissPrompt"
+  | "ocrModels.download"
+  | "ocrModels.cancel"
+  | "ocrModels.delete";
 
 const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
@@ -416,6 +427,14 @@ const KNOWN_ERRORS = [
   "text_failed",
   "no_bookmarks",
   "redaction_failed",
+  "model_unknown",
+  "model_busy",
+  "model_unavailable",
+  "model_download_failed",
+  "model_checksum_mismatch",
+  "model_disk_full",
+  "model_archive_invalid",
+  "model_install_failed",
 ];
 
 function reportError(error: unknown) {
@@ -653,6 +672,25 @@ function markHits(active: OpenDocument, indices: number[]) {
     }
     return next;
   });
+}
+
+const ocr = () => useOcrModels.getState();
+
+/** Loads the OCR models' listing from the shell (ADR 0034). */
+export async function refreshOcrModels(): Promise<void> {
+  ocr().setModels(await backend.ocrModels());
+}
+
+/** Starts a download; progress then arrives as events (App listens). */
+async function downloadOcrModel(id: string): Promise<void> {
+  ocr().startJob(id);
+  try {
+    await backend.downloadOcrModel(id);
+  } catch (error) {
+    // The listing says what is really running (e.g. already downloading).
+    await refreshOcrModels().catch(() => {});
+    throw error;
+  }
 }
 
 const COMMANDS: Command[] = [
@@ -1769,6 +1807,83 @@ const COMMANDS: Command[] = [
     shortcut: { key: "k", mod: true },
     run() {
       store().setPaletteOpen(!store().paletteOpen);
+    },
+  },
+  {
+    id: "app.settings",
+    shortcut: { key: ",", mod: true },
+    async run() {
+      store().setSettingsOpen(true);
+      await refreshOcrModels();
+    },
+  },
+  {
+    id: "app.closeSettings",
+    paletteHidden: true,
+    isEnabled: (state) => state.settingsOpen,
+    run: () => store().setSettingsOpen(false),
+  },
+  {
+    // The first use of OCR without its model asks to download it (spec §8).
+    id: "ocr.recognize",
+    isEnabled: hasDocument,
+    async run() {
+      if (!ocr().models) await refreshOcrModels();
+      const { models } = ocr();
+      if (!models?.available) {
+        store().setError("model_unavailable");
+        return;
+      }
+      if (!ocrReady(models)) {
+        ocr().setPrompt(true);
+        return;
+      }
+      // Recognising pages arrives with the M4 pipeline's commands.
+      store().setNotice({ key: "ocrNotYet" });
+    },
+  },
+  {
+    // The first-use prompt's answer: whatever OCR still needs, shown downloading in Settings.
+    id: "ocrModels.downloadRequired",
+    isEnabled: () => {
+      const { models, jobs } = ocr();
+      return models === null || missingRequired(models).some((pkg) => !jobs[pkg.id]);
+    },
+    async run() {
+      ocr().setPrompt(false);
+      if (!ocr().models) await refreshOcrModels();
+      const missing = missingRequired(ocr().models).filter((pkg) => !ocr().jobs[pkg.id]);
+      if (missing.length === 0) return;
+      store().setSettingsOpen(true);
+      for (const pkg of missing) await downloadOcrModel(pkg.id);
+    },
+  },
+  {
+    id: "ocrModels.dismissPrompt",
+    paletteHidden: true,
+    run: () => ocr().setPrompt(false),
+  },
+  {
+    id: "ocrModels.download",
+    paletteHidden: true,
+    async run(arg) {
+      if (arg?.modelId) await downloadOcrModel(arg.modelId);
+    },
+  },
+  {
+    id: "ocrModels.cancel",
+    paletteHidden: true,
+    async run(arg) {
+      if (arg?.modelId) await backend.cancelOcrModelDownload(arg.modelId);
+    },
+  },
+  {
+    id: "ocrModels.delete",
+    paletteHidden: true,
+    async run(arg) {
+      if (!arg?.modelId) return;
+      await backend.deleteOcrModel(arg.modelId);
+      await refreshOcrModels();
     },
   },
 ];

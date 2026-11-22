@@ -1,0 +1,95 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hint,
+.hardware {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.role {
+  color: var(--color-text);
+}
+
+.meta,
+.status {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.failure {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.confirm {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.track {
+  display: block;
+  block-size: var(--size-progress);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-pressed);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  transition: inline-size var(--motion-base) var(--motion-ease);
+}
+
+.fill[data-indeterminate] {
+  inline-size: 100%;
+  opacity: 0.5;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}

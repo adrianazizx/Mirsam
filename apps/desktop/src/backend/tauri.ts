@@ -10,6 +10,8 @@ import {
   type EditOutcome,
   type InsertOutcome,
   isBackendError,
+  type OcrModelEvent,
+  type OcrModels,
   type OpenOutcome,
   type OutlineItem,
   type PageAnnotation,
@@ -224,4 +226,11 @@ export const tauriBackend: Backend = {
   },
   webviewRssKb: async () =>
     (await hasDevtools()) ? invoke<number | null>("webview_rss_kb") : null,
+  ocrModels: () => invoke<OcrModels>("ocr_models"),
+  downloadOcrModel: (id) => invoke<void>("download_ocr_model", { id }),
+  cancelOcrModelDownload: (id) => invoke<void>("cancel_ocr_model_download", { id }),
+  deleteOcrModel: (id) => invoke<void>("delete_ocr_model", { id }),
+  // Sent to every window: a download started in one shows in all.
+  onOcrModelProgress: (listener) =>
+    listen<OcrModelEvent>("ocr-model-progress", (event) => listener(event.payload)),
 };

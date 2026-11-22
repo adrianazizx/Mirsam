@@ -1,0 +1,54 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--color-scrim);
+}
+
+.modal {
+  inline-size: min(var(--size-settings), calc(100vw - 2 * var(--space-4)));
+  max-block-size: calc(100vh - 2 * var(--space-4));
+  display: flex;
+  background: var(--color-bg-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-block-size: 0;
+  inline-size: 100%;
+  padding: var(--space-5);
+  outline: none;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}

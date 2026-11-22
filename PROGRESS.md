@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (M4 runtime and word-box side track, merged with `main` after session M5-a).
+Last updated: 2026-11-22 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -69,6 +69,17 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
+
+16. **The llama.cpp runtime's licences (M4, ADR 0034).** The download manager can fetch
+    llama.cpp's own `llama-server` builds (release `b12359`), but they are held out of its catalog
+    until you answer. Most of each build is MIT, Apache-2.0, or Apache-2.0 WITH LLVM-exception. Outside
+    spec §10's list:
+    - sheredom `subprocess.h` (Unlicense, a public-domain dedication), compiled in;
+    - miniaudio (Unlicense OR MIT-0), compiled in (MIT-0 is item 4);
+    - its built-in web UI's npm packages, not audited (we start it with `--no-webui`).
+
+    May they ship? The CUDA builds are left out either way: they need NVIDIA's CUDA runtime
+    (NVIDIA's licence). NVIDIA GPUs are used through the Vulkan builds.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -459,7 +470,22 @@ Plan, in order:
 - [ ] Background jobs with draft-then-quality results; survives restart
 - [ ] Word-level confidence, pages-needing-review list
 - [ ] Searchable-PDF output in logical order
-- [ ] Model download manager; hardware acceleration
+- [~] Model download manager; hardware acceleration (ADR 0034, branch `pomidor/m4-model-downloads-ef1050`):
+  - **Engine:** `safha_core::models`. A pinned catalog (Nuqta 4B and 0.8B GGUF by revision, size
+    and SHA-256). Resumable HTTPS downloads with retries, checksum, a disk-space check, cancel,
+    atomic install into `<app data>/ocr-models`, delete, and a status query. tar.gz and zip
+    runtime archives are unpacked safely.
+  - **Hardware:** Metal, CUDA, Vulkan and memory are detected and reported.
+  - **UI:** Settings (Cmd/Ctrl+,) lists the models with size, licence, state and progress. The
+    OCR tool's inspector panel shows the model's state. The first OCR use without the model asks
+    to download it and explains its size.
+  - **Gaps:**
+    - The llama.cpp runtime is not in the catalog until the owner answers item 16 (its six
+      builds are defined and tested).
+    - Acceleration is reported, not yet used by recognition.
+    - Windows memory detection and the Windows/Linux archive paths are untested on those OSes
+      (CI builds them).
+    - Signing a downloaded `llama-server` is open (M7).
 - [ ] Benchmark gate in CI
 - [ ] Exit test: targets and ship gates in spec §8 met on `ocr-eval/`
 
@@ -497,6 +523,60 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 side track — 2026-11-22 (OCR model download manager; branch `pomidor/m4-model-downloads-ef1050`)
+
+- **ADR 0034.** 0033 is taken by the reconcile work on `pomidor/m4-reconcile`.
+- **Engine (`safha_core::models`):**
+  - **`Catalog`:** the Nuqta 4B (5.5 GB) and 0.8B (1.1 GB) Q8_0 GGUF files and their vision
+    encoders, pinned to the revisions ADR 0030 measured. `runtime_package` defines llama.cpp
+    `b12359` for six platforms: Metal on Apple silicon, CPU on Intel Macs, Vulkan with CPU
+    fallback on Windows and Linux; no CUDA, because of NVIDIA's runtime licence. It stays out of
+    the catalog until owner item 16 is answered.
+  - **`ModelStore`:**
+    - Status: not installed, partial, installed, outdated.
+    - Install: resumable `.part` files named by SHA-256, the whole file hashed, a disk-space
+      check, cancel, staging, then a receipt and a rename into place.
+    - Delete and clean.
+  - **`Downloader`:** ureq with rustls (ring) and the OS trust store (`rustls-native-certs`).
+    Ranges, redirects, retries with backoff, and timeouts.
+    - `rustls-platform-verifier` was tried first and dropped: its wasm32-only
+      `webpki-root-certs` is CDLA-licensed, and `cargo deny` checks every target.
+  - **Archives:** tar.gz through `tar`, zip through our own small reader. Escapes are refused.
+  - **`Hardware::detect`:** accelerators and memory.
+- **Shell (`models.rs`):**
+  - **Commands:** `ocr_models`, `download_ocr_model` (on a thread),
+    `cancel_ocr_model_download`, `delete_ocr_model`.
+  - **Progress:** `ocr-model-progress` events, throttled to 150 ms.
+  - **Folder:** `SAFHA_MODELS_DIR` overrides the models' folder.
+- **UI:**
+  - **Settings dialog:** `app.settings`, Cmd/Ctrl+,.
+  - **OCR models section:** progress bar, Download, Resume, Update, Cancel, Delete with confirm.
+  - **OCR tool's inspector panel.**
+  - **First-use prompt:** `ocr.recognize` asks to download the model, then opens Settings to
+    show the download.
+  - **Recognition itself** shows "arrives in a coming update" until the pipeline commands land.
+  - **Store and strings:** an `ocrModels` store, 8 commands, en/ar strings, and a mock backend
+    whose downloads take a few timer steps.
+- **Licences checked:**
+  - Nuqta GGUF and the Qwen3.5 base models: Apache-2.0.
+  - llama.cpp builds: see owner item 16.
+  - New crates: ureq, rustls, ring, rustls-native-certs, tar, flate2, fs4. All MIT, Apache-2.0
+    or ISC; `cargo deny` passes.
+- **Tests:**
+  - **Rust:** 28 unit tests in `models`, against a local HTTP server and archive fixtures. No
+    model is downloaded.
+  - **Live check:** an `--ignored` test fetched and resumed a 1.1 MB file through Hugging Face's
+    CDN.
+  - **Shell:** 2 tests.
+  - **UI:** 12 tests (prompt, download, cancel and resume, delete, failures, busy, Arabic RTL,
+    inspector).
+  - **Browser build:** seen in English (light) and Arabic (dark).
+- **Not done / not checked:**
+  - The runtime in the catalog (owner item 16).
+  - A real multi-GB download end to end in the app.
+  - Windows and Linux runs.
+  - A native-speaker review of the new Arabic strings (owner item 11).
 
 ### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
 

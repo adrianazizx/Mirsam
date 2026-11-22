@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { formatNumber } from "../../i18n";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
+import { OcrPanel } from "../ocr/OcrPanel";
 import { ProtectPanel } from "../protect/ProtectPanel";
 import styles from "./Inspector.module.css";
 
@@ -22,9 +23,17 @@ export function Inspector() {
   return (
     <aside className={styles.inspector} aria-label={t("inspector.title")} data-testid="inspector">
       <h2 className={styles.title}>
-        {t(tool === "protect" && document ? "tools.protect" : "inspector.title")}
+        {t(
+          tool === "protect" && document
+            ? "tools.protect"
+            : tool === "ocr"
+              ? "tools.ocr"
+              : "inspector.title",
+        )}
       </h2>
-      {document && tool === "protect" ? (
+      {tool === "ocr" ? (
+        <OcrPanel />
+      ) : document && tool === "protect" ? (
         <ProtectPanel key={document.id} document={document} />
       ) : document ? (
         <dl className={styles.list}>

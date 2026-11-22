@@ -1,3 +1,4 @@
+import { mockOcrBackend } from "./mockOcr";
 import type {
   AnnotationKind,
   Backend,
@@ -1057,4 +1058,5 @@ export const mockBackend: Backend = {
   shellRssKb: async () => null,
   webviewRssKb: async () => null,
   selftestLog: async () => {},
+  ...mockOcrBackend,
 };
