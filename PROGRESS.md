@@ -393,6 +393,10 @@ parallel with M2 and merged by pull request at the owner's request.
 - **CI fix:** the macOS and Windows runners draw the page at under 1 pixel per point, where a
   note's icon and a text box have 19–38 matching pixels. The fixed 50-pixel bar failed them.
   The bar now follows the render scale (8 px per square px/pt, at least 8).
+- **CI fix (Windows):** the shell's unit-test binary failed to start
+  (STATUS_ENTRYPOINT_NOT_FOUND) once autosave made test code reach the Tauri runtime. Tauri
+  embeds its Common Controls v6 manifest into the app binary only. `build.rs` now has the
+  linker embed the same manifest (`windows-app-manifest.xml`) into every binary, tests included.
 - **Comments panel (ADR 0041):**
   - A fourth view of the side panel lists every comment the app knows: author, date, the
     marked text (read in logical order, Arabic too), its replies, and whether it is resolved.
