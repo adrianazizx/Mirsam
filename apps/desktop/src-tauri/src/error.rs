@@ -45,6 +45,8 @@ fn engine_error_code(err: &safha_core::Error) -> &'static str {
         E::InvalidPdf => "invalid_pdf",
         E::PageOutOfRange { .. } => "page_out_of_range",
         E::InvalidRenderRequest(_) => "invalid_render_request",
+        E::EditUnsupported(_) => "edit_unsupported",
+        E::InvalidEdit(_) => "invalid_edit",
         E::Io(_) => "io_error",
         E::Pdfium(_) => "engine_error",
     }

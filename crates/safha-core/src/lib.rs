@@ -13,9 +13,11 @@
 mod bitmap;
 pub mod catalog;
 mod document;
+pub mod edit;
 mod engine;
 mod error;
 pub mod outline;
+mod pdf;
 pub mod render;
 pub mod search;
 pub mod store;
