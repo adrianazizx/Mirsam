@@ -4,6 +4,13 @@
 //!   cargo run --release -p safha-core --example ocr_eval -- --out <dir>
 //!       [--model nuqta-4b-q8_0] [--model-dir <dir>] [--server <llama-server>]
 //!       [--cpu] [--threads N] [--only <id part>] [--stride N] [--manifest <path>]
+//!       [--pipeline [--vision] [--reread-all-strips]]
+//!
+//! `--pipeline` runs the quality pipeline (ADR 0033): the model above as the primary,
+//! Nuqta 0.8B Q8_0 as the partner, and with `--vision` Apple Vision (macOS, via
+//! `ocr-eval/engines/apple-vision.swift --image`) as the third reader for numbers.
+//! It also writes `<sample>.review.json` (the words to review) and the page review
+//! list in `run.json`.
 //!
 //! `--model-dir` (or `SAFHA_OCR_MODEL_DIR`) holds the GGUF files under their
 //! repository names (`nuqta-ocr-4b-Q8_0.gguf`, `nuqta-ocr-4b-mmproj-f16.gguf`, …).
@@ -16,7 +23,10 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use safha_core::ocr::{Device, NuqtaEngine, NuqtaModel, OcrEngine, OcrImage, ServerConfig};
+use safha_core::ocr::{
+    CommandEngine, Device, NuqtaEngine, NuqtaModel, OcrEngine, OcrImage, PageResult, QualityReader,
+    ServerConfig, Settings, WordStatus, review_list,
+};
 use serde_json::{Value, json};
 
 struct Args {
@@ -29,6 +39,9 @@ struct Args {
     only: Option<String>,
     stride: usize,
     manifest: PathBuf,
+    pipeline: bool,
+    vision: bool,
+    reread_all_strips: bool,
 }
 
 fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
@@ -43,6 +56,7 @@ fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
     let mut only = None;
     let mut stride = 1;
     let mut manifest = repo.join("ocr-eval/out/manifest.json");
+    let (mut pipeline, mut vision, mut reread_all_strips) = (false, false, false);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
@@ -59,6 +73,9 @@ fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
             "--only" => only = Some(value()?),
             "--stride" => stride = value()?.parse::<usize>()?.max(1),
             "--manifest" => manifest = PathBuf::from(value()?),
+            "--pipeline" => pipeline = true,
+            "--vision" => vision = true,
+            "--reread-all-strips" => reread_all_strips = true,
             other => return Err(format!("unknown argument {other}").into()),
         }
     }
@@ -72,6 +89,9 @@ fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
         only,
         stride,
         manifest,
+        pipeline,
+        vision,
+        reread_all_strips,
     })
 }
 
@@ -99,6 +119,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = NuqtaEngine::start(&config, args.model)?;
     let load_seconds = started.elapsed().as_secs_f64();
     println!("{} ready in {load_seconds:.1} s; {} samples", engine.name(), samples.len());
+    if args.pipeline {
+        return run_pipeline(&args, &engine, &samples, &config, load_seconds);
+    }
 
     let mut per_sample = serde_json::Map::new();
     let mut total = 0.0;
@@ -131,6 +154,96 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "samples": samples.len(),
         "load_seconds": (load_seconds * 10.0).round() / 10.0,
         "seconds_per_page": if samples.is_empty() { 0.0 } else { (total / samples.len() as f64 * 100.0).round() / 100.0 },
+        "per_sample": per_sample,
+    });
+    std::fs::write(args.out.join("run.json"), serde_json::to_string_pretty(&record)? + "\n")?;
+    println!("{:.2} s per page", record["seconds_per_page"].as_f64().unwrap_or(0.0));
+    Ok(())
+}
+
+fn run_pipeline(
+    args: &Args,
+    primary: &NuqtaEngine,
+    samples: &[(String, PathBuf)],
+    primary_config: &ServerConfig,
+    load_seconds: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let partner_model = NuqtaModel::PARTNER;
+    let mut config = ServerConfig::for_model(&args.server, &args.model_dir, partner_model);
+    config.device = primary_config.device;
+    config.threads = primary_config.threads;
+    config.log = Some(args.out.join("llama-server-partner.log"));
+    let partner = NuqtaEngine::start(&config, partner_model)?;
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let vision = CommandEngine {
+        name: "apple-vision".into(),
+        program: "swift".into(),
+        args: vec![repo.join("ocr-eval/engines/apple-vision.swift").display().to_string(), "--image".into()],
+    };
+    let reader = QualityReader {
+        primary,
+        partner: Some(&partner),
+        third: if args.vision { Some(&vision) } else { None },
+        settings: Settings { reread_all_strips: args.reread_all_strips, ..Settings::default() },
+    };
+
+    let mut results: Vec<(usize, String, PageResult)> = Vec::new();
+    let mut per_sample = serde_json::Map::new();
+    let mut total = 0.0;
+    for (index, (id, image)) in samples.iter().enumerate() {
+        let image = OcrImage::decode_png(&std::fs::read(image)?)?;
+        let result = reader.read_page(&image)?;
+        let seconds = result.elapsed.as_secs_f64();
+        total += seconds;
+        std::fs::write(args.out.join(format!("{id}.txt")), format!("{}\n", result.text().trim()))?;
+        let review: Vec<Value> = result
+            .review()
+            .map(|w| {
+                let (status, detail) = match &w.status {
+                    WordStatus::Corrected { read } => ("corrected", json!(read)),
+                    WordStatus::Uncertain { alternatives } => ("uncertain", json!(alternatives)),
+                    WordStatus::Reordered { read } => ("reordered", json!(read)),
+                    other => ("other", json!(format!("{other:?}"))),
+                };
+                json!({ "word": w.text, "line": w.line, "probability": w.probability, "status": status, "detail": detail })
+            })
+            .collect();
+        std::fs::write(args.out.join(format!("{id}.review.json")), serde_json::to_string_pretty(&review)?)?;
+        per_sample.insert(
+            id.clone(),
+            json!({
+                "seconds": (seconds * 10.0).round() / 10.0,
+                "reads": result.reads,
+                "skew_degrees": result.layout.skew_degrees,
+                "strips": result.layout.lines.len(),
+                "needs_review": result.needs_review(),
+            }),
+        );
+        println!("{seconds:7.1} s  {:2} reads  {:2} to review  {id}", result.reads, result.review().count());
+        results.push((index, id.clone(), result));
+    }
+    let list: Vec<Value> = review_list(results.iter().map(|(i, _, r)| (*i, r)))
+        .into_iter()
+        .map(|p| {
+            json!({
+                "page": results[p.page].1,
+                "uncertain": p.uncertain,
+                "corrected": p.corrected,
+                "reordered": p.reordered,
+                "truncated": p.truncated,
+                "lowest_probability": p.lowest_probability,
+            })
+        })
+        .collect();
+    let record = json!({
+        "engine": format!("pipeline:{}+{}{}", primary.name(), partner.name(), if args.vision { "+apple-vision" } else { "" }),
+        "runtime": "safha_core::ocr::QualityReader via llama-server",
+        "device": format!("{:?}", args.device),
+        "reread_all_strips": args.reread_all_strips,
+        "samples": samples.len(),
+        "load_seconds": (load_seconds * 10.0).round() / 10.0,
+        "seconds_per_page": if samples.is_empty() { 0.0 } else { (total / samples.len() as f64 * 100.0).round() / 100.0 },
+        "pages_needing_review": list,
         "per_sample": per_sample,
     });
     std::fs::write(args.out.join("run.json"), serde_json::to_string_pretty(&record)? + "\n")?;
