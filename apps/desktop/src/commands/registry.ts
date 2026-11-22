@@ -5,9 +5,13 @@ import {
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
+  type RedactPattern,
+  type RedactPreset,
   type RestoreOutcome,
+  type SanitizeOptions,
   type SplitBy,
   type StrokePoint,
+  type ViewRect,
 } from "../backend";
 import {
   type AppState,
@@ -19,6 +23,14 @@ import {
   useAppStore,
 } from "../state/appStore";
 import type { CommentFilter, CommentSort } from "../state/comments";
+import {
+  addMark,
+  MIN_MARK_SIDE,
+  marksForApply,
+  redoMark,
+  removeMark,
+  undoMark,
+} from "../state/redaction";
 import { stepZoom } from "../state/zoom";
 import { NOTE_SIZE, type SelectedAnnotation, TEXT_BOX_WIDTH } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
@@ -102,6 +114,16 @@ export interface CommandArg {
   filter?: Partial<CommentFilter>;
   /** `comments.sort`. */
   sort?: CommentSort;
+  /** `redact.addArea`: the area, on the displayed page (`page` above). */
+  rect?: ViewRect;
+  /** `redact.find`: the typed query (`preset` below finds a preset instead). */
+  /** `redact.findPreset`. */
+  preset?: RedactPreset;
+  /** `redact.removeMark`. */
+  markId?: number;
+  /** `sanitize.setOption`. */
+  option?: keyof SanitizeOptions;
+  value?: boolean;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -137,6 +159,23 @@ export type CommandId =
   | "markup.strikeOut"
   | "markup.squiggly"
   | "annotation.delete"
+  | "redact.openTool"
+  | "redact.addArea"
+  | "redact.markSelection"
+  | "redact.find"
+  | "redact.findPreset"
+  | "redact.toggleRegex"
+  | "redact.markHit"
+  | "redact.markAllHits"
+  | "redact.removeMark"
+  | "redact.clearMarks"
+  | "redact.undoMark"
+  | "redact.redoMark"
+  | "redact.apply"
+  | "redact.confirm"
+  | "redact.cancel"
+  | "sanitize.setOption"
+  | "sanitize.run"
   | "recovery.restore"
   | "recovery.discard"
   | "recovery.later"
@@ -218,8 +257,18 @@ const hasAnnotationSelected = (state: AppState) =>
 const isWritingNote = (state: AppState) =>
   (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
   ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
-const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
-const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
+/** While marking areas to redact, undo and redo step through the marks first (ADR 0042). */
+const stepsMarks = (state: AppState, direction: "undo" | "redo") => {
+  const redaction = selectActiveDocument(state)?.redaction;
+  if (state.activeTool !== "protect" || !redaction) return false;
+  return direction === "undo" ? redaction.marks.length > 0 : redaction.undone.length > 0;
+};
+const canUndo = (state: AppState) =>
+  stepsMarks(state, "undo") || (selectActiveDocument(state)?.canUndo ?? false);
+const canRedo = (state: AppState) =>
+  stepsMarks(state, "redo") || (selectActiveDocument(state)?.canRedo ?? false);
+const hasMarks = (state: AppState) =>
+  (selectActiveDocument(state)?.redaction.marks.length ?? 0) > 0;
 
 /**
  * The pages a page command acts on: the organizer's selection when it has
@@ -299,6 +348,10 @@ function chooseCommentTool(tool: CommentTool) {
 async function stepActive(step: "undo" | "redo"): Promise<void> {
   const active = selectActiveDocument(store());
   if (!active) return;
+  if (stepsMarks(store(), step)) {
+    store().updateRedaction(active.id, step === "undo" ? undoMark : redoMark);
+    return;
+  }
   const outcome =
     step === "undo" ? await backend.undoEdit(active.id) : await backend.redoEdit(active.id);
   store().applyEdit(active.id, outcome);
@@ -352,6 +405,7 @@ const KNOWN_ERRORS = [
   "invalid_edit",
   "text_failed",
   "no_bookmarks",
+  "redaction_failed",
 ];
 
 function reportError(error: unknown) {
@@ -534,6 +588,61 @@ function toggleSearchOption(key: keyof AppState["searchOptions"]) {
 export function resolvedTheme(theme: AppState["theme"]): "light" | "dark" {
   if (theme !== "system") return theme;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/** Runs a search for things to redact, keeping the newest answer (ADR 0042). */
+async function runRedactFind(
+  active: OpenDocument,
+  pattern: RedactPattern,
+  field: { query: string; preset: RedactPreset | null },
+) {
+  const serial = active.redaction.find.serial + 1;
+  store().updateRedaction(active.id, (redaction) => ({
+    ...redaction,
+    ...field,
+    find: { ...redaction.find, status: "searching", error: null, serial },
+  }));
+  const current = () => store().documents.find((open) => open.id === active.id);
+  try {
+    const results = await backend.findRedactions(active.id, pattern);
+    if (current()?.redaction.find.serial !== serial) return;
+    store().updateRedaction(active.id, (redaction) => ({
+      ...redaction,
+      find: {
+        status: "done",
+        hits: results.hits,
+        truncated: results.truncated,
+        error: null,
+        serial,
+      },
+    }));
+  } catch (error) {
+    if (current()?.redaction.find.serial !== serial) return;
+    const code =
+      isBackendError(error) && error.code === "invalid_query" ? "searchInvalid" : "searchFailed";
+    store().updateRedaction(active.id, (redaction) => ({
+      ...redaction,
+      find: { status: "error", hits: [], truncated: false, error: code, serial },
+    }));
+  }
+}
+
+/** Marks hits for redaction: those not marked already. */
+function markHits(active: OpenDocument, indices: number[]) {
+  store().updateRedaction(active.id, (redaction) => {
+    let next = redaction;
+    for (const index of indices) {
+      const hit = redaction.find.hits[index];
+      if (!hit) continue;
+      next = addMark(next, {
+        page: hit.page,
+        rects: hit.rects,
+        text: hit.text,
+        source: "search",
+      }).state;
+    }
+    return next;
+  });
 }
 
 const COMMANDS: Command[] = [
@@ -968,6 +1077,206 @@ const COMMANDS: Command[] = [
       if (!active || !selected) return;
       const outcome = await backend.removeAnnotations(active.id, selected.page, [selected.index]);
       store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "redact.openTool",
+    isEnabled: hasDocument,
+    run: () => store().setActiveTool("protect"),
+  },
+  {
+    id: "redact.addArea",
+    isEnabled: hasDocument,
+    paletteHidden: true,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      const { page, rect } = arg ?? {};
+      if (!active || page === undefined || !rect) return;
+      if (rect.width < MIN_MARK_SIDE || rect.height < MIN_MARK_SIDE) return;
+      store().updateRedaction(
+        active.id,
+        (redaction) =>
+          addMark(redaction, { page, rects: [rect], text: null, source: "area" }).state,
+      );
+    },
+  },
+  {
+    id: "redact.markSelection",
+    isEnabled: hasSelection,
+    run() {
+      const active = selectActiveDocument(store());
+      const viewer = active ? getViewer(active.id) : undefined;
+      if (!active || !viewer) return;
+      const pages = viewer.selectionMarks();
+      const text = viewer.selectedText().trim();
+      store().updateRedaction(active.id, (redaction) => {
+        let next = redaction;
+        for (const { page, rects } of pages) {
+          next = addMark(next, {
+            page,
+            rects,
+            text: text.length > 0 ? text : null,
+            source: "selection",
+          }).state;
+        }
+        return next;
+      });
+      viewer.clearSelection();
+      store().setActiveTool("protect");
+    },
+  },
+  {
+    id: "redact.find",
+    isEnabled: hasDocument,
+    paletteHidden: true,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const query = arg?.query ?? active.redaction.query;
+      if (!query.trim()) {
+        store().updateRedaction(active.id, (redaction) => ({
+          ...redaction,
+          query,
+          preset: null,
+          find: { ...redaction.find, status: "idle", hits: [], error: null },
+        }));
+        return;
+      }
+      const regex = active.redaction.regex;
+      await runRedactFind(
+        active,
+        { kind: "text", query, options: { ...store().searchOptions, regex } },
+        { query, preset: null },
+      );
+    },
+  },
+  {
+    id: "redact.findPreset",
+    isEnabled: hasDocument,
+    paletteHidden: true,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.preset) return;
+      await runRedactFind(
+        active,
+        { kind: "preset", preset: arg.preset },
+        { query: "", preset: arg.preset },
+      );
+    },
+  },
+  {
+    id: "redact.toggleRegex",
+    isEnabled: hasDocument,
+    run() {
+      const active = selectActiveDocument(store());
+      if (active) store().updateRedaction(active.id, { regex: !active.redaction.regex });
+    },
+  },
+  {
+    id: "redact.markHit",
+    isEnabled: hasDocument,
+    paletteHidden: true,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (active && arg?.index !== undefined) markHits(active, [arg.index]);
+    },
+  },
+  {
+    id: "redact.markAllHits",
+    isEnabled: (state) => (selectActiveDocument(state)?.redaction.find.hits.length ?? 0) > 0,
+    run() {
+      const active = selectActiveDocument(store());
+      if (active)
+        markHits(
+          active,
+          active.redaction.find.hits.map((_, i) => i),
+        );
+    },
+  },
+  {
+    id: "redact.removeMark",
+    isEnabled: hasMarks,
+    paletteHidden: true,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      const id = arg?.markId;
+      if (active && id !== undefined) {
+        store().updateRedaction(active.id, (redaction) => removeMark(redaction, id));
+      }
+    },
+  },
+  {
+    id: "redact.clearMarks",
+    isEnabled: hasMarks,
+    run() {
+      const active = selectActiveDocument(store());
+      if (active) {
+        store().updateRedaction(active.id, (redaction) => ({
+          ...redaction,
+          marks: [],
+          undone: [],
+        }));
+      }
+    },
+  },
+  {
+    id: "redact.undoMark",
+    isEnabled: (state) => (selectActiveDocument(state)?.redaction.marks.length ?? 0) > 0,
+    run() {
+      const active = selectActiveDocument(store());
+      if (active) store().updateRedaction(active.id, undoMark);
+    },
+  },
+  {
+    id: "redact.redoMark",
+    isEnabled: (state) => (selectActiveDocument(state)?.redaction.undone.length ?? 0) > 0,
+    run() {
+      const active = selectActiveDocument(store());
+      if (active) store().updateRedaction(active.id, redoMark);
+    },
+  },
+  {
+    // Asks first: applying removes content from the file.
+    id: "redact.apply",
+    isEnabled: hasMarks,
+    run: () => store().setRedactPrompt(true),
+  },
+  {
+    id: "redact.confirm",
+    isEnabled: hasMarks,
+    paletteHidden: true,
+    async run() {
+      const active = selectActiveDocument(store());
+      store().setRedactPrompt(false);
+      if (!active || active.redaction.marks.length === 0) return;
+      const outcome = await backend.applyRedactions(active.id, marksForApply(active.redaction));
+      // The edit starts the document over (the marks are spent); then the summary.
+      store().applyEdit(active.id, outcome.edit);
+      store().updateRedaction(active.id, { applied: outcome.report, sanitized: null });
+    },
+  },
+  {
+    id: "redact.cancel",
+    paletteHidden: true,
+    run: () => store().setRedactPrompt(false),
+  },
+  {
+    id: "sanitize.setOption",
+    paletteHidden: true,
+    run(arg) {
+      if (!arg?.option || arg.value === undefined) return;
+      store().setSanitizeOptions({ ...store().sanitizeOptions, [arg.option]: arg.value });
+    },
+  },
+  {
+    id: "sanitize.run",
+    isEnabled: (state) => hasDocument(state) && Object.values(state.sanitizeOptions).some(Boolean),
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const outcome = await backend.sanitizeDocument(active.id, store().sanitizeOptions);
+      store().applyEdit(active.id, outcome.edit);
+      store().updateRedaction(active.id, { sanitized: outcome.report, applied: null });
     },
   },
   {

@@ -39,6 +39,77 @@ export interface MarkedPage {
   rects: ViewRect[];
 }
 
+/** A ready-made pattern for finding what to redact (ADR 0042). */
+export type RedactPreset = "email" | "phone" | "iban" | "idNumber" | "cardNumber";
+
+/** What to look for: text (a regular expression with `options.regex`), or a preset. */
+export type RedactPattern =
+  | { kind: "text"; query: string; options: SearchOptions }
+  | { kind: "preset"; preset: RedactPreset };
+
+/** One match, with the boxes to mark (displayed-page points). */
+export interface RedactHit {
+  page: number;
+  /** The matched text as the page has it. */
+  text: string;
+  before: string;
+  after: string;
+  rects: ViewRect[];
+}
+
+export interface RedactHits {
+  hits: RedactHit[];
+  truncated: boolean;
+}
+
+/** An area to redact: boxes on the displayed page, and the text under them when known. */
+export interface RedactMarkArg {
+  page: number;
+  rects: ViewRect[];
+  text: string | null;
+}
+
+/** What a redaction removed (ADR 0042). */
+export interface RedactReport {
+  pages: number;
+  counts: {
+    glyphs: number;
+    imagesBlanked: number;
+    imagesDropped: number;
+    paths: number;
+    hidden: number;
+  };
+  annotations: number;
+  strings: number;
+}
+
+export interface RedactOutcome {
+  edit: EditOutcome;
+  report: RedactReport;
+}
+
+/** What sanitizing may take out (ADR 0042). */
+export interface SanitizeOptions {
+  metadata: boolean;
+  scripts: boolean;
+  attachments: boolean;
+  comments: boolean;
+  hiddenContent: boolean;
+}
+
+export interface SanitizeReport {
+  metadata: number;
+  scripts: number;
+  attachments: number;
+  comments: number;
+  hidden: number;
+}
+
+export interface SanitizeOutcome {
+  edit: EditOutcome;
+  report: SanitizeReport;
+}
+
 /** The annotations the app writes and can change or remove (ADRs 0017, 0018). */
 export type AnnotationKind = MarkupKind | "ink" | "note" | "textBox";
 
@@ -447,6 +518,19 @@ export interface Backend {
   editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
   undoEdit(documentId: number): Promise<EditOutcome>;
   redoEdit(documentId: number): Promise<EditOutcome>;
+  /**
+   * Finds what matches a pattern, with boxes to mark. Rejects with
+   * `invalid_query` for an empty query or a bad regular expression.
+   */
+  findRedactions(documentId: number, pattern: RedactPattern): Promise<RedactHits>;
+  /**
+   * Removes what is under the marks from the file and draws boxes over them,
+   * as one undo step. Rejects with `redaction_failed` if checking the result
+   * finds readable text under a mark; nothing changes then.
+   */
+  applyRedactions(documentId: number, marks: RedactMarkArg[]): Promise<RedactOutcome>;
+  /** Strips metadata, scripts, attachments, comments, and hidden content (one undo step). */
+  sanitizeDocument(documentId: number, options: SanitizeOptions): Promise<SanitizeOutcome>;
   /** Marks text: one annotation per page, all in one undo step (ADR 0017). */
   addMarkup(documentId: number, kind: MarkupKind, pages: MarkedPage[]): Promise<EditOutcome>;
   /** Adds freehand ink: strokes in displayed-page points (ADR 0018). */

@@ -147,6 +147,27 @@
       "extract": "Extract pages to a new file…",
       "split": "Split into files…",
       "splitInto": "Split"
+    },
+    "redact": {
+      "openTool": "Redact content…",
+      "addArea": "Mark an area to redact",
+      "markSelection": "Redact selected text",
+      "find": "Find text to redact",
+      "findPreset": "Find personal data to redact",
+      "toggleRegex": "Search with a regular expression",
+      "markHit": "Mark this match for redaction",
+      "markAllHits": "Mark all matches for redaction",
+      "removeMark": "Remove this mark",
+      "clearMarks": "Clear all marks",
+      "undoMark": "Undo the last mark",
+      "redoMark": "Redo the last mark",
+      "apply": "Apply redactions…",
+      "confirm": "Apply redactions",
+      "cancel": "Cancel redaction"
+    },
+    "sanitize": {
+      "setOption": "Choose what to sanitize",
+      "run": "Sanitize document"
     }
   },
   "viewer": {
@@ -194,7 +215,8 @@
     "save_failed": "The document could not be saved. The file on disk was not changed.",
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
     "text_failed": "The text could not be set.",
-    "no_bookmarks": "This document has no top-level bookmarks to split at."
+    "no_bookmarks": "This document has no top-level bookmarks to split at.",
+    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed."
   },
   "gallery": {
     "title": "Design gallery",
@@ -363,5 +385,74 @@
     "reopen": "Reopen",
     "yourName": "Your name on comments",
     "yourNamePlaceholder": "Not set: comments carry no name"
+  },
+  "protect": {
+    "redactHeading": "Redact",
+    "hint": "Drag on a page to mark an area for redaction, or find text below.",
+    "findLabel": "Find text or a pattern to redact",
+    "findPlaceholder": "Text or pattern",
+    "findButton": "Find",
+    "regex": "Regular expression",
+    "presets": "Personal data",
+    "preset": {
+      "email": "E-mail addresses",
+      "phone": "Phone numbers",
+      "iban": "IBANs",
+      "idNumber": "ID numbers",
+      "cardNumber": "Card numbers"
+    },
+    "searching": "Searching…",
+    "noneFound": "Nothing found.",
+    "found": "Found: {{formatted}}",
+    "foundTruncated": "Found: the first {{formatted}} are listed",
+    "results": "Matches",
+    "mark": "Mark",
+    "marked": "Marked",
+    "markAll": "Mark all",
+    "marksTitle": "Marked for redaction",
+    "markedAreas": "Areas: {{marks}}",
+    "markedPages": "Pages: {{pages}}",
+    "noMarks": "Nothing is marked yet.",
+    "area": "Area",
+    "selection": "Selection",
+    "page": "Page {{page}}",
+    "remove": "Remove",
+    "clear": "Clear all",
+    "undo": "Undo mark",
+    "redo": "Redo mark",
+    "apply": "Apply redactions…",
+    "appliedTitle": "Removed from the document",
+    "applied": {
+      "glyphs": "Characters",
+      "images": "Image areas",
+      "imagesDropped": "Images removed whole",
+      "shapes": "Drawings",
+      "annotations": "Annotations",
+      "strings": "Mentions in metadata"
+    },
+    "sanitizeHeading": "Sanitize",
+    "sanitizeHint": "Remove what a file carries besides its pages.",
+    "option": {
+      "metadata": "Metadata (author, title, XMP)",
+      "scripts": "JavaScript and actions",
+      "attachments": "Embedded files and attachments",
+      "comments": "Comments and annotations",
+      "hiddenContent": "Hidden text and layers"
+    },
+    "sanitize": "Sanitize",
+    "sanitizedTitle": "Removed by sanitizing",
+    "sanitized": {
+      "metadata": "Metadata",
+      "scripts": "Scripts and actions",
+      "attachments": "Attachments",
+      "comments": "Comments",
+      "hidden": "Hidden items"
+    }
+  },
+  "redactDialog": {
+    "title": "Apply redactions?",
+    "body": "This removes the marked content from the document: the text, image pixels, drawings, and annotations under {{marks}} marked areas, and any mention of the marked text in its metadata. A black box covers each area. You can undo this until you save; once saved, it cannot be undone.",
+    "confirm": "Apply redactions",
+    "cancel": "Cancel"
   }
 }

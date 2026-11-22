@@ -623,3 +623,33 @@ fn every_text_block_of_the_corpus_can_be_redacted_and_leaves_nothing_readable() 
     }
     assert!(redacted > 60, "only {redacted} blocks were exercised");
 }
+
+#[test]
+fn sanitizing_the_whole_corpus_changes_no_visible_text_and_keeps_every_file_sound() {
+    let manifest = manifest();
+    let mut sanitized = 0;
+    for fixture in &manifest.fixtures {
+        if fixture.damaged || fixture.password.is_some() || fixture.pages.is_some_and(|p| p > 50) {
+            continue;
+        }
+        let document = engine().open_file(&fixture.file(), None).expect("opens");
+        let (after, bytes, _) = document
+            .with_sanitized(SanitizeOptions::default())
+            .unwrap_or_else(|err| panic!("{}: {err}", fixture.name()));
+        assert_eq!(after.page_count(), document.page_count(), "{}", fixture.name());
+        for page in 0..document.page_count().min(3) {
+            assert_eq!(text_of(&after, page), text_of(&document, page), "{} page {page}", fixture.name());
+        }
+        let path = scratch("corpus-sanitized.pdf");
+        std::fs::write(&path, &*bytes).expect("write");
+        let output = Command::new("qpdf").arg("--check").arg(&path).output().expect("qpdf runs");
+        assert!(
+            matches!(output.status.code(), Some(0 | 3)),
+            "{}: {}",
+            fixture.name(),
+            String::from_utf8_lossy(&output.stdout)
+        );
+        sanitized += 1;
+    }
+    assert!(sanitized > 15, "only {sanitized} files were exercised");
+}

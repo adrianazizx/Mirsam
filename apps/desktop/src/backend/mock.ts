@@ -14,6 +14,8 @@ import type {
   Priority,
   RecentFile,
   RecoveryInfo,
+  RedactHit,
+  RedactPreset,
   RenderedPage,
   SearchHit,
   SearchOptions,
@@ -293,6 +295,47 @@ function outcome(documentId: number, change: MockState["change"]): EditOutcome {
     modified: history ? history.at !== history.saved : false,
     pagesChanged: change === "pages",
   };
+}
+
+/** The presets as the engine runs them, on text whose Arabic-Indic digits are Western. */
+const PRESET_PATTERNS: Record<RedactPreset, RegExp> = {
+  email: /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu,
+  phone: /(?:\+|\b00)?[0-9][0-9 ().-]{6,18}[0-9]/gu,
+  iban: /\b[a-z]{2}[0-9]{2}(?: ?[a-z0-9]{4}){2,7}(?: ?[a-z0-9]{1,3})?\b/giu,
+  idNumber: /\b[0-9]{9,14}\b/gu,
+  cardNumber: /\b(?:[0-9][ -]?){12,18}[0-9]\b/gu,
+};
+
+/** Finds a preset's matches line by line (the mock has no real text; the shape is the engine's). */
+function findPreset(documentId: number, preset: RedactPreset): RedactHit[] {
+  const hits: RedactHit[] = [];
+  const pageCount = pagesOf(documentId).length;
+  for (let page = 0; page < pageCount; page += 1) {
+    for (const block of textLayer(page).blocks) {
+      for (const line of block.lines) {
+        // Arabic-Indic and Persian digits are folded one for one, so indices still line up.
+        const folded = line.text
+          .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+          .replace(/[\u06f0-\u06f9]/g, (c) => String(c.charCodeAt(0) - 0x06f0));
+        for (const match of folded.matchAll(PRESET_PATTERNS[preset])) {
+          const start = match.index ?? 0;
+          const end = start + match[0].length;
+          const rects = line.spans
+            .filter((span) => span.rect && span.start < end && start < span.end)
+            .map((span) => span.rect)
+            .filter((rect) => rect !== null);
+          hits.push({
+            page,
+            text: line.text.slice(start, end),
+            before: line.text.slice(Math.max(0, start - 24), start),
+            after: line.text.slice(end, end + 24),
+            rects,
+          });
+        }
+      }
+    }
+  }
+  return hits;
 }
 
 function search(documentId: number, query: string, options: SearchOptions): SearchHit[] {
@@ -684,6 +727,35 @@ export const mockBackend: Backend = {
     const undone = history.states[history.at]?.change ?? "pages";
     history.at -= 1;
     return outcome(documentId, undone);
+  },
+  findRedactions: async (documentId, pattern) => {
+    if (pattern.kind === "preset")
+      return { hits: findPreset(documentId, pattern.preset), truncated: false };
+    const hits = search(documentId, pattern.query, pattern.options).map((hit) => ({
+      page: hit.page,
+      text: hit.context.matched,
+      before: hit.context.before,
+      after: hit.context.after,
+      rects: hit.rects,
+    }));
+    return { hits, truncated: false };
+  },
+  applyRedactions: async (documentId, marks) => {
+    if (marks.length === 0) throw { code: "invalid_edit", detail: "no areas to redact" };
+    const state = stateOf(documentId);
+    // The mock draws no pages' content, so there is nothing to remove: it only takes the step.
+    const edit = pushState(documentId, { ...state, change: "pages" });
+    const report = {
+      pages: new Set(marks.map((mark) => mark.page)).size,
+      counts: { glyphs: 0, imagesBlanked: 0, imagesDropped: 0, paths: 0, hidden: 0 },
+      annotations: 0,
+      strings: 0,
+    };
+    return { edit, report };
+  },
+  sanitizeDocument: async (documentId) => {
+    const edit = pushState(documentId, { ...stateOf(documentId), change: "pages" });
+    return { edit, report: { metadata: 0, scripts: 0, attachments: 0, comments: 0, hidden: 0 } };
   },
   addMarkup: async (documentId, kind, pages) => {
     if (pages.length === 0) throw { code: "invalid_edit", detail: "nothing marked" };
