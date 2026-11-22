@@ -95,7 +95,7 @@ layout(text: &str, spans: &[Span], fonts: &[FontFace], style: &ParagraphStyle)
 ## Verified
 
 `cargo test -p safha-core --test typeset --test typeset_pdf`, plus unit tests in
-`typeset/itemize.rs`. Fonts: Amiri, IBM Plex Sans (variable), IBM Plex Sans Arabic, Noto Naskh
+`typeset/itemize.rs` and `typeset/matching.rs`. Fonts: Amiri, IBM Plex Sans (variable), IBM Plex Sans Arabic, Noto Naskh
 Arabic (variable), all OFL, from `assets/fonts/`.
 
 - **Every layout** is checked for:
@@ -155,13 +155,57 @@ are noisy:
 The spec's typing budget is 32 ms per keystroke (§11). Laying out a whole paragraph again on
 every keystroke takes about 3% of it at 1,200 characters.
 
+## Fonts: subsets and matching
+
+Added in the same session, in the same module.
+
+**Subsets** (`subset_fonts`).
+- Each font a layout uses is cut to its glyphs with `subsetter` 0.2.6 (typst; MIT /
+  Apache-2.0; released 2026-06), and a variable font is instanced at the face's variation.
+  PDF has no variable fonts, and the bundled Noto and Plex faces are variable.
+- The subset has no `cmap`, and its glyph ids are the CIDs for an identity CIDToGIDMap.
+- Per glyph: its `/W` width at the instance, and the text it alone draws (for ToUnicode).
+  Glyphs that only draw part of a cluster get no text.
+- Instancing brings fontations' `skrifa` and `write-fonts`, and linebender's `kurbo`
+  (MIT / Apache-2.0). That puts a second `read-fonts` version (0.39) beside harfrust's 0.47.
+- **Verified:** every end-to-end case is written twice, with whole fonts and with subsets. The
+  subsets draw identical pixels and extract the same text, from files 33–44× smaller (Amiri:
+  435 KB → 10–13 KB; two variable fonts: 853 KB → 21 KB). A `wght` 700 instance embeds as bold
+  (more ink), with `/W` widths within kerning of the layout's advances. No subset carries
+  variation tables.
+
+**Matching** (`match_font`, spec §7 step 4).
+- Candidates are `FontFace`s. Their traits come from the name table, `OS/2` (PANOSE, IBM
+  class, weight, slant) and `post`, with a short table of common Arabic and Latin families
+  whose fonts leave the classification empty.
+- The request comes from the PDF's `/BaseFont` (subset tag stripped; style words such as
+  "BoldItalic" and suffixes such as "PSMT" parsed) and the descriptor's `/FontWeight`, `/Flags`
+  and `/ItalicAngle`.
+- Ranking:
+  1. a font that draws every character of the paragraph;
+  2. the same family;
+  3. a related family ("IBMPlexSans" → "IBM Plex Sans Arabic");
+  4. serif, sans, monospace;
+  5. weight and slant.
+- The result says `Exact`, `SameFamily` or `Substitute`, for the editor's "Font substituted"
+  indicator.
+- **Verified** on the seven bundled fonts:
+  - exact and same-family matches;
+  - Windows' Naskh faces → a serif Naskh, and its sans faces → a sans Arabic, keeping bold;
+  - IBM Plex Sans asked for with Arabic text → IBM Plex Sans Arabic;
+  - descriptor weight;
+  - a bold variable instance.
+
 ## Not done, and known limits
 
 - **Each piece is shaped twice:** once whole, to measure, and once per line, exactly. The
   second pass could reuse the first where harfrust marks the glyphs safe to break.
 - **Greedy line filling.** No hyphenation, tabs, letter- or word-spacing input, kashida (P2),
   or vertical text.
-- **Fonts come from the caller.** Matching and discovery are the next step (spec §7, step 4).
+- **Fonts come from the caller.** Matching ranks the fonts it is given. Not done yet:
+  - discovering installed fonts;
+  - reusing the PDF's own embedded font when it has every glyph (spec §7, step 4);
+  - comparing metrics from `/Widths`.
 - **Complex-script line breaking** (Thai, Lao, Khmer, Myanmar) needs ICU4X's dictionary or
   LSTM data. That data is not built in: a size decision for when those scripts matter.
 - **Bidi data is `unicode-bidi`'s own tables** (an older Unicode version than ICU 2.4's). The
@@ -172,8 +216,8 @@ every keystroke takes about 3% of it at 1,200 characters.
   - The test writer's `/ActualText` around such a cluster round-trips single letters, but the
     two-mark cluster extracts twice through PDFium.
   - ADR 0005's extraction findings apply.
-- **Variable fonts** are shaped at an instance. Embedding needs that instance as a static font
-  (the subsetting step).
+- **Variable fonts** are shaped at an instance and embedded as that instance (above). CFF2
+  fonts are converted to TrueType by the subsetter; none is bundled, so that path is untested.
 
 ## Consequences
 

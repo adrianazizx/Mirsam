@@ -503,3 +503,88 @@ fn spans_set_size_and_font_per_stretch() {
         assert!(layout(text, &bad, &fonts, &unbounded()).is_err(), "{bad:?}");
     }
 }
+
+// ---------------------------------------------------------------- Font matching
+
+use safha_core::typeset::{FontRequest, MatchKind, match_font};
+
+const BUNDLED: [&str; 7] = [
+    "Amiri-Regular.ttf",
+    "Amiri-Bold.ttf",
+    "IBMPlexSans-VF.ttf",
+    "IBMPlexSansArabic-Regular.ttf",
+    "IBMPlexSansArabic-SemiBold.ttf",
+    "NotoNaskhArabic-VF.ttf",
+    "NotoSansArabic-VF.ttf",
+];
+
+fn bundled() -> Vec<FontFace> {
+    BUNDLED.iter().map(|f| font(f)).collect()
+}
+
+const ARABIC: &str = "السلام عليكم ورحمة الله";
+
+fn pick(name: &str, text: &str, fonts: &[FontFace]) -> (usize, MatchKind, bool) {
+    let request = FontRequest::from_pdf(name, None, None, None, None);
+    let m = match_font(&request, text, fonts).unwrap_or_else(|| panic!("no match for {name}"));
+    (m.index, m.kind, m.covers_text)
+}
+
+#[test]
+fn matching_prefers_the_same_family_and_style() {
+    let fonts = bundled();
+    assert_eq!(pick("ABCDEF+Amiri-Bold", ARABIC, &fonts), (1, MatchKind::Exact, true));
+    assert_eq!(pick("Amiri-Regular", ARABIC, &fonts), (0, MatchKind::Exact, true));
+    // No bold italic Amiri here: the bold, flagged as another style.
+    assert_eq!(pick("Amiri-BoldItalic", ARABIC, &fonts), (1, MatchKind::SameFamily, true));
+    // Bold asked, SemiBold is the nearest weight of the family.
+    assert_eq!(pick("IBMPlexSansArabic-Bold", ARABIC, &fonts), (4, MatchKind::SameFamily, true));
+}
+
+#[test]
+fn matching_substitutes_by_classification() {
+    let fonts = bundled();
+    // Windows' Naskh faces become a serif Naskh here; its sans faces a sans Arabic.
+    for name in ["TraditionalArabic", "ABCDEF+SimplifiedArabic-Bold", "TimesNewRomanPSMT"] {
+        let (index, kind, covers) = pick(name, ARABIC, &fonts);
+        assert_eq!(kind, MatchKind::Substitute, "{name}");
+        assert!(covers, "{name}");
+        assert_eq!(fonts[index].traits().serif, Some(true), "{name} matched {}", BUNDLED[index]);
+    }
+    for name in ["Tahoma", "Arial,Bold", "SegoeUI"] {
+        let (index, _, covers) = pick(name, ARABIC, &fonts);
+        assert!(covers);
+        assert_eq!(fonts[index].traits().serif, Some(false), "{name} matched {}", BUNDLED[index]);
+    }
+    // "Arial,Bold" keeps the weight: the SemiBold sans, not a regular.
+    assert_eq!(pick("Arial,Bold", ARABIC, &fonts).0, 4);
+}
+
+#[test]
+fn matching_never_picks_a_font_that_cannot_draw_the_text() {
+    let fonts = bundled();
+    // IBM Plex Sans has no Arabic: its Arabic relative is chosen instead.
+    let (index, kind, covers) = pick("IBMPlexSans-Regular", ARABIC, &fonts);
+    assert_eq!((index, kind, covers), (3, MatchKind::Substitute, true));
+    // For English it is the exact match.
+    assert_eq!(pick("IBMPlexSans-Regular", "Quarterly Report", &fonts), (2, MatchKind::Exact, true));
+    // The matched font sets the whole paragraph without .notdef.
+    let text = "اشتريت 3 أجهزة iPhone 15 Pro";
+    let (index, _, covers) = pick("ABCDEF+Mystery", text, &fonts);
+    assert!(covers);
+    let out = lay(text, std::slice::from_ref(&fonts[index]), &unbounded());
+    assert!(out.runs().all(|r| r.font == 0 && r.glyphs.iter().all(|g| g.id != 0)));
+}
+
+#[test]
+fn matching_uses_descriptor_weight_slant_and_variable_instances() {
+    let fonts = bundled();
+    // An unknown family, FontWeight 600 and the Serif flag clear: weight decides.
+    let request = FontRequest::from_pdf("ABCDEF+Unknown", None, Some(600.0), Some(32), Some(0.0));
+    assert_eq!(match_font(&request, ARABIC, &fonts).map(|m| m.index), Some(4));
+    // A bold instance of a variable font matches a bold request exactly.
+    let plex = font("IBMPlexSans-VF.ttf");
+    let candidates =
+        vec![plex.clone(), plex.with_variations(&[(*b"wght", 700.0)]).unwrap_or_else(|e| panic!("{e}"))];
+    assert_eq!(pick("IBMPlexSans-Bold", "Quarterly Report", &candidates), (1, MatchKind::Exact, true));
+}

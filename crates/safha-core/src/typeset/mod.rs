@@ -27,6 +27,7 @@
 mod font;
 mod itemize;
 mod lines;
+mod matching;
 mod shape;
 mod subset;
 
@@ -34,6 +35,7 @@ use std::ops::Range;
 
 pub use font::{FontFace, LineMetrics};
 pub use lines::layout;
+pub use matching::{FontMatch, FontRequest, FontTraits, MatchKind, match_font};
 pub use subset::{FontSubset, SubsetGlyph, subset_fonts};
 
 /// Why a layout could not be made.

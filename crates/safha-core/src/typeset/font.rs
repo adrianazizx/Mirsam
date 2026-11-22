@@ -112,6 +112,10 @@ impl FontFace {
     pub(super) fn shaper_font(&self) -> &harfrust::Font {
         &self.font
     }
+
+    pub(super) fn variation_list(&self) -> &[(Tag, f32)] {
+        &self.variations
+    }
 }
 
 impl std::fmt::Debug for FontFace {
