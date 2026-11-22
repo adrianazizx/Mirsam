@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             block.width,
             block.height,
             if block.editable { "" } else { " [not editable]" },
-            if block.flattened { " [mixed]" } else { "" },
+            if block.styled { " [styled]" } else { "" },
             block.font,
             block.text
         );
