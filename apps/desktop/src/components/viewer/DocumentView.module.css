@@ -126,7 +126,8 @@
   cursor: cell;
 }
 
-[data-viewer-content][data-mode="textBox"] {
+[data-viewer-content][data-mode="textBox"],
+[data-viewer-content][data-mode="text"] {
   cursor: text;
 }
 

@@ -7,8 +7,6 @@
 //! drawn upright as the page is displayed: on a turned page the appearance
 //! is turned back by the page's `/Rotate`, as a note's icon is.
 
-use std::sync::OnceLock;
-
 use super::{Appearance, check_color, check_contents, in_range, num, text_string};
 use crate::error::{Error, Result};
 use crate::pdf::text::{NamedFont, draw_text};
@@ -31,45 +29,14 @@ pub struct TextBox {
     pub color: [f32; 3],
 }
 
-/// The bundled faces (OFL; the UI's own families): IBM Plex Sans at its
-/// regular weight, and IBM Plex Sans Arabic.
-fn faces() -> Result<&'static (NamedFont, NamedFont)> {
-    static FACES: OnceLock<std::result::Result<(NamedFont, NamedFont), &'static str>> = OnceLock::new();
-    FACES
-        .get_or_init(|| {
-            let latin = FontFace::from_bytes(
-                include_bytes!("../../../../assets/fonts/IBMPlexSans-VF.ttf").to_vec(),
-                0,
-            )
-            .and_then(|face| face.with_variations(&[(*b"wght", 400.0), (*b"wdth", 100.0)]))
-            .map_err(|err| err.code())?;
-            let arabic = FontFace::from_bytes(
-                include_bytes!("../../../../assets/fonts/IBMPlexSansArabic-Regular.ttf").to_vec(),
-                0,
-            )
-            .map_err(|err| err.code())?;
-            Ok((
-                NamedFont { face: latin, name: "IBMPlexSans" },
-                NamedFont { face: arabic, name: "IBMPlexSansArabic" },
-            ))
-        })
-        .as_ref()
-        .map_err(|code| Error::Typeset(code))
-}
-
 /// Whether the text's first strong character is right to left (UAX #9 P2).
 fn starts_rtl(text: &str) -> bool {
-    matches!(unicode_bidi::get_base_direction(text), unicode_bidi::Direction::Rtl)
+    crate::fonts::starts_rtl(text)
 }
 
-/// The fonts for a text: its own script's family first, the other as fallback.
+/// The fonts for a text: IBM Plex, its own script's face first (ADR 0019).
 fn fonts_for(text: &str) -> Result<Vec<NamedFont>> {
-    let (latin, arabic) = faces()?;
-    Ok(if starts_rtl(text) {
-        vec![arabic.clone(), latin.clone()]
-    } else {
-        vec![latin.clone(), arabic.clone()]
-    })
+    crate::fonts::for_text(crate::fonts::FontFamily::Sans, text)
 }
 
 fn check(contents: &str, size: f32, width: f32) -> Result<()> {
@@ -151,6 +118,7 @@ impl TextBox {
             &fonts,
             (TEXT_BOX_PADDING, height - TEXT_BOX_PADDING),
             self.color,
+            "F",
         )?;
 
         let turn = (rotate.rem_euclid(360) as f32).to_radians();

@@ -9,15 +9,19 @@
 //! ([`text`]), search it ([`search`]), read the outline and page labels, map
 //! page space to the displayed page ([`view`]), edit pages ([`edit`]) and
 //! annotations ([`annotate`]) as incremental updates, save ([`save`]), keep
-//! local app state ([`store`]), and lay out text for writing ([`typeset`]).
+//! local app state ([`store`]), lay out text for writing ([`typeset`]), and
+//! write it into pages ([`text_edit`]) in the bundled families ([`fonts`]).
 
 pub mod annotate;
 mod bitmap;
+pub mod block_edit;
+pub mod blocks;
 pub mod catalog;
 mod document;
 pub mod edit;
 mod engine;
 mod error;
+pub mod fonts;
 pub mod outline;
 mod pdf;
 pub mod recovery;
@@ -26,6 +30,7 @@ pub mod save;
 pub mod search;
 pub mod store;
 pub mod text;
+pub mod text_edit;
 pub mod typeset;
 pub mod view;
 

@@ -3666,6 +3666,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spike-editor-surface"
+version = "0.0.1"
+dependencies = [
+ "safha-core",
+ "serde_json",
+]
+
+[[package]]
 name = "spike-pdfium-edit"
 version = "0.0.1"
 dependencies = [

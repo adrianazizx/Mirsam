@@ -54,6 +54,7 @@
   --size-unlock-panel: 400px;
   --size-selection-toolbar-span: 480px;
   --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
+  --size-swatch: 22px; /* a colour choice */
   --border-width: 1px;
   --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;
