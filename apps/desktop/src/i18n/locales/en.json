@@ -117,7 +117,9 @@
       "place": "Place a text box"
     },
     "text": {
-      "editBlock": "Edit a paragraph of page text"
+      "editBlock": "Edit a paragraph of page text",
+      "bold": "Bold",
+      "italic": "Italic"
     },
     "ink": {
       "add": "Add ink",
@@ -377,7 +379,15 @@
     "extracted": "The pages were saved as {{name}}.",
     "split": "The document was split into {{count}} files.",
     "fontSubstituted": "Font substituted: {{from}} → {{to}}.",
-    "textNotEditable": "This text cannot be edited here.",
+    "fontSubstitutedUnnamed": "Font substituted: set in {{to}}.",
+    "textNotEditable": {
+      "shared": "This text is drawn together with other text, so it can't be edited on its own yet.",
+      "unreadable": "This text can't be read reliably, so it can't be edited. Run OCR on it first.",
+      "font": "This text's font can't be read for editing yet.",
+      "rotated": "Rotated text can't be edited yet.",
+      "encrypted": "Text in encrypted files can't be edited yet.",
+      "unsupported": "This text is drawn in a way that can't be edited yet."
+    },
     "exportedImages": "{{count}} image files were written.",
     "exportedText": "The text was saved as {{name}}.",
     "compressedSaved": "The compressed copy was saved as {{name}}."
@@ -602,8 +612,9 @@
     "placeholder": "Type the text…",
     "ownFont": "Set in the paragraph's own font ({{font}}) where it has the letters.",
     "substituted": "Font substituted: the paragraph is set in a bundled font instead of {{font}}.",
-    "flattened": "This paragraph mixes fonts, sizes or colours; editing sets it in one.",
-    "familyAuto": "Automatic"
+    "styled": "Its bold, italic, sizes and colours are kept; text you type takes the style of the text before it.",
+    "familyAuto": "Automatic",
+    "formatting": "Formatting"
   },
   "forms": {
     "loading": "Reading the form…",

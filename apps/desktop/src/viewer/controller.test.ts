@@ -80,6 +80,14 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
       updates.push(keep);
     },
+    // Page 0's text: a paragraph to edit, and text in a font that cannot be read.
+    pageTextBlocks: async (_doc: number, page: number) =>
+      page === 0
+        ? [
+            { index: 0, x: 20, y: 20, width: 200, height: 30, editable: true, reason: null },
+            { index: 1, x: 20, y: 100, width: 200, height: 30, editable: false, reason: "font" },
+          ]
+        : [],
   } as unknown as Backend;
 
   const container = document.createElement("div");
@@ -95,6 +103,9 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onErase: vi.fn(),
     onPlaceNote: vi.fn(),
     onPlaceTextBox: vi.fn(),
+    onPlaceText: vi.fn(),
+    onEditBlock: vi.fn(),
+    onBlockRefused: vi.fn(),
   };
   const viewer = new ViewerController({
     backend,
@@ -442,6 +453,36 @@ describe("viewer controller", () => {
     );
     expect(viewer.noteEditorHost.hidden).toBe(false);
     expect(callbacks.onPlaceNote).toHaveBeenCalledTimes(1);
+    viewer.destroy();
+  });
+
+  it("edits the page's text where pressed, says why where it cannot, and places new text elsewhere", async () => {
+    mode = "text";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const press = async (x: number, y: number) => {
+      for (const type of ["pointerdown", "pointerup"]) {
+        content.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+        );
+      }
+      await settle();
+    };
+    await press(50, 30);
+    expect(callbacks.onEditBlock).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 0 }),
+    );
+    // On text it cannot edit: the reason, and no new text on top of it.
+    await press(50, 110);
+    expect(callbacks.onBlockRefused).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: "font" }),
+    );
+    expect(callbacks.onPlaceText).not.toHaveBeenCalled();
+    await press(50, 300);
+    expect(callbacks.onPlaceText).toHaveBeenCalledTimes(1);
+    expect(callbacks.onEditBlock).toHaveBeenCalledTimes(1);
     viewer.destroy();
   });
 

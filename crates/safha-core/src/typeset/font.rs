@@ -82,6 +82,20 @@ impl FontFace {
     }
 
     /// The raw font file, for embedding and subsetting.
+    /// Whether the font has table `tag` (`GSUB`, `GPOS`, …).
+    pub fn has_table(&self, tag: &[u8; 4]) -> bool {
+        read_fonts::FontRef::from_index(&self.data, self.index)
+            .is_ok_and(|font| font.table_data(read_fonts::types::Tag::new(tag)).is_some())
+    }
+
+    /// The font's embedding permissions, `OS/2.fsType`; `None` when it has
+    /// no `OS/2` table (subsets often leave it out).
+    pub fn embedding_permissions(&self) -> Option<u16> {
+        use read_fonts::TableProvider;
+        let font = read_fonts::FontRef::from_index(&self.data, self.index).ok()?;
+        font.os2().ok().map(|os2| os2.fs_type())
+    }
+
     pub fn data(&self) -> &[u8] {
         &self.data
     }

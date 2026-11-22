@@ -29,6 +29,7 @@ mod itemize;
 mod library;
 mod lines;
 mod matching;
+mod presentation;
 mod shape;
 mod subset;
 
@@ -38,6 +39,7 @@ pub use font::{FontFace, LineMetrics};
 pub use library::{Coverage, FontEntry, FontLibrary, system_font_dirs};
 pub use lines::layout;
 pub use matching::{FontMatch, FontRequest, FontTraits, MatchKind, match_font};
+pub use presentation::{logical_text, presentation_forms, presentation_forms_in};
 pub use subset::{FontSubset, SubsetGlyph, subset_fonts};
 
 /// Why a layout could not be made.
@@ -119,11 +121,14 @@ pub struct Span {
     /// BCP 47 language tag, e.g. `ar`, `fa`, `ur`: selects language-specific
     /// glyph forms (Persian and Urdu digits) where the font has them.
     pub language: Option<String>,
+    /// Fonts to try, in order, for characters `font` lacks, before the rest
+    /// of the list: a bold span's bold faces in other scripts.
+    pub fallbacks: Vec<usize>,
 }
 
 impl Span {
     pub fn new(range: Range<usize>, font: usize, size: f32) -> Self {
-        Span { range, font, size, language: None }
+        Span { range, font, size, language: None, fallbacks: Vec::new() }
     }
 }
 

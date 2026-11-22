@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session M6-a: headers/footers, page numbers, watermarks, image and text export, compression; on top of `main` after M5-b, M5-c and M4 pipeline slices 1 and 3).
+Last updated: 2026-11-22 (session M6-a: headers/footers, page numbers, watermarks, image and text export, compression; on top of `main` after session 16 (M3 closed), M5-a/b/c and M4 pipeline slices 1 and 3).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -44,6 +44,16 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     ToUnicode conventions. Acrobat Reader and pdf.js are untested — testing Acrobat needs it
     installed. The spec's §7 acceptance test on "another viewer" needs rewording once that is
     measured (ADR 0005).
+
+    **Measured at M3's exit (session 16, `docs/demos/m3.md`).** For text this app writes:
+    - **PDFKit (Preview):** copies Arabic, including ligatures and mixed sentences, exactly.
+    - **PDFium (Chrome) and Poppler:** reverse ligatures' letters ("الموظفني"), and PDFium
+      reverses Latin runs inside Arabic. Both do worse on Chrome's own files.
+    - **`/ActualText` on ligatures:** fixed some of PDFium's words and reversed others; Poppler
+      ignored it.
+
+    The decision is still yours: which viewer's convention to follow, or whether to accept
+    this.
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
 12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
@@ -73,6 +83,15 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     own baseline encoder (ADR 0050), checked against PDFium's decoder. Only a **decoder** is still
     needed — for redacting scans and for downsampling JPEG images when compressing (scans are
     mostly JPEG, so it is compression's biggest gap). `zune-jpeg` (decoder only) is the candidate.
+16. **M3's exit, by hand** (`docs/demos/m3.md`):
+    - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
+      cannot be driven here);
+    - type into the paragraph editor with real input methods: macOS and Windows Arabic
+      keyboards, press-and-hold, the emoji picker, dictation.
+
+    Also, when this Mac is idle, re-run the scroll and zoom benchmark. At M3's exit it ran under
+    a load average of 85 (another session's OCR benchmark and builds), and its numbers are not
+    evidence.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -333,7 +352,10 @@ M2 closed in session 8 at the owner's go-ahead, with these items carried forward
 - **Autosave:** a single running copy is not enforced.
 - **From M1:** extreme pinch-out, and printing on screen (owner item 13).
 
-## M3 — Text engine — started in session 9 on branch `m3-text` (groundwork merged to `main` ahead of M2)
+## M3 — Text engine — done; closed on `m3-text` (PR #8) with the open items below
+
+Closed in session 16 at the owner's go-ahead, with the exit test's gaps stated rather than
+waited on. Demo script: `docs/demos/m3.md`.
 
 The groundwork that did not depend on M2 was built on branch `pomidor/m3-text-engine-3c22b6`
 in parallel with M2 and merged by pull request at the owner's request. M3 proper started in
@@ -358,7 +380,7 @@ Plan, in order:
    has codes for, otherwise the whole paragraph in a bundled family with a "Font substituted"
    note and a Sans/Naskh choice; unused fonts of our own drop out. The Edit tool opens a
    paragraph when pressed.
-6. **Exit test:** spec §7's four acceptance tests.
+6. ~~**Exit test**~~ **done with stated gaps (session 16):** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
       `spikes/pdfium-regenerate/`).
@@ -394,7 +416,7 @@ Plan, in order:
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
       M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
-      block's existing text objects (for in-place editing) is still to do. Must solve:
+      block's existing text objects is done (`block_edit`, by byte range, ADR 0023). Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
@@ -417,7 +439,64 @@ Plan, in order:
       - Gaps (ADR 0023 "Honest limits"): bold/italic, indents and tabs, mixed styles flatten,
         no kerning in reused fonts, forms/encrypted/Type 3, installed-font substitutes, the
         editor field does not yet sit over the paragraph in its own width and size.
-- [ ] Exit test: all acceptance tests in spec §7
+      - Session 11 (ADR 0023 amendment):
+        - a press on text that cannot be edited says why, in English and Arabic: shared, needs
+          OCR, an unreadable font (Type 3), rotated, encrypted, or unsupported;
+        - such text is listed as refused areas, so no new text lands on top of it;
+        - the automatic substitute is the closest of five bundled faces (Noto Naskh Arabic and
+          Noto Sans Arabic added), by name, serif flag, and the font's own `/Widths`.
+      - Session 12 (ADR 0024): **styled runs.**
+        - Bold, italic, sizes and colours inside a paragraph are kept through edits.
+        - Typed text takes the style before it; typing over a word keeps its style.
+        - Each run is written in its own font when it can be, else in a bundled face at its
+          weight (bold faces added), slanted for italic.
+        - Still to do: weights other than regular and bold.
+      - Session 13 (ADR 0025): **bold and italic while editing.**
+        - The paragraph field is the browser's own rich-text editing, held to bold and italic.
+        - `text.bold` and `text.italic` (Cmd/Ctrl+B and I, and B and I buttons) run its own
+          commands, so its undo covers them.
+        - The edit carries marks, served by the page's own bold and italic fonts of the same
+          family, or by bundled faces.
+        - Not yet settable from the editor: underline, size, colour.
+      - Session 14 (ADR 0026): **the PDF's own embedded fonts.**
+        - An edited paragraph is set in its fonts' embedded TrueType or OpenType programs
+          when they have the glyphs, between reusing codes and bundled faces.
+        - Arabic from Chrome's subsets (no `GSUB`) works through presentation forms.
+        - `fsType` is respected.
+        - Still to do: Type 1 and bare CFF programs.
+      - Session 15 (ADR 0023 amendment): **tashkeel.**
+        - Chrome's vocalised Arabic and this app's own read in place exactly: no stray spaces,
+          letters in order, marks on their letters.
+        - A vocalised paragraph's marks go with it when it is edited or removed.
+- [~] **Exit test: all acceptance tests in spec §7** (session 16, `tests/m3_exit.rs`,
+      `docs/demos/m3.md`).
+      - **All four pass:** typo, Arabic insert, mixed sentence, round trip. Checked against
+        PDFium's, Poppler's and PDFKit's rendering and text, where installed.
+      - **Gaps:**
+        - Acrobat Reader is a check by hand;
+        - copying Arabic ligatures and mixed lines is exact in PDFKit and in this app, but not
+          in PDFium (Chrome) or Poppler (owner item 10, measured);
+        - the scroll benchmark is to be re-run on an idle machine (owner item 16).
+      - **Typing** in the paragraph field takes 17–18 ms a keystroke (median), within the 32 ms
+        budget.
+
+M3 closed in session 16 at the owner's go-ahead, with these items carried forward:
+
+- **The exit test by hand** (owner item 16): Acrobat Reader, real input methods, and the scroll
+  and zoom benchmark on an idle machine.
+- **Copying our Arabic in Chrome and Poppler** (owner item 10): they reverse ligatures' letters
+  and print mixed lines in visual order, in Chrome's own files too.
+- **Editing:**
+  - underline, sizes and colours are not settable from the editor;
+  - only regular and bold weights;
+  - indents, lists and tab stops are not kept;
+  - reused fonts lose kerning;
+  - a paragraph that grows can overlap the text below it;
+  - direction is decided by the majority of letters.
+- **Fonts:** Type 1 and bare CFF programs are not re-set; installed fonts are not offered as
+  substitutes (comes with the font picker).
+- **Not edited:** text in forms, encrypted files, Type 3 and CMap-encoded fonts. Each is refused
+  with its reason.
 
 ## M4 — OCR (quality-first)
 
@@ -556,7 +635,7 @@ Plan, in order:
 
 ### Session M6-a — 2026-11-22 (Milestone 6: stamps, exports, compression; parallel to M4/M5)
 
-Branch `pomidor/m6-exports-a29095`, from `main` after M4 runtime; `main` merged in as it moved (M5-b encryption, M4 pipeline slices 1 and 3, M5-c forms).
+Branch `pomidor/m6-exports-a29095`, from `main` after M4 runtime; `main` merged in as it moved (M5-b encryption, M4 pipeline slices 1 and 3, M5-c forms, session 16's M3 close).
 Stayed out of OCR, forms/signatures and encryption code, as asked.
 
 - **ADR 0050** records the approach. In short: headers, footers, page numbers and watermarks are
@@ -601,6 +680,157 @@ Stayed out of OCR, forms/signatures and encryption code, as asked.
   report pass. The end-to-end shell self-test was not re-run (no shell window code changed).
 - **Not done here:** images/links/object editing and find & replace (other M6 items); OCR review
   items (depend on M4).
+
+### Session 16 — 2026-11-22 (Milestone 3's exit test)
+
+- **`tests/m3_exit.rs`:** spec §7's four acceptance tests, each clause checked against every
+  viewer installed.
+  - PDFium's rendering and text (Chrome's engine) everywhere.
+  - Poppler (`pdftoppm`/`pdftotext`) where installed.
+  - PDFKit (`sips`, and `tests/support/pdfkit_text.swift`) on macOS.
+  - What cannot run says so.
+- **Results:** all four pass.
+  - **Typo:** no other paragraph moves; three engines draw the saved page identically outside
+    the paragraph; all read the fix.
+  - **Arabic insert:** a re-set word is drawn as Chrome drew it (width and ink within 5%); the
+    paragraph re-wraps right to left; PDFKit copies it exactly.
+  - **Mixed sentence:** in order in this app and PDFKit.
+  - **Round trip:** English, Arabic and an embedded-font heading, with no drift or duplicate
+    fonts.
+- **Measured:** PDFium and Poppler reverse ligatures' letters and mixed runs, in Chrome's own
+  files too. `/ActualText` on ligatures helped some words and broke others, so it was not
+  kept. Owner item 10 is updated.
+- **Self-test:** typing in the paragraph field is 17–18 ms a keystroke at the median (spec §11:
+  32 ms).
+- **Benchmark:** the scroll benchmark ran under a load average of 85 and is to be re-run (owner
+  item 16).
+- **Demo script:** `docs/demos/m3.md`.
+- **Milestone 3 closed** at the owner's go-ahead, with the gaps above carried forward rather than
+  the benchmark re-run first. `main` (M5-b: encryption and permissions) was merged in first.
+
+### Session 15 — 2026-11-22 (Milestone 3: tashkeel in paragraphs edited in place)
+
+- **Found:**
+  - Chrome gives a cluster's text to a zero-width mark glyph off the line and none to the
+    letter. The result was stray spaces, swapped letters, and lost letters.
+  - This app's own marks below the line formed lines of their own and attached to the wrong
+    letters.
+  - **No mark's operator was part of its paragraph:** edits left marks on the page.
+- **Fixed in `blocks`:**
+  - carriers take their letter's box and baseline;
+  - marks find their letter by drawing order (direction-aware) and take its baseline;
+  - every mark's operator belongs to its paragraph.
+- **Measured:** 33 of 126 fixture paragraphs read exactly, up from 26. Chrome's vocalised
+  page and this app's tashkeel (Amiri, Plex Sans Arabic) are exact.
+- **Tests:** three unit tests, and two integration tests (vocalised ground truth, and no
+  leftover ink after removing a vocalised paragraph, in Chrome's text and this app's).
+
+### Session 14 — 2026-11-22 (Milestone 3: the PDF's own embedded fonts, ADR 0026)
+
+- **What producers embed:** the fixtures' subsets were inspected.
+  - Chrome: TrueType with a `cmap` of presentation forms and ligatures, but no `GSUB`/`GPOS`.
+  - CoreText: a Mac Roman `cmap` only.
+  - harfrust has no Arabic fallback, so it gave `.notdef`.
+- **`typeset::presentation_forms_in`:**
+  - joined forms from ICU's joining types;
+  - lam-alef;
+  - Unicode's optional ligatures when the font has them;
+  - letters kept where a subset maps the isolated form by the letter.
+  - `logical_text` folds forms back for `/ToUnicode` and `/ActualText`.
+- **A new font source between page codes and bundled faces:**
+  - a paragraph is laid out in its fonts' embedded programs and re-embedded under their names;
+  - this needs the glyphs, `GPOS` for marks, and an `fsType` that allows it;
+  - `EditedBlock::source` reports it, through the shell to the UI.
+- **Plumbing:**
+  - `FontFace::has_table` and `embedding_permissions`;
+  - `FontInfo` keeps the program's place;
+  - `NamedFont` names can be a PDF's own.
+- **Tests:**
+  - Rust: unit tests for forms, ligatures and permissions; integration tests for Chrome's
+    Arabic heading re-set and shortened in its own program, a missing form and tashkeel
+    falling back, and Latin still embedding nothing.
+  - UI tests unchanged.
+
+### Session 13 — 2026-11-22 (Milestone 3: bold and italic commands in the paragraph editor, ADR 0025)
+
+- **The field:**
+  - The paragraph editor's field is a `contenteditable` held to text, line breaks, bold and
+    italic.
+  - Enter is a line break, pasted text is plain, and drops are refused.
+  - `richText` fills it from runs and reads it back (inline styles and WebKit's un-bold
+    included).
+- **Commands:**
+  - `text.bold` and `text.italic` (Cmd/Ctrl+B, Cmd/Ctrl+I) run the browser's own `bold` and
+    `italic`, so undo covers them.
+  - B and I toggle buttons keep the field's focus and show the selection's state.
+- **Engine:**
+  - `BlockEdit::marks` sets each character's bold and italic.
+  - A run that needs another style takes the page's font of the same family that has it
+    (Helvetica-Bold), else the paragraph is set in bundled faces.
+  - A style-only change is an edit.
+- **Tests:**
+  - Rust: own-font marks, bundled bold-italic, family key, UTF-16 marks.
+  - UI: rich text, the editor's buttons and marks in English and Arabic, registry gating and
+    style-only saves.
+  - Real-app self-test: an Arabic word made bold in the field with WebKit's command and read
+    back as a bold run (English light; Arabic dark on two fixtures).
+
+### Session 12 — 2026-11-22 (Milestone 3: styled runs in edited paragraphs, ADR 0024)
+
+- **Reading:**
+  - Every character of a paragraph keeps its font, size and colour through the
+    visual-to-logical reorder.
+  - The UI gets the runs (UTF-16 offsets, font, bold, italic, size, colour) and a `styled`
+    flag.
+  - Lines group into a paragraph when they share any font, not only the dominant one: a mostly
+    italic line no longer splits a paragraph.
+- **Editing:**
+  - The field's plain text is mapped onto the old runs by a character LCS.
+  - Kept characters keep their style; typing over a word takes its style; other typing takes
+    the style before it (after it at the start).
+- **Writing:**
+  - When every run's own font has codes for its text: each run in its font, with font and
+    colour switching inside the line, and justification at spaces.
+  - Otherwise, the closest bundled face per original font at the run's weight:
+    - bold faces added (Plex Sans and the Noto VFs at 700, Amiri Bold, Plex Sans Arabic
+      SemiBold);
+    - per-span fallbacks of the same weight in `typeset`;
+    - spans no longer carry a font across a style boundary;
+    - italic slanted 12° under an oblique name, so it reads back italic.
+- **Tests:**
+  - Unit tests for runs and restyling.
+  - Four integration tests on a Helvetica / Bold / Oblique page with a red word: runs read;
+    own-font edit; substituted edit kept over a second edit; Arabic over a bold word in a
+    bold Arabic face.
+  - A UI test of the styled note in English and Arabic.
+
+### Session 11 — 2026-11-22 (Milestone 3: main's in-place editor kept; reasons and closer substitutes ported)
+
+- **Two implementations met.**
+  - PR #8 (`m3-text`) and PR #9 (merged into `main`) each built M3's editor-surface spike,
+    page analysis and in-place editing, with opposite surface decisions: our own canvas, or a
+    native text field.
+  - At the owner's choice, `m3-text` merged `main` keeping main's tree whole (`4b7926c`); the
+    branch's own three commits stay in history only.
+  - What main lacked was then ported onto its design.
+- **Refusal reasons:**
+  - `block_edit::Refusal` replaces English strings: shared, unreadable (needs OCR), font,
+    rotated, encrypted, unsupported.
+  - Text that is not a paragraph (Type 3 fonts, rotated text, all text of encrypted pages) is
+    listed as refused areas after the paragraphs.
+  - A press there shows the reason, in English and Arabic, instead of placing new text on top.
+    On Chrome's Type 3 fixtures every line is covered.
+- **Closer substitutes:**
+  - Noto Naskh Arabic and Noto Sans Arabic are bundled.
+  - With the Plex and Amiri faces, they are ranked by `match_font`: coverage, name, serif
+    flag, and the font's `/Widths` for letters that do not join.
+  - The notice names the face, isolated from the sentence's direction.
+  - Sans and Naskh stay as the user's override.
+- **Tests:**
+  - Rust: 306 tests (new unit tests for width matching and area joining, and the refusal test
+    extended to encrypted and Type 3 pages).
+  - UI: 159 tests (a press on refused text; the substitute notice).
+  - Real-app self-test: English (light) and Arabic (dark, two fixtures).
 
 ### Session M5-c — 2026-11-22 (Milestone 5: form filling, Fill & Sign, signatures; parallel to M5 crypto and M6)
 

@@ -353,10 +353,31 @@ impl Document {
         Ok((bytes, report))
     }
 
-    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023),
+    /// then where its text cannot be edited and why. When the page's content
+    /// cannot be read at all (an encrypted file, a filter the editor does
+    /// not follow), every block of its text as PDFium reads it is refused.
     pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
+        use crate::block_edit::{Refusal, refused_page, text_blocks};
         let view = self.view_transform(page)?;
-        crate::block_edit::text_blocks(&self.bytes, &view, page)
+        match text_blocks(&self.bytes, &view, page) {
+            Err(Error::EditUnsupported(_)) => {
+                let reason = if crate::block_edit::encrypted(&self.bytes)? {
+                    Refusal::Encrypted
+                } else {
+                    Refusal::Unsupported
+                };
+                let text = self.page_text(page)?;
+                Ok(refused_page(
+                    text.blocks.iter().map(|block| {
+                        let shown = view.rect(block.bounds);
+                        [shown.x, shown.x + shown.width, shown.y, shown.y + shown.height]
+                    }),
+                    reason,
+                ))
+            }
+            other => other,
+        }
     }
 
     /// This document with one paragraph of its page's text edited in place

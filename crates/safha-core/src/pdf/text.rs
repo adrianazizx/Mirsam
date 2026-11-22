@@ -22,7 +22,8 @@ use crate::typeset::{FontFace, FontSubset, TextLayout, subset_fonts};
 #[derive(Debug, Clone)]
 pub(crate) struct NamedFont {
     pub(crate) face: FontFace,
-    pub(crate) name: &'static str,
+    /// Its PostScript name: a bundled face's, or a PDF font's own (ADR 0026).
+    pub(crate) name: std::borrow::Cow<'static, str>,
 }
 
 /// Text ready for a content stream.
@@ -59,32 +60,59 @@ pub(crate) fn draw_text(
     text: &str,
     layout: &TextLayout,
     fonts: &[NamedFont],
-    (left, top): (f32, f32),
+    origin: (f32, f32),
     color: [f32; 3],
+    prefix: &str,
+) -> Result<TextDrawing> {
+    let paint = [Paint { range: 0..text.len(), color, slant: false }];
+    draw_painted_text(text, layout, fonts, origin, &paint, prefix)
+}
+
+/// How a stretch of the text is painted: its fill colour, and whether it is
+/// slanted (an italic run with no italic face, ADR 0024).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Paint {
+    /// Byte range of the text.
+    pub(crate) range: std::ops::Range<usize>,
+    pub(crate) color: [f32; 3],
+    pub(crate) slant: bool,
+}
+
+/// The shear of a slanted run: 12°, as word processors fake an italic.
+const SLANT: f32 = 0.2126;
+
+/// [`draw_text`] with a paint per stretch of the text (`paints` cover it, in
+/// order). A glyph run never crosses a span of the layout, and each paint is
+/// one, so a run takes the paint its first character has.
+pub(crate) fn draw_painted_text(
+    text: &str,
+    layout: &TextLayout,
+    fonts: &[NamedFont],
+    (left, top): (f32, f32),
+    paints: &[Paint],
     prefix: &str,
 ) -> Result<TextDrawing> {
     let faces: Vec<FontFace> = fonts.iter().map(|font| font.face.clone()).collect();
     let subsets = subset_fonts(text, layout, &faces).map_err(|err| Error::Typeset(err.code()))?;
-    let content = draw_with_subsets(text, layout, &subsets, (left, top), color, prefix);
+    let content = draw_with_subsets(text, layout, &subsets, (left, top), paints, prefix)?;
     Ok(TextDrawing { content, fonts: fonts_to_embed(subsets, fonts, prefix) })
 }
 
-/// [`draw_text`]'s operators for `layout` (of `text`), drawn with glyphs of
-/// `subsets` made beforehand: several texts can share one set of subsets
-/// when those were made from text that holds them all (ADR 0050).
+/// [`draw_painted_text`]'s operators for `layout` (of `text`), drawn with
+/// glyphs of `subsets` made beforehand: several texts can share one set of
+/// subsets when those were made from text that holds them all (ADR 0050).
 pub(crate) fn draw_with_subsets(
     text: &str,
     layout: &TextLayout,
     subsets: &[FontSubset],
     (left, top): (f32, f32),
-    color: [f32; 3],
+    paints: &[Paint],
     prefix: &str,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     // Resource names in the order the subsets come (by font index).
     let resource_of = |font: usize| subsets.iter().position(|s| s.font == font);
 
     let mut content = String::new();
-    let [r, g, b] = color;
     for line in &layout.lines {
         let baseline = top - line.baseline;
         for run in &line.runs {
@@ -93,6 +121,13 @@ pub(crate) fn draw_with_subsets(
             else {
                 continue;
             };
+            let paint = paints
+                .iter()
+                .find(|p| p.range.contains(&run.text_range.start))
+                .or(paints.last())
+                .ok_or(Error::InvalidEdit("text with no paint"))?;
+            let [r, g, b] = paint.color;
+            let shear = if paint.slant { num(SLANT) } else { "0".to_string() };
             let _ = writeln!(
                 content,
                 "BT /{prefix}{resource} {} Tf {} {} {} rg",
@@ -109,14 +144,16 @@ pub(crate) fn draw_with_subsets(
                 // in PDFium's text inside form XObjects.)
                 let several = cluster.glyphs.len() > 1;
                 if several && i == cluster.glyphs.start {
-                    let utf16: String =
-                        text[cluster.text.clone()].encode_utf16().map(|u| format!("{u:04X}")).collect();
+                    let utf16: String = crate::typeset::logical_text(&text[cluster.text.clone()])
+                        .encode_utf16()
+                        .map(|u| format!("{u:04X}"))
+                        .collect();
                     let _ = writeln!(content, "/Span << /ActualText <FEFF{utf16}> >> BDC");
                 }
                 let cid = subset.cid(glyph.id).unwrap_or(0);
                 let _ = writeln!(
                     content,
-                    "1 0 0 1 {} {} Tm <{cid:04X}> Tj",
+                    "1 0 {shear} 1 {} {} Tm <{cid:04X}> Tj",
                     num(left + glyph.x),
                     num(baseline + glyph.y_offset)
                 );
@@ -128,7 +165,7 @@ pub(crate) fn draw_with_subsets(
         }
     }
 
-    content.into_bytes()
+    Ok(content.into_bytes())
 }
 
 /// The fonts to embed for `subsets` (of `fonts`), named `prefix` and a number.
