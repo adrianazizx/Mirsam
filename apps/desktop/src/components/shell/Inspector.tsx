@@ -1,10 +1,14 @@
 import { useTranslation } from "react-i18next";
 import { formatNumber } from "../../i18n";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
+import { FormsPanel } from "../forms/FormsPanel";
+import { SignPanel } from "../forms/SignPanel";
 import { ProtectPanel } from "../protect/ProtectPanel";
 import styles from "./Inspector.module.css";
 
 const MM_PER_POINT = 25.4 / 72;
+/** Tools whose own panel the inspector shows. */
+const TOOL_PANELS: string[] = ["protect", "forms", "sign"];
 
 /**
  * Contextual properties panel. With nothing selected it shows document info
@@ -22,10 +26,14 @@ export function Inspector() {
   return (
     <aside className={styles.inspector} aria-label={t("inspector.title")} data-testid="inspector">
       <h2 className={styles.title}>
-        {t(tool === "protect" && document ? "tools.protect" : "inspector.title")}
+        {t(document && TOOL_PANELS.includes(tool) ? `tools.${tool}` : "inspector.title")}
       </h2>
       {document && tool === "protect" ? (
         <ProtectPanel key={document.id} document={document} />
+      ) : document && tool === "forms" ? (
+        <FormsPanel key={document.id} documentId={document.id} />
+      ) : document && tool === "sign" ? (
+        <SignPanel key={document.id} document={document} />
       ) : document ? (
         <dl className={styles.list}>
           <dt>{t("inspector.name")}</dt>

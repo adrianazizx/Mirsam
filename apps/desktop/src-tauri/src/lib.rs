@@ -9,11 +9,13 @@ mod commands;
 mod diagnostics;
 mod editing;
 mod error;
+mod forms;
 mod navigation;
 #[cfg(target_os = "linux")]
 mod print_linux;
 mod recovery;
 mod redaction;
+mod security;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
@@ -39,10 +41,22 @@ macro_rules! product_commands {
             redaction::find_redactions,
             redaction::apply_redactions,
             redaction::sanitize_document,
+            security::secure_document,
             editing::add_markup,
             editing::add_ink,
             editing::add_note,
             editing::add_text_box,
+            forms::form_fields,
+            forms::set_form_field,
+            forms::add_fill_text,
+            forms::add_fill_mark,
+            forms::place_signature,
+            forms::set_annotation_rect,
+            forms::signatures,
+            forms::save_drawn_signature,
+            forms::save_typed_signature,
+            forms::import_signature_image,
+            forms::delete_signature,
             editing::add_text,
             editing::page_text_blocks,
             editing::edit_text_block,

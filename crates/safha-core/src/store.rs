@@ -1,5 +1,6 @@
 //! Local application state: recent files, per-file view position, settings,
-//! and the open-tabs session (spec sections 5.1 and 9, "Storage").
+//! the open-tabs session (spec sections 5.1 and 9, "Storage"), and the
+//! user's signatures and initials (spec §5.6, ADR 0045).
 //!
 //! One SQLite file in the app data directory. Everything stays on the device
 //! (spec section 1, "Private by default"). Paths are stored here and never
@@ -77,9 +78,22 @@ pub struct RecoveryEntry {
     pub original: Option<crate::recovery::FileStamp>,
 }
 
+/// A signature or initials kept for Fill & Sign (ADR 0045).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredSignature {
+    pub id: i64,
+    /// Initials rather than a full signature.
+    pub initials: bool,
+    /// Unix seconds.
+    pub created: i64,
+    pub signature: crate::annotate::Signature,
+}
+
 /// Bumped whenever `migrate` gains a step.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const MAX_RECENTS: i64 = 200;
+/// The most signatures kept; saving another forgets the oldest.
+pub const MAX_SIGNATURES: i64 = 24;
 
 pub struct Store {
     connection: Mutex<Connection>,
@@ -309,6 +323,71 @@ impl Store {
     }
 }
 
+impl Store {
+    /// Keeps a signature (or initials); returns its id. Only the newest
+    /// [`MAX_SIGNATURES`] are kept.
+    pub fn save_signature(&self, initials: bool, signature: &crate::annotate::Signature) -> StoreResult<i64> {
+        use crate::annotate::Signature;
+        let (kind, data) = match signature {
+            Signature::Drawn(drawn) => ("drawn", serde_json::to_vec(drawn).unwrap_or_default()),
+            Signature::Typed(typed) => ("typed", serde_json::to_vec(typed).unwrap_or_default()),
+            Signature::Image(bytes) => ("image", bytes.clone()),
+        };
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO signatures (kind, initials, data, created) VALUES (?1, ?2, ?3, ?4)",
+                params![kind, initials, data, now()],
+            )?;
+            let id = db.last_insert_rowid();
+            db.execute(
+                "DELETE FROM signatures WHERE id NOT IN (SELECT id FROM signatures ORDER BY id DESC LIMIT ?1)",
+                params![MAX_SIGNATURES],
+            )?;
+            Ok(id)
+        })
+    }
+
+    /// Every kept signature, newest first. One that cannot be read is left out.
+    pub fn signatures(&self) -> StoreResult<Vec<StoredSignature>> {
+        self.with(|db| {
+            let mut statement =
+                db.prepare("SELECT id, kind, initials, data, created FROM signatures ORDER BY id DESC")?;
+            let rows = statement.query_map([], |row| {
+                let kind: String = row.get(1)?;
+                let data: Vec<u8> = row.get(3)?;
+                Ok((row.get::<_, i64>(0)?, kind, row.get::<_, bool>(2)?, data, row.get::<_, i64>(4)?))
+            })?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (id, kind, initials, data, created) = row?;
+                if let Some(signature) = decode_signature(&kind, data) {
+                    out.push(StoredSignature { id, initials, created, signature });
+                }
+            }
+            Ok(out)
+        })
+    }
+
+    /// The signature kept as `id`.
+    pub fn signature(&self, id: i64) -> StoreResult<Option<StoredSignature>> {
+        Ok(self.signatures()?.into_iter().find(|stored| stored.id == id))
+    }
+
+    pub fn delete_signature(&self, id: i64) -> StoreResult<()> {
+        self.with(|db| db.execute("DELETE FROM signatures WHERE id = ?1", params![id]).map(|_| ()))
+    }
+}
+
+fn decode_signature(kind: &str, data: Vec<u8>) -> Option<crate::annotate::Signature> {
+    use crate::annotate::Signature;
+    Some(match kind {
+        "drawn" => Signature::Drawn(serde_json::from_slice(&data).ok()?),
+        "typed" => Signature::Typed(serde_json::from_slice(&data).ok()?),
+        "image" => Signature::Image(data),
+        _ => return None,
+    })
+}
+
 /// The same file opened through different relative paths or symlinks is one entry.
 /// A file that no longer exists cannot be canonicalized, so its folder is
 /// (on macOS `/var` is itself a symlink to `/private/var`).
@@ -385,6 +464,21 @@ fn migrate(db: &Connection) -> StoreResult<()> {
                  original_modified INTEGER
              );
              PRAGMA user_version = 3;
+             COMMIT;",
+        )?;
+    }
+    if version < 4 {
+        // Signatures and initials for Fill & Sign (ADR 0045).
+        db.execute_batch(
+            "BEGIN;
+             CREATE TABLE signatures (
+                 id INTEGER PRIMARY KEY,
+                 kind TEXT NOT NULL,
+                 initials INTEGER NOT NULL,
+                 data BLOB NOT NULL,
+                 created INTEGER NOT NULL
+             );
+             PRAGMA user_version = 4;
              COMMIT;",
         )?;
     }
@@ -546,6 +640,32 @@ mod tests {
         assert_eq!(store.setting("locale").expect("reads").as_deref(), Some("en"));
         assert_eq!(store.setting("missing").expect("reads"), None);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn signatures_are_kept_newest_first_and_bounded() {
+        use crate::annotate::{DrawnSignature, Signature, SignaturePoint, TypedSignature};
+        use crate::fonts::FontFamily;
+        let store = Store::in_memory().expect("opens");
+        let typed = Signature::Typed(TypedSignature { text: "سارة".into(), family: FontFamily::Naskh });
+        let drawn = Signature::Drawn(DrawnSignature {
+            strokes: vec![vec![SignaturePoint { x: 1.0, y: 2.0, pressure: 0.5 }]],
+            width: 3.0,
+        });
+        let first = store.save_signature(false, &typed).expect("saves");
+        let second = store.save_signature(true, &drawn).expect("saves");
+        let third = store.save_signature(false, &Signature::Image(vec![1, 2, 3])).expect("saves");
+        let kept = store.signatures().expect("lists");
+        assert_eq!(kept.iter().map(|s| s.id).collect::<Vec<_>>(), [third, second, first]);
+        assert_eq!(kept[1].signature, drawn);
+        assert!(kept[1].initials && !kept[2].initials);
+        assert_eq!(store.signature(first).expect("reads").map(|s| s.signature), Some(typed));
+        store.delete_signature(second).expect("deletes");
+        assert_eq!(store.signatures().expect("lists").len(), 2);
+        for _ in 0..MAX_SIGNATURES {
+            store.save_signature(false, &drawn).expect("saves");
+        }
+        assert_eq!(store.signatures().expect("lists").len() as i64, MAX_SIGNATURES);
     }
 
     #[test]

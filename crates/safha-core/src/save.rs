@@ -47,6 +47,41 @@ pub fn save(document: &Document, path: &Path) -> Result<SaveMode> {
     Ok(mode)
 }
 
+/// Saves `document` to `path` with its protection changed (ADR 0043): a
+/// password set, changed or removed, or its permissions. Returns the document
+/// as the saved file reads, opened with the new password, for the caller to
+/// show from now on.
+///
+/// The saved file is opened again with the new password (and must have the
+/// same pages) before anything is written; with a wrong cipher or a bad
+/// password nothing is.
+pub fn save_secured(
+    document: &Document,
+    path: &Path,
+    change: &crate::security::SecurityChange,
+) -> Result<Document> {
+    use crate::security::SecurityChange;
+    let bytes: Arc<[u8]> = Arc::from(document.to_pdf_bytes_secured(change)?);
+    let password = match change {
+        SecurityChange::Keep => None,
+        SecurityChange::Remove => None,
+        SecurityChange::Set(protection) => protection.opening_password(),
+    };
+    // Kept: the password the document is open with.
+    let password = match change {
+        SecurityChange::Keep => document.password_in_use(),
+        _ => password,
+    };
+    let reopened = document
+        .reopen(Arc::clone(&bytes), password.as_deref())
+        .map_err(|_| Error::SaveRejected("the saved file would not open with its password"))?;
+    if reopened.page_count() != document.page_count() {
+        return Err(Error::SaveRejected("the saved file would have a different number of pages"));
+    }
+    write_atomically(path, &bytes)?;
+    Ok(reopened)
+}
+
 /// Writes `bytes` to `path` through a temporary file in the same directory
 /// (a rename is atomic only within one file system), keeping an existing
 /// file's permissions.

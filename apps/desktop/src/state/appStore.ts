@@ -11,6 +11,8 @@ import type {
   SaveOutcome,
   SearchHit,
   SearchOptions,
+  SecureOutcome,
+  SignatureInfo,
   TextStyle,
 } from "../backend";
 import type { Locale } from "../i18n";
@@ -107,6 +109,9 @@ export interface OpenDocument extends DocumentInfo {
 /** The Comment tool's modes (ADR 0018). */
 export type CommentTool = "note" | "textBox" | "pen" | "eraser";
 
+/** What a press on a page places with the Sign tool (ADR 0045); null selects instead. */
+export type FillTool = "text" | "date" | "check" | "cross" | "dot" | "signature";
+
 /**
  * A note or text box being written before it is added (ADRs 0018, 0019):
  * where it goes (its top-left corner in displayed-page points) and how wide
@@ -114,8 +119,11 @@ export type CommentTool = "note" | "textBox" | "pen" | "eraser";
  */
 export interface PendingNote {
   documentId: number;
-  /** A sticky note, a text box, text written into the page (ADR 0021), or a paragraph of page text edited in place (ADR 0023). */
-  kind: "note" | "textBox" | "pageText" | "block";
+  /**
+   * A sticky note, a text box, text written into the page (ADR 0021), a
+   * paragraph of page text edited in place (ADR 0023), or Fill & Sign text (ADR 0045).
+   */
+  kind: "note" | "textBox" | "pageText" | "block" | "fillText";
   page: number;
   x: number;
   y: number;
@@ -179,6 +187,17 @@ export interface AppState {
   commentTool: CommentTool;
   /** A note being written before it is added: where its icon goes. */
   pendingNote: PendingNote | null;
+  /** What a press places with the Sign tool; null: it selects (ADR 0045). */
+  fillTool: FillTool | null;
+  /** The kept signature `fillTool: "signature"` places. */
+  fillSignature: number | null;
+  setFill(tool: FillTool | null, signature?: number | null): void;
+  /** The kept signatures and initials, newest first; null until loaded. */
+  signatures: SignatureInfo[] | null;
+  setSignatures(signatures: SignatureInfo[] | null): void;
+  /** The dialog that makes a new signature (or initials) is open. */
+  signatureDialog: { initials: boolean } | null;
+  setSignatureDialog(dialog: { initials: boolean } | null): void;
   documents: OpenDocument[];
   activeDocumentId: number | null;
   /** Unsaved changes an earlier session left, waiting for restore or discard (ADR 0040). */
@@ -218,6 +237,11 @@ export interface AppState {
   applyEdit(id: number, outcome: EditOutcome): void;
   /** After Save or Save As: the name may change, and the document is no longer modified. */
   applySave(id: number, outcome: SaveOutcome): void;
+  /** After a save with another protection (ADR 0043): its new protection, and undo starts over. */
+  applySecured(id: number, outcome: SecureOutcome): void;
+  /** The protection dialog is open. */
+  securityPrompt: boolean;
+  setSecurityPrompt(open: boolean): void;
   setSelectedPages(id: number, pages: number[]): void;
   closePrompt: ClosePrompt | null;
   setClosePrompt(prompt: ClosePrompt | null): void;
@@ -389,6 +413,33 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTool: "select",
     commentTool: "note",
     pendingNote: null,
+    fillTool: null,
+    fillSignature: null,
+    setFill(fillTool, signature) {
+      set((state) => ({
+        fillTool,
+        fillSignature: signature === undefined ? state.fillSignature : signature,
+        pendingNote: null,
+      }));
+    },
+    signatures: null,
+    setSignatures(signatures) {
+      set((state) => ({
+        signatures,
+        // A forgotten signature is no longer placed.
+        ...(state.fillSignature !== null &&
+        !(signatures ?? []).some((kept) => kept.id === state.fillSignature)
+          ? {
+              fillSignature: null,
+              fillTool: state.fillTool === "signature" ? null : state.fillTool,
+            }
+          : {}),
+      }));
+    },
+    signatureDialog: null,
+    setSignatureDialog(signatureDialog) {
+      set({ signatureDialog });
+    },
     commentFilter: DEFAULT_COMMENT_FILTER,
     commentSort: "page",
     textStyle: DEFAULT_TEXT_STYLE,
@@ -571,6 +622,26 @@ export const useAppStore = create<AppState>((set, get) => {
           open.id === id ? { ...open, name: outcome.name, modified: outcome.modified } : open,
         ),
       }));
+    },
+    applySecured(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id
+            ? {
+                ...open,
+                name: outcome.name,
+                modified: outcome.modified,
+                security: outcome.security,
+                canUndo: false,
+                canRedo: false,
+              }
+            : open,
+        ),
+      }));
+    },
+    securityPrompt: false,
+    setSecurityPrompt(securityPrompt) {
+      set({ securityPrompt });
     },
     updateRedaction(id, change) {
       set((state) => ({

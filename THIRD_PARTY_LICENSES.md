@@ -21,26 +21,30 @@ PDFium: Its licence and its own third-party notices (third_party/pdfium/<platfor
 
 SQLite: Compiled into the app from source by rusqlite's `bundled` feature; public domain.
 
-## Rust crates (497)
+## Rust crates (555)
 
 | Component | Version | Licence | Source |
 |---|---|---|---|
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2 |
 | aes | 0.9.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-ciphers |
+| aes-kw | 0.3.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/key-wraps |
 | aho-corasick | 1.1.5 | Unlicense OR MIT | https://github.com/BurntSushi/aho-corasick |
 | alloc-no-stdlib | 2.0.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
 | alloc-no-stdlib | 3.0.0 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
 | alloc-stdlib | 0.2.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
 | alloc-stdlib | 0.3.0 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
 | android_system_properties | 0.1.6 | MIT OR Apache-2.0 | https://github.com/nical/android_system_properties |
+| ansi-x963-kdf | 0.1.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/KDFs |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 | https://github.com/dtolnay/anyhow |
 | arrayvec | 0.7.8 | MIT OR Apache-2.0 | https://github.com/bluss/arrayvec |
 | atk | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | atk-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/atomic-waker |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT | https://github.com/cuviper/autocfg |
+| base16ct | 1.0.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | base64 | 0.21.7 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 |
 | base64 | 0.23.1 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 |
+| base64ct | 1.8.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | bit-set | 0.11.1 | Apache-2.0 OR MIT | https://github.com/contain-rs/bit-vec |
 | bit-set | 0.8.0 | Apache-2.0 OR MIT | https://github.com/contain-rs/bit-set |
 | bit-vec | 0.10.2 | Apache-2.0 OR MIT | https://github.com/contain-rs/bit-vec |
@@ -75,6 +79,9 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | chacha20 | 0.10.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/stream-ciphers |
 | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono |
 | cipher | 0.5.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
+| cmov | 0.5.4 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
+| cmpv2 | 0.3.0-rc.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| cms | 0.3.0-rc.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | combine | 4.6.9 | MIT | https://github.com/Marwes/combine |
 | console_error_panic_hook | 0.1.7 | Apache-2.0/MIT | https://github.com/rustwasm/console_error_panic_hook |
 | console_log | 1.1.0 | MIT/Apache-2.0 | https://github.com/iamcodemaker/console_log |
@@ -89,18 +96,26 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | cpufeatures | 0.3.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | crc32fast | 1.5.5 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast |
+| crmf | 0.3.0-rc.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam |
 | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam |
+| crypto-bigint | 0.7.11 | Apache-2.0 OR MIT | https://github.com/RustCrypto/crypto-bigint |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
+| crypto-primes | 0.7.2 | Apache-2.0 OR MIT | https://github.com/entropyxyz/crypto-primes |
 | cssparser | 0.37.0 | MPL-2.0 | https://github.com/servo/rust-cssparser |
 | cssparser | 0.38.0 | MPL-2.0 | https://github.com/servo/rust-cssparser |
 | cssparser-macros | 0.7.1 | MPL-2.0 | https://github.com/servo/rust-cssparser |
 | ctor | 1.0.14 | Apache-2.0 OR MIT | https://github.com/mmastrac/linktime |
+| ctutils | 0.4.8 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
+| curve25519-dalek | 5.0.0 | BSD-3-Clause | https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek |
+| curve25519-dalek-derive | 0.1.1 | MIT/Apache-2.0 | https://github.com/dalek-cryptography/curve25519-dalek |
 | darling | 0.24.1 | MIT | https://github.com/TedDriggs/darling |
 | darling_core | 0.24.1 | MIT | https://github.com/TedDriggs/darling |
 | darling_macro | 0.24.1 | MIT | https://github.com/TedDriggs/darling |
 | dbus | 0.9.12 | Apache-2.0/MIT | https://github.com/diwic/dbus-rs |
+| der | 0.8.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| der_derive | 0.8.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | deranged | 0.5.9 | MIT OR Apache-2.0 | https://github.com/jhpratt/deranged |
 | derive_more | 2.1.1 | MIT | https://github.com/JelteF/derive_more |
 | derive_more-impl | 2.1.1 | MIT | https://github.com/JelteF/derive_more |
@@ -120,7 +135,11 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://gitlab.com/kornelski/dunce |
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/dyn-clone |
 | ecb | 0.2.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-modes |
+| ecdsa | 0.17.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/signatures |
+| ed25519 | 3.0.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/signatures |
+| ed25519-dalek | 3.0.0 | BSD-3-Clause | https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek |
 | either | 1.19.0 | MIT OR Apache-2.0 | https://github.com/rayon-rs/either |
+| elliptic-curve | 0.14.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/traits |
 | embed_plist | 1.2.2 | MIT OR Apache-2.0 | https://github.com/nvzqz/embed-plist-rs |
 | embed-resource | 3.0.12 | MIT | https://github.com/nabijaczleweli/rust-embed-resource |
 | encoding_rs | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause | https://github.com/hsivonen/encoding_rs |
@@ -131,8 +150,11 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 | https://github.com/sfackler/fallible-streaming-iterator |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate |
+| ff | 0.14.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/ff |
+| fiat-crypto | 0.3.0 | MIT OR Apache-2.0 OR BSD-1-Clause | https://github.com/mit-plv/fiat-crypto |
 | field-offset | 0.3.6 | MIT OR Apache-2.0 | https://github.com/Diggsey/rust-field-offset |
 | find-msvc-tools | 0.1.15 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs |
+| flagset | 0.4.7 | Apache-2.0 | https://github.com/enarx/flagset |
 | flate2 | 1.1.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs |
 | fnv | 1.0.7 | Apache-2.0 / MIT | https://github.com/servo/rust-fnv |
 | foldhash | 0.2.0 | Zlib | https://github.com/orlp/foldhash |
@@ -167,6 +189,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | glib-sys | 0.18.1 | MIT | https://github.com/gtk-rs/gtk-rs-core |
 | glob | 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-lang/glob |
 | gobject-sys | 0.18.0 | MIT | https://github.com/gtk-rs/gtk-rs-core |
+| group | 0.14.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/group |
 | gtk | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | gtk-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | gtk3-macros | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
@@ -177,6 +200,8 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | heck | 0.4.1 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck |
 | heck | 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck |
 | hex | 0.4.3 | MIT OR Apache-2.0 | https://github.com/KokaKiwi/rust-hex |
+| hkdf | 0.13.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/KDFs/ |
+| hmac | 0.13.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/MACs |
 | html5ever | 0.39.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever |
 | html5ever | 0.40.1 | MIT OR Apache-2.0 | https://github.com/servo/html5ever |
 | http | 1.5.0 | MIT OR Apache-2.0 | https://github.com/hyperium/http |
@@ -229,6 +254,8 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | js-sys | 0.3.107 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys |
 | json-patch | 4.2.0 | MIT/Apache-2.0 | https://github.com/idubrov/json-patch |
 | jsonptr | 0.7.1 | MIT OR Apache-2.0 | https://github.com/chanced/jsonptr |
+| k256 | 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
+| keccak | 0.2.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/sponges |
 | keyboard-types | 0.8.3 | MIT OR Apache-2.0 | https://github.com/rust-windowing/keyboard-types |
 | kurbo | 0.13.1 | Apache-2.0 OR MIT | https://github.com/linebender/kurbo |
 | libappindicator | 0.9.0 | Apache-2.0 OR MIT | https://crates.io/crates/libappindicator |
@@ -284,11 +311,17 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | objc2-web-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | https://github.com/matklad/once_cell |
 | option-ext | 0.2.0 | MPL-2.0 | https://github.com/soc/option-ext.git |
+| p192 | 0.14.0-rc.15 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
+| p224 | 0.14.0-rc.15 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
+| p256 | 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
+| p384 | 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
+| p521 | 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
 | pango | 0.18.3 | MIT | https://github.com/gtk-rs/gtk-rs-core |
 | pango-sys | 0.18.0 | MIT | https://github.com/gtk-rs/gtk-rs-core |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot |
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot |
 | pdfium-render | 0.9.6 | MIT OR Apache-2.0 | https://github.com/ajrcarey/pdfium-render |
+| pem-rfc7468 | 1.0.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ |
 | phf | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf |
 | phf | 0.14.0 | MIT | https://github.com/rust-phf/rust-phf |
@@ -302,6 +335,8 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | phf_shared | 0.14.0 | MIT | https://github.com/rust-phf/rust-phf |
 | pin-project-lite | 0.2.18 | Apache-2.0 OR MIT | https://github.com/taiki-e/pin-project-lite |
 | piston-float | 1.0.1 | MIT | https://github.com/pistondevelopers/float.git |
+| pkcs1 | 0.8.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| pkcs8 | 0.11.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | pkg-config | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/pkg-config-rs |
 | plist | 1.10.4 | MIT | https://github.com/ebarnard/rust-plist/ |
 | png | 0.18.1 | MIT OR Apache-2.0 | https://github.com/image-rs/image-png |
@@ -311,6 +346,8 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | potential_utf | 0.1.6 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | powerfmt | 0.2.1 | MIT OR Apache-2.0 | https://github.com/jhpratt/powerfmt |
 | precomputed-hash | 0.1.1 | MIT | https://github.com/emilio/precomputed-hash |
+| primefield | 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
+| primeorder | 0.14.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
 | proc-macro-crate | 1.3.1 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate |
 | proc-macro-crate | 2.0.2 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate |
 | proc-macro-crate | 3.5.0 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate |
@@ -335,7 +372,9 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | regex-automata | 0.4.19 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
 | regex-syntax | 0.8.12 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
 | reqwest | 0.13.5 | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest |
+| rfc6979 | 0.6.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/signatures |
 | rfd | 0.17.2 | MIT | https://github.com/PolyMeilex/rfd |
+| rsa | 0.10.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/RSA |
 | rsqlite-vfs | 0.2.0 | MIT | https://github.com/Spxg/sqlite-wasm-rs |
 | rusqlite | 0.43.0 | MIT | https://github.com/rusqlite/rusqlite |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 | https://github.com/djc/rustc-version-rs |
@@ -347,6 +386,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | schemars | 1.2.3 | MIT | https://github.com/GREsau/schemars |
 | schemars_derive | 0.8.22 | MIT | https://github.com/GREsau/schemars |
 | scopeguard | 1.2.0 | MIT OR Apache-2.0 | https://github.com/bluss/scopeguard |
+| sec1 | 0.8.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | selectors | 0.38.0 | MPL-2.0 | https://github.com/servo/stylo |
 | selectors | 0.41.0 | MPL-2.0 | https://github.com/servo/stylo |
 | semver | 1.0.28 | MIT OR Apache-2.0 | https://github.com/dtolnay/semver |
@@ -361,13 +401,17 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | serde_with | 3.25.0 | MIT OR Apache-2.0 | https://github.com/jonasbb/serde_with/ |
 | serde_with_macros | 3.25.0 | MIT OR Apache-2.0 | https://github.com/jonasbb/serde_with/ |
 | serde-untagged | 0.1.9 | MIT OR Apache-2.0 | https://github.com/dtolnay/serde-untagged |
+| serdect | 0.4.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 | https://github.com/servo/stylo |
 | servo_arc | 0.5.0 | MIT OR Apache-2.0 | https://github.com/servo/stylo |
+| sha1 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | sha2 | 0.11.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
+| sha3 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | shlex | 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex |
+| signature | 3.0.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/traits |
 | simd-adler32 | 0.3.10 | MIT | https://github.com/mcountryman/simd-adler32 |
 | simdutf8 | 0.1.5 | MIT OR Apache-2.0 | https://github.com/rusticstuff/simdutf8 |
 | siphasher | 1.0.4 | MIT OR Apache-2.0 | https://github.com/jedisct1/rust-siphash |
@@ -378,6 +422,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | softbuffer | 0.4.8 | MIT OR Apache-2.0 | https://github.com/rust-windowing/softbuffer |
 | soup3 | 0.5.0 | MIT | https://gitlab.gnome.org/World/Rust/soup3-rs |
 | soup3-sys | 0.5.0 | MIT | https://gitlab.gnome.org/World/Rust/soup3-rs |
+| spki | 0.8.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | sqlite-wasm-rs | 0.6.3 | MIT | https://github.com/Spxg/sqlite-wasm-rs |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | https://github.com/storyyeller/stable_deref_trait |
 | static_vcruntime | 3.0.0 | MIT OR Apache-2.0 OR Zlib | https://github.com/ChrisDenton/static_vcruntime |
@@ -388,6 +433,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | stringprep | 0.1.5 | MIT/Apache-2.0 | https://github.com/sfackler/rust-stringprep |
 | strsim | 0.11.1 | MIT | https://github.com/rapidfuzz/strsim-rs |
 | subsetter | 0.2.6 | MIT OR Apache-2.0 | https://github.com/typst/subsetter |
+| subtle | 2.6.1 | BSD-3-Clause | https://github.com/dalek-cryptography/subtle |
 | swift-rs | 1.0.9 | MIT OR Apache-2.0 | https://github.com/Brendonovich/swift-rs |
 | syn | 1.0.109 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn |
 | syn | 2.0.119 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn |
@@ -419,6 +465,8 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | time-macros | 0.2.32 | MIT OR Apache-2.0 | https://github.com/time-rs/time |
 | tinystr | 0.8.5 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | tinyvec | 1.13.3 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/tinyvec |
+| tls_codec | 0.4.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| tls_codec_derive | 0.4.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | tokio | 1.54.1 | MIT | https://github.com/tokio-rs/tokio |
 | tokio-util | 0.7.20 | MIT | https://github.com/tokio-rs/tokio |
 | toml | 0.8.2 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml |
@@ -445,11 +493,14 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | unicode-normalization | 0.1.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/unicode-rs/unicode-normalization |
 | unicode-properties | 0.1.5 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/unicode-rs/unicode-properties |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation |
+| ureq | 3.5.2 | MIT OR Apache-2.0 | https://github.com/algesten/ureq |
+| ureq-proto | 0.7.1 | MIT OR Apache-2.0 | https://github.com/algesten/ureq-proto |
 | url | 2.5.9 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
 | urlpattern | 0.6.0 | MIT | https://github.com/denoland/rust-urlpattern |
 | utf_types | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf_types |
 | utf16string | 0.2.0 | MIT OR Apache-2.0 | https://github.com/getsentry/utf16string |
 | utf8_iter | 1.1.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf8_iter |
+| utf8-zero | 0.8.1 | MIT OR Apache-2.0 | https://github.com/algesten/utf8-zero |
 | uuid | 1.29.3 | Apache-2.0 OR MIT | https://github.com/uuid-rs/uuid |
 | vcpkg | 0.2.15 | MIT/Apache-2.0 | https://github.com/mcgoo/vcpkg-rs |
 | vecmath | 1.0.0 | MIT | https://github.com/pistondevelopers/vecmath.git |
@@ -508,15 +559,22 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | winnow | 1.0.5 | MIT | https://github.com/winnow-rs/winnow |
 | winreg | 0.56.0 | MIT | https://github.com/gentoo90/winreg-rs |
 | wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wit-bindgen |
+| wnaf | 0.14.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/elliptic-curves |
 | write-fonts | 0.48.1 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | writeable | 0.6.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | wry | 0.57.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/wry |
 | x11 | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |
 | x11-dl | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |
+| x509-cert | 0.3.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| x509-ocsp | 0.3.0-rc.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| x509-tsp | 0.2.0-rc.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
+| x509-verify | 0.4.10 | Apache-2.0 OR MIT | https://github.com/bhesh/x509-verify/ |
 | yoke | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerofrom-derive | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
+| zeroize | 1.9.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
+| zeroize_derive | 1.5.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
 | zerotrie | 0.2.5 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec | 0.11.9 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec-derive | 0.11.7 | Unicode-3.0 | https://github.com/unicode-org/icu4x |

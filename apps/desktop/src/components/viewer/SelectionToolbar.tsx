@@ -3,12 +3,15 @@ import {
   EyeOff,
   Highlighter,
   LineSquiggle,
+  Maximize2,
+  Minimize2,
   Strikethrough,
   Trash2,
   Underline,
 } from "lucide-react";
 import { Toolbar } from "react-aria-components";
 import { useTranslation } from "react-i18next";
+import { FILL_KINDS } from "../../backend";
 import { directionOf } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { CommandButton } from "../ui/CommandButton";
@@ -23,9 +26,11 @@ import styles from "./SelectionToolbar.module.css";
 export function SelectionToolbar({ documentId }: { documentId: number }) {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
-  const annotationSelected = useAppStore((state) =>
-    Boolean(state.documents.find((open) => open.id === documentId)?.selectedAnnotation),
+  const selectedKind = useAppStore(
+    (state) => state.documents.find((open) => open.id === documentId)?.selectedAnnotation?.kind,
   );
+  const annotationSelected = selectedKind !== undefined;
+  const fillSelected = selectedKind !== undefined && FILL_KINDS.includes(selectedKind);
   return (
     <div className={styles.band}>
       {/* The page area is always left to right; the toolbar follows the UI language. */}
@@ -36,9 +41,21 @@ export function SelectionToolbar({ documentId }: { documentId: number }) {
         data-testid="selection-toolbar"
       >
         {annotationSelected ? (
-          <CommandButton command="annotation.delete" tooltipPlacement="top">
-            <Trash2 />
-          </CommandButton>
+          <>
+            {fillSelected ? (
+              <>
+                <CommandButton command="fill.smaller" tooltipPlacement="top">
+                  <Minimize2 />
+                </CommandButton>
+                <CommandButton command="fill.larger" tooltipPlacement="top">
+                  <Maximize2 />
+                </CommandButton>
+              </>
+            ) : null}
+            <CommandButton command="annotation.delete" tooltipPlacement="top">
+              <Trash2 />
+            </CommandButton>
+          </>
         ) : (
           <>
             <CommandButton command="edit.copy" tooltipPlacement="top">
