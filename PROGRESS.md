@@ -264,6 +264,21 @@ Remaining M1 work:
 
 ## Session log
 
+### CI cost trim — 2026-11-22
+
+- **Why:** the repository is private on GitHub Free, so CI draws on a $12 monthly Actions
+  allowance. macOS runners cost about ten times Linux ones per minute. The nine runs on
+  2026-11-22 used about $4.90, and macOS was 60% of that.
+- **Now:** pull requests run Linux and Windows only. Pushes to `main` and manual runs ("Run
+  workflow" on the Actions tab) run all three platforms. Documentation-only changes (`docs/`,
+  Markdown files other than `THIRD_PARTY_LICENSES.md`) run nothing. A full pull-request run drops
+  from about $0.58 to about $0.27 with warm caches.
+- **Kept on purpose:** the second run on `main` after a merge. It builds the caches that later
+  pull requests reuse; without it, each new pull request's first run starts cold, which takes
+  about 20 minutes on Linux and Windows.
+- **Consequence:** a pull request can break macOS without CI noticing until it reaches `main`.
+  Run the usual checks on the Mac before pushing, as `CLAUDE.md` already asks.
+
 ### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
 
 - **CI fixes for PR #1:**
