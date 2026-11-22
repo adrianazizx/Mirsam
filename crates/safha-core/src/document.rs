@@ -108,6 +108,23 @@ fn excerpt(text: &str, limit: usize) -> String {
     }
 }
 
+/// How a revision follows the one before it.
+#[derive(Debug, Clone)]
+pub enum RevisionStep {
+    /// An incremental update to append.
+    Update(Vec<u8>),
+    /// The whole new file.
+    Snapshot(Arc<[u8]>),
+}
+
+/// A redaction's result.
+#[derive(Debug)]
+pub struct Redacted {
+    pub document: Document,
+    pub step: RevisionStep,
+    pub report: crate::redact::Report,
+}
+
 impl Document {
     pub(crate) fn new(
         inner: PdfDocument<'static>,
@@ -177,6 +194,76 @@ impl Document {
         }
         let update = bytes[start..].to_vec();
         Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// This document with `marks` redacted (ADR 0042). The content under
+    /// each mark is removed from the file, not covered, and the result is
+    /// checked: the text PDFium reads from the new revision must hold nothing
+    /// inside a mark, or the redaction is refused and nothing changes.
+    ///
+    /// A signed file is rewritten in full at once, since an update would
+    /// leave the redacted content in the bytes the signature covers; the
+    /// signature no longer validates, which no redaction of a signed file can
+    /// avoid.
+    pub fn with_redactions(&self, marks: &[crate::redact::Mark]) -> Result<Redacted> {
+        let (update, report) = crate::redact::redaction_update(&self.bytes, marks)?;
+        let mut bytes = Vec::with_capacity(self.bytes.len() + update.len());
+        bytes.extend_from_slice(&self.bytes);
+        bytes.extend_from_slice(&update);
+        let mut revision = self.revision(Arc::from(bytes))?;
+        let mut step = RevisionStep::Update(update);
+        if self.is_signed() {
+            let rewritten: Arc<[u8]> = Arc::from(revision.to_pdf_bytes()?);
+            revision = self.revision(Arc::clone(&rewritten))?;
+            step = RevisionStep::Snapshot(rewritten);
+        }
+        revision.check_nothing_under(marks)?;
+        Ok(Redacted { document: revision, step, report })
+    }
+
+    /// Whether any text PDFium reads lies under a mark.
+    fn check_nothing_under(&self, marks: &[crate::redact::Mark]) -> Result<()> {
+        let mut pages: Vec<usize> = marks.iter().map(|m| m.page).collect();
+        pages.sort_unstable();
+        pages.dedup();
+        for page in pages {
+            let text = self.page_text(page)?;
+            for line in text.blocks.iter().flat_map(|block| &block.lines) {
+                for span in &line.spans {
+                    let Some(rect) = span.rect else { continue };
+                    let shown = line.text.get(span.start..span.end).unwrap_or("");
+                    if shown.trim().is_empty() {
+                        continue;
+                    }
+                    let (x, y) = ((rect.left + rect.right) / 2.0, (rect.bottom + rect.top) / 2.0);
+                    let under = marks.iter().any(|m| {
+                        m.page == page
+                            && m.rect.left <= x
+                            && x <= m.rect.right
+                            && m.rect.bottom <= y
+                            && y <= m.rect.top
+                    });
+                    if under {
+                        return Err(Error::Redaction("text is still readable under a marked area"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// This document sanitized (ADR 0042), rewritten in full so that what was
+    /// unlinked is gone from the bytes too. The step is always a snapshot.
+    pub fn with_sanitized(
+        &self,
+        options: crate::redact::SanitizeOptions,
+    ) -> Result<(Document, Arc<[u8]>, crate::redact::SanitizeReport)> {
+        let (update, report) = crate::redact::sanitize_update(&self.bytes, options)?;
+        let mut bytes = Vec::with_capacity(self.bytes.len() + update.len());
+        bytes.extend_from_slice(&self.bytes);
+        bytes.extend_from_slice(&update);
+        let rewritten: Arc<[u8]> = Arc::from(self.revision(Arc::from(bytes))?.to_pdf_bytes()?);
+        Ok((self.revision(Arc::clone(&rewritten))?, rewritten, report))
     }
 
     /// The page's annotations of the kinds this app writes (markup, ink,
