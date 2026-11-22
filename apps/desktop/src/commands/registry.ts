@@ -1,6 +1,8 @@
 import {
   backend,
+  type CompressOptions,
   type EditOutcome,
+  type ImageFormat,
   isBackendError,
   type MarkupKind,
   type OpenOutcome,
@@ -11,7 +13,9 @@ import {
   type RestoreOutcome,
   type SanitizeOptions,
   type SplitBy,
+  type StampArg,
   type StrokePoint,
+  type TextFormat,
   type TextStyle,
   type ViewRect,
 } from "../backend";
@@ -20,6 +24,7 @@ import {
   type CommentTool,
   type LeftPanel,
   type OpenDocument,
+  type OutputDialog,
   type ReadingTheme,
   selectActiveDocument,
   useAppStore,
@@ -131,6 +136,15 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /** `output.stamp`: the header, footer, page numbers, or watermark (`pages` above). */
+  stamp?: StampArg;
+  /** `output.exportImages`: resolution and format (`pages` above). */
+  dpi?: number;
+  imageFormat?: ImageFormat;
+  /** `output.exportText` (`pages` above). */
+  textFormat?: TextFormat;
+  /** `output.compress`. */
+  compress?: CompressOptions;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -211,6 +225,19 @@ export type CommandId =
   | "pages.extract"
   | "pages.split"
   | "pages.splitInto"
+  | "pages.headerFooter"
+  | "pages.pageNumbers"
+  | "pages.watermark"
+  | "file.exportImages"
+  | "file.exportText"
+  | "file.compress"
+  | "output.stamp"
+  | "output.pickImage"
+  | "output.exportImages"
+  | "output.exportText"
+  | "output.compress"
+  | "output.saveCompressed"
+  | "output.cancel"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -289,6 +316,11 @@ export function targetPages(state: AppState = store()): number[] {
   if (!active) return [];
   if (state.activeTool === "pages" && active.selectedPages.length > 0) return active.selectedPages;
   return [active.page];
+}
+
+/** Opens an output dialog (ADR 0050). */
+function openOutput(dialog: OutputDialog): void {
+  store().setOutputDialog(dialog);
 }
 
 /**
@@ -416,6 +448,9 @@ const KNOWN_ERRORS = [
   "text_failed",
   "no_bookmarks",
   "redaction_failed",
+  "no_image",
+  "image_unreadable",
+  "compress_stale",
 ];
 
 function reportError(error: unknown) {
@@ -895,6 +930,102 @@ const COMMANDS: Command[] = [
       const count = await backend.splitDocument(active.id, split);
       if (count !== null) store().setNotice({ key: "split", values: { count: String(count) } });
     },
+  },
+  // Output (ADR 0050): each opens its dialog; the dialog runs `output.*` with what was chosen.
+  ...(
+    [
+      ["pages.headerFooter", "headerFooter"],
+      ["pages.pageNumbers", "pageNumbers"],
+      ["pages.watermark", "watermark"],
+      ["file.exportImages", "exportImages"],
+      ["file.exportText", "exportText"],
+      ["file.compress", "compress"],
+    ] as const
+  ).map(
+    ([id, dialog]): Command => ({
+      id,
+      isEnabled: hasDocument,
+      run: () => openOutput(dialog),
+    }),
+  ),
+  {
+    id: "output.stamp",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.stamp || !arg.pages || arg.pages.length === 0) return;
+      const outcome = await backend.stampPages(active.id, arg.pages, arg.stamp);
+      store().setOutputDialog(null);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "output.pickImage",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run() {
+      const name = await backend.pickWatermarkImage();
+      if (name) store().setWatermarkImage(name);
+    },
+  },
+  {
+    id: "output.exportImages",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.pages || arg.pages.length === 0 || !arg.imageFormat || !arg.dpi) return;
+      const count = await backend.exportPageImages(active.id, arg.pages, arg.dpi, arg.imageFormat);
+      if (count === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "exportedImages", values: { count: String(count) } });
+    },
+  },
+  {
+    id: "output.exportText",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.pages || arg.pages.length === 0 || !arg.textFormat) return;
+      const name = await backend.exportText(active.id, arg.pages, arg.textFormat);
+      if (name === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "exportedText", values: { name } });
+    },
+  },
+  {
+    // Compresses in memory and shows the sizes; nothing is written yet.
+    id: "output.compress",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.compress) return;
+      store().setCompressed(null);
+      const report = await backend.compressDocument(active.id, arg.compress);
+      store().setCompressed({ documentId: active.id, report });
+    },
+  },
+  {
+    id: "output.saveCompressed",
+    paletteHidden: true,
+    isEnabled: (state) =>
+      state.compressed !== null && state.compressed.documentId === state.activeDocumentId,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const name = await backend.saveCompressed(active.id);
+      if (name === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "compressedSaved", values: { name } });
+    },
+  },
+  {
+    id: "output.cancel",
+    paletteHidden: true,
+    run: () => store().setOutputDialog(null),
   },
   {
     // Opens a page from the organizer in the page view.

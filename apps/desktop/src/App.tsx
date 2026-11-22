@@ -9,6 +9,7 @@ import {
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
+import { OutputDialog } from "./components/output/OutputDialog";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
 import { AppShell } from "./components/shell/AppShell";
@@ -186,6 +187,7 @@ export function App() {
       <RecoveryDialog />
       <SplitDialog />
       <RedactDialog />
+      <OutputDialog />
     </I18nProvider>
   );
 }

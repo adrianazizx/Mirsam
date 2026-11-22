@@ -11,18 +11,23 @@
 //! annotations ([`annotate`]) as incremental updates, redact and sanitize
 //! ([`redact`]), save ([`save`]), keep local app state ([`store`]), lay out
 //! text for writing ([`typeset`]), and write it into pages ([`text_edit`]) in
-//! the bundled families ([`fonts`]).
+//! the bundled families ([`fonts`]); stamp headers, footers, page numbers and
+//! watermarks ([`stamp`]), export pages as images and text ([`export`]), and
+//! compress ([`compress`]).
 
 pub mod annotate;
 mod bitmap;
 pub mod block_edit;
 pub mod blocks;
 pub mod catalog;
+pub mod compress;
 mod document;
 pub mod edit;
 mod engine;
 mod error;
+pub mod export;
 pub mod fonts;
+pub mod jpeg;
 pub mod outline;
 mod pdf;
 pub mod recovery;
@@ -30,6 +35,7 @@ pub mod redact;
 pub mod render;
 pub mod save;
 pub mod search;
+pub mod stamp;
 pub mod store;
 pub mod text;
 pub mod text_edit;

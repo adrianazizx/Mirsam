@@ -233,6 +233,11 @@ function stateOf(documentId: number): MockState {
 const MOCK_BLOCK_TEXT = "The mock page has one paragraph of text that the Edit tool can change.";
 const mockBlockTexts = new Map<number, string>();
 
+/** The watermark image the mock last "picked". */
+let mockWatermarkImage: string | null = null;
+/** Documents with a compressed copy waiting to be saved. */
+const mockCompressed = new Set<number>();
+
 function pushState(documentId: number, next: MockState): EditOutcome {
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
@@ -965,6 +970,51 @@ export const mockBackend: Backend = {
     }
     pendingInsert = null;
     return { kind: "inserted", edit: insertSample(pending.documentId, pending.at) };
+  },
+  // The mock draws nothing into pages: a stamp only takes the step (and is checked).
+  stampPages: async (documentId, pages, stamp) => {
+    const state = stateOf(documentId);
+    if (pages.length === 0) throw { code: "invalid_edit", detail: "no pages given" };
+    if (pages.some((page) => state.pages[page] === undefined)) {
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    }
+    if (
+      stamp.kind === "watermark" &&
+      stamp.watermark.mark.kind === "image" &&
+      !mockWatermarkImage
+    ) {
+      throw { code: "no_image", detail: "no watermark image picked" };
+    }
+    return {
+      ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
+      textChanged: true,
+    };
+  },
+  pickWatermarkImage: async () => {
+    mockWatermarkImage = "logo.png";
+    return mockWatermarkImage;
+  },
+  exportPageImages: async (_documentId, pages) => pages.length,
+  exportText: async (_documentId, _pages, format) =>
+    format === "markdown" ? "Sample.md" : "Sample.txt",
+  // Sizes as a real compression of a scanned sample might report them.
+  compressDocument: async (documentId, options) => {
+    mockCompressed.add(documentId);
+    const reduced = options.imageDpi !== null;
+    return {
+      before: 4_200_000,
+      after: reduced ? 1_350_000 : 3_900_000,
+      imagesReduced: reduced ? 12 : 0,
+      imagesKept: 0,
+      streamsCompressed: 3,
+      objectsRemoved: 40,
+    };
+  },
+  saveCompressed: async (documentId) => {
+    if (!mockCompressed.delete(documentId)) {
+      throw { code: "compress_stale", detail: "nothing compressed" };
+    }
+    return "Sample (compressed).pdf";
   },
   extractPages: async () => "Extract.pdf",
   // The mock "writes" parts of 20 pages when split by size, whatever the limit.

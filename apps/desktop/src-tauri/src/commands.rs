@@ -329,7 +329,12 @@ pub fn cancel_unlock(state: State<'_, AppState>, token: u32) {
 /// Closes a document: its queued renders are cancelled, its cached tiles
 /// dropped, and a search index build stopped.
 #[tauri::command]
-pub fn close_document(state: State<'_, AppState>, document_id: u32) -> bool {
+pub fn close_document(
+    state: State<'_, AppState>,
+    output: State<'_, crate::output::OutputState>,
+    document_id: u32,
+) -> bool {
+    crate::output::forget(&output, document_id);
     state.remove_document(document_id)
 }
 

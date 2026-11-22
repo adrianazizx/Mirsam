@@ -30,7 +30,10 @@
       "print": "Print…",
       "save": "Save",
       "saveAs": "Save as…",
-      "saveAndClose": "Save and close"
+      "saveAndClose": "Save and close",
+      "exportImages": "Export pages as images…",
+      "exportText": "Export text…",
+      "compress": "Compress…"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -149,7 +152,10 @@
       "insertFromFile": "Insert pages from a file…",
       "extract": "Extract pages to a new file…",
       "split": "Split into files…",
-      "splitInto": "Split"
+      "splitInto": "Split",
+      "headerFooter": "Add header or footer…",
+      "pageNumbers": "Add page numbers…",
+      "watermark": "Add watermark…"
     },
     "redact": {
       "openTool": "Redact content…",
@@ -171,6 +177,15 @@
     "sanitize": {
       "setOption": "Choose what to sanitize",
       "run": "Sanitize document"
+    },
+    "output": {
+      "stamp": "Apply to pages",
+      "pickImage": "Choose a watermark image",
+      "exportImages": "Export images",
+      "exportText": "Export text",
+      "compress": "Compress",
+      "saveCompressed": "Save compressed copy",
+      "cancel": "Close dialog"
     }
   },
   "viewer": {
@@ -219,7 +234,10 @@
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
     "text_failed": "The text could not be set.",
     "no_bookmarks": "This document has no top-level bookmarks to split at.",
-    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed."
+    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed.",
+    "no_image": "Choose an image for the watermark first.",
+    "image_unreadable": "That image can't be used. Choose a PNG or JPEG file under 50 MB.",
+    "compress_stale": "The document changed after it was compressed. Compress it again."
   },
   "gallery": {
     "title": "Design gallery",
@@ -318,7 +336,10 @@
     "extracted": "The pages were saved as {{name}}.",
     "split": "The document was split into {{count}} files.",
     "fontSubstituted": "Font substituted: {{from}} → {{to}}.",
-    "textNotEditable": "This text cannot be edited here."
+    "textNotEditable": "This text cannot be edited here.",
+    "exportedImages": "{{count}} image files were written.",
+    "exportedText": "The text was saved as {{name}}.",
+    "compressedSaved": "The compressed copy was saved as {{name}}."
   },
   "split": {
     "title": "Split into files",
@@ -500,5 +521,94 @@
     "substituted": "Font substituted: the paragraph is set in a bundled font instead of {{font}}.",
     "flattened": "This paragraph mixes fonts, sizes or colours; editing sets it in one.",
     "familyAuto": "Automatic"
+  },
+  "output": {
+    "pages": "Pages",
+    "allPages": "All ({{count}})",
+    "currentPage": "Current page",
+    "range": "Range",
+    "rangeLabel": "Page range",
+    "rangePlaceholder": "1-3, 5, 8-",
+    "rangeHelp": "Pages 1 to {{last}}, separated by commas; an open end runs to the last page.",
+    "apply": "Apply",
+    "export": "Export…",
+    "cancel": "Cancel",
+    "edge": "Where",
+    "top": "Top",
+    "bottom": "Bottom",
+    "position": "Along the edge",
+    "start": "At the start",
+    "center": "In the centre",
+    "end": "At the end",
+    "direction": "Line direction",
+    "ltr": "Left to right",
+    "rtl": "Right to left",
+    "digits": "Digits",
+    "western": "Western (123)",
+    "arabicIndic": "Arabic-Indic (١٢٣)",
+    "font": "Font",
+    "size": "Size (pt)",
+    "color": "Colour",
+    "colors": {
+      "grey": "Grey",
+      "black": "Black",
+      "blue": "Blue",
+      "red": "Red",
+      "green": "Green"
+    },
+    "firstNumber": "First number",
+    "headerFooter": {
+      "title": "Header or footer",
+      "tokens": "Type {page} for the page number and {pages} for the last one."
+    },
+    "pageNumbers": {
+      "title": "Page numbers",
+      "format": "Format",
+      "number": "1",
+      "ofTotal": "Page 1 of 9",
+      "slash": "1 / 9",
+      "ofTotalText": "Page {page} of {pages}"
+    },
+    "watermark": {
+      "title": "Watermark",
+      "kind": "Show",
+      "text": "Text",
+      "image": "Image",
+      "textLabel": "Watermark text",
+      "default": "CONFIDENTIAL",
+      "choose": "Choose image…",
+      "noImage": "No image chosen",
+      "width": "Width (of the page)",
+      "opacity": "Opacity",
+      "rotation": "Rotation (degrees)",
+      "behind": "Behind the page's content"
+    },
+    "exportImages": {
+      "title": "Export pages as images",
+      "format": "Format",
+      "dpi": "Resolution (dpi)",
+      "quality": "JPEG quality"
+    },
+    "exportText": {
+      "title": "Export text",
+      "format": "Format",
+      "plain": "Plain text (.txt)",
+      "markdown": "Markdown (.md)",
+      "help": "Text is written in reading order, so Arabic copies and searches correctly."
+    },
+    "compress": {
+      "title": "Compress",
+      "reduce": "Reduce image resolution",
+      "dpi": "Largest resolution (dpi)",
+      "jpeg": "JPEG for colour images",
+      "objectStreams": "Pack objects into compressed streams",
+      "help": "Unused objects are removed. Your document is not changed: the result is saved as a copy.",
+      "run": "Compress",
+      "working": "Compressing…",
+      "save": "Save compressed copy…",
+      "sizes": "{{before}} → {{after}} ({{saved}} smaller)",
+      "details": "Images reduced: {{images}}. Unused objects removed: {{objects}}.",
+      "kept": "{{count}} images were kept as they are (JPEG and other formats are not reduced yet)."
+    }
   }
 }

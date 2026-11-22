@@ -34,11 +34,13 @@ icu_segmenter = { version = "2.4", default-features = false, features = ["compil
 icu_properties = "2.4"
 subsetter = "0.2.6"
 read-fonts = "0.47.0"
+# PNG for page export and image watermarks (MIT OR Apache-2.0; already in the
+# tree through Tauri).
+png = "0.18"
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-png = "0.18"
 serde_json = { workspace = true }
 unicode-normalization = "0.1.26"

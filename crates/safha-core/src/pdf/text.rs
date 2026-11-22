@@ -16,7 +16,7 @@ use super::crypt::Crypt;
 use super::write::Update;
 use super::{Dict, Object};
 use crate::error::{Error, Result};
-use crate::typeset::{FontFace, TextLayout, subset_fonts};
+use crate::typeset::{FontFace, FontSubset, TextLayout, subset_fonts};
 
 /// A font for writing, with the PostScript name it is embedded under.
 #[derive(Debug, Clone)]
@@ -65,6 +65,21 @@ pub(crate) fn draw_text(
 ) -> Result<TextDrawing> {
     let faces: Vec<FontFace> = fonts.iter().map(|font| font.face.clone()).collect();
     let subsets = subset_fonts(text, layout, &faces).map_err(|err| Error::Typeset(err.code()))?;
+    let content = draw_with_subsets(text, layout, &subsets, (left, top), color, prefix);
+    Ok(TextDrawing { content, fonts: fonts_to_embed(subsets, fonts, prefix) })
+}
+
+/// [`draw_text`]'s operators for `layout` (of `text`), drawn with glyphs of
+/// `subsets` made beforehand: several texts can share one set of subsets
+/// when those were made from text that holds them all (ADR 0050).
+pub(crate) fn draw_with_subsets(
+    text: &str,
+    layout: &TextLayout,
+    subsets: &[FontSubset],
+    (left, top): (f32, f32),
+    color: [f32; 3],
+    prefix: &str,
+) -> Vec<u8> {
     // Resource names in the order the subsets come (by font index).
     let resource_of = |font: usize| subsets.iter().position(|s| s.font == font);
 
@@ -113,7 +128,16 @@ pub(crate) fn draw_text(
         }
     }
 
-    let fonts = subsets
+    content.into_bytes()
+}
+
+/// The fonts to embed for `subsets` (of `fonts`), named `prefix` and a number.
+pub(crate) fn fonts_to_embed(
+    subsets: Vec<FontSubset>,
+    fonts: &[NamedFont],
+    prefix: &str,
+) -> Vec<FontToEmbed> {
+    subsets
         .into_iter()
         .enumerate()
         .map(|(resource, subset)| {
@@ -130,8 +154,7 @@ pub(crate) fn draw_text(
                 program: subset.data,
             }
         })
-        .collect();
-    Ok(TextDrawing { content: content.into_bytes(), fonts })
+        .collect()
 }
 
 /// Six capital letters from the subset's bytes, as PDF names subsets
