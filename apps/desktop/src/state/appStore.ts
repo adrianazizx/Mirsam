@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  CompressReport,
   DocumentInfo,
   EditOutcome,
   OutlineItem,
@@ -26,6 +27,17 @@ import {
 } from "./comments";
 import { DEFAULT_SANITIZE, IDLE_REDACTION, type RedactionState } from "./redaction";
 import { clampZoom } from "./zoom";
+
+/** The output dialogs (ADR 0050). */
+export const OUTPUT_DIALOGS = [
+  "headerFooter",
+  "pageNumbers",
+  "watermark",
+  "exportImages",
+  "exportText",
+  "compress",
+] as const;
+export type OutputDialog = (typeof OUTPUT_DIALOGS)[number];
 
 export const TOOLS = [
   "select",
@@ -268,6 +280,15 @@ export interface AppState {
   /** The split dialog is open (asks how many pages per file). */
   splitPrompt: boolean;
   setSplitPrompt(open: boolean): void;
+  /** The open M6 output dialog (ADR 0050), if any. */
+  outputDialog: OutputDialog | null;
+  setOutputDialog(dialog: OutputDialog | null): void;
+  /** The file name of the watermark image last picked (the image stays in the shell). */
+  watermarkImage: string | null;
+  setWatermarkImage(name: string | null): void;
+  /** The last compression's sizes, for the document it was made from. */
+  compressed: { documentId: number; report: CompressReport } | null;
+  setCompressed(compressed: { documentId: number; report: CompressReport } | null): void;
   setGalleryOpen(open: boolean): void;
   setPaletteOpen(open: boolean): void;
   /** Applies settings read from the shell's store at startup. */
@@ -469,6 +490,19 @@ export const useAppStore = create<AppState>((set, get) => {
     splitPrompt: false,
     setSplitPrompt(open) {
       set({ splitPrompt: open });
+    },
+    outputDialog: null,
+    setOutputDialog(dialog) {
+      // A new dialog starts without the last compression's report.
+      set({ outputDialog: dialog, compressed: null });
+    },
+    watermarkImage: null,
+    setWatermarkImage(name) {
+      set({ watermarkImage: name });
+    },
+    compressed: null,
+    setCompressed(compressed) {
+      set({ compressed });
     },
     galleryOpen: false,
     paletteOpen: false,
