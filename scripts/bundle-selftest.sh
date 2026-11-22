@@ -9,7 +9,7 @@
 # Usage: scripts/bundle-selftest.sh <installer-or-app> <out-dir>
 #   .app        runs it where it is
 #   .dmg        mounts it read-only and runs the app inside
-#   .deb, .rpm  unpacks it (dpkg-deb, rpm2cpio) and runs usr/bin/<app>
+#   .deb, .rpm  unpacks it (dpkg-deb; rpm2cpio or bsdtar) and runs usr/bin/<app>
 #   .AppImage   unpacks it (--appimage-extract) and runs its AppRun
 #   -setup.exe  installs it silently (NSIS) into <out-dir>/install, then uninstalls
 #   .msi        unpacks it (an administrative install) into <out-dir>/install
@@ -49,7 +49,8 @@ case "$INSTALLER" in
     BUNDLE_ROOT="$INSTALL"
     ;;
   *.rpm)
-    (cd "$INSTALL" && rpm2cpio "$INSTALLER" | cpio -idm --quiet)
+    # rpm2cpio | cpio where they can read it, else libarchive.
+    (cd "$INSTALL" && rpm2cpio "$INSTALLER" | cpio -idm --quiet) || bsdtar -xf "$INSTALLER" -C "$INSTALL"
     BUNDLE_ROOT="$INSTALL"
     ;;
   *.AppImage)

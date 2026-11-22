@@ -30,6 +30,9 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | Rust lint / format | `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --all` |
 | UI tests / types / lint | `cd apps/desktop && pnpm test` · `pnpm typecheck` · `pnpm lint` (`pnpm format` fixes) |
 | End-to-end shell check | `cargo build -p safha-desktop --features devtools && scripts/selftest.sh <pdf> <out> [en\|ar] [light\|dark]` then `node scripts/check-selftest.mjs <out> <ltr\|rtl>` |
+| Installers (PDFium inside, checked) | `node scripts/bundle.mjs [--target <triple>] [--features devtools]` (never bare `tauri build`; ADR 0060) |
+| Self-test an installer | `scripts/bundle-selftest.sh <dmg\|deb\|rpm\|AppImage\|setup.exe\|msi> <out>` (bundle built with `--features devtools`) |
+| Fuzz the open/parse path | `node fuzz/seed.mjs && cp Cargo.lock fuzz/ && cd fuzz && cargo fuzz run <open\|file\|objects\|content\|cmap>` (fuzz/README.md) |
 | Licence check | `cargo deny check licenses bans sources` · `node scripts/third-party-licenses.mjs [--check]` |
 | Scroll/zoom benchmark (window must be visible) | `scripts/scroll-benchmark.sh <out> debug\|release` then `node scripts/check-scroll-benchmark.mjs <out>` |
 | Page text / extraction report | `cargo run -p safha-core --example page_text -- f.pdf [page]` · `--example fixture_report [-- --verbose]` |
@@ -53,6 +56,7 @@ fixtures/                content/*.json (ground truth) → generate.mjs → out/
 ocr-eval/                evaluation set definition, targets, baselines; out/ is generated
 assets/fonts/            OFL fonts (fixtures now, bundled text-engine fonts later)
 spikes/                  throwaway prototypes behind ADRs; not in the default build
+fuzz/                    cargo-fuzz targets (own workspace, nightly); never ships
 scripts/                 setup, PDFium fetch, self-test, licence report
 third_party/pdfium/      downloaded binaries (git-ignored)
 ```

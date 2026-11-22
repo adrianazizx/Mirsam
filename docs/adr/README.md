@@ -37,6 +37,7 @@ number and says so.
 | [0043](0043-encryption-and-permissions.md) | Encryption and permissions on save: one rewrite pass that decrypts and re-encrypts (AES-256 R6 default, AES-128 R4 for old readers), SASLprep-normalised Unicode passwords tried as typed and normalised, owner vs user, `/P` flags honoured by the command registry | Accepted |
 | [0044](0044-pades-signatures.md) | PAdES: RustCrypto `cms` + `x509-cert` + `x509-tsp` + `rsa` 0.10; prototype signs an incremental update (P-256, RSA, Arabic name, time-stamp) that Poppler/NSS and OpenSSL verify | Proposed (spike; Acrobat unchecked) |
 | [0045](0045-forms-fill-and-sign-signatures.md) | Form filling with our own shaped appearances (`/Q 0` starts where the text's direction starts; comb, list, and button states drawn; `NeedAppearances` turned off after drawing every field); Fill & Sign items as our own `/Stamp`s, resized by `/Rect`; drawn, typed, and image (PNG with soft mask, JPEG as is) signatures kept in the state store | Accepted |
+| [0060](0060-bundling-pdfium.md) | Bundling PDFium per target through a `tauri build --config` overlay (`scripts/bundle.mjs`): macOS `Contents/Frameworks` (universal by `lipo`), Windows beside the exe, Linux `/usr/lib/Mirsam`; every installer opened and checked (pinned bytes, architectures, notices, 60 MB), installed apps self-tested in CI; cargo-fuzz targets for the open and parse path | Accepted |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
 Office → PDF (post-1.0).

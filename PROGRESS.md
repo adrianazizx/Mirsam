@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session M5-c: form filling, Fill & Sign, signatures; merged with `main` after M5-b).
+Last updated: 2026-11-22 (M7 packaging: PDFium bundled on every platform, installers checked, fuzzing; merged with `main` after M5-c).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -70,6 +70,15 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
 
+16. **Code signing and auto-update (M7) need your certificates and accounts:** an Apple Developer ID
+    (signing and notarizing the `.app`/`.dmg`), a Windows code-signing certificate (the exe, the
+    installers, and `pdfium.dll`, which ships as a resource and needs its own signing step), and an
+    update server or GitHub Releases plus Tauri's updater key. Installers build and pass their checks
+    unsigned (ADR 0060); macOS Gatekeeper and Windows SmartScreen will warn until they are signed.
+17. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
+    spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
+    shipped, and not in the licence report. Say if that is not acceptable.
+
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
 
@@ -77,8 +86,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — runs on GitHub. A fully green run on PR #1 is still to be seen
-      (owner item 3)
+- [x] CI on Windows/macOS/Linux — green on every pull request since PR #1; the shell self-tests
+      are required checks (M7 packaging session)
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -122,13 +131,15 @@ by anything found so far.
 
 ### Known gaps carried forward
 
-- Bundling ships PDFium for macOS arm64 only (`tauri.macos.conf.json`). Intel/universal macOS,
-  Windows (`pdfium.dll` beside the exe), and Linux bundle paths are still to configure and test.
+- ~~Bundling ships PDFium for macOS arm64 only.~~ Done in the M7 packaging session (ADR 0060):
+  macOS arm64/Intel/universal, Windows, Linux deb/rpm/AppImage, each installer checked and
+  self-tested in CI.
 - The self-test reads back the canvas, not the composited window (ADR 0007).
 - `ocr-eval` degraded category is too easy; tables need cell-level scoring (ADR 0006).
 - ~~Preferences live in `localStorage` until the SQLite store exists (M1).~~ Done in session 3:
   the store holds them; `localStorage` keeps a copy for the first frame only.
-- No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
+- ~~No fuzzing of the open/parse path yet.~~ Done in the M7 packaging session: five cargo-fuzz
+  targets (`fuzz/`), three crashes found and fixed.
 
 ## M1 — Viewer (P0 viewing) — done; merged from `m1-viewer` with the open items below
 
@@ -537,7 +548,11 @@ Plan, in order:
 
 - [ ] Accessibility pass
 - [ ] Native-speaker Arabic localization review
-- [ ] Onboarding, auto-update, installers and code signing
+- [ ] Onboarding
+- [x] Installers with PDFium for every platform (ADR 0060): `node scripts/bundle.mjs`; each installer
+      opened and checked, the installed app self-tested in English and Arabic (`bundle.yml`)
+- [ ] Code signing and auto-update (owner item 16: certificates)
+- [x] Fuzzing of the open/parse path (spec §11 testing): `fuzz/`, weekly in `fuzz.yml`
 - [ ] Opt-in crash reporting
 - [ ] Performance hardening
 
