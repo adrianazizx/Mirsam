@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`, merged with `main` after Milestone 3 closed).
+Last updated: 2026-11-23 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`, merged with `main` after M6-a, the fill-resize fix and the viewer-shell work).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -80,6 +80,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
+    **Update (M6-a):** the *encoder* half is solved without a dependency: `safha_core::jpeg` is our
+    own baseline encoder (ADR 0050), checked against PDFium's decoder. Only a **decoder** is still
+    needed — for redacting scans and for downsampling JPEG images when compressing (scans are
+    mostly JPEG, so it is compression's biggest gap). `zune-jpeg` (decoder only) is the candidate.
 16. **M3's exit, by hand** (`docs/demos/m3.md`):
     - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
       cannot be driven here);
@@ -604,8 +608,10 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     - Fields in encrypted object streams are not listed.
 - [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
   click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
-  - Resized in 25% steps, with text keeping its size for later changes.
-  - **Gaps:** no drag to move or drag handles to resize; fixed colours and sizes.
+  - Moved by dragging (a dashed outline shows where it lands) or with the arrow keys (1 pt, Shift
+    10 pt). Resized by dragging a corner handle (in proportion, about the opposite corner) or in
+    25% steps; text keeps its size for later changes.
+  - **Gaps:** no moving to another page; fixed colours and sizes.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -632,9 +638,16 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 ## M6 — Edit everything else + convert
 
 - [ ] Images, links, object manipulation
-- [ ] Headers/footers, page numbers, watermarks
+- [~] Headers/footers, page numbers (Western or Arabic-Indic digits, start on the right in RTL),
+      watermarks (text as outlines, PNG/JPEG images; opacity, rotation, behind or over; page
+      ranges) — ADR 0050. Gap: text that runs vertically in page space (an upright footer on a
+      page turned 90°) extracts letter by letter (extractor work); no "remove stamp" yet
 - [ ] Find and replace
-- [ ] Compression; image export; text/Markdown export
+- [~] Compression (unused objects, object streams, Flate, images reduced by drawn resolution, size
+      preview before saving a copy), image export (PNG, own baseline JPEG encoder, 36–600 dpi),
+      text/Markdown export (logical order, RTL blocks marked) — ADR 0050. Gaps: JPEG images are not
+      downsampled (needs a decoder, owner item 15); no font re-subsetting or duplicate merging;
+      no progress bar or cancel for long exports
 - [ ] OCR review mode, region re-OCR, replacing poor text layers, scan-to-editable-text
 
 ## M7 — v1.0 polish
@@ -701,10 +714,59 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - Windows and Linux runs.
   - A native-speaker review of the new Arabic strings (owner item 11).
 - **Merged with `main` after M5-c and the M4 pipeline** (PRs #12, #15, #16), and again after
-  Milestone 3 closed (PR #8; locale keys and the session log only):
+  Milestone 3 closed (PR #8), and after M6-a and the M5 fill-resize fix (PRs #14, #20; module
+  lists, app-store fields, dialogs, locale keys and the session log):
   - **Conflicts were additions on both sides:** dependencies (ureq gains `rustls-no-provider`
     for HTTPS), the `lib.rs` modules, registry arguments and error codes, locale keys, the
     inspector's panels, and the ADR index.
+
+### Session M6-a — 2026-11-22 (Milestone 6: stamps, exports, compression; parallel to M4/M5)
+
+Branch `pomidor/m6-exports-a29095`, from `main` after M4 runtime; `main` merged in as it moved (M5-b encryption, M4 pipeline slices 1 and 3, M5-c forms, session 16's M3 close).
+Stayed out of OCR, forms/signatures and encryption code, as asked.
+
+- **ADR 0050** records the approach. In short: headers, footers, page numbers and watermarks are
+  *stamps*, one incremental update each (one undo), drawn by our own writer in a new content stream per
+  page (ADR 0021's wrapping; nothing regenerated), placed on the page as displayed, marked as
+  pagination artifacts; compression is our own full rewrite, previewed before a copy is saved.
+- **Engine (`safha_core`):**
+  - `stamp`: `Band` (start/centre/end, `{page}`/`{pages}`, digits, first number, `rtl`), `Watermark`
+    (text or image, opacity, rotation, behind); `Document::with_stamp`. A band embeds **one** font set
+    for all its pages (1,000-page numbering: 1.0 MB, 0.49 s release; 5.3 MB with a subset per page).
+    Text watermarks are drawn as glyph outlines (`pdf::outline`), so they stay out of copy, search and
+    export (at 45° as text they read back as "L IA T N E ID F N O C").
+  - `jpeg`: our own baseline JPEG encoder (no licence question; see owner item 15).
+  - `export`: `Document::export_page_image` (PNG/JPEG, 36–600 dpi), `Document::export_text`
+    (plain with form feeds between pages; Markdown with escaping, page markers, and
+    `<div dir="rtl">` around blocks whose direction differs from the document's).
+  - `compress`: `Document::compressed` (refuses signed and encrypted files; checked by reopening).
+    1,000-page fixture 571 KB → 170 KB in 0.24 s; single-page Chrome fixtures 12–26 % smaller.
+  - `pdf::text::draw_text` split into `draw_with_subsets` + `fonts_to_embed` (same output).
+  - `png` is a normal dependency (OCR page images and image signatures use it too). M5-c's
+    `pdf::image` and this branch's watermark image writer overlap: a follow-up can merge them.
+  - `examples/m6_report.rs`: stamping and compression timings and sizes for any PDFs.
+- **Shell (`output.rs`):** `stamp_pages`, `pick_watermark_image` (the image is read here; the UI gets
+  its name), `export_page_images` (one file, or a folder for several, never overwriting),
+  `export_text`, `compress_document` (kept in memory with the bytes it came from) and
+  `save_compressed` (`compress_stale` once the document changed). Error codes `no_image`,
+  `image_unreadable`, `compress_stale`.
+- **UI:** six commands open one dialog each (`pages.headerFooter`, `pages.pageNumbers`,
+  `pages.watermark`, `file.exportImages`, `file.exportText`, `file.compress`), which run `output.*`
+  commands. Page ranges are typed as "1-3, 5, 8-" (Arabic-Indic digits, the Arabic comma and dashes
+  read too). The Arabic UI defaults to Arabic-Indic digits, right to left and Naskh. Stamps need the
+  `modify` permission and exports `copy` (ADR 0043); compression is off for encrypted files. Strings
+  in English and Arabic. Checked in the browser preview in both directions; found and fixed number
+  fields snapping 150 dpi to 156 (a step of 12 from a minimum of 36).
+- **Tests:** `tests/stamp_export.rs` (10, English and Arabic: footer and header placement on plain
+  and turned pages, Arabic-Indic digits and right-side start, undo, translucent rotated and behind
+  watermarks, PNG alpha and our JPEG decoded by PDFium, page images, text/Markdown in logical order,
+  compression of the whole corpus with page text unchanged and `qpdf --check`, image reduction,
+  encrypted refused); unit tests in `jpeg`, `stamp`, `export`, `compress`, `pdf::outline`, `output.rs`;
+  UI `pageRanges.test.ts` and `output.test.tsx` (dialogs in English and Arabic, permissions).
+  Workspace tests, clippy (with and without `devtools`), Biome, `tsc`, `cargo deny` and the licence
+  report pass. The end-to-end shell self-test was not re-run (no shell window code changed).
+- **Not done here:** images/links/object editing and find & replace (other M6 items); OCR review
+  items (depend on M4).
 
 ### Session 16 — 2026-11-22 (Milestone 3's exit test)
 
@@ -921,6 +983,32 @@ encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11b
 - **Merged with `main` again after the M4 pipeline** (PRs #12 and #15): `ocr` and `forms` both
   added to `lib.rs`, both branches made `png` and `serde_json` normal dependencies, and the session
   logs met at the top of this list.
+- **Drag to move Fill & Sign items** (added on request after PR #16 merged; its own PR):
+  - **In the viewer:** a press on an item, with the Sign or Select tool, drags it. A dashed outline
+    shows where it lands, kept on its page. A press that does not travel selects it.
+  - **`fill.move`** applies the drag as one undo step through `SetRect`, and the item stays
+    selected.
+  - **Arrow keys** nudge the selected item 1 pt, and Shift+arrow 10 pt, only while the page view has
+    the focus (8 commands).
+  - **After an edit** the viewer reloads the visible pages' annotations, so a just-placed item drags
+    at once.
+  - **Tests:** a viewer test drags in both modes (including the page edge and a press that stays);
+    a command test covers the move, the nudges, and the arrow keys left to text fields. 193 UI tests
+    pass.
+  - **Checked in the browser preview** against the mock: placing a tick, dragging it at once, and
+    Shift+→ three times.
+- **Corner handles to resize Fill & Sign items** (added on request; its own PR, after the drag one):
+  - **Handles:** a selected item shows four. Dragging one resizes the item about the opposite corner,
+    in proportion (`resizedRect`), at least 6 pt, and on its page.
+  - **Letting go** goes through `fill.move` (`SetRect`), and the item stays selected.
+  - **Grabbing:** a handle reaches 7 px outward but only a quarter of the item inward, so a small
+    tick can still be dragged by its middle. Resize cursors show over the handles.
+  - **Also fixed:** a doc comment the drag change had left above the wrong method.
+  - **Tests:** a viewer test (the handles appear on selection, the corner drag, and the middle still
+    moving the item) and `resizedRect` unit tests (proportion, the anchor, the minimum, the page
+    edge). 196 UI tests pass.
+  - **Checked in the browser preview:** a drawn signature selected, then enlarged by its
+    bottom-right handle.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 

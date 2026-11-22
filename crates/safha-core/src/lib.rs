@@ -11,20 +11,25 @@
 //! annotations ([`annotate`]) and form fields ([`forms`]) as incremental updates, redact and sanitize
 //! ([`redact`]), save ([`save`]), keep local app state ([`store`]), lay out
 //! text for writing ([`typeset`]), and write it into pages ([`text_edit`]) in
-//! the bundled families ([`fonts`]), recognise page images ([`ocr`]), and
-//! download the OCR models ([`models`]).
+//! the bundled families ([`fonts`]); stamp headers, footers, page numbers and
+//! watermarks ([`stamp`]), export pages as images and text ([`export`]),
+//! compress ([`compress`]), recognise page images ([`ocr`]), and download the
+//! OCR models ([`models`]).
 
 pub mod annotate;
 mod bitmap;
 pub mod block_edit;
 pub mod blocks;
 pub mod catalog;
+pub mod compress;
 mod document;
 pub mod edit;
 mod engine;
 mod error;
+pub mod export;
 pub mod fonts;
 pub mod forms;
+pub mod jpeg;
 pub mod models;
 pub mod ocr;
 pub mod outline;
@@ -35,6 +40,7 @@ pub mod render;
 pub mod save;
 pub mod search;
 pub mod security;
+pub mod stamp;
 pub mod store;
 pub mod text;
 pub mod text_edit;

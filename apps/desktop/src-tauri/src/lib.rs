@@ -12,6 +12,7 @@ mod error;
 mod forms;
 mod models;
 mod navigation;
+mod output;
 #[cfg(target_os = "linux")]
 mod print_linux;
 mod recovery;
@@ -78,6 +79,12 @@ macro_rules! product_commands {
             editing::split_document,
             editing::bookmark_parts,
             editing::quit_discarding,
+            output::stamp_pages,
+            output::pick_watermark_image,
+            output::export_page_images,
+            output::export_text,
+            output::compress_document,
+            output::save_compressed,
             recovery::recoveries,
             recovery::restore_recovery,
             recovery::unlock_recovery,
@@ -114,6 +121,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new(started, startup_document_path()))
+        .manage(output::OutputState::default())
         // Tiles: BMP images fetched by the webview (ADR 0011).
         .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
         .setup(|app| {

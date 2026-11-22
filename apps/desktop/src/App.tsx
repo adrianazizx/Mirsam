@@ -12,6 +12,7 @@ import {
 } from "./commands/registry";
 import { SignatureDialog } from "./components/forms/SignatureDialog";
 import { OcrModelPrompt } from "./components/ocr/OcrModelPrompt";
+import { OutputDialog } from "./components/output/OutputDialog";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
 import { SecurityDialog } from "./components/protect/SecurityDialog";
@@ -218,6 +219,7 @@ export function App() {
       <SplitDialog />
       <SignatureDialog />
       <RedactDialog />
+      <OutputDialog />
       <SecurityDialog />
       <SettingsDialog />
       <OcrModelPrompt />

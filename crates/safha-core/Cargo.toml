@@ -44,7 +44,8 @@ ureq = { version = "3.5.2", default-features = false, features = ["rustls-no-pro
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8.5"
 base64 = "0.23.1"
-# PNG: image signatures (ADR 0045) and OCR page images (ADR 0032).
+# PNG (MIT OR Apache-2.0): image signatures (ADR 0045), OCR page images (ADR 0032),
+# page export and image watermarks (ADR 0050).
 png = "0.18"
 # The llama.cpp runtime's .tar.gz builds are unpacked by tar on flate2
 # (miniz_oxide); its Windows .zip builds by models/archive.rs. fs4 asks the OS
