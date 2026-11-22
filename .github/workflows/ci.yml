@@ -146,3 +146,67 @@ jobs:
         with:
           name: shell-selftest
           path: selftest-out
+
+  shell-selftest-other:
+    name: Desktop shell self-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The same end-to-end check on WebKitGTK (Linux, under a virtual X server)
+    # and WebView2 (Windows): tiles over the custom scheme, selection, search,
+    # thumbnails, a second window, in both UI directions. First runs on these
+    # platforms (ADR 0011 left them untested), so not yet required.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      # WebKitGTK in a virtual machine: no GPU, no DMA-BUF.
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev build-essential file qpdf xvfb
+      - name: Virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1600x1200x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      - name: System packages (Windows)
+        if: runner.os == 'Windows'
+        run: choco install qpdf --no-progress -y
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: scripts/fetch-pdfium.sh
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - run: node fixtures/generate.mjs
+      - run: cargo build -p safha-desktop --features devtools --locked
+      - name: Warm-up launch (not checked)
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/warmup en light || true
+      - name: English, light
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/en en light
+      - name: Arabic, dark
+        run: scripts/selftest.sh fixtures/out/chrome/contract-two-column.pdf selftest-out/ar ar dark
+      - name: Check the reports
+        run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shell-selftest-${{ matrix.os }}
+          path: selftest-out
