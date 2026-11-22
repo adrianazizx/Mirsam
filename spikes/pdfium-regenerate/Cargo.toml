@@ -1,0 +1,18 @@
+[package]
+name = "spike-pdfium-regenerate"
+description = "M3 check (throwaway): does PDFium regenerate page content faithfully when objects are deleted or replaced?"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+safha-core = { workspace = true }
+pdfium-render = { workspace = true }
+# Independent reader for the content streams PDFium writes (MIT, already vetted by the M0 spike).
+lopdf = { version = "0.47", default-features = false }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
