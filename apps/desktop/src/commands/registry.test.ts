@@ -170,9 +170,9 @@ describe("command registry", () => {
   });
 
   it("inserts another file's pages, extracts, and splits", async () => {
-    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    // The mock keeps its edits between tests: start from its current page count.
     const before = (await backend.pageSizes(1)).length;
-    useAppStore.getState().updateDocument(1, { pageCount: before });
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: before });
     useAppStore.getState().setActiveTool("pages");
     useAppStore.getState().setSelectedPages(1, [4]);
 
