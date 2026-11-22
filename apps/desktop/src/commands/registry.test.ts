@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { backend } from "../backend";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
 import { commandForEvent, isCommandEnabled, runCommand, shortcutLabel } from "./registry";
 
@@ -28,6 +29,18 @@ describe("command registry", () => {
     expect(shortcutLabel("app.toggleTheme")).toBeNull();
   });
 
+  it("shows its own message when printing fails", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 2 });
+    const print = vi
+      .spyOn(backend, "printDocument")
+      .mockRejectedValue({ code: "print_failed", detail: "no printer" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await runCommand("file.print");
+    expect(print).toHaveBeenCalledWith(1);
+    expect(useAppStore.getState().errorCode).toBe("print_failed");
+    vi.restoreAllMocks();
+  });
+
   it("disables document commands until a document is open", async () => {
     expect(isCommandEnabled("view.zoomIn")).toBe(false);
     await runCommand("view.zoomIn");
@@ -48,6 +61,38 @@ describe("command registry", () => {
     });
     await runCommand("view.fitWidth");
     expect(selectActiveDocument(useAppStore.getState())?.zoomMode).toBe("fit-width");
+  });
+
+  it("goes to a typed page, clamped to the document", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 10 });
+    await runCommand("view.goToPage", { page: 6 });
+    expect(selectActiveDocument(useAppStore.getState())?.page).toBe(6);
+    await runCommand("view.goToPage", { page: 400 });
+    expect(selectActiveDocument(useAppStore.getState())?.page).toBe(9);
+    expect(shortcutLabel("view.goToPage", true)).toBe("⇧⌘N");
+    expect(commandForEvent(key({ key: "N", ctrlKey: true, shiftKey: true }), false)?.id).toBe(
+      "view.goToPage",
+    );
+  });
+
+  it("switches view mode and spread page order", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 10 });
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      viewMode: "continuous",
+      pageOrder: "ltr",
+    });
+    await runCommand("view.modeBook");
+    await runCommand("view.pagesRightToLeft");
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      viewMode: "book",
+      pageOrder: "rtl",
+    });
+    await runCommand("view.modeSingle");
+    await runCommand("view.pagesLeftToRight");
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      viewMode: "single",
+      pageOrder: "ltr",
+    });
   });
 
   it("switches language", async () => {

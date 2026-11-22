@@ -21,17 +21,32 @@ impl CommandError {
 
 impl From<safha_core::Error> for CommandError {
     fn from(err: safha_core::Error) -> Self {
-        use safha_core::Error as E;
-        let code = match &err {
-            E::PdfiumNotFound { .. } | E::PdfiumLoad { .. } => "engine_unavailable",
-            E::PasswordRequired => "password_required",
-            E::InvalidPdf => "invalid_pdf",
-            E::PageOutOfRange { .. } => "page_out_of_range",
-            E::InvalidRenderRequest(_) => "invalid_render_request",
-            E::Io(_) => "io_error",
-            E::Pdfium(_) => "engine_error",
-        };
-        Self::new(code, err.to_string())
+        Self::new(engine_error_code(&err), err.to_string())
+    }
+}
+
+impl From<safha_core::render::RenderError> for CommandError {
+    fn from(err: safha_core::render::RenderError) -> Self {
+        use safha_core::render::RenderError as E;
+        match err {
+            // Expected during scrolling; the UI drops these silently.
+            E::Cancelled => Self::new("cancelled", err.to_string()),
+            E::UnknownDocument(_) => Self::new("unknown_document", err.to_string()),
+            E::Engine(engine) => Self::new(engine_error_code(&engine), engine.to_string()),
+        }
+    }
+}
+
+fn engine_error_code(err: &safha_core::Error) -> &'static str {
+    use safha_core::Error as E;
+    match err {
+        E::PdfiumNotFound { .. } | E::PdfiumLoad { .. } => "engine_unavailable",
+        E::PasswordRequired => "password_required",
+        E::InvalidPdf => "invalid_pdf",
+        E::PageOutOfRange { .. } => "page_out_of_range",
+        E::InvalidRenderRequest(_) => "invalid_render_request",
+        E::Io(_) => "io_error",
+        E::Pdfium(_) => "engine_error",
     }
 }
 

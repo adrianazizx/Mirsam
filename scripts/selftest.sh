@@ -7,6 +7,10 @@
 #
 # Usage: scripts/selftest.sh <file.pdf> <out-dir> [en|ar] [light|dark]
 # Needs: cargo build -p safha-desktop --features devtools
+# Env:   SAFHA_SELFTEST_APP=<binary> runs another devtools build, e.g. the release
+#        bundle (target/release/bundle/macos/Safha.app/Contents/MacOS/safha-desktop);
+#        SAFHA_SELFTEST_SPIKE=<name> runs a benchmark (scroll, tile-transport);
+#        SAFHA_SELFTEST_TIMEOUT=<seconds> (default 60).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,11 +19,17 @@ mkdir -p "$2"
 OUT="$(cd "$2" && pwd)"
 LOCALE="${3:-en}"
 THEME="${4:-light}"
-APP="$ROOT/target/debug/safha-desktop"
+APP="${SAFHA_SELFTEST_APP:-$ROOT/target/debug/safha-desktop}"
+[[ -f "$APP.exe" ]] && APP="$APP.exe"
 TIMEOUT_SECONDS="${SAFHA_SELFTEST_TIMEOUT:-60}"
 
 [[ -x "$APP" ]] || { echo "missing $APP: run cargo build -p safha-desktop --features devtools" >&2; exit 2; }
+# Git Bash on Windows: the app is a native program and needs Windows paths.
+native() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 rm -f "$OUT/report.json" "$OUT/canvas.png"
+# A fresh state store per run: no recents or session from the user's own use,
+# and nothing written back to them.
+rm -rf "$OUT/state"
 
 cd "$ROOT/apps/desktop"
 pnpm exec vite --port 1420 --strictPort >"$OUT/vite.log" 2>&1 &
@@ -32,7 +42,8 @@ for _ in $(seq 1 150); do
   sleep 0.2
 done
 
-SAFHA_OPEN="$PDF" SAFHA_SELFTEST_OUT="$OUT" SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" \
+SAFHA_OPEN="$(native "$PDF")" SAFHA_STATE_DIR="$(native "$OUT/state")" SAFHA_SELFTEST_OUT="$(native "$OUT")" \
+  SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" \
   "$APP" >"$OUT/app.log" 2>&1 &
 APP_PID=$!
 ( sleep "$TIMEOUT_SECONDS"; kill "$APP_PID" 2>/dev/null || true ) &

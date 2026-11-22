@@ -44,7 +44,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         write_stacked(&path.with_extension("png"), &pages)?;
         // Raw RGBA per page so the parent can assemble comparison sheets.
         for (index, page) in pages.iter().enumerate() {
-            std::fs::write(path.with_extension(format!("p{index}.rgba")), page.as_rgba())?;
+            std::fs::write(path.with_extension(format!("p{index}.rgba")), page.to_rgba())?;
         }
         texts.insert(stem, serde_json::Value::Array(page_texts));
     }
@@ -54,7 +54,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 fn write_stacked(path: &Path, pages: &[Bitmap]) -> Result<(), Box<dyn std::error::Error>> {
     let width = pages.iter().map(Bitmap::width).max().unwrap_or(1);
-    let rows: Vec<(u32, u32, &[u8])> = pages.iter().map(|p| (p.width(), p.height(), p.as_rgba())).collect();
+    let rgba: Vec<Vec<u8>> = pages.iter().map(Bitmap::to_rgba).collect();
+    let rows: Vec<(u32, u32, &[u8])> =
+        pages.iter().zip(&rgba).map(|(p, pixels)| (p.width(), p.height(), pixels.as_slice())).collect();
     write_rows(path, width, &rows)
 }
 

@@ -9,6 +9,35 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct Manifest {
     pub fixtures: Vec<Fixture>,
+    /// Producers that could not run where the corpus was generated, and why
+    /// (CoreText exists only on macOS).
+    #[serde(default)]
+    pub skipped: Vec<SkippedProducer>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SkippedProducer {
+    pub producer: String,
+    pub reason: String,
+}
+
+impl Manifest {
+    /// The fixture called `name` ("producer/id"). `None` only when the
+    /// manifest records that its producer could not run on this machine,
+    /// which is reported; any other missing fixture fails the test.
+    pub fn fixture_or_unavailable(&self, name: &str) -> Option<&Fixture> {
+        if let Some(fixture) = self.fixtures.iter().find(|f| f.name() == name) {
+            return Some(fixture);
+        }
+        let producer = name.split('/').next().unwrap_or_default();
+        match self.skipped.iter().find(|skipped| skipped.producer == producer) {
+            Some(skipped) => {
+                eprintln!("not checked here: {name} (producer {producer} unavailable: {})", skipped.reason);
+                None
+            }
+            None => panic!("fixture {name} missing from the corpus: run `node fixtures/generate.mjs`"),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,4 +87,14 @@ pub fn manifest() -> Manifest {
 /// Collapses runs of whitespace (including the line breaks PDFium inserts) to single spaces.
 pub fn normalize_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The form both sides are compared in: NFC, whitespace collapsed.
+pub fn comparable(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    normalize_whitespace(&text.nfc().collect::<String>())
+}
+
+pub fn without_spaces(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
 }

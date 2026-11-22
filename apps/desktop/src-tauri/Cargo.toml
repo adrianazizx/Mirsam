@@ -28,5 +28,10 @@ tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8"
 base64 = { version = "0.22", optional = true }
 
+# Printing on Linux (ADR 0013). Tauri already builds on GTK 3 there; this is the
+# same crate and version its window toolkit uses.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [lints]
 workspace = true

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use pdfium_render::prelude::Pdfium;
 
@@ -28,6 +28,11 @@ pub enum PdfiumSource {
 pub struct Engine {
     pdfium: Pdfium,
     library_path: PathBuf,
+    /// Held across a document load *and* its error report. PDFium keeps one
+    /// process-wide "last error", and pdfium-render reads it in a separate call
+    /// after a failed load; without this, a concurrent load (the render thread,
+    /// another tab) can make a damaged file report "password required".
+    open_lock: Mutex<()>,
 }
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -59,7 +64,7 @@ impl Engine {
         let bindings = Pdfium::bind_to_library(&library_path)
             .map_err(|err| Error::PdfiumLoad { path: library_path.clone(), reason: format!("{err:?}") })?;
 
-        Ok(Engine { pdfium: Pdfium::new(bindings), library_path })
+        Ok(Engine { pdfium: Pdfium::new(bindings), library_path, open_lock: Mutex::new(()) })
     }
 
     /// The PDFium shared library this engine loaded.
@@ -72,8 +77,12 @@ impl Engine {
     /// The engine never holds the source file open, so the original on disk
     /// stays untouched and replaceable (spec section 9, "Document model and saving").
     pub fn open_bytes(&'static self, bytes: Vec<u8>, password: Option<&str>) -> Result<Document> {
+        // Read before PDFium takes the bytes: the catalog's reading preferences,
+        // which PDFium exposes only through an `unsafe` call.
+        let hints = crate::catalog::catalog_hints(&bytes);
+        let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
         let inner = self.pdfium.load_pdf_from_byte_vec(bytes, password)?;
-        Ok(Document::new(inner))
+        Ok(Document::new(inner, hints))
     }
 
     /// Reads `path` fully into memory and opens it.

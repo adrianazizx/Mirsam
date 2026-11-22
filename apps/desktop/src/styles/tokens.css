@@ -34,6 +34,19 @@
   --size-rail: 48px;
   --size-statusbar: 32px;
   --size-inspector: 272px;
+  /* Page viewer geometry, read by the viewer's layout code (src/viewer/layout.ts) */
+  --size-page-gap: var(--space-4); /* between rows of pages */
+  --size-spread-gap: var(--space-1); /* between the two pages of a spread */
+  --size-viewer-padding: var(--space-6); /* around the pages */
+  --size-page-number-field: 56px;
+  --size-side-panel: 248px;
+  /* Thumbnails are drawn this wide (CSS px), read by src/viewer/thumbnails.ts */
+  --size-thumbnail: 128px;
+  --size-search-result: 56px; /* row height of the virtualized results list */
+  --size-palette: 560px;
+  --size-palette-row: 36px;
+  --size-unlock-panel: 400px;
+  --size-selection-toolbar-span: 480px;
   --border-width: 1px;
   --focus-ring-width: 2px;
 
@@ -57,8 +70,14 @@
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* Layers */
+  --layer-page-overlay: 1; /* highlights above a page's tiles */
+  --layer-selection-toolbar: 10;
   --layer-overlay: 100;
   --layer-tooltip: 200;
+
+  /* Reading themes tint the page image, not the UI (spec section 4) */
+  --filter-reading-sepia: sepia(0.55) saturate(1.15) brightness(0.97);
+  --filter-reading-night: invert(0.9) hue-rotate(180deg) contrast(0.92);
 }
 
 /* Light theme (default) */
@@ -90,7 +109,15 @@
 
   --color-page-paper: #ffffff;
   --shadow-page: 0 1px 2px rgb(16 24 40 / 0.1), 0 4px 16px rgb(16 24 40 / 0.1);
+
+  /* Marks drawn over the page image: multiplied, so text under them stays legible */
+  --color-search-hit: rgb(250 204 21 / 0.45);
+  --color-search-hit-active: rgb(234 88 12 / 0.5);
+  --color-text-selection: rgb(14 116 144 / 0.3);
+  --color-search-mark-bg: #fde68a;
+  --color-search-mark-text: #1b1f24;
   --shadow-popover: 0 2px 4px rgb(16 24 40 / 0.08), 0 8px 24px rgb(16 24 40 / 0.14);
+  --color-scrim: rgb(16 24 40 / 0.2);
 
   --color-tooltip-bg: #1b1f24;
   --color-tooltip-text: #f3f4f6;
@@ -124,7 +151,14 @@
 
   --color-page-paper: #ffffff;
   --shadow-page: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 16px rgb(0 0 0 / 0.45);
+
+  --color-search-hit: rgb(250 204 21 / 0.45);
+  --color-search-hit-active: rgb(234 88 12 / 0.5);
+  --color-text-selection: rgb(77 196 220 / 0.35);
+  --color-search-mark-bg: #854d0e;
+  --color-search-mark-text: #fef3c7;
   --shadow-popover: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+  --color-scrim: rgb(0 0 0 / 0.45);
 
   --color-tooltip-bg: #e6e8eb;
   --color-tooltip-text: #16181b;

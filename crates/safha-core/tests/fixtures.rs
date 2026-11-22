@@ -14,7 +14,7 @@ fn engine() -> &'static Engine {
 
 /// Fraction of pixels that are not near-white.
 fn ink_ratio(bitmap: &Bitmap) -> f64 {
-    let (pixels, _) = bitmap.as_rgba().as_chunks::<4>();
+    let (pixels, _) = bitmap.as_bgra().as_chunks::<4>();
     let ink = pixels.iter().filter(|px| px[0] < 200 || px[1] < 200 || px[2] < 200).count();
     ink as f64 / pixels.len() as f64
 }
@@ -97,4 +97,29 @@ fn thousand_page_document_opens_without_touching_every_page() {
     println!("1000-page fixture: open {opened:?}, first render of page 1000 {rendered:?}");
     // Generous ceiling (debug build, CI runners): opening must not scale with page count.
     assert!(opened.as_millis() < 1000, "open took {opened:?}");
+}
+
+#[test]
+fn reads_the_outline_in_both_languages() {
+    let manifest = manifest();
+    let fixture =
+        manifest.fixtures.iter().find(|f| f.name() == "chrome/contract-two-column").expect("exists");
+    let outline = engine().open_file(&fixture.file(), None).expect("opens").outline();
+    let titles: Vec<(&str, Option<usize>)> =
+        outline.iter().map(|item| (item.title.as_str(), item.page)).collect();
+    assert_eq!(titles, [("Lease Agreement", Some(0)), ("عقد إيجار", Some(0))]);
+    assert!(outline.iter().all(|item| item.top.is_some_and(|top| top > 700.0)), "{outline:?}");
+}
+
+#[test]
+fn reads_page_labels() {
+    let manifest = manifest();
+    let fixture = manifest.fixtures.iter().find(|f| f.id == "page-labels").expect("exists");
+    let document = engine().open_file(&fixture.file(), None).expect("opens");
+    let labels: Vec<Option<String>> = (0..3).map(|i| document.page_label(i).expect("label")).collect();
+    assert_eq!(labels, [Some("i".into()), Some("1".into()), Some("2".into())]);
+
+    // A document without labels has none.
+    let plain = manifest.fixtures.iter().find(|f| f.name() == "chrome/en-paragraphs").expect("exists");
+    assert_eq!(engine().open_file(&plain.file(), None).expect("opens").page_label(0).expect("label"), None);
 }

@@ -31,6 +31,8 @@ const ALLOWED = new Set([
   "CC0-1.0",
   "0BSD",
   "OFL-1.1",
+  // SQLite's public-domain dedication. Pending the owner's confirmation (PROGRESS.md).
+  "blessing",
 ]);
 
 /** Components that ship in the app but come from neither Cargo nor npm. */
@@ -41,6 +43,13 @@ const BUNDLED = [
     license: "BSD-3-Clause AND Apache-2.0",
     source: "https://pdfium.googlesource.com/pdfium/",
     note: "Its own third-party notices ship in third_party/pdfium/<platform>/licenses/.",
+  },
+  {
+    name: "SQLite",
+    version: "bundled by libsqlite3-sys",
+    license: "blessing",
+    source: "https://sqlite.org/copyright.html",
+    note: "Compiled into the app from source by rusqlite's `bundled` feature; public domain.",
   },
   ...[
     ["Amiri", "https://github.com/aliftype/amiri"],
@@ -95,15 +104,35 @@ function npmPackages() {
       maxBuffer: 256 * 1024 * 1024,
     }),
   );
-  return Object.entries(listing).flatMap(([license, packages]) =>
+  const rows = Object.entries(listing).flatMap(([license, packages]) =>
     packages.flatMap((pkg) =>
       (pkg.versions ?? [pkg.version]).map((version) => ({
-        name: pkg.name,
+        name: platformNeutral(pkg.name),
         version,
         license,
         source: pkg.homepage ?? `https://www.npmjs.com/package/${pkg.name}`,
       })),
     ),
+  );
+  // One row per package, whichever platform's binary this machine installed.
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = `${row.name}@${row.version}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Native binaries ship as one package per platform (`@typescript/typescript-
+ * darwin-arm64`, `…-linux-x64`, …) and pnpm installs only this machine's. Named
+ * neutrally, the report is the same on every OS, so CI can check it anywhere.
+ */
+function platformNeutral(name) {
+  return name.replace(
+    /-(darwin|linux|win32|freebsd|android)-(arm64|x64|ia32|arm)(-(gnu|musl|msvc|gnueabihf))?$/,
+    "-<platform>",
   );
 }
 

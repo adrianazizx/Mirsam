@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 1).
+Last updated: 2026-11-22 (session 6).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -13,11 +13,18 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **Nothing is committed yet.** `git init` was run; committing was left to you.
-3. **CI has never run.** `.github/workflows/ci.yml` is written and its YAML parses, but there is
-   no remote. Expect first-run fixes, especially on Windows and Linux.
+2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
+   and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
+3. **CI on pull request #1:**
+   - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
+     including printing through GTK on Linux.
+   - **The Linux tests** failed because Chrome on Linux draws some word spaces differently. The
+     extractor now handles both ways (ADR 0008); the fix is pushed and passes locally on the
+     Linux-made corpus. A green CI run is still to be seen.
+   - **The Windows tests** have not yet finished a run.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
-   `CC0-1.0`, `0BSD`, and `MIT-0`. All are permissive and all arrive through Tauri's own
+   `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
+   `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
    dependency tree (Unicode data, ICU4X), so they cannot be avoided on this stack — but the spec
    says to ask.
 5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
@@ -39,6 +46,19 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     measured (ADR 0005).
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
+12. **Does the 500 MB memory budget include WebKit?** On the 1,000-page benchmark (release build)
+    the shell stays under the budget at 339 MB, but the shell and WebKit together reach 726 MB.
+    WebKit alone needs about 155 MB with just one page on screen. A budget for the shell only, or
+    a separate one for the webview (say 400 MB), is achievable today; 500 MB in total is not
+    without deeper work. ADR 0011 has the numbers. Which do you want?
+13. **Try Print once (Cmd/Ctrl+P).** On macOS and Windows, printing goes through the platform's
+    own PDF viewer (ADR 0012): a window shows the PDF and the system print panel opens over it.
+    No session so far could see the screen, so it is unverified. If you see a blank window, or
+    the panel prints only part of the document, say so. The fallback is the Linux path below,
+    which prints pages as images.
+
+    Linux uses GTK's print dialog, with each page drawn at the printer's resolution (ADR 0013).
+    CI checks it by printing to a file; it has not been tried on a desktop with a real printer.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -47,7 +67,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — workflow written; **never executed** (no remote yet)
+- [~] CI on Windows/macOS/Linux — runs on GitHub. A fully green run on PR #1 is still to be seen
+      (owner item 3)
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -95,28 +116,91 @@ by anything found so far.
   Windows (`pdfium.dll` beside the exe), and Linux bundle paths are still to configure and test.
 - The self-test reads back the canvas, not the composited window (ADR 0007).
 - `ocr-eval` degraded category is too easy; tables need cell-level scoring (ADR 0006).
-- Preferences live in `localStorage` until the SQLite store exists (M1).
+- ~~Preferences live in `localStorage` until the SQLite store exists (M1).~~ Done in session 3:
+  the store holds them; `localStorage` keeps a copy for the first frame only.
 - No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
 
-## M1 — Viewer (P0 viewing)
+## M1 — Viewer (P0 viewing) — in progress on branch `m1-viewer`
 
-Starting points already in place: `Document::render_tile`, the command registry, the 1,000-page
-fixture, the extraction baseline (46/118 blocks verbatim), ADR 0004.
+- [x] Render scheduler: one render thread, priority queue, cancellation by viewport generation,
+      64 MiB byte-capped LRU keyed by (document, revision, page, scale, rect), previews then tiles
+      (ADR 0009)
+- [~] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI — measured with a visible window
+      (ADR 0011). Release build, 1,000 pages:
+      - scrolling at 4,000 and 12,000 px/s and flinging drops no frames;
+      - 0.2% of all frames are dropped;
+      - pinch-in is clean;
+      - no page is blank longer than 12 ms; random jumps show a preview within 16 ms.
+      **Still over budget:** an extreme pinch-out (×1/20 in 1.2 s) drops 3 frames, p95 25 ms.
+- [x] View modes: single / continuous / two-page / book; RTL page order. A document's own
+      `/ViewerPreferences /Direction` and `/PageLayout` set its defaults, read by our own safe
+      catalog reader (ADR 0012): an Arabic book that asks for right-to-left spreads opens that way
+- [x] Thumbnails, outline, page labels, go-to-page (ADR 0010) — thumbnail strip on its own render
+      lane; outline tree; the page field shows and accepts labels (`i`, `1`, `2`) and Arabic-Indic
+      digits. Verified in the real app in both directions
+- [x] Tabs and windows (ADR 0012):
+      - tabs: close button, middle-click, Ctrl+Tab / Ctrl+Shift+Tab, reordering by drag and by
+        Ctrl+Shift+PageUp/PageDown in reading order;
+      - windows: New Window (Cmd/Ctrl+N) and Move Tab to New Window; a window's documents close
+        with it; the session restores every window; settings follow across windows.
+      Checked in the real app: the self-test opens a second window
+- [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 86/118 corpus blocks verbatim
+      (was 46), 69/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for OCR;
+      identical text on pages rotated 0/90/180/270°
+- [x] Selection and copy (ADR 0010) — selects visually, copies logically; word/line/page
+      selection, floating Copy button, Edit-menu copy. In the real app, select-all on page 1 copies
+      exactly the page's text in English and Arabic runs
+- [x] Search with Arabic normalization (spec §6.2) — side panel with five options, hits marked on
+      pages, ⌘G/⇧⌘G; 1,000 pages: index 1.09 s once, then 18 ms per search (release)
+- [x] Recents, session restore, per-file position (SQLite) — wired: start screen lists recents
+      (missing files marked), a second launch restores tabs, each file reopens where it was left
+- [x] Reading themes (normal, sepia, night) and command palette (⌘K, matches English and Arabic
+      titles in either UI language)
+- [~] Printing — Cmd/Ctrl+P:
+      - macOS and Windows print through the platform's PDF viewer (ADR 0012). Built, but not yet
+        seen working on screen (owner item 13).
+      - Linux uses GTK's print dialog, with PDFium drawing each page at the printer's resolution
+        (ADR 0013). CI prints the four rotated pages to a file and checks them.
+- [x] Open password-protected PDFs — inline prompt; wrong password asks again; never stored
+- [x] Tiles on Windows and Linux. The shell self-test passes on WebView2 and on WebKitGTK in
+      CI: first page 99–155 ms on virtual machines (ADR 0011, session 6 amendment). The memory
+      experiment is WebKit-on-macOS only.
+- [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
+      pinch-out (above), and memory if WebKit counts (owner question 12). Session 6 tested three
+      causes of the pinch-out drops; none was it (ADR 0011).
+- [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures):
+      - Pages with a trustworthy text layer: 69 of 70 blocks verbatim, and every word of their
+        ground truth is found by search as typed (542 words, `tests/search.rs`).
+      - Copy in the real app equals the extracted text (self-test).
+      - The one miss is `(64-bit)` in an Arabic line, which is drawn exactly like `(bit-64)`.
+      - Pages with a broken mapping are flagged for OCR (M4).
+      - The same holds for the fixtures Chrome makes on Linux (62/63; ADR 0008).
 
-- [ ] Render scheduler: one prioritized queue with cancellation, tile cache keyed by
-      (page, zoom, tile, revision), low-res preview then sharpen (PDFium is single-threaded per
-      process — ADR 0002)
-- [ ] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI
-- [ ] View modes: single / continuous / two-page / book; RTL page order; read `/Direction`
-- [ ] Thumbnails, outline, page labels, go-to-page
-- [ ] Tabs (real: close, reorder), multiple windows
-- [ ] Bidi-aware text extraction (spec §6.1) and selection/copy in logical order
-- [ ] Search with Arabic normalization (spec §6.2)
-- [ ] Recents, session restore, per-file position (SQLite)
-- [ ] Reading themes (sepia, night); command palette; printing
-- [ ] Open password-protected PDFs (the engine already accepts a password; the UI has no prompt)
-- [ ] Re-run the tile-transport spike on Windows and Linux
-- [ ] Exit test: 1,000-page bilingual PDF at 60 fps; Arabic copy and search correct on all fixtures
+Known extraction gap (floors in `crates/safha-core/tests/text.rs`): `(64-bit)` inside an Arabic
+line comes out `(bit-64)`. The two are drawn identically, and the same file's `INV-2026-00417`
+needs the other reading (ADR 0008, session 6 amendment). Everything else missed is on pages
+flagged for OCR.
+
+To re-measure (screen unlocked; the release bundle sometimes opens hidden, and such a run is
+rejected as invalid, so run it again):
+
+- debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
+- release: `(cd apps/desktop && pnpm tauri build --features devtools --bundles app) && scripts/scroll-benchmark.sh <out> release`
+
+Test status at the end of session 6:
+
+- **Rust:** 123 tests pass on this Mac. Clippy is clean with and without `devtools`, `cargo deny`
+  is ok, and the licence report is current. The Linux-only printing code is compiled and linted
+  only by CI.
+- **UI:** 122 tests pass. Biome, `tsc` and the production build are clean.
+- **End to end:** self-tests pass on macOS, Linux and Windows in English/light and Arabic/dark.
+  The scroll benchmark ran visibly in a debug build (pinch-out 7 dropped frames).
+
+Remaining M1 work:
+
+- confirm printing on screen on macOS and Windows (owner item 13);
+- pinch-out frames (needs WebKit's own profiler);
+- the memory budget decision (owner item 12).
 
 ## M2 — Annotate and organize
 
@@ -179,6 +263,164 @@ fixture, the extraction baseline (46/118 blocks verbatim), ADR 0004.
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
+
+- **CI fixes for PR #1:**
+  - The 1,000-page fixture no longer overflows Windows' command line, and no longer depends
+    on qpdf reading `@file` arguments, which Ubuntu's qpdf does not.
+  - Tests skip CoreText fixtures only where the manifest says so.
+  - The macOS self-test gets a warm-up launch.
+  - The benchmark's frame budgets warn on CI virtual machines.
+- **Text extraction** (ADR 0008 amendment): 85/118 blocks verbatim (was 83), and 69/70 on
+  trustworthy pages. The fixes cover Amiri clusters drawn from one origin, a heading alone in its
+  column, and bracket pairs mirrored by bidi level. `(64-bit)` is documented as undecidable from
+  the page.
+- **Search across the corpus:** a new test searches every ground-truth word as typed.
+- **Windows and Linux:** the shell self-test runs on both in CI, and passed on its first run.
+- **Printing on Linux:** GTK's print dialog, with PDFium drawing each page (ADR 0013). CI
+  exports four pages to a file and checks them.
+- **Pinch-out:** three hypotheses measured and rejected (ADR 0011).
+- **Chrome on Linux** draws some word spaces inside another run. Handled now, so extraction on
+  Linux-made fixtures matches macOS (ADR 0008).
+- **Printing on Linux** verified in CI: four rotated pages exported in 203 ms, each on paper of
+  the right orientation.
+
+### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
+
+- **Reading preferences:** `safha_core::catalog` reads `/ViewerPreferences /Direction` and
+  `/PageLayout` without `unsafe`. It handles classic and stream cross-references, incremental
+  updates, and Flate object streams. New fixtures: `derived/rtl-book.pdf` and
+  `derived/rtl-book-objstm.pdf` (24 in all).
+- **Tabs:** reordering by drag and by keyboard, in reading order.
+- **Windows:** multiple windows with per-window sessions (store schema 2) and settings broadcast.
+- **Printing:** through the platform's PDF viewer, still unverified.
+- **CI:** the first CI run's fixes were pushed as PR #1 (Auto-fix on). PR #1's first run then
+  failed three checks, fixed in `40a9331`:
+  - Windows: the 1,000-page fixture's qpdf arguments overflowed the command line. An `@file`
+    list fixed Windows but Ubuntu's qpdf does not read it, so the fixture is now a two-page file
+    whose range `1-2` is repeated 500 times in one argument.
+  - Linux and Windows: tests skip CoreText fixtures only where the manifest records the producer
+    as unavailable.
+  - macOS self-test: an unmeasured warm-up launch, because a cold first launch took 461 ms to the
+    first preview.
+
+Status: 118 Rust tests and 121 UI tests pass. Clippy is clean both ways. Self-tests pass, with a
+second window opened in the real app and the right-to-left book opening right to left in book
+layout.
+
+Things that were not obvious:
+
+- WebKit's print panel cannot be checked from a session that cannot see the screen: the print
+  window opened, but `screencapture` was refused and the window reported itself hidden.
+- Closing the last window must keep its tabs in the session (they are what the next launch
+  restores), and so must quitting, which closes every window. `RunEvent::ExitRequested` marks
+  the second case.
+- qpdf's JSON round trip (`--json-output=2` → edit → `--json-input`) is a clean way to make
+  fixtures with specific catalog entries.
+
+### Session 4 — 2026-11-22 (Milestone 1: the exit-test measurement)
+
+The scroll benchmark ran with a visible window for the first time. In the debug build:
+
+- no blank pages;
+- 1–2% slow frames while scrolling, and up to half while pinching;
+- 1.37 GB of memory, of which more than 1 GB was WebKit's and was never returned.
+
+Changes:
+
+- **Tile transport replaced (ADR 0011):** tiles are now BMP images over the `safha` scheme,
+  loaded by `<img>`. In isolation, WebKit's growth per 2 GB of tiles fell from +170–190 MB to
+  +22–39 MB. The core's bitmaps are now BGRA, with `Bitmap::encode_bmp`.
+- **Zoom gestures** scale with a CSS transform and `will-change`, and lay out only now and then.
+- **Fairer frame rule:** the checker now counts dropped frames.
+- **Benchmark detail:** it records memory per phase, and the viewer's own time per phase.
+
+Result, release build:
+
+| | Before | After |
+|---|---|---|
+| Dropped frames | — | 0.2% |
+| Scrolling | 1–2% slow frames | no dropped frames |
+| Pinch-out | up to half the frames slow | 3 dropped |
+| Shell + WebKit at end | 1.37 GB | 726 MB |
+
+Things that were not obvious:
+
+- Handing tile bytes to JavaScript is what costs memory: an `ArrayBuffer` response or a fetched
+  `Blob` alike. WebKit's garbage collector reclaims them late and its heap stays at its
+  high-water mark. An `<img>` decodes natively and frees on `src = ""`.
+- WebKit rejects a `BITMAPV4` RGBA-bitfields BMP. Plain `BI_RGB` (BGRX) works, and is what PDFium
+  renders anyway. One comparison here was confounded: the plain variant also arrived three times
+  slower, which gives the garbage collector time. Delivery speed matters as much as format for
+  anything that passes through a `Blob`.
+- `createImageBitmap` options made no difference to memory.
+- Measured with counters, our JavaScript costs under 1 ms a frame. The slow frames were WebKit
+  repainting resized pages during zoom.
+- A CSS transform without `will-change` re-rasterizes at every new scale (+187 MB per pinch-in).
+- An idle WKWebView shows a p95 frame interval of 18–19 ms. A 17.5 ms p95 budget could never
+  pass; a missed vsync (over 25 ms) is the meaningful signal.
+- The self-test opens the thumbnail panel, and WebKit's `localStorage` copy carried that into the
+  next run despite the fresh state store. Settings missing from the store now fall back to their
+  defaults, and changes made before the store answers are kept.
+- The release bundle opened hidden in 3 of 5 benchmark launches, with the screen unlocked.
+- **This machine's typecheck had been too lenient since Milestone 0.** `scripts/dev-setup.sh` puts
+  pnpm's packages outside the OneDrive folder; from there, library type files cannot find
+  `@types/react`, so every React Aria component was typed `(props: any) => any`. CI's fresh
+  install caught a `Tabs` prop error this machine missed. `tsconfig.json` now maps `react` to the
+  app's own types, and the two setups agree. This is also why React Aria callbacks seemed to need
+  explicit parameter types under TypeScript 7.
+- Windows needs `.gitattributes` (`eol=lf`), or the formatters reject a CRLF checkout.
+
+### Session 3 — 2026-11-22 (Milestone 1: navigation, search, selection)
+
+Branch `m1-viewer`. The user-facing half of M1 on top of session 2's core (ADR 0010):
+
+- **Side panel:** thumbnails, outline, search.
+- **Selection and copy:** visual select, logical copy.
+- **Local state:** recents, session restore and remembered position, wired to the SQLite store.
+- **Also:** settings in the store, reading themes, the command palette, and the password prompt.
+- **Core:** `view::ViewTransform` (rotation-correct geometry), `search::IndexCache`, page labels in
+  one call, `Urgency::Thumbnail`, and position-only duplicate removal (ADR 0008 amendment).
+- **Fixtures:** new `derived/rotated.pdf`, 22 in all.
+- **Self-test:** now also checks selection, search and thumbnails in the real app.
+- **Test isolation:** self-tests use a throwaway state store (`SAFHA_STATE_DIR`).
+
+Things that were not obvious:
+
+- React Aria's `<Tabs>` builds its collection by rendering *everything* inside it. A search
+  results `ListBox` placed anywhere inside crashed the app with "Duplicate key 1": hit 1 against
+  the tab of document 1. `<Tabs>` now wraps only the tab bar and page area.
+- `PointerEvent.detail` is always 0 in Chromium, so double/triple-click must be counted by hand.
+- React Aria form validation in `native` mode keeps a server error as the input's custom
+  validity, which blocks the next submit: the password prompt could not be retried. `aria` mode
+  shows the message without blocking.
+- Under TypeScript 7, React Aria's render-prop and callback parameters are not inferred; they need
+  explicit types.
+- A debounced session save was lost when the app quit within the delay (the self-test does). It is
+  now written immediately; tab changes are rare.
+- On a rotated page PDFium orders characters by displayed position, so "duplicates are near each
+  other in the stream" was false; duplicates are now found by position alone.
+- The concurrency stress test holds PDFium's open lock for seconds; sharing a test binary with a
+  timing assertion made that flaky. It lives in `tests/concurrency.rs` now.
+
+### Session 2 — 2026-11-22 (Milestone 1 started)
+
+Branch `m1-viewer`. Text extraction and search in the core (ADR 0008); outline and page labels;
+the local state store (recents, view state, settings, session);
+Chrome fixtures now carry outlines; new `derived/page-labels.pdf`. The tiled viewer is being built in
+parallel by a background agent (render service in `safha-core/src/render/`, UI viewer).
+
+Things that were not obvious:
+
+- Chrome writes Arabic in visual order inside `/ReversedChars`, one `/ActualText` span per letter,
+  dots as separate glyphs, and a space glyph at every word break. PDFium's character list drops
+  most of those spaces; its page-object list still has them, at the right positions.
+- `PdfPageTextObject::text()` in pdfium-render rebuilds the page's whole text analysis per call
+  (11 s to index 500 pages); `PdfPageText::for_object` on one shared text page takes 0.54 s.
+- Release builds do not look in `third_party/pdfium`; set `SAFHA_PDFIUM_DIR` to run release tests.
+- PDFium reports a multi-letter Arabic glyph's letters reversed on Chrome pages but not CoreText's;
+  Arabic joining rules (a backward-only letter cannot start a ligature) tell the two apart.
 
 ### Session 1 — 2026-11-22
 

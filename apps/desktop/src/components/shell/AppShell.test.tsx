@@ -4,6 +4,8 @@ import { App } from "../../App";
 import { useAppStore } from "../../state/appStore";
 
 beforeEach(() => {
+  // Settings persist (the mock backend keeps them in localStorage); start clean.
+  localStorage.clear();
   useAppStore.setState({
     locale: "en",
     theme: "light",
@@ -48,7 +50,26 @@ describe("app shell", () => {
       useAppStore.getState().setError("invalid_pdf");
     });
     expect(await screen.findByRole("tab", { name: "عقد.pdf", selected: true })).toBeTruthy();
-    expect(screen.getByText("Page 1 of 12")).toBeTruthy();
+    const pageNumber = screen.getByRole("textbox", { name: "Page number" }) as HTMLInputElement;
+    expect(pageNumber.value).toBe("1");
+    expect(screen.getByText("of 12")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("could not be read");
+  });
+
+  it("offers view modes and page order in the status bar, in both languages", async () => {
+    render(<App />);
+    act(() => useAppStore.getState().addDocument({ id: 3, name: "book.pdf", pageCount: 9 }));
+    expect(await screen.findByRole("region", { name: "Pages of book.pdf" })).toBeTruthy();
+    expect(screen.getByTestId("view-mode").textContent).toContain("Continuous");
+    expect(screen.getByTestId("page-order").textContent).toContain("Left to right");
+    act(() => {
+      useAppStore.getState().updateDocument(3, { viewMode: "book", pageOrder: "rtl" });
+      useAppStore.getState().setLocale("ar");
+    });
+    expect(await screen.findByRole("textbox", { name: "رقم الصفحة" })).toBeTruthy();
+    expect(screen.getByTestId("view-mode").textContent).toContain("كتاب");
+    expect(screen.getByTestId("page-order").textContent).toContain("من اليمين");
+    // The page area keeps its own direction whatever the UI language.
+    expect(document.documentElement.dir).toBe("rtl");
   });
 });

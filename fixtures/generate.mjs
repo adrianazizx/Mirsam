@@ -65,6 +65,8 @@ const PRODUCERS = {
           // CI containers run as root, where Chrome refuses its sandbox.
           ...(process.env.CI ? ["--no-sandbox"] : []),
           "--no-pdf-header-footer",
+          // Headings become the PDF outline (bookmarks).
+          "--generate-pdf-document-outline",
           `--user-data-dir=${path.join(workDir, "chrome-profile")}`,
           `--print-to-pdf=${outFile}`,
           pathToFileURL(htmlFile).href,
@@ -208,15 +210,102 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
 
   // 1,000 pages alternating the bilingual contract and the mixed-direction page:
   // the Milestone 1 exit-test document.
-  const pages = [];
-  for (let i = 0; i < 500; i += 1) {
-    pages.push(src("contract-two-column"), "1", src("mixed-inline"), "1");
-  }
-  execFileSync(qpdf, ["--empty", "--pages", ...pages, "--", derived("bilingual-1000-pages.pdf")]);
+  // A two-page file, then its page range repeated 500 times in one argument:
+  // one file argument per page overflowed Windows' command line, and an
+  // `@file` argument list is not read by every qpdf build (Ubuntu's).
+  const pair = derived("bilingual-pair.tmp.pdf");
+  execFileSync(qpdf, ["--empty", "--pages", src("contract-two-column"), "1", src("mixed-inline"), "1", "--", pair]);
+  const range = Array.from({ length: 500 }, () => "1-2").join(",");
+  execFileSync(qpdf, ["--empty", "--pages", pair, range, "--", derived("bilingual-1000-pages.pdf")]);
+  rmSync(pair);
   add("bilingual-1000-pages.pdf", {
     pages: pageCount(derived("bilingual-1000-pages.pdf")),
     description: "1,000 pages alternating chrome/contract-two-column and chrome/mixed-inline.",
   });
+
+  // Page labels: roman front matter, then arabic numbering from 1.
+  const three = derived("three-pages.tmp.pdf");
+  execFileSync(qpdf, [
+    "--empty",
+    "--pages",
+    src("en-paragraphs"),
+    src("mixed-inline"),
+    src("contract-two-column"),
+    "--",
+    three,
+  ]);
+  execFileSync(qpdf, [three, "--set-page-labels", "1:r", "2:D", "--", derived("page-labels.pdf")]);
+  rmSync(three);
+  add("page-labels.pdf", {
+    pages: 3,
+    pageLabels: ["i", "1", "2"],
+    description: "Three pages labelled i, 1, 2 (qpdf --set-page-labels).",
+  });
+
+  // The same page four times with /Rotate 0, 90, 180, 270: text geometry must
+  // follow the rotation onto the displayed page (selection, search highlights).
+  const quarter = src("mixed-inline");
+  execFileSync(qpdf, [
+    "--empty",
+    "--pages",
+    quarter,
+    quarter,
+    quarter,
+    quarter,
+    "--",
+    "--rotate=+90:2",
+    "--rotate=+180:3",
+    "--rotate=+270:4",
+    derived("rotated.pdf"),
+  ]);
+  add("rotated.pdf", {
+    pages: 4,
+    rotations: [0, 90, 180, 270],
+    description: "chrome/mixed-inline four times, rotated 0, 90, 180 and 270 degrees.",
+  });
+
+  // An Arabic "book" that states its own reading preferences in its catalog:
+  // /ViewerPreferences /Direction /R2L (bound on the right) and /PageLayout
+  // /TwoPageRight (spreads with the first page alone). Edited through qpdf's
+  // JSON form; a second copy keeps the catalog in a compressed object stream
+  // indexed by a cross-reference stream.
+  if (["ar-plain", "ar-sans", "ar-vocalized", "ar-lam-alef"].every((id) => base(id))) {
+    const book = derived("rtl-book.tmp.pdf");
+    execFileSync(qpdf, [
+      "--empty",
+      "--pages",
+      ...["ar-plain", "ar-sans", "ar-vocalized", "ar-lam-alef"].map(src),
+      "--",
+      book,
+    ]);
+    const json = JSON.parse(
+      execFileSync(qpdf, ["--json-output=2", "--json-stream-data=inline", "--json-key=qpdf", book], {
+        encoding: "utf8",
+        maxBuffer: 256 * 1024 * 1024,
+      }),
+    );
+    const objects = json.qpdf[1];
+    const catalog = objects[`obj:${objects.trailer.value["/Root"]}`].value;
+    catalog["/ViewerPreferences"] = { "/Direction": "/R2L" };
+    catalog["/PageLayout"] = "/TwoPageRight";
+    const edited = derived("rtl-book.tmp.json");
+    writeFileSync(edited, JSON.stringify(json));
+    execFileSync(qpdf, ["--json-input", edited, derived("rtl-book.pdf")]);
+    execFileSync(qpdf, ["--object-streams=generate", derived("rtl-book.pdf"), derived("rtl-book-objstm.pdf")]);
+    rmSync(book);
+    rmSync(edited);
+    const hints = { direction: "R2L", pageLayout: "TwoPageRight" };
+    add("rtl-book.pdf", {
+      pages: 4,
+      catalog: hints,
+      description: "Four Arabic pages whose catalog asks for right-to-left binding and two-page spreads.",
+    });
+    add("rtl-book-objstm.pdf", {
+      pages: 4,
+      catalog: hints,
+      description: "rtl-book.pdf with its catalog in an object stream (qpdf --object-streams=generate).",
+    });
+  }
 
   // A file cut off mid-stream: opening it must fail cleanly or recover, never crash.
   const whole = readFileSync(src("mixed-inline"));

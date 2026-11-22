@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         png::Encoder::new(BufWriter::new(File::create(output)?), bitmap.width(), bitmap.height());
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(bitmap.as_rgba())?;
+    encoder.write_header()?.write_image_data(&bitmap.to_rgba())?;
     println!("{output}: {}x{} (page {page} of {})", bitmap.width(), bitmap.height(), document.page_count());
     Ok(())
 }

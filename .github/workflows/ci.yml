@@ -100,6 +100,13 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked --features safha-desktop/devtools -- -D warnings
       - name: Rust tests
         run: cargo test --workspace --locked
+      # Each platform's Chrome lays out the fixtures a little differently;
+      # keep the PDFs a failure was measured on.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fixtures-${{ matrix.os }}
+          path: fixtures/out
 
   shell-selftest:
     name: Desktop shell self-test (macOS)
@@ -125,14 +132,107 @@ jobs:
         working-directory: apps/desktop
       - run: node fixtures/generate.mjs
       - run: cargo build -p safha-desktop --features devtools --locked
+      # The first launch of a freshly built binary on a fresh runner pays
+      # one-time costs (macOS checks the new executable, caches are cold): on
+      # the first CI run it took 461 ms to the first preview, the next launch
+      # 53 ms. Launch once unmeasured so the budget applies to the app.
+      - name: Warm-up launch (not checked)
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/warmup en light || true
       - name: English, light
         run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/en en light
       - name: Arabic, dark
         run: scripts/selftest.sh fixtures/out/coretext/contract-two-column.pdf selftest-out/ar ar dark
       - name: Check the reports
         run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+      # Frame timing on a virtual machine says little about real hardware, so
+      # those budgets only warn here; blank time and the shell's memory fail.
+      - name: Scroll and zoom budgets, 1,000-page document (spec section 11)
+        run: scripts/scroll-benchmark.sh selftest-out/scroll debug --ci
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: shell-selftest
+          path: selftest-out
+
+  shell-selftest-other:
+    name: Desktop shell self-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The same end-to-end check on WebKitGTK (Linux, under a virtual X server)
+    # and WebView2 (Windows): tiles over the custom scheme, selection, search,
+    # thumbnails, a second window, in both UI directions. First runs on these
+    # platforms (ADR 0011 left them untested), so not yet required.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      # WebKitGTK in a virtual machine: no GPU, no DMA-BUF.
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev build-essential file qpdf xvfb
+      - name: Virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1600x1200x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      - name: System packages (Windows)
+        if: runner.os == 'Windows'
+        run: choco install qpdf --no-progress -y
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: scripts/fetch-pdfium.sh
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - run: node fixtures/generate.mjs
+      - run: cargo build -p safha-desktop --features devtools --locked
+      - name: Warm-up launch (not checked)
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/warmup en light || true
+      - name: English, light
+        run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/en en light
+      - name: Arabic, dark
+        run: scripts/selftest.sh fixtures/out/chrome/contract-two-column.pdf selftest-out/ar ar dark
+      - name: Check the reports
+        run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+      # GTK's print path, exported to a file instead of the dialog (ADR 0013):
+      # four pages turned 0, 90, 180 and 270 degrees must all come out.
+      - name: Print through GTK to a file (Linux)
+        if: runner.os == 'Linux'
+        env:
+          SAFHA_SELFTEST_SPIKE: print
+        run: |
+          SAFHA_PRINT_EXPORT="$PWD/selftest-out/print/printed.pdf" \
+            scripts/selftest.sh fixtures/out/derived/rotated.pdf selftest-out/print en light
+          cat selftest-out/print/report.json
+          node -e 'const r = require("./selftest-out/print/report.json").results; if (r.error) { console.error(r.error); process.exit(1); }'
+          pages="$(qpdf --show-npages selftest-out/print/printed.pdf)"
+          echo "printed $pages pages, $(wc -c < selftest-out/print/printed.pdf) bytes"
+          test "$pages" = 4
+          # Small previews of what was printed, for the uploaded artifact.
+          for page in 0 1 2 3; do
+            cargo run -q -p safha-core --example render_png -- \
+              selftest-out/print/printed.pdf "selftest-out/print/page-$page.png" "$page" 0.4
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shell-selftest-${{ matrix.os }}
           path: selftest-out

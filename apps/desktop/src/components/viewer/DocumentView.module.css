@@ -1,0 +1,97 @@
+.viewport {
+  position: relative;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: auto;
+  /* Reserve the scrollbar so fit-width does not oscillate as it appears. */
+  scrollbar-gutter: stable;
+  /* The page area is a physical object: it never mirrors with the UI language.
+     Spread order is a separate, explicit setting (view.pagesRightToLeft). */
+  direction: ltr;
+  /* Pinch and Ctrl+wheel zoom the document, not the webview. */
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+}
+
+.viewport:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.page {
+  position: absolute;
+  overflow: hidden;
+  background: var(--color-page-paper);
+  box-shadow: var(--shadow-page);
+  /* Each page is laid out and painted on its own. */
+  contain: strict;
+}
+
+.preview,
+.tiles {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.preview {
+  display: block;
+}
+
+.tile {
+  position: absolute;
+  display: block;
+}
+
+/* Search hits and the text selection, above the tiles. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--layer-page-overlay);
+  pointer-events: none;
+}
+
+.searchHit,
+.selection {
+  position: absolute;
+  /* Multiplied over the page image, so the glyphs underneath stay legible. */
+  mix-blend-mode: multiply;
+  border-radius: var(--radius-sm);
+}
+
+.searchHit {
+  background: var(--color-search-hit);
+}
+
+.searchHitActive {
+  background: var(--color-search-hit-active);
+  outline: var(--focus-ring-width) solid var(--color-search-hit-active);
+}
+
+.selection {
+  background: var(--color-text-selection);
+}
+
+[data-viewer-content][data-over-text] {
+  cursor: text;
+}
+
+/* Anchor of the floating selection toolbar (positioned by the viewer). */
+.selectionToolbar {
+  position: absolute;
+  z-index: var(--layer-selection-toolbar);
+  inline-size: 0;
+  block-size: 0;
+}
+
+/* Reading themes tint the page images and their marks, not the window. */
+:global(:root[data-reading-theme="sepia"]) .page {
+  filter: var(--filter-reading-sepia);
+}
+
+:global(:root[data-reading-theme="night"]) .page {
+  filter: var(--filter-reading-night);
+  box-shadow: none;
+}

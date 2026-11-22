@@ -1,0 +1,23 @@
+/*
+ * Centred over a zero-size anchor without physical directions: a band
+ * symmetric around the anchor, with the toolbar centred inside it.
+ */
+.band {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline: calc(var(--size-selection-toolbar-span) / -2);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toolbar {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--color-bg-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+}

@@ -11,6 +11,14 @@ publish.workspace = true
 pdfium-render = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+unicode-bidi = "0.3.18"
+unicode-normalization = "0.1.26"
+regex = { version = "1.13", default-features = false, features = ["std", "unicode", "perf"] }
+# Bundled: the same SQLite on every platform, no system library needed.
+rusqlite = { version = "0.43", features = ["bundled"] }
+# Inflate for the catalog reader's object and cross-reference streams; it can
+# cap the decompressed size, which untrusted input needs.
+miniz_oxide = "0.9"
 
 [lints]
 workspace = true
@@ -18,3 +26,4 @@ workspace = true
 [dev-dependencies]
 png = "0.18"
 serde_json = { workspace = true }
+unicode-normalization = "0.1.26"
