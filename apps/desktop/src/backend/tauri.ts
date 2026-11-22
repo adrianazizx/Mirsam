@@ -181,10 +181,28 @@ export const tauriBackend: Backend = {
   formFields: (documentId) => invoke<FormInfo>("form_fields", { documentId }),
   setFormField: (documentId, field, values) =>
     invoke<EditOutcome>("set_form_field", { documentId, field, values }),
-  addFillText: (documentId, page, x, y, contents, size) =>
-    invoke<EditOutcome>("add_fill_text", { documentId, page, x, y, contents, size: size ?? null }),
-  addFillMark: (documentId, page, x, y, kind, size) =>
-    invoke<EditOutcome>("add_fill_mark", { documentId, page, x, y, kind, size: size ?? null }),
+  addFillText: (documentId, page, x, y, contents, size, color) =>
+    invoke<EditOutcome>("add_fill_text", {
+      documentId,
+      page,
+      x,
+      y,
+      contents,
+      size: size ?? null,
+      color: color ?? null,
+    }),
+  addFillMark: (documentId, page, x, y, kind, size, color) =>
+    invoke<EditOutcome>("add_fill_mark", {
+      documentId,
+      page,
+      x,
+      y,
+      kind,
+      size: size ?? null,
+      color: color ?? null,
+    }),
+  setAnnotationColor: (documentId, page, index, color) =>
+    invoke<EditOutcome>("set_annotation_color", { documentId, page, index, color }),
   placeSignature: (documentId, page, x, y, width, signature) =>
     invoke<EditOutcome>("place_signature", { documentId, page, x, y, width, signature }),
   setAnnotationRect: (documentId, page, index, rect) =>

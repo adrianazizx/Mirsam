@@ -57,7 +57,9 @@ pub async fn set_form_field(
     Ok(EditOutcome::new(page_count, &history, Change::Annotations))
 }
 
-/// Places Fill & Sign text (or a date) with its top-left corner displayed at (`x`, `y`).
+/// Places Fill & Sign text (or a date) with its top-left corner displayed at
+/// (`x`, `y`), in `color` (black when absent).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn add_fill_text(
     state: State<'_, AppState>,
@@ -67,16 +69,20 @@ pub async fn add_fill_text(
     y: f32,
     contents: String,
     size: Option<f32>,
+    color: Option<[f32; 3]>,
 ) -> CommandResult<EditOutcome> {
     edit_annotations(&state, document_id, |document| {
         let view = document.view_transform(page)?;
         let size = size.unwrap_or(FillText::DEFAULT_SIZE);
-        let text = FillText::at(x, y, &contents, size, FillText::DEFAULT_COLOR, &view)?;
+        let color = color.unwrap_or(FillText::DEFAULT_COLOR);
+        let text = FillText::at(x, y, &contents, size, color, &view)?;
         Ok(vec![AnnotationEdit::AddFillText { page, text }])
     })
 }
 
-/// Places a tick, cross, or dot `size` points square, its top-left corner displayed at (`x`, `y`).
+/// Places a tick, cross, or dot `size` points square, its top-left corner
+/// displayed at (`x`, `y`), in `color` (black when absent).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn add_fill_mark(
     state: State<'_, AppState>,
@@ -86,15 +92,26 @@ pub async fn add_fill_mark(
     y: f32,
     kind: MarkKind,
     size: Option<f32>,
+    color: Option<[f32; 3]>,
 ) -> CommandResult<EditOutcome> {
     edit_annotations(&state, document_id, |document| {
         let view = document.view_transform(page)?;
         let size = size.unwrap_or(Mark::DEFAULT_SIZE).clamp(4.0, 200.0);
-        Ok(vec![AnnotationEdit::AddMark {
-            page,
-            mark: Mark::at(x, y, size, kind, Mark::DEFAULT_COLOR, &view),
-        }])
+        let color = color.unwrap_or(Mark::DEFAULT_COLOR);
+        Ok(vec![AnnotationEdit::AddMark { page, mark: Mark::at(x, y, size, kind, color, &view) }])
     })
+}
+
+/// Recolours a Fill & Sign text or mark: one undo step.
+#[tauri::command]
+pub async fn set_annotation_color(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    index: usize,
+    color: [f32; 3],
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |_| Ok(vec![AnnotationEdit::SetColor { page, index, color }]))
 }
 
 /// Places a kept signature `width` points wide, its top-left corner displayed at (`x`, `y`).

@@ -938,7 +938,7 @@ export interface Backend {
   formFields(documentId: number): Promise<FormInfo>;
   /** Fills in a field (values as `FormField.values`): one undo step. */
   setFormField(documentId: number, field: number, values: string[]): Promise<EditOutcome>;
-  /** Places Fill & Sign text, its top-left corner displayed at (`x`, `y`). */
+  /** Places Fill & Sign text, its top-left corner displayed at (`x`, `y`); black unless `color`. */
   addFillText(
     documentId: number,
     page: number,
@@ -946,8 +946,9 @@ export interface Backend {
     y: number,
     contents: string,
     size?: number,
+    color?: [number, number, number],
   ): Promise<EditOutcome>;
-  /** Places a tick, cross, or dot, its top-left corner displayed at (`x`, `y`). */
+  /** Places a tick, cross, or dot, its top-left corner displayed at (`x`, `y`); black unless `color`. */
   addFillMark(
     documentId: number,
     page: number,
@@ -955,6 +956,14 @@ export interface Backend {
     y: number,
     kind: MarkKind,
     size?: number,
+    color?: [number, number, number],
+  ): Promise<EditOutcome>;
+  /** Recolours a Fill & Sign text or mark (ADR 0045): one undo step. */
+  setAnnotationColor(
+    documentId: number,
+    page: number,
+    index: number,
+    color: [number, number, number],
   ): Promise<EditOutcome>;
   /** Places a kept signature `width` points wide, its top-left corner displayed at (`x`, `y`). */
   placeSignature(

@@ -19,6 +19,7 @@ import type {
 import type { Locale } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
+import type { DocumentColorId } from "./colors";
 import {
   type CommentFilter,
   type CommentSort,
@@ -203,6 +204,9 @@ export interface AppState {
   fillTool: FillTool | null;
   /** The kept signature `fillTool: "signature"` places. */
   fillSignature: number | null;
+  /** The colour new Fill & Sign text, dates and marks are placed in (ADR 0045). */
+  fillColor: DocumentColorId;
+  setFillColor(color: DocumentColorId): void;
   setFill(tool: FillTool | null, signature?: number | null): void;
   /** The kept signatures and initials, newest first; null until loaded. */
   signatures: SignatureInfo[] | null;
@@ -436,6 +440,10 @@ export const useAppStore = create<AppState>((set, get) => {
     pendingNote: null,
     fillTool: null,
     fillSignature: null,
+    fillColor: "black",
+    setFillColor(fillColor) {
+      set({ fillColor });
+    },
     setFill(fillTool, signature) {
       set((state) => ({
         fillTool,
