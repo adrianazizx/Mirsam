@@ -10,7 +10,7 @@ number and says so.
 | [0002](0002-pdf-engine-pdfium.md) | Render/parse engine: PDFium via `pdfium-render`, dynamically loaded | Accepted |
 | [0003](0003-ui-stack.md) | UI stack: React, React Aria Components, CSS-variable tokens, i18next | Accepted |
 | [0004](0004-tile-transport.md) | Tile transport: native PDFium + raw binary IPC | Accepted (spike); transport superseded by 0011 |
-| [0005](0005-pdf-text-writing.md) | Writing text: own shaping pipeline, emitted through PDFium's CID-font API; own writer kept as second backend | Accepted (spike), one check before M3 |
+| [0005](0005-pdf-text-writing.md) | Writing text: own shaping pipeline; PDFium's content regeneration is lossy, so text is emitted by our own writer as incremental updates (2026-11-22 amendment) | Accepted, amended in M3 |
 | [0006](0006-ocr-evaluation.md) | OCR evaluation method and gates; engine choice deferred to M4 | Accepted |
 | [0007](0007-fixtures-and-self-test.md) | Generated fixture corpus and in-app self-test harness | Accepted |
 | [0008](0008-text-extraction-and-search.md) | Text extraction in reading order (geometry + bidi + producer quirks) and Arabic-aware search | Accepted |

@@ -3558,6 +3558,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "spike-pdfium-regenerate"
+version = "0.0.1"
+dependencies = [
+ "lopdf",
+ "pdfium-render",
+ "safha-core",
+ "serde_json",
+]
+
+[[package]]
 name = "sqlite-wasm-rs"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
