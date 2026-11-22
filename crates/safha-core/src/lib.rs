@@ -7,8 +7,8 @@
 //! Surface so far: bind PDFium, open documents, report page geometry, render
 //! through a prioritized queue ([`render`]), extract text in logical order
 //! ([`text`]), search it ([`search`]), read the outline and page labels, map
-//! page space to the displayed page ([`view`]), and keep local app state
-//! ([`store`]).
+//! page space to the displayed page ([`view`]), keep local app state
+//! ([`store`]), and lay out text for writing ([`typeset`]).
 
 mod bitmap;
 pub mod catalog;
