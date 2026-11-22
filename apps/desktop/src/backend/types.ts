@@ -5,6 +5,119 @@ export interface AppInfo {
   devtools: boolean;
 }
 
+/** A change to a document's pages. Page numbers are zero-based, before the edit. */
+export type PageEdit =
+  | { kind: "rotate"; pages: number[]; quarterTurns: number }
+  | { kind: "delete"; pages: number[] }
+  /** The pages keep their order and the first lands at index `to` of the result. */
+  | { kind: "move"; pages: number[]; to: number }
+  /** An empty page of `width` × `height` points before index `at`. */
+  | { kind: "insertBlank"; at: number; width: number; height: number }
+  /** Each copy goes right after its page. */
+  | { kind: "duplicate"; pages: number[] };
+
+/** The document after an edit, an undo, or a redo. */
+export interface EditOutcome {
+  pageCount: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Differs from the file as opened or last saved. */
+  modified: boolean;
+  /**
+   * The pages changed (count, order, sizes, content). Otherwise only their
+   * annotations did: the same pages just need painting again.
+   */
+  pagesChanged: boolean;
+}
+
+/** The four text-markup annotations (ADR 0017). */
+export type MarkupKind = "highlight" | "underline" | "strikeOut" | "squiggly";
+
+/** Marked text on one page: the displayed-page rectangles of its runs. */
+export interface MarkedPage {
+  page: number;
+  rects: ViewRect[];
+}
+
+/** The annotations the app writes and can change or remove (ADRs 0017, 0018). */
+export type AnnotationKind = MarkupKind | "ink" | "note" | "textBox";
+
+/** An annotation on a page, for hit-testing, showing, and changing it. */
+export interface PageAnnotation {
+  /** Its position in the page's annotations; what the edit commands take. */
+  index: number;
+  kind: AnnotationKind;
+  /** Displayed-page rectangles: one per run of marked text, else its box. */
+  rects: ViewRect[];
+  /** A note's text. */
+  contents: string | null;
+  /** Ink strokes as displayed-page `[x, y]` points. */
+  strokes: [number, number][][];
+}
+
+/** What inserting pages from files led to: done, or a file's password is needed (ADR 0016). */
+export type InsertOutcome =
+  | { kind: "inserted"; edit: EditOutcome }
+  | { kind: "needsPassword"; token: number; name: string; retry: boolean };
+
+/** How to split a document (ADR 0016): by pages per file, at top-level bookmarks, or by bytes per file. */
+export type SplitBy =
+  | { kind: "pages"; size: number }
+  | { kind: "bookmarks" }
+  | { kind: "bytes"; limit: number };
+
+/** One file of a split at the top-level bookmarks: its title and pages (zero-based, end exclusive). */
+export interface BookmarkPart {
+  title: string;
+  start: number;
+  end: number;
+}
+
+/** A reply in a comment's thread (ADR 0041). */
+export interface CommentReply {
+  index: number;
+  author: string | null;
+  /** Unix seconds. */
+  modified: number | null;
+  contents: string;
+}
+
+/** A comment as the comments panel lists it (ADR 0041). */
+export interface DocumentComment {
+  page: number;
+  /** Its position in the page's annotations; what the comment commands take. */
+  index: number;
+  kind: AnnotationKind;
+  author: string | null;
+  /** Unix seconds. */
+  modified: number | null;
+  /** A note's or text box's text, or a comment on markup. */
+  contents: string | null;
+  /** For markup, the page's text under it. */
+  markedText: string | null;
+  /** Where it is on the displayed page. */
+  rect: ViewRect;
+  resolved: boolean;
+  /** Oldest first. */
+  replies: CommentReply[];
+}
+
+/** A point of a pen stroke on the displayed page, with the pen's pressure (0–1). */
+export interface StrokePoint {
+  x: number;
+  y: number;
+  pressure: number;
+}
+
+/** The document after a save. */
+export interface SaveOutcome {
+  /** The file's display name (new after Save As). */
+  name: string;
+  modified: boolean;
+  /** Edits were appended to keep the file's signatures valid. */
+  incremental: boolean;
+}
+
 export interface DocumentInfo {
   id: number;
   /** File name only; the UI never sees filesystem paths. */
@@ -18,6 +131,26 @@ export interface DocumentInfo {
    */
   readingDirection?: "ltr" | "rtl" | null;
   pageLayout?: "single" | "continuous" | "spread" | "book" | null;
+  /** Restored from a recovery file with unsaved changes (ADR 0040). */
+  modified?: boolean;
+  canUndo?: boolean;
+}
+
+/** Unsaved changes an earlier session left, kept in a recovery file (ADR 0040). */
+export interface RecoveryInfo {
+  /** Names it in `restoreRecovery` and `discardRecovery`; the UI never sees paths. */
+  token: number;
+  name: string;
+  /** When its latest change was kept (Unix seconds). */
+  savedAt: number;
+  /** The original changed or went away since: the recovered version is saved as a new file. */
+  originalChanged: boolean;
+}
+
+/** What restoring a recovery file led to, and the tab it replaced (the original, reopened). */
+export interface RestoreOutcome {
+  outcome: OpenOutcome;
+  replaced: number | null;
 }
 
 /** A document's remembered position (safha_core::store::ViewState). */
@@ -41,6 +174,8 @@ export interface Startup {
   documents: OpenOutcome[];
   /** The document to show first. */
   active: number | null;
+  /** Unsaved changes an earlier session left, offered once at the app's start. */
+  recoveries?: RecoveryInfo[];
 }
 
 export interface RecentFile {
@@ -308,6 +443,86 @@ export interface Backend {
    * (ADR 0012; unverified on screen so far).
    */
   printDocument(documentId: number): Promise<void>;
+  /** Applies a page edit; the document is then at a new revision (ADR 0014). */
+  editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
+  undoEdit(documentId: number): Promise<EditOutcome>;
+  redoEdit(documentId: number): Promise<EditOutcome>;
+  /** Marks text: one annotation per page, all in one undo step (ADR 0017). */
+  addMarkup(documentId: number, kind: MarkupKind, pages: MarkedPage[]): Promise<EditOutcome>;
+  /** Adds freehand ink: strokes in displayed-page points (ADR 0018). */
+  addInk(documentId: number, page: number, strokes: StrokePoint[][]): Promise<EditOutcome>;
+  /** Adds a sticky note whose icon's top-left corner is displayed at (`x`, `y`). */
+  addNote(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /**
+   * Adds a text box (ADR 0019) whose top-left corner is displayed at (`x`,
+   * `y`), `width` points wide; its height fits the text.
+   */
+  addTextBox(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    width: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Replaces a note's or a text box's text. */
+  setAnnotationContents(
+    documentId: number,
+    page: number,
+    index: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Opens a recovery file as a document with unsaved changes; an encrypted one asks first. */
+  restoreRecovery(token: number): Promise<RestoreOutcome>;
+  /** Tries the password of an encrypted recovery file (the token its restore gave). */
+  unlockRecovery(token: number, password: string): Promise<RestoreOutcome>;
+  /** Deletes a recovery file the user does not want. */
+  discardRecovery(token: number): Promise<void>;
+  /** Whether a document's changes are kept in a recovery file; devtools builds only (the self-test). */
+  hasRecoveryFile(documentId: number): Promise<boolean | null>;
+  /** Every comment in the document, page by page (ADR 0041). */
+  documentComments(documentId: number): Promise<DocumentComment[]>;
+  /** Answers a comment; signed with the `commentAuthor` setting. */
+  replyToComment(
+    documentId: number,
+    page: number,
+    index: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Marks a comment resolved, or open again. */
+  setCommentResolved(
+    documentId: number,
+    page: number,
+    index: number,
+    resolved: boolean,
+  ): Promise<EditOutcome>;
+  /** Removes annotations of one page (with their pop-ups and replies) in one undo step. */
+  removeAnnotations(documentId: number, page: number, indices: number[]): Promise<EditOutcome>;
+  /** The page's annotations of the kinds the app writes. */
+  pageAnnotations(documentId: number, page: number): Promise<PageAnnotation[]>;
+  /**
+   * Asks for PDFs and inserts their pages before page `at`, in order (ADR 0016);
+   * null if cancelled.
+   */
+  insertPagesFromFiles(documentId: number, at: number): Promise<InsertOutcome | null>;
+  /** Tries the password of the file an insert waits for, and goes on. */
+  unlockInsert(token: number, password: string): Promise<InsertOutcome>;
+  /** Asks where, and writes `pages` as a new PDF; its name, or null if cancelled. */
+  extractPages(documentId: number, pages: number[]): Promise<string | null>;
+  /** Asks for a folder and writes the document in parts; how many, or null (ADR 0016). */
+  splitDocument(documentId: number, by: SplitBy): Promise<number | null>;
+  /** Where a split at the top-level bookmarks would fall (fewer than two: none). */
+  bookmarkParts(documentId: number): Promise<BookmarkPart[]>;
+  /** Saves over the document's file (ADR 0015). */
+  saveDocument(documentId: number): Promise<SaveOutcome>;
+  /** Asks where to save, saves there, and the document becomes that file; null if cancelled. */
+  saveDocumentAs(documentId: number): Promise<SaveOutcome | null>;
   /** Gives the document's tab to a new window; the caller drops its own tab. */
   moveToNewWindow(documentId: number): Promise<void>;
   /**
@@ -315,6 +530,14 @@ export interface Backend {
    * follows a change made in one. Returns a function that stops listening.
    */
   onSettingChanged(listener: (key: string, value: string) => void): Promise<() => void>;
+  /** The shell asks this window to confirm closing it: it holds unsaved changes (ADR 0015). */
+  onCloseRequested(listener: () => void): Promise<() => void>;
+  /** The shell asks this window to confirm quitting: documents hold unsaved changes. */
+  onQuitRequested(listener: () => void): Promise<() => void>;
+  /** Closes this window without saving its documents (the user confirmed). */
+  closeWindowDiscarding(): Promise<void>;
+  /** Quits without saving (the user confirmed). */
+  quitDiscarding(): Promise<void>;
   selftestConfig(): Promise<SelftestConfig | null>;
   selftestReport(results: unknown, canvasPng: string | null): Promise<void>;
   /** Devtools builds only; null elsewhere. */

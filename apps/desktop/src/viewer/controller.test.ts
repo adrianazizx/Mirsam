@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backend, KeptRequest, Priority, RenderedPage, TileRequest } from "../backend";
-import { ViewerController, type ViewState } from "./controller";
+import { ViewerController, type ViewerMode, type ViewState } from "./controller";
 
 /**
  * The controller against a fake backend and a stubbed 1000 x 800 viewport
@@ -13,6 +13,9 @@ interface Call {
   tile: TileRequest;
   priority: Priority;
 }
+
+/** What a press does in the viewer under test. */
+let mode: ViewerMode = "select";
 
 function setup(view: Partial<ViewState> = {}, pageCount = 10) {
   const calls: Call[] = [];
@@ -40,6 +43,40 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       };
       return bitmap;
     },
+    pageText: async () => ({ blocks: [], direction: "ltr", quality: "noText" }),
+    // Page 0 has a highlight over (10, 10)-(110, 30) in page points.
+    pageAnnotations: async (_doc: number, page: number) =>
+      page === 0
+        ? [
+            {
+              index: 3,
+              kind: "highlight",
+              rects: [{ x: 10, y: 10, width: 100, height: 20 }],
+              contents: null,
+              strokes: [],
+            },
+            // A stroke along y = 300, and a note at (250, 10).
+            {
+              index: 4,
+              kind: "ink",
+              rects: [{ x: 8, y: 298, width: 194, height: 4 }],
+              contents: null,
+              strokes: [
+                [
+                  [10, 300],
+                  [200, 300],
+                ],
+              ],
+            },
+            {
+              index: 5,
+              kind: "note",
+              rects: [{ x: 250, y: 10, width: 20, height: 20 }],
+              contents: "ملاحظة",
+              strokes: [],
+            },
+          ]
+        : [],
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
       updates.push(keep);
     },
@@ -49,7 +86,16 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
   Object.defineProperty(container, "clientWidth", { value: 1000 });
   Object.defineProperty(container, "clientHeight", { value: 800 });
   document.body.append(container);
-  const callbacks = { onCurrentPage: vi.fn(), onZoom: vi.fn(), onFatal: vi.fn() };
+  const callbacks = {
+    onCurrentPage: vi.fn(),
+    onZoom: vi.fn(),
+    onFatal: vi.fn(),
+    onAnnotationSelect: vi.fn(),
+    onInk: vi.fn(),
+    onErase: vi.fn(),
+    onPlaceNote: vi.fn(),
+    onPlaceTextBox: vi.fn(),
+  };
   const viewer = new ViewerController({
     backend,
     documentId: 1,
@@ -63,6 +109,12 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       searchHit: "hit",
       searchHitActive: "hit-active",
       selection: "selection",
+      markupSelected: "markup-selected",
+      inkPreview: "ink-preview",
+      inkErasing: "ink-erasing",
+      notePending: "note-pending",
+      textBoxPending: "text-box-pending",
+      noteEditor: "note-editor",
       selectionToolbar: "selection-toolbar",
     },
     initial: {
@@ -77,6 +129,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     callbacks,
     pageLabel: (page) => `Page ${page + 1}`,
     isMac: false,
+    mode: () => mode,
   });
   const scrollTo = (top: number) => {
     container.scrollTop = top;
@@ -105,6 +158,7 @@ beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = (() => null) as typeof getContext;
 });
 afterEach(() => {
+  mode = "select";
   HTMLCanvasElement.prototype.getContext = getContext;
   document.body.replaceChildren();
 });
@@ -230,6 +284,164 @@ describe("viewer controller", () => {
     expect(content?.style.transform).toBe("");
     expect(height()).not.toBe(laidOut);
     expect(viewer.snapshot().zoom).toBeCloseTo(zoom ?? 0);
+    viewer.destroy();
+  });
+
+  it("paints pages again after an annotation edit, keeping the old tiles until new ones arrive", async () => {
+    const { viewer, container, calls } = setup();
+    await settle();
+    const canvases = () => container.querySelectorAll("[data-page='0'] canvas").length;
+    const before = canvases();
+    const requested = calls.length;
+    viewer.refresh();
+    // Nothing went blank: the old canvases stay while the page is drawn again.
+    expect(canvases()).toBe(before);
+    expect(viewer.snapshot().visible[0]?.sharp).toBe(false);
+    const again = calls.slice(requested).filter((call) => call.page === 0);
+    expect(again.map((call) => call.tile.scale).sort()).toEqual([Math.fround(0.25), 1]);
+    await settle();
+    // The new ones replaced them.
+    expect(canvases()).toBe(before);
+    expect(viewer.snapshot().visible[0]).toEqual({ page: 0, preview: true, sharp: true });
+    viewer.destroy();
+  });
+
+  it("selects markup with a click, and forgets it on Escape or an annotation edit", async () => {
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    // Page 0 sits at (350, 20), one CSS px per point: page point (45, 15) is at (395, 35).
+    const press = (type: string, clientX = 395) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX, clientY: 35, button: 0 }),
+      );
+    // The first click works even before the page's markup has arrived.
+    press("pointerdown");
+    press("pointerup");
+    await settle();
+    expect(callbacks.onAnnotationSelect).toHaveBeenLastCalledWith({
+      page: 0,
+      index: 3,
+      kind: "highlight",
+      contents: null,
+      rect: { x: 10, y: 10, width: 100, height: 20 },
+    });
+    expect(viewer.currentAnnotation()?.index).toBe(3);
+    expect(container.querySelectorAll(".markup-selected")).toHaveLength(1);
+
+    // Escape's command clears it; an annotation edit forgets it too.
+    viewer.clearSelection();
+    expect(callbacks.onAnnotationSelect).toHaveBeenLastCalledWith(null);
+    expect(container.querySelectorAll(".markup-selected")).toHaveLength(0);
+    // Further along the highlight, so it is not taken for a double click.
+    press("pointerdown", 420);
+    press("pointerup", 420);
+    await settle();
+    expect(viewer.currentAnnotation()?.index).toBe(3);
+    viewer.refresh();
+    expect(viewer.currentAnnotation()).toBeNull();
+    viewer.destroy();
+  });
+
+  it("draws with the pen on the page it started on, and keeps the stroke until the page repaints", async () => {
+    mode = "pen";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    // Page 0 sits at (350, 20), one CSS px per point: page point (x, y) is at (350 + x, 20 + y).
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          clientX: 350 + x,
+          clientY: 20 + y,
+          button: 0,
+        }),
+      );
+    at("pointerdown", 100, 200);
+    at("pointermove", 150, 210);
+    // Past the page's bottom edge (and onto the next page): kept on this page.
+    at("pointermove", 200, 450);
+    at("pointerup", 200, 450);
+    expect(callbacks.onInk).toHaveBeenCalledWith(0, [
+      [
+        { x: 100, y: 200, pressure: 0.5 },
+        { x: 150, y: 210, pressure: 0.5 },
+        { x: 200, y: 400, pressure: 0.5 },
+      ],
+    ]);
+    expect(container.querySelectorAll(".ink-preview path").length).toBeGreaterThan(0);
+    // The stroke stays drawn until the engine's repaint covers it.
+    viewer.refresh();
+    expect(container.querySelectorAll(".ink-preview path").length).toBeGreaterThan(0);
+    await settle();
+    expect(container.querySelectorAll(".ink-preview")).toHaveLength(0);
+    viewer.destroy();
+  });
+
+  it("erases the ink a drag touches, and only that", async () => {
+    mode = "eraser";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          clientX: 350 + x,
+          clientY: 20 + y,
+          button: 0,
+        }),
+      );
+    at("pointerdown", 50, 250);
+    await settle();
+    at("pointermove", 100, 299);
+    expect(container.querySelectorAll(".ink-erasing")).toHaveLength(1);
+    at("pointerup", 100, 299);
+    expect(callbacks.onErase).toHaveBeenCalledWith(0, [4]);
+    viewer.destroy();
+  });
+
+  it("places a note where it is pressed, and opens one that is pressed", async () => {
+    mode = "note";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const click = async (x: number, y: number) => {
+      for (const type of ["pointerdown", "pointerup"]) {
+        content.dispatchEvent(
+          new MouseEvent(type, {
+            bubbles: true,
+            clientX: 350 + x,
+            clientY: 20 + y,
+            button: 0,
+          }),
+        );
+      }
+      await settle();
+    };
+    // On empty page: the icon centred on the press.
+    await click(150, 200);
+    expect(callbacks.onPlaceNote).toHaveBeenCalledWith(0, 140, 190);
+    viewer.showPendingNote({ page: 0, x: 140, y: 190, kind: "note", width: 20 });
+    expect(container.querySelectorAll(".note-pending")).toHaveLength(1);
+    expect(viewer.noteEditorHost.hidden).toBe(false);
+    viewer.showPendingNote(null);
+    expect(container.querySelectorAll(".note-pending")).toHaveLength(0);
+
+    // With the text box tool: the box's corner at the press, as wide as the page allows.
+    mode = "textBox";
+    await click(150, 250);
+    expect(callbacks.onPlaceTextBox).toHaveBeenCalledWith(0, 150, 250, 146);
+    mode = "note";
+
+    // On a note: it opens, with its text.
+    await click(255, 15);
+    expect(callbacks.onAnnotationSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 5, kind: "note", contents: "ملاحظة" }),
+    );
+    expect(viewer.noteEditorHost.hidden).toBe(false);
+    expect(callbacks.onPlaceNote).toHaveBeenCalledTimes(1);
     viewer.destroy();
   });
 

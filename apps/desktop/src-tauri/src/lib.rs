@@ -7,10 +7,12 @@
 mod commands;
 #[cfg(feature = "devtools")]
 mod diagnostics;
+mod editing;
 mod error;
 mod navigation;
 #[cfg(target_os = "linux")]
 mod print_linux;
+mod recovery;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
@@ -20,7 +22,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use state::AppState;
-use tauri::Manager;
+use tauri::{Emitter as _, Manager};
 
 /// Every product command, in one list so release and devtools builds agree.
 macro_rules! product_commands {
@@ -32,6 +34,32 @@ macro_rules! product_commands {
             commands::new_window,
             commands::move_to_new_window,
             commands::print_document,
+            editing::edit_pages,
+            editing::add_markup,
+            editing::add_ink,
+            editing::add_note,
+            editing::add_text_box,
+            editing::set_annotation_contents,
+            editing::remove_annotations,
+            editing::page_annotations,
+            editing::document_comments,
+            editing::reply_to_comment,
+            editing::set_comment_resolved,
+            editing::undo_edit,
+            editing::redo_edit,
+            editing::save_document,
+            editing::save_document_as,
+            editing::close_window_discarding,
+            editing::insert_pages_from_files,
+            editing::unlock_insert,
+            editing::extract_pages,
+            editing::split_document,
+            editing::bookmark_parts,
+            editing::quit_discarding,
+            recovery::recoveries,
+            recovery::restore_recovery,
+            recovery::unlock_recovery,
+            recovery::discard_recovery,
             commands::unlock_document,
             commands::cancel_unlock,
             commands::close_document,
@@ -63,15 +91,32 @@ pub fn run() {
         // Tiles: BMP images fetched by the webview (ADR 0011).
         .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
         .setup(|app| {
+            app.state::<AppState>().set_app(app.handle().clone());
             open_store(app);
             #[cfg(feature = "devtools")]
             diagnostics::prepare_window(app);
             Ok(())
         })
-        // A window's documents close with it. Its tabs leave the saved
-        // session too, unless the app is quitting or it was the last window.
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
+        .on_window_event(|window, event| match event {
+            // A window holding unsaved changes asks its UI first (ADR 0015);
+            // the UI closes it again once the user confirms.
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let state = window.state::<AppState>();
+                if !state.take_close_confirmed(window.label())
+                    && !state.quit_confirmed()
+                    && !state.unsaved(Some(window.label())).is_empty()
+                {
+                    api.prevent_close();
+                    if let Err(err) =
+                        window.app_handle().emit_to(window.label(), editing::CLOSE_REQUESTED, ())
+                    {
+                        eprintln!("safha: could not ask about unsaved changes: {err}");
+                    }
+                }
+            }
+            // A window's documents close with it. Its tabs leave the saved
+            // session too, unless the app is quitting or it was the last window.
+            tauri::WindowEvent::Destroyed => {
                 let state = window.state::<AppState>();
                 if state.close_window(window.label())
                     && let Err(err) = commands::write_session(&state)
@@ -79,6 +124,7 @@ pub fn run() {
                     eprintln!("safha: could not save the session: {}", err.detail);
                 }
             }
+            _ => {}
         });
 
     // Release bundles expose only the product commands. The self-test harness and
@@ -91,6 +137,8 @@ pub fn run() {
         .invoke_handler(product_commands![
             diagnostics::render_stats,
             diagnostics::window_labels,
+            diagnostics::selftest_request_close,
+            diagnostics::selftest_has_recovery_file,
             diagnostics::webview_rss_kb,
             diagnostics::selftest_log,
             diagnostics::selftest_config,
@@ -104,9 +152,21 @@ pub fn run() {
 
     let app = builder.build(tauri::generate_context!()).expect("failed to start the Mirsam desktop shell");
     app.run(|handle, event| {
-        // Quitting closes every window; their tabs are the session to restore.
-        if let tauri::RunEvent::ExitRequested { .. } = event {
-            handle.state::<AppState>().set_exiting();
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            let state = handle.state::<AppState>();
+            // Unsaved changes: ask in the window of the first such document
+            // (ADR 0015); the UI quits again once the user confirms.
+            if !state.quit_confirmed()
+                && let Some((_, window)) = state.unsaved(None).into_iter().next()
+            {
+                api.prevent_exit();
+                if let Err(err) = handle.emit_to(window.as_str(), editing::QUIT_REQUESTED, ()) {
+                    eprintln!("safha: could not ask about unsaved changes: {err}");
+                }
+                return;
+            }
+            // Quitting closes every window; their tabs are the session to restore.
+            state.set_exiting();
         }
     });
 }
@@ -126,6 +186,8 @@ fn open_store(app: &tauri::App) {
         Ok(store) => app.state::<AppState>().set_store(store),
         Err(err) => eprintln!("safha: could not open the state store in {}: {err}", dir.display()),
     }
+    // Recovery files of documents with unsaved changes, beside the store (ADR 0040).
+    recovery::open_files(&app.state::<AppState>(), &dir);
 }
 
 /// A PDF handed to us at launch: the first command-line argument that is not a

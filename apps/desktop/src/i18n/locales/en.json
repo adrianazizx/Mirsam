@@ -15,7 +15,8 @@
   },
   "tabs": {
     "label": "Open documents",
-    "close": "Close {{name}}"
+    "close": "Close {{name}}",
+    "modified": "Unsaved changes"
   },
   "commands": {
     "file": {
@@ -26,7 +27,10 @@
       "clearRecents": "Clear recent files",
       "unlock": "Open with password",
       "cancelUnlock": "Cancel opening",
-      "print": "Print…"
+      "print": "Print…",
+      "save": "Save",
+      "saveAs": "Save as…",
+      "saveAndClose": "Save and close"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -47,13 +51,16 @@
       "showOutline": "Show the outline",
       "readingNormal": "Pages: normal",
       "readingSepia": "Pages: sepia",
-      "readingNight": "Pages: night"
+      "readingNight": "Pages: night",
+      "showComments": "Show comments"
     },
     "app": {
       "toggleTheme": "Switch theme",
       "toggleLanguage": "العربية",
       "toggleGallery": "Design gallery",
-      "commandPalette": "All commands…"
+      "commandPalette": "All commands…",
+      "quitDiscarding": "Quit without saving",
+      "cancelClose": "Keep open"
     },
     "tabs": {
       "next": "Next tab",
@@ -66,7 +73,49 @@
     "edit": {
       "copy": "Copy",
       "selectAll": "Select all text on the page",
-      "deselect": "Clear selection"
+      "deselect": "Clear selection",
+      "undo": "Undo",
+      "redo": "Redo"
+    },
+    "markup": {
+      "highlight": "Highlight",
+      "underline": "Underline",
+      "strikeOut": "Strikethrough",
+      "squiggly": "Squiggly underline"
+    },
+    "annotation": {
+      "delete": "Delete annotation"
+    },
+    "recovery": {
+      "restore": "Restore",
+      "discard": "Discard",
+      "later": "Decide later"
+    },
+    "comment": {
+      "note": "Add note",
+      "textBox": "Add text box",
+      "pen": "Draw",
+      "eraser": "Erase ink",
+      "show": "Show comment",
+      "reply": "Reply to comment",
+      "resolve": "Resolve comment"
+    },
+    "comments": {
+      "filter": "Filter comments",
+      "sort": "Sort comments",
+      "setAuthor": "Set your name on comments"
+    },
+    "note": {
+      "place": "Place a note",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "textBox": {
+      "place": "Place a text box"
+    },
+    "ink": {
+      "add": "Add ink",
+      "erase": "Erase ink strokes"
     },
     "search": {
       "focus": "Find in document…",
@@ -81,7 +130,23 @@
       "toggleTaMarbuta": "Treat ة and ه as the same"
     },
     "window": {
-      "new": "New window"
+      "new": "New window",
+      "closeDiscarding": "Close window without saving"
+    },
+    "pages": {
+      "rotateClockwise": "Rotate page clockwise",
+      "rotateCounterclockwise": "Rotate page counterclockwise",
+      "delete": "Delete page",
+      "duplicate": "Duplicate page",
+      "insertBlank": "Insert blank page after this one",
+      "moveEarlier": "Move pages earlier",
+      "moveLater": "Move pages later",
+      "move": "Move pages",
+      "open": "Open page",
+      "insertFromFile": "Insert pages from a file…",
+      "extract": "Extract pages to a new file…",
+      "split": "Split into files…",
+      "splitInto": "Split"
     }
   },
   "viewer": {
@@ -123,7 +188,13 @@
     "file_missing": "That file has been moved or deleted.",
     "print_failed": "The document could not be printed. Check the printer and try again.",
     "searchInvalid": "That search cannot be run. Check the regular expression.",
-    "searchFailed": "The search could not be completed."
+    "searchFailed": "The search could not be completed.",
+    "edit_unsupported": "This file's structure can't be edited yet. Viewing still works.",
+    "invalid_edit": "That change can't be made to this document.",
+    "save_failed": "The document could not be saved. The file on disk was not changed.",
+    "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
+    "text_failed": "The text could not be set.",
+    "no_bookmarks": "This document has no top-level bookmarks to split at."
   },
   "gallery": {
     "title": "Design gallery",
@@ -139,7 +210,8 @@
     "spacing": "Spacing"
   },
   "selection": {
-    "toolbar": "Selected text"
+    "toolbar": "Selected text",
+    "annotationToolbar": "Selected annotation"
   },
   "panel": {
     "label": "Side panel",
@@ -148,7 +220,8 @@
     "outline": "Outline",
     "search": "Search",
     "close": "Hide the side panel",
-    "noDocument": "Open a document to see its pages here."
+    "noDocument": "Open a document to see its pages here.",
+    "comments": "Comments"
   },
   "thumbnails": {
     "name": "Page {{page}}",
@@ -178,14 +251,117 @@
   "unlock": {
     "title": "Password required",
     "body": "Enter the password to open",
+    "insertBody": "Enter the password to insert pages from",
     "password": "Password",
     "wrong": "That password is not correct. Try again.",
     "open": "Open",
+    "insert": "Insert",
     "cancel": "Cancel"
   },
   "recents": {
     "title": "Recent files",
     "missing": "Moved or deleted",
     "forget": "Remove {{name}} from recent files"
+  },
+  "unsaved": {
+    "title": "Unsaved changes",
+    "tab": "Save the changes to this document before closing it?",
+    "window": "Some documents in this window have unsaved changes. Close it anyway?",
+    "quit": "Some documents have unsaved changes. Quit anyway?",
+    "save": "Save",
+    "discard": "Don't save",
+    "closeAnyway": "Close without saving",
+    "quitAnyway": "Quit without saving",
+    "cancel": "Cancel"
+  },
+  "recovery": {
+    "title": "Recover unsaved changes?",
+    "message": "Mirsam closed before these documents were saved. Their latest changes were kept.",
+    "changed": "The original file has changed since. Save the recovered version as a new file.",
+    "savedAt": "Last change {{time}}",
+    "restore": "Restore",
+    "discard": "Discard",
+    "later": "Decide later"
+  },
+  "pages": {
+    "organizer": "Organize the pages of {{name}}",
+    "actions": "Page actions",
+    "grid": "Pages of {{name}}",
+    "selected": "Selected: {{count}}"
+  },
+  "notices": {
+    "extracted": "The pages were saved as {{name}}.",
+    "split": "The document was split into {{count}} files."
+  },
+  "split": {
+    "title": "Split into files",
+    "method": "How to split",
+    "byPages": "By page count",
+    "byBookmarks": "At top-level bookmarks",
+    "bySize": "By file size",
+    "megabytes": "Largest file, in MB",
+    "sizeHelp": "Each file holds as many pages as fit. A page larger than this gets a file of its own.",
+    "bookmarksHelp": "One file per bookmark: <bdi>{{titles}}</bdi>",
+    "noBookmarks": "This document has no top-level bookmarks on different pages.",
+    "size": "Pages per file",
+    "help": "Each file gets this many pages, in order; the last one gets the rest.",
+    "confirm": "Choose a folder…",
+    "cancel": "Cancel"
+  },
+  "note": {
+    "label": "Note",
+    "text": "Note text",
+    "placeholder": "Write a note…"
+  },
+  "textBox": {
+    "label": "Text box",
+    "text": "Text of the box",
+    "placeholder": "Type the text…"
+  },
+  "comment": {
+    "tools": "Comment tools"
+  },
+  "comments": {
+    "loading": "Loading comments…",
+    "empty": "No comments in this document yet.",
+    "noMatch": "No comments match these filters.",
+    "status": "Show",
+    "statusAll": "All comments",
+    "statusOpen": "Open",
+    "statusResolved": "Resolved",
+    "kind": "Type",
+    "kindAll": "All types",
+    "kindMarkup": "Text markup",
+    "kindNotes": "Notes",
+    "kindTextBoxes": "Text boxes",
+    "kindInk": "Drawings",
+    "author": "Author",
+    "authorAll": "Everyone",
+    "noAuthor": "No name",
+    "sort": "Order",
+    "sortPage": "Page order",
+    "sortNewest": "Latest activity",
+    "sortAuthor": "By author",
+    "page": "Page {{page}}",
+    "show": "{{kind}} on page {{page}}: show it",
+    "kinds": {
+      "highlight": "Highlight",
+      "underline": "Underline",
+      "strikeOut": "Strikethrough",
+      "squiggly": "Squiggly underline",
+      "ink": "Drawing",
+      "note": "Note",
+      "textBox": "Text box"
+    },
+    "resolvedBadge": "Resolved",
+    "replies": "Replies",
+    "reply": "Reply",
+    "replyLabel": "Your reply",
+    "send": "Reply",
+    "cancel": "Cancel",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "yourName": "Your name on comments",
+    "yourNamePlaceholder": "Not set: comments carry no name"
   }
 }

@@ -19,8 +19,16 @@ number and says so.
 | [0011](0011-tiles-as-images-and-gesture-zoom.md) | Tiles as BMP images over the `safha` scheme (supersedes 0004's transport); compositor-only zoom gestures; fair frame criterion | Accepted; pinch-out and total memory still over budget |
 | [0012](0012-reading-preferences-windows-printing.md) | Reading preferences from the catalog (own safe reader), several windows, tab reordering; printing through the platform's PDF viewer | Accepted; printing proposed (unverified) |
 | [0013](0013-printing-on-linux.md) | Printing on Linux: GTK's print dialog, each page rendered by PDFium at the printer's resolution | Proposed; checked in CI by printing to a file |
+| [0014](0014-edits-as-incremental-updates.md) | Edits as incremental updates written by our own writer; undo as a stack of them; documents keep their bytes (and, in memory, their password) | Accepted for page edits and annotations (0017) |
+| [0015](0015-saving-and-unsaved-changes.md) | Saving (signed files incrementally, others rewritten in full by PDFium; validated; atomic rename); asking before closing a modified tab or window, or quitting | Accepted |
+| [0016](0016-pages-across-files.md) | Pages across files: extract, split (by pages, top-level bookmarks, or size), insert and merge (password-protected sources too) through PDFium's page import; snapshot steps in the edit history | Accepted; amended session 8 |
+| [0017](0017-markup-annotations.md) | Markup annotations (highlight, underline, strikethrough, squiggly) as incremental updates with appearance streams; encrypting new objects; repainting instead of rebuilding | Accepted |
+| [0018](0018-ink-and-notes.md) | Ink with pressure and an eraser, sticky notes (upright on turned pages, text in `/Contents`), the Comment tool and its note editor | Accepted |
+| [0019](0019-text-boxes-and-the-text-writer.md) | Text boxes drawn with shaped text and embedded font subsets (`pdf::text`, the text half of the content-stream writer); word spaces read inside form XObjects | Accepted |
 | [0020](0020-text-layout-engine.md) | Text layout engine `safha_core::typeset`: bidi + script + font itemization, harfrust shaping, UAX #14 breaking, per-line reordering; backend-neutral positioned glyph runs; font subsets (variable fonts instanced) and font matching | Accepted (M3 groundwork) |
 | [0030](0030-ocr-engines.md) | OCR engines: Nuqta-Arabic-OCR 4B as the recogniser, Nuqta 0.8B as the checking partner (every number re-read), platform OCR or Tesseract as the quick draft; eval set v2 (severe scans, table cells, either column first) | Proposed (spike, synthetic set only) |
+| [0040](0040-autosave-and-recovery.md) | Autosave: each modified document's current bytes in a recovery file 2 s after its last change; restored at startup (undo back to the original when unchanged, Save As when it changed); encrypted ones ask for the password | Accepted |
+| [0041](0041-comments-panel.md) | Comments panel: threads read by our parser (`/IRT`, review states) with PDFium's text; replies and resolve as hidden-appearance annotations; authors only by the user's chosen name; filter, sort, go to | Accepted |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
 crypto/PAdES library (M5), Office → PDF (post-1.0).

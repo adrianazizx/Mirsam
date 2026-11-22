@@ -4,10 +4,12 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { backend, isBackendError } from "../../backend";
 import { isMac } from "../../commands/platform";
+import { runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
-import { ViewerController, type ViewerSpacing } from "../../viewer/controller";
+import { ViewerController, type ViewerMode, type ViewerSpacing } from "../../viewer/controller";
 import { registerViewer, unregisterViewer } from "../../viewer/registry";
+import { NoteEditor } from "../comments/NoteEditor";
 import styles from "./DocumentView.module.css";
 import { SelectionToolbar } from "./SelectionToolbar";
 
@@ -28,7 +30,8 @@ function readSpacing(element: HTMLElement): ViewerSpacing {
 /** The remembered position is written this long after the reader stops moving. */
 const SAVE_DELAY_MS = 800;
 /** Documents whose page labels were asked for (once per open). */
-const labelsRequested = new Set<number>();
+/** `id@revision` of each document revision whose page labels were requested. */
+const labelsRequested = new Set<string>();
 
 /**
  * The scrolling page area for one document. React owns only this container;
@@ -41,8 +44,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const containerRef = useRef<HTMLElement>(null);
   const viewerRef = useRef<ViewerController | null>(null);
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
+  const [noteHost, setNoteHost] = useState<HTMLElement | null>(null);
   // The view settings only: page changes (reported by the viewer itself) do not re-render this.
-  const { name, zoomMode, zoom, viewMode, pageOrder, hasSelection } = useAppStore(
+  const { name, zoomMode, zoom, viewMode, pageOrder, hasSelection, selectedKind } = useAppStore(
     useShallow((state) => {
       const open = state.documents.find((candidate) => candidate.id === id);
       return {
@@ -52,8 +56,18 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         viewMode: open?.viewMode ?? "continuous",
         pageOrder: open?.pageOrder ?? "ltr",
         hasSelection: open?.hasSelection ?? false,
+        selectedKind: open?.selectedAnnotation?.kind ?? null,
       };
     }),
+  );
+  // A new revision (an edit, undo, or redo) rebuilds the view from its pages.
+  const revision = useAppStore(
+    (state) => state.documents.find((open) => open.id === id)?.revision ?? 0,
+  );
+  // Only annotations changed (ADR 0017): the same view paints its pages again.
+  const paint = useAppStore((state) => state.documents.find((open) => open.id === id)?.paint ?? 0);
+  const pendingNote = useAppStore((state) =>
+    state.pendingNote?.documentId === id ? state.pendingNote : null,
   );
   const hits = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.search.hits ?? null,
@@ -84,6 +98,12 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         searchHit: styles.searchHit ?? "",
         searchHitActive: styles.searchHitActive ?? "",
         selection: styles.selection ?? "",
+        markupSelected: styles.markupSelected ?? "",
+        inkPreview: styles.inkPreview ?? "",
+        inkErasing: styles.inkErasing ?? "",
+        notePending: styles.notePending ?? "",
+        textBoxPending: styles.textBoxPending ?? "",
+        noteEditor: styles.noteEditor ?? "",
         selectionToolbar: styles.selectionToolbar ?? "",
       },
       initial: {
@@ -97,18 +117,29 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       spacing: readSpacing(container),
       isMac,
       pageLabel: (page) => pageLabel.current(page),
-      canSelect: () => useAppStore.getState().activeTool === "select",
+      mode: (): ViewerMode => {
+        const { activeTool, commentTool } = useAppStore.getState();
+        if (activeTool === "select") return "select";
+        return activeTool === "comment" ? commentTool : "none";
+      },
       callbacks: {
         onCurrentPage: (page, size) => update(id, { page, pageSize: size }),
         onZoom: (next, mode) => update(id, { zoom: next, zoomMode: mode }),
         onFatal: (error) =>
           useAppStore.getState().setError(isBackendError(error) ? error.code : "generic"),
         onSelectionChange: (has) => update(id, { hasSelection: has }),
+        onAnnotationSelect: (selected) => update(id, { selectedAnnotation: selected }),
+        onInk: (page, strokes) => void runCommand("ink.add", { page, strokes }),
+        onErase: (page, indices) => void runCommand("ink.erase", { page, indices }),
+        onPlaceNote: (page, x, y) => void runCommand("note.place", { page, x, y }),
+        onPlaceTextBox: (page, x, y, width) =>
+          void runCommand("textBox.place", { page, x, y, width }),
       },
     });
     viewerRef.current = viewer;
     registerViewer(id, viewer);
     setToolbarHost(viewer.selectionToolbarHost);
+    setNoteHost(viewer.noteEditorHost);
 
     // Remember where the reader is, a moment after they stop moving.
     let timer: number | null = null;
@@ -133,8 +164,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
     };
     container.addEventListener("scroll", onScroll, { passive: true });
 
-    if (current.labels === null && !labelsRequested.has(id)) {
-      labelsRequested.add(id);
+    const labelKey = `${id}@${revision}`;
+    if (current.labels === null && !labelsRequested.has(labelKey)) {
+      labelsRequested.add(labelKey);
       backend.pageLabels(id).then(
         (labels) => {
           if (labels) useAppStore.getState().updateDocument(id, { labels });
@@ -153,8 +185,21 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       viewer.destroy();
       viewerRef.current = null;
       setToolbarHost(null);
+      setNoteHost(null);
     };
-  }, [id]);
+  }, [id, revision]);
+
+  const paintShown = useRef(paint);
+  useEffect(() => {
+    if (paint === paintShown.current) return;
+    paintShown.current = paint;
+    viewerRef.current?.refresh();
+  }, [paint]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows it again
+  useEffect(() => {
+    viewerRef.current?.showPendingNote(pendingNote);
+  }, [pendingNote, noteHost]);
 
   useEffect(() => {
     viewerRef.current?.setView({ zoomMode, zoom, viewMode, pageOrder });
@@ -179,7 +224,14 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       aria-label={t("viewer.pagesLabel", { name })}
       data-testid="viewer"
     >
-      {toolbarHost && hasSelection ? createPortal(<SelectionToolbar />, toolbarHost) : null}
+      {toolbarHost &&
+      (hasSelection ||
+        (selectedKind !== null && selectedKind !== "note" && selectedKind !== "textBox"))
+        ? createPortal(<SelectionToolbar documentId={id} />, toolbarHost)
+        : null}
+      {noteHost && (pendingNote || selectedKind === "note" || selectedKind === "textBox")
+        ? createPortal(<NoteEditor documentId={id} />, noteHost)
+        : null}
     </section>
   );
 }

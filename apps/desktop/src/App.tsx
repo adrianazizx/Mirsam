@@ -9,7 +9,10 @@ import {
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
+import { SplitDialog } from "./components/pages/SplitDialog";
 import { AppShell } from "./components/shell/AppShell";
+import { RecoveryDialog } from "./components/shell/RecoveryDialog";
+import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
 import { applyLocale, formatTag } from "./i18n";
 import {
   type AppState,
@@ -131,8 +134,10 @@ export function App() {
     let cancelled = false;
     backend
       .startup()
-      .then(({ documents, active }) => {
+      .then(({ documents, active, recoveries }) => {
         for (const outcome of documents) acceptOutcome(outcome, { activate: false });
+        // Unsaved changes an earlier session left (ADR 0040).
+        if (recoveries?.length) useAppStore.getState().setRecoveries(recoveries);
         const store = useAppStore.getState();
         const first = store.documents[0];
         const target = active ?? (store.activeDocumentId === null ? first?.id : undefined);
@@ -150,9 +155,35 @@ export function App() {
     };
   }, []);
 
+  // The shell asks before a window or the app closes over unsaved changes (ADR 0015).
+  useEffect(() => {
+    const stops: (() => void)[] = [];
+    let live = true;
+    const keep = (stop: () => void) => {
+      if (live) stops.push(stop);
+      else stop();
+    };
+    const ask = (kind: "window" | "quit") => () => useAppStore.getState().setClosePrompt({ kind });
+    backend
+      .onCloseRequested(ask("window"))
+      .then(keep)
+      .catch((error: unknown) => console.warn("cannot ask before closing", error));
+    backend
+      .onQuitRequested(ask("quit"))
+      .then(keep)
+      .catch((error: unknown) => console.warn("cannot ask before quitting", error));
+    return () => {
+      live = false;
+      for (const stop of stops) stop();
+    };
+  }, []);
+
   return (
     <I18nProvider locale={formatTag(locale)}>
       <AppShell />
+      <UnsavedChangesDialog />
+      <RecoveryDialog />
+      <SplitDialog />
     </I18nProvider>
   );
 }

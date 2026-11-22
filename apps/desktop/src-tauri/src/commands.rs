@@ -38,10 +38,20 @@ pub struct DocumentInfo {
     /// /Direction`, `/PageLayout`), the defaults for its page order and layout.
     reading_direction: Option<&'static str>,
     page_layout: Option<&'static str>,
+    /// Restored with unsaved changes (ADR 0040).
+    modified: bool,
+    can_undo: bool,
 }
 
 impl DocumentInfo {
-    fn new(id: u32, name: String, document: &Document, view_state: Option<ViewState>) -> Self {
+    /// A restored document's edit state.
+    pub fn with_edits(mut self, modified: bool, can_undo: bool) -> Self {
+        self.modified = modified;
+        self.can_undo = can_undo;
+        self
+    }
+
+    pub fn new(id: u32, name: String, document: &Document, view_state: Option<ViewState>) -> Self {
         let hints = document.catalog_hints();
         Self {
             id,
@@ -60,6 +70,8 @@ impl DocumentInfo {
                 PageLayout::TwoColumnLeft | PageLayout::TwoPageLeft => "spread",
                 PageLayout::TwoColumnRight | PageLayout::TwoPageRight => "book",
             }),
+            modified: false,
+            can_undo: false,
         }
     }
 }
@@ -87,6 +99,9 @@ pub struct Startup {
     documents: Vec<OpenOutcome>,
     /// The document to show first.
     active: Option<u32>,
+    /// Unsaved changes an earlier session left (ADR 0040), offered once, at
+    /// the app's start, in the main window.
+    recoveries: Vec<crate::recovery::RecoveryInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,7 +158,7 @@ pub async fn startup(
                 Some(OpenOutcome::Opened { document: DocumentInfo::new(id, name, &document, view_state) })
             })
             .collect();
-        return Ok(Startup { documents, active: state.window_tabs(label).active });
+        return Ok(Startup { documents, active: state.window_tabs(label).active, recoveries: Vec::new() });
     }
 
     let mut documents = Vec::new();
@@ -189,7 +204,7 @@ pub async fn startup(
             documents.push(outcome);
         }
     }
-    Ok(Startup { documents, active })
+    Ok(Startup { documents, active, recoveries: crate::recovery::list(&state) })
 }
 
 /// Opens an empty window.
@@ -431,8 +446,15 @@ struct SettingChanged {
 
 /// The settings the UI may store. A closed list: the webview cannot use the
 /// store as general-purpose storage.
-const SETTINGS: &[&str] =
-    &["locale", "theme", "readingTheme", "leftPanel", "session.restore", "search.options"];
+const SETTINGS: &[&str] = &[
+    "locale",
+    "theme",
+    "readingTheme",
+    "leftPanel",
+    "session.restore",
+    "search.options",
+    crate::editing::COMMENT_AUTHOR,
+];
 
 /// Opens `path` in a tab of `window`, or switches to it if that window has it
 /// open already.

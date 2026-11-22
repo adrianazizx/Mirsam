@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use pdfium_render::prelude::{
-    PdfBitmap, PdfBitmapFormat, PdfColor, PdfDocument, PdfPage, PdfPageIndex, PdfRenderConfig,
+    PdfBitmap, PdfBitmapFormat, PdfColor, PdfDocument, PdfPage, PdfPageAnnotationCommon,
+    PdfPageAnnotationType, PdfPageIndex, PdfRenderConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -40,11 +41,451 @@ pub struct TileRequest {
 pub struct Document {
     inner: PdfDocument<'static>,
     hints: crate::catalog::CatalogHints,
+    /// The file's bytes as PDFium reads them; an edit appends to a copy.
+    bytes: Arc<[u8]>,
+    /// Kept in memory while the document is open, so an edited revision of an
+    /// encrypted file can be opened too (ADR 0014). Never written anywhere.
+    password: Option<String>,
+    engine: &'static crate::Engine,
+}
+
+/// The kind of an annotation the app knows, by PDFium's reading of it.
+fn annotation_kind(
+    annotation: &pdfium_render::prelude::PdfPageAnnotation<'_>,
+) -> Option<crate::annotate::AnnotationKind> {
+    use crate::annotate::AnnotationKind;
+    Some(match annotation.annotation_type() {
+        PdfPageAnnotationType::Highlight => AnnotationKind::Highlight,
+        PdfPageAnnotationType::Underline => AnnotationKind::Underline,
+        PdfPageAnnotationType::Strikeout => AnnotationKind::StrikeOut,
+        PdfPageAnnotationType::Squiggly => AnnotationKind::Squiggly,
+        PdfPageAnnotationType::Ink => AnnotationKind::Ink,
+        PdfPageAnnotationType::Text => AnnotationKind::Note,
+        PdfPageAnnotationType::FreeText => AnnotationKind::TextBox,
+        _ => return None,
+    })
+}
+
+fn is_markup(kind: crate::annotate::AnnotationKind) -> bool {
+    use crate::annotate::AnnotationKind;
+    matches!(
+        kind,
+        AnnotationKind::Highlight
+            | AnnotationKind::Underline
+            | AnnotationKind::StrikeOut
+            | AnnotationKind::Squiggly
+    )
+}
+
+/// Page-space rectangles an annotation covers: one per quad for markup,
+/// else its bounds.
+fn annotation_rects(annotation: &pdfium_render::prelude::PdfPageAnnotation<'_>) -> Vec<crate::text::Rect> {
+    let rect = |left: f32, bottom: f32, right: f32, top: f32| crate::text::Rect { left, bottom, right, top };
+    let points = annotation.attachment_points();
+    let mut rects: Vec<_> = (0..points.len())
+        .filter_map(|q| points.get(q).ok())
+        .map(|quad| rect(quad.left().value, quad.bottom().value, quad.right().value, quad.top().value))
+        .filter(|r| r.width() > 0.0 && r.height() > 0.0)
+        .collect();
+    if rects.is_empty()
+        && let Ok(bounds) = annotation.bounds()
+    {
+        rects.push(rect(
+            bounds.left().value,
+            bounds.bottom().value,
+            bounds.right().value,
+            bounds.top().value,
+        ));
+    }
+    rects
+}
+
+/// `text` cut to `limit` characters, with an ellipsis when cut.
+fn excerpt(text: &str, limit: usize) -> String {
+    match text.char_indices().nth(limit) {
+        Some((at, _)) => format!("{}…", text[..at].trim_end()),
+        None => text.to_string(),
+    }
 }
 
 impl Document {
-    pub(crate) fn new(inner: PdfDocument<'static>, hints: crate::catalog::CatalogHints) -> Self {
-        Self { inner, hints }
+    pub(crate) fn new(
+        inner: PdfDocument<'static>,
+        hints: crate::catalog::CatalogHints,
+        bytes: Arc<[u8]>,
+        password: Option<String>,
+        engine: &'static crate::Engine,
+    ) -> Self {
+        Self { inner, hints, bytes, password, engine }
+    }
+
+    /// The document's bytes: the file as opened plus any edits.
+    pub fn bytes(&self) -> Arc<[u8]> {
+        Arc::clone(&self.bytes)
+    }
+
+    /// Another revision of this document (after an edit, an undo or a redo),
+    /// opened with the same password.
+    pub fn revision(&self, bytes: Arc<[u8]>) -> Result<Document> {
+        self.engine.open_shared(bytes, self.password.as_deref())
+    }
+
+    /// This document with `edit` applied, and the update that applies it.
+    pub fn with_page_edit(&self, edit: &crate::edit::PageEdit) -> Result<(Document, Vec<u8>)> {
+        let update = crate::edit::page_edit_update(&self.bytes, edit)?;
+        let mut bytes = Vec::with_capacity(self.bytes.len() + update.len());
+        bytes.extend_from_slice(&self.bytes);
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// This document with an annotation added or removed, and the update that
+    /// does it (ADR 0017).
+    pub fn with_annotation_edit(
+        &self,
+        edit: &crate::annotate::AnnotationEdit,
+    ) -> Result<(Document, Vec<u8>)> {
+        self.with_annotation_edits(std::slice::from_ref(edit))
+    }
+
+    /// This document with `edits` applied in order (marking a selection that
+    /// spans pages adds one annotation per page), and the one update that
+    /// does them all, so a single undo takes them back.
+    pub fn with_annotation_edits(
+        &self,
+        edits: &[crate::annotate::AnnotationEdit],
+    ) -> Result<(Document, Vec<u8>)> {
+        self.with_annotation_edits_by(edits, None)
+    }
+
+    /// [`Document::with_annotation_edits`], with new annotations signed by
+    /// `author` (`/T`, ADR 0041).
+    pub fn with_annotation_edits_by(
+        &self,
+        edits: &[crate::annotate::AnnotationEdit],
+        author: Option<&str>,
+    ) -> Result<(Document, Vec<u8>)> {
+        if edits.is_empty() {
+            return Err(Error::InvalidEdit("no annotation edits given"));
+        }
+        let mut bytes = self.bytes.to_vec();
+        let start = bytes.len();
+        for edit in edits {
+            // Each update builds on the last: appended together they are one.
+            let update = crate::annotate::annotation_update(&bytes, self.password.as_deref(), author, edit)?;
+            bytes.extend_from_slice(&update);
+        }
+        let update = bytes[start..].to_vec();
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// The page's annotations of the kinds this app writes (markup, ink,
+    /// notes, text boxes), and the map from page space to the page as
+    /// displayed. Replies and review states are left out: they belong to
+    /// another annotation's thread and are not on the page (ADR 0041).
+    pub fn page_annotations(
+        &self,
+        index: usize,
+    ) -> Result<(Vec<crate::annotate::AnnotationInfo>, ViewTransform)> {
+        use crate::annotate::{AnnotationInfo, AnnotationKind};
+        let page = self.page(index)?;
+        let annotations = page.annotations();
+        let mut out = Vec::new();
+        // By index, not by iterator: the iterator stops at the first entry
+        // PDFium cannot read, and the index is the annotation's position in
+        // `/Annots`, which changing or removing it needs.
+        for position in 0..annotations.len() {
+            let Ok(annotation) = annotations.get(position) else { continue };
+            let Some(kind) = annotation_kind(&annotation) else { continue };
+            let contents = matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox)
+                .then(|| annotation.contents().unwrap_or_default());
+            out.push(AnnotationInfo {
+                index: position,
+                kind,
+                rects: annotation_rects(&annotation),
+                contents,
+                strokes: Vec::new(),
+            });
+        }
+        if out.iter().any(|info| info.kind == AnnotationKind::Note) {
+            let threads = crate::annotate::threads(&self.bytes, index);
+            out.retain(|info| !threads.answers(info.index));
+        }
+        if out.iter().any(|info| info.kind == AnnotationKind::Ink) {
+            let mut strokes = crate::annotate::ink_strokes(&self.bytes, index);
+            for info in &mut out {
+                if let Some(found) = strokes.remove(&info.index) {
+                    info.strokes = found;
+                }
+            }
+        }
+        Ok((out, ViewTransform::of_page(&page)?))
+    }
+
+    /// Every comment in the document, page by page in `/Annots` order: the
+    /// annotations of the kinds this app knows that answer nothing, each with
+    /// its author, date, text, replies, and whether it is resolved (ADR 0041).
+    /// Markup carries the page's text under it.
+    pub fn comments(&self) -> Result<Vec<crate::annotate::Comment>> {
+        use std::collections::HashMap;
+
+        use crate::annotate::{AnnotationKind, Comment, Reply};
+
+        /// What PDFium reads of one annotation (decrypted).
+        struct Read {
+            position: usize,
+            kind: AnnotationKind,
+            author: Option<String>,
+            modified: Option<i64>,
+            contents: Option<String>,
+            rects: Vec<crate::text::Rect>,
+        }
+        /// The longest excerpt of marked text, in characters.
+        const EXCERPT: usize = 500;
+
+        // Loading a page costs; our parser knows which have annotations.
+        let annotated = crate::annotate::annotated_pages(&self.bytes);
+        let mut out = Vec::new();
+        for index in 0..self.page_count() {
+            if annotated.as_ref().is_some_and(|pages| !pages.contains(&index)) {
+                continue;
+            }
+            let page = self.page(index)?;
+            let annotations = page.annotations();
+            let mut read = Vec::new();
+            for position in 0..annotations.len() {
+                let Ok(annotation) = annotations.get(position) else { continue };
+                let Some(kind) = annotation_kind(&annotation) else { continue };
+                read.push(Read {
+                    position,
+                    kind,
+                    author: annotation.creator().filter(|author| !author.trim().is_empty()),
+                    modified: annotation
+                        .modification_date()
+                        .or_else(|| annotation.creation_date())
+                        .and_then(|date| crate::annotate::parse_pdf_date(&date)),
+                    contents: annotation.contents().filter(|contents| !contents.trim().is_empty()),
+                    rects: annotation_rects(&annotation),
+                });
+            }
+            if read.is_empty() {
+                continue;
+            }
+            let threads = crate::annotate::threads(&self.bytes, index);
+            let text = read
+                .iter()
+                .any(|entry| is_markup(entry.kind) && !threads.answers(entry.position))
+                .then(|| self.page_text(index).ok())
+                .flatten();
+
+            let mut comments: Vec<Comment> = Vec::new();
+            let mut at = HashMap::new();
+            for entry in &read {
+                if threads.answers(entry.position) {
+                    continue;
+                }
+                let Some(bounds) = entry.rects.iter().copied().reduce(crate::text::Rect::union) else {
+                    continue;
+                };
+                let marked_text = text
+                    .as_ref()
+                    .filter(|_| is_markup(entry.kind))
+                    .map(|text| excerpt(&text.text_in(&entry.rects), EXCERPT))
+                    .filter(|marked| !marked.is_empty());
+                at.insert(entry.position, comments.len());
+                comments.push(Comment {
+                    page: index,
+                    index: entry.position,
+                    kind: entry.kind,
+                    author: entry.author.clone(),
+                    modified: entry.modified,
+                    contents: entry.contents.clone(),
+                    marked_text,
+                    bounds,
+                    resolved: false,
+                    replies: Vec::new(),
+                });
+            }
+            // Replies, oldest first (undated ones by their place in `/Annots`).
+            let order = |entry: &Read| (entry.modified.unwrap_or(i64::MIN), entry.position);
+            let mut replies: Vec<(usize, &Read)> = read
+                .iter()
+                .filter_map(|entry| threads.replies.get(&entry.position).map(|&root| (root, entry)))
+                .collect();
+            replies.sort_by_key(|(_, entry)| order(entry));
+            for (root, entry) in replies {
+                if let Some(&i) = at.get(&root) {
+                    comments[i].replies.push(Reply {
+                        index: entry.position,
+                        author: entry.author.clone(),
+                        modified: entry.modified,
+                        contents: entry.contents.clone().unwrap_or_default(),
+                    });
+                }
+            }
+            // The latest review state counts.
+            let mut latest: HashMap<usize, ((i64, usize), bool)> = HashMap::new();
+            for entry in &read {
+                let Some(&(root, Some(resolved))) = threads.states.get(&entry.position) else { continue };
+                let key = order(entry);
+                let state = latest.entry(root).or_insert((key, resolved));
+                if key >= state.0 {
+                    *state = (key, resolved);
+                }
+            }
+            for (root, (_, resolved)) in latest {
+                if let Some(&i) = at.get(&root) {
+                    comments[i].resolved = resolved;
+                }
+            }
+            out.extend(comments);
+        }
+        Ok(out)
+    }
+
+    /// The map from page space to the page as displayed.
+    pub fn view_transform(&self, index: usize) -> Result<ViewTransform> {
+        ViewTransform::of_page(&self.page(index)?)
+    }
+
+    /// `pages` (in that order) as a PDF of their own, copied by PDFium with
+    /// everything they use (fonts, images, annotations). The new file has no
+    /// outline and no encryption: it is a fresh document (ADR 0016).
+    pub fn extract_pages(&self, pages: &[usize]) -> Result<Vec<u8>> {
+        if pages.is_empty() {
+            return Err(Error::InvalidEdit("no pages given"));
+        }
+        let mut out = self.engine.new_pdf()?;
+        for (position, &page) in pages.iter().enumerate() {
+            let index = self.page_index(page)?;
+            let at = PdfPageIndex::try_from(position).map_err(|_| Error::InvalidEdit("too many pages"))?;
+            out.pages_mut().copy_page_range_from_document(&self.inner, index..=index, at)?;
+        }
+        Ok(out.save_to_bytes()?)
+    }
+
+    /// The document in parts of at most `size` pages each, in order.
+    pub fn split_every(&self, size: usize) -> Result<Vec<Vec<u8>>> {
+        if size == 0 {
+            return Err(Error::InvalidEdit("parts need at least one page"));
+        }
+        let pages: Vec<usize> = (0..self.page_count()).collect();
+        pages.chunks(size).map(|part| self.extract_pages(part)).collect()
+    }
+
+    /// Where a split at each top-level bookmark falls (ADR 0016): one part
+    /// per top-level outline entry that points into this document, from its
+    /// page to the next one's, in page order, named by the entry's title.
+    /// Pages before the first such entry go with it; entries on the same page
+    /// as an earlier one add nothing. Fewer than two parts means the outline
+    /// gives no split.
+    pub fn bookmark_parts(&self) -> Vec<(String, std::ops::Range<usize>)> {
+        let count = self.page_count();
+        let mut starts: Vec<(usize, String)> = self
+            .outline()
+            .into_iter()
+            .filter_map(|item| Some((item.page.filter(|page| *page < count)?, item.title)))
+            .collect();
+        // Stable: of entries on one page, the first listed names the part.
+        starts.sort_by_key(|(page, _)| *page);
+        starts.dedup_by_key(|(page, _)| *page);
+        let mut parts = Vec::new();
+        for (i, (page, title)) in starts.iter().enumerate() {
+            let start = if i == 0 { 0 } else { *page };
+            let end = starts.get(i + 1).map_or(count, |(next, _)| *next);
+            parts.push((title.clone(), start..end));
+        }
+        parts
+    }
+
+    /// The pages of each range, in order, each as a PDF of its own (as
+    /// [`Document::extract_pages`] makes them).
+    pub fn split_ranges(&self, ranges: &[std::ops::Range<usize>]) -> Result<Vec<Vec<u8>>> {
+        ranges.iter().map(|range| self.extract_pages(&range.clone().collect::<Vec<_>>())).collect()
+    }
+
+    /// The document split, in page order, into files of at most `limit`
+    /// bytes each: every part holds as many pages as fit (ADR 0016). A page
+    /// that alone is larger than `limit` makes a part of its own. Each part's
+    /// size is measured by writing it, so shared fonts and images count in
+    /// every part that uses them.
+    pub fn split_by_size(&self, limit: usize) -> Result<Vec<(std::ops::Range<usize>, Vec<u8>)>> {
+        let count = self.page_count();
+        let part = |range: std::ops::Range<usize>| self.extract_pages(&range.collect::<Vec<_>>());
+        let mut parts = Vec::new();
+        let mut start = 0;
+        while start < count {
+            // One page always goes; then the longest run that still fits,
+            // found by doubling, then halving the gap (sizes grow with pages).
+            let mut fits = start + 1;
+            let mut bytes = part(start..fits)?;
+            if bytes.len() <= limit {
+                let mut too_long = None;
+                let mut length = 2;
+                while fits < count {
+                    let end = (start + length).min(count);
+                    let candidate = part(start..end)?;
+                    if candidate.len() > limit {
+                        too_long = Some(end);
+                        break;
+                    }
+                    (fits, bytes) = (end, candidate);
+                    length *= 2;
+                }
+                if let Some(mut over) = too_long {
+                    while over - fits > 1 {
+                        let middle = fits + (over - fits) / 2;
+                        let candidate = part(start..middle)?;
+                        if candidate.len() > limit {
+                            over = middle;
+                        } else {
+                            (fits, bytes) = (middle, candidate);
+                        }
+                    }
+                }
+            }
+            parts.push((start..fits, bytes));
+            start = fits;
+        }
+        Ok(parts)
+    }
+
+    /// This document with every page of `others` inserted before page `at`
+    /// (`at` = page count appends), in order; and the new revision's bytes.
+    ///
+    /// PDFium copies the pages with everything they use, then rewrites the
+    /// whole file: copying objects across files is beyond the incremental
+    /// writer (ADR 0016). A signed document is refused, since a rewrite would
+    /// invalidate its signatures.
+    pub fn with_pages_from(&self, others: &[&Document], at: usize) -> Result<(Document, Arc<[u8]>)> {
+        if self.is_signed() {
+            return Err(Error::EditUnsupported(
+                "it is signed, and inserting pages from another file would invalidate its signatures",
+            ));
+        }
+        let count = self.page_count();
+        if at > count {
+            return Err(Error::PageOutOfRange { index: at, count });
+        }
+        let mut working = self.revision(self.bytes())?;
+        let mut position = PdfPageIndex::try_from(at).map_err(|_| Error::InvalidEdit("too many pages"))?;
+        for other in others {
+            let pages = PdfPageIndex::try_from(other.page_count())
+                .map_err(|_| Error::InvalidEdit("too many pages"))?;
+            if pages == 0 {
+                continue;
+            }
+            working.inner.pages_mut().copy_page_range_from_document(&other.inner, 0..=pages - 1, position)?;
+            position += pages;
+        }
+        let bytes: Arc<[u8]> = Arc::from(working.inner.save_to_bytes()?);
+        Ok((self.revision(Arc::clone(&bytes))?, bytes))
+    }
+
+    /// Whether the document carries digital signatures, which only an
+    /// incremental save keeps valid.
+    pub fn is_signed(&self) -> bool {
+        !self.inner.signatures().is_empty()
     }
 
     /// The document's own reading preferences: `/ViewerPreferences /Direction`

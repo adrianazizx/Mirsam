@@ -1,0 +1,90 @@
+.organizer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: var(--color-bg-canvas);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  border-block-end: var(--border-width) solid var(--color-border);
+  background: var(--color-bg-surface);
+}
+
+.divider {
+  inline-size: var(--border-width);
+  block-size: var(--space-5);
+  margin-inline: var(--space-1);
+  background: var(--color-border);
+}
+
+.count {
+  margin-inline-start: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.grid {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+  outline: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  outline: none;
+  cursor: default;
+}
+
+.image {
+  overflow: hidden;
+  background: var(--color-page-paper);
+  box-shadow: var(--shadow-page);
+  outline: var(--focus-ring-width) solid transparent;
+  outline-offset: var(--space-1);
+}
+
+.image canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.item[data-selected] .image {
+  outline-color: var(--color-accent);
+}
+
+.item[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+}
+
+.item[data-dragging] {
+  opacity: 0.5;
+}
+
+.item[data-drop-target] .image {
+  outline-color: var(--color-accent);
+  outline-style: dashed;
+}
+
+.label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.item[data-selected] .label {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}

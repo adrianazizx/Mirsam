@@ -28,6 +28,25 @@ pub enum Error {
     #[error("invalid render request: {0}")]
     InvalidRenderRequest(&'static str),
 
+    /// An edit this file's structure does not allow yet (for example, its page
+    /// tree sits in an encrypted object stream, which the editor cannot read).
+    #[error("this file cannot be edited: {0}")]
+    EditUnsupported(&'static str),
+
+    /// A save that was stopped before anything was written, because the
+    /// result would not have been a sound file.
+    #[error("not saved: {0}")]
+    SaveRejected(&'static str),
+
+    /// An edit that does not fit the document (no pages, a page out of range).
+    #[error("invalid edit: {0}")]
+    InvalidEdit(&'static str),
+
+    /// Text could not be laid out or its fonts embedded (a `typeset` error
+    /// code: `font_unreadable`, `shaping_failed`, `font_subset_failed`, …).
+    #[error("the text could not be set: {0}")]
+    Typeset(&'static str),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

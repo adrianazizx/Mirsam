@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 6).
+Last updated: 2026-11-22 (session 8).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -14,16 +14,12 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
 2. **The code is on GitHub** as the public repository `adrianazizx/Mirsam` (public since
-   2026-11-22): `main` (Milestone 0) and `m1-viewer` (Milestone 1), open as pull request #1 with
-   Auto-fix on. It has no licence file, so the code is all rights reserved until you choose one
+   2026-11-22). It has no licence file, so the code is all rights reserved until you choose one
    (spec D2).
-3. **CI on pull request #1:**
-   - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
-     including printing through GTK on Linux.
-   - **The Linux tests** failed because Chrome on Linux draws some word spaces differently. The
-     extractor now handles both ways (ADR 0008); the fix is pushed and passes locally on the
-     Linux-made corpus. A green CI run is still to be seen.
-   - **The Windows tests** have not yet finished a run.
+   - `main` holds Milestones 0 and 1 (PR #1) and the Milestone 3 groundwork (PR #4);
+   - `m2-organize` holds Milestone 2 so far, open as draft PR #2 with Auto-fix on.
+3. **CI on PR #2** was green on every check (tests and shell self-test on macOS, Linux and
+   Windows, and licences) before the markup work and the merge of `main` were pushed.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
@@ -50,11 +46,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     measured (ADR 0005).
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
-12. **Does the 500 MB memory budget include WebKit?** On the 1,000-page benchmark (release build)
-    the shell stays under the budget at 339 MB, but the shell and WebKit together reach 726 MB.
-    WebKit alone needs about 155 MB with just one page on screen. A budget for the shell only, or
-    a separate one for the webview (say 400 MB), is achievable today; 500 MB in total is not
-    without deeper work. ADR 0011 has the numbers. Which do you want?
+12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
+    process only.** It measures 339 MB in the release benchmark. The webview's processes
+    (387 MB more) are measured and printed but not budgeted. The spec's §11 and the benchmark
+    checker are updated.
 13. **Try Print once (Cmd/Ctrl+P).** On macOS and Windows, printing goes through the platform's
     own PDF viewer (ADR 0012): a window shows the PDF and the system print panel opens over it.
     No session so far could see the screen, so it is unverified. If you see a blank window, or
@@ -63,6 +58,11 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 
     Linux uses GTK's print dialog, with each page drawn at the printer's resolution (ADR 0013).
     CI checks it by printing to a file; it has not been tried on a desktop with a real printer.
+14. **IBM Plex in users' PDFs.** Text boxes embed subsets of IBM Plex Sans and IBM Plex Sans
+    Arabic (ADR 0019). "Plex" is a Reserved Font Name under the OFL. Embedding a subset in a
+    document under the font's own name is common practice and is not redistributing a modified
+    font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
+    and Noto Sans Arabic (OFL, no reserved name) can replace them.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -124,7 +124,7 @@ by anything found so far.
   the store holds them; `localStorage` keeps a copy for the first frame only.
 - No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
 
-## M1 — Viewer (P0 viewing) — in progress on branch `m1-viewer`
+## M1 — Viewer (P0 viewing) — done; merged from `m1-viewer` with the open items below
 
 - [x] Render scheduler: one render thread, priority queue, cancellation by viewport generation,
       64 MiB byte-capped LRU keyed by (document, revision, page, scale, rect), previews then tiles
@@ -170,8 +170,8 @@ by anything found so far.
       CI: first page 99–155 ms on virtual machines (ADR 0011, session 6 amendment). The memory
       experiment is WebKit-on-macOS only.
 - [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
-      pinch-out (above), and memory if WebKit counts (owner question 12). Session 6 tested three
-      causes of the pinch-out drops; none was it (ADR 0011).
+      pinch-out (above). Memory is within budget: the app's process, by the owner's decision.
+      Session 6 tested three causes of the pinch-out drops; none was it (ADR 0011).
 - [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures):
       - Pages with a trustworthy text layer: 69 of 70 blocks verbatim, and every word of their
         ground truth is found by search as typed (542 words, `tests/search.rs`).
@@ -200,20 +200,128 @@ Test status at the end of session 6:
 - **End to end:** self-tests pass on macOS, Linux and Windows in English/light and Arabic/dark.
   The scroll benchmark ran visibly in a debug build (pinch-out 7 dropped frames).
 
-Remaining M1 work:
+M1 closed in session 6 at the owner's go-ahead, with these items carried forward:
 
 - confirm printing on screen on macOS and Windows (owner item 13);
-- pinch-out frames (needs WebKit's own profiler);
-- the memory budget decision (owner item 12).
+- pinch-out frames (needs WebKit's own profiler).
 
-## M2 — Annotate and organize
+## M2 — Annotate and organize — done; merged from `m2-organize` (PR #2) with the open items below
 
-- [ ] Markup, notes, text boxes, ink
-- [ ] Comments panel
-- [ ] Page organizer (reorder/rotate/delete/merge/split/extract)
-- [ ] Undo journal
-- [ ] Safe save pipeline (temp → validate with reopen + `qpdf --check` → atomic rename)
-- [ ] Autosave and recovery
+Merged into `main` in session 8 at the owner's go-ahead. Demo script: `docs/demos/m2.md`.
+
+Plan, in order: every later slice edits documents, so the editing model and saving come first.
+
+1. ~~**Editing model**~~ **done (ADR 0014):** each edit is an incremental update written by our
+   own writer, and undo pops the last one. PDFium's safe API cannot reorder pages without
+   breaking the outline and links, and cannot save incrementally. Validated on the corpus with
+   PDFium and `qpdf --check`.
+2. ~~**Page organizer**~~ **done:** the Pages tool shows a page grid with multi-select, drag to
+   reorder, and move earlier/later (keyboard and palette). Rotate, delete, duplicate and insert
+   act on the selection, or on the current page in the page view, with undo and redo.
+3. ~~**Safe save**~~ **done (ADR 0015):** Save and Save As (temp file → validate → atomic
+   rename). The original is never written in place; signed files are saved incrementally. The
+   app asks before a modified tab, window, or the app closes.
+4. ~~**Merge, insert from another PDF, extract, split**~~ **done (ADR 0016):** PDFium's page
+   import; snapshot steps in the history; refuses signed targets. Session 8 added split by
+   top-level bookmarks and by file size, and inserting from password-protected files (the
+   page area asks for each file's password).
+5. ~~**Markup**~~ **done (ADR 0017):** highlight, underline, strikethrough and squiggly from the
+   text selection, as standard annotations with appearance streams. Click a markup to select
+   it; Delete removes it. New objects in encrypted files are encrypted (RC4, AES-128, AES-256).
+   The view paints again instead of rebuilding. Colour choice comes with the inspector.
+6. **Notes, text boxes, ink** (RTL-aware text entry):
+   - ~~**Ink and sticky notes**~~ **done (ADR 0018):** the Comment tool's Note, Draw (with
+     pressure), and Erase-ink modes; a note editor that follows the text's own direction.
+   - ~~**Text boxes**~~ **done (ADR 0019):** shaped by M3's `typeset`, drawn with embedded
+     IBM Plex subsets by the new `pdf::text` writer. They stand upright on turned pages, and
+     their height fits the text.
+7. ~~**Autosave and recovery**~~ **done (ADR 0040):** a modified document's current bytes go
+   to a recovery file 2 seconds after its last change. At the next start the app offers to
+   restore or discard them.
+8. ~~**Comments panel**~~ **done (ADR 0041):** filter, sort, reply, resolve, and go to each
+   comment. Replies and review states are standard `/IRT` threads, and new annotations carry
+   the name the user chose.
+
+- [~] Markup, notes, text boxes, ink:
+      - Markup is done (ADR 0017): highlight, underline, strikethrough, squiggly; select and
+        delete; undo; English and Arabic; encrypted files.
+      - Ink and sticky notes are done (ADR 0018): pressure, eraser, notes upright on turned
+        pages, Arabic note text, edit and delete.
+      - Text boxes are done (ADR 0019): Arabic, English and mixed text shaped with embedded
+        font subsets; they read back exactly once flattened; encrypted files work.
+      - Not yet: callouts, choosing fonts, sizes and colours, and moving annotations.
+- [~] Comments panel (ADR 0041):
+      - lists markup, notes, text boxes and drawings with author, date, the marked text,
+        replies, and whether resolved; threads written by other viewers are followed;
+      - filter by status, type and author; sort by page, latest activity, or author;
+      - reply and resolve (or reopen), as standard annotations that draw nothing; undo covers
+        them; removing a comment removes its thread;
+      - "Your name on comments" signs new annotations of every kind; no name is guessed.
+      - Not yet: shapes, stamps and other kinds from other tools; editing or deleting a single
+        reply; XFDF import/export, summaries, flattening (P1).
+- [~] Page organizer (reorder/rotate/delete/merge/split/extract):
+      - The Pages tool shows a virtualized grid (React Aria `GridList` + `GridLayout`).
+      - Select pages with click, Shift and Cmd/Ctrl; drag to reorder; move earlier or later.
+      - Rotate, delete, duplicate and insert act on the selection.
+      - Both directions: the grid flows right to left in Arabic.
+      - Insert pages from files (also merges), including password-protected ones; extract to a
+        new file; split by page count, at top-level bookmarks (files named after them), or by
+        file size (ADR 0016).
+      - Pointer dragging is untested: browser automation cannot start a native drag. The drop
+        arithmetic is unit-tested, and the move commands are the keyboard path.
+- [x] Undo journal: undo and redo for page edits and annotations (`EditHistory`, ADRs 0014
+      and 0017); each step knows whether it changed pages or only annotations
+- [x] Safe save pipeline (ADR 0015):
+      - temp file → reopen to validate → atomic rename;
+      - a full PDFium rewrite drops deleted pages' content;
+      - signed files are saved incrementally;
+      - `qpdf --check` runs in tests (qpdf is not bundled);
+      - unsaved changes are marked on the tab, and the app asks before closing them.
+- [x] Autosave and recovery (ADR 0040):
+      - each modified document's current revision is written to `<state dir>/recovery/` 2 s
+        after its last change, atomically;
+      - removed on save, on undo back to the saved revision, and on closing or quitting
+        without saving;
+      - at startup a dialog offers each one: restore (undo goes back to the original when it
+        is unchanged; Save asks where when it changed) or discard, or decide later;
+      - encrypted documents stay encrypted, and restoring asks for the password.
+      - Gap: running a single copy of the app is not enforced. A second copy started while
+        the first runs would offer the first one's recovery files.
+- [x] Budgets not regressed (spec §11; measurements below)
+
+### M2 measurements (Apple-silicon MacBook, macOS 26, session 8)
+
+M2 adds no budgets of its own; the check is that M1's did not regress.
+
+- **Search:** 1,000 pages index in 1.11 s once (M1: 1.09 s), then 17–18 ms per search (M1:
+  18 ms). Release build, `search_bench`.
+- **Scroll and zoom:** the debug-build benchmark ran with a visible window, on `m2-organize`
+  and on `main` (M1, without M2) one after the other:
+
+| Debug build, 1,000 pages | `main` | `m2-organize` |
+|---|---|---|
+| Scrolling 4,000 / 12,000 px/s, fling: median, p95 frame | 17 ms, 17–18 ms | 17 ms, 18 ms |
+| Longest blank page; random jump to preview (p95) | 0 ms; 19 ms | 0 ms; 19 ms |
+| Pinch in: p95 frame, frames > 20 ms | 25 ms, 4 | 23 ms, 4 |
+| Pinch out: p95 frame, frames > 20 ms | 36 ms, 12 | 37 ms, 12 |
+| The app's own memory at the end | 334 MB | 344 MB |
+
+  The same on both. Pinch is over budget in debug builds on both; the release figures
+  (pinch-in clean, extreme pinch-out p95 25 ms) are M1's open item.
+- **First page on screen:** 31–45 ms in the self-test (debug, dev server).
+- **M2's own interactions** (not budgeted): an edit is painted in 20–40 ms; a markup is
+  added in 15–20 ms.
+
+M2 closed in session 8 at the owner's go-ahead, with these items carried forward:
+
+- **Annotations:** callouts (P0), choosing fonts, sizes and colours, and moving annotations.
+  These come with the inspector.
+- **Comments:** shapes, stamps and other kinds from other tools are not listed; a single reply
+  cannot be edited or deleted from the panel; XFDF import and export, summaries and
+  flattening (P1).
+- **Organizer:** pointer dragging is untested by automation.
+- **Autosave:** a single running copy is not enforced.
+- **From M1:** extreme pinch-out, and printing on screen (owner item 13).
 
 ## M3 — Text engine — groundwork merged to `main` ahead of M2
 
@@ -251,11 +359,12 @@ parallel with M2 and merged by pull request at the owner's request.
         the best few in full and instances variable fonts at the requested weight.
       - **Gap:** reusing the PDF's own embedded font when it has the glyphs (in-place-editing
         work).
-- [ ] **Own content-stream writer** (now the only backend). Waits for M2's
-      `safha_core::pdf` writer to merge. Must solve:
+- [~] **Own content-stream writer** (now the only backend). The text half exists:
+      `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
+      M2's text boxes. Writing into page content is still to do. Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
-      - encrypting new objects in encrypted files.
+      - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
 - [ ] Add-new-text tool
 - [ ] In-place editing with reflow — **[SPIKE]** editor surface vs `contenteditable` overlay first
 - [ ] Exit test: all acceptance tests in spec §7
@@ -356,6 +465,105 @@ parallel with M2 and merged by pull request at the owner's request.
 - **Tests:** `cargo test --workspace`: 130 passed, 26 of them in `safha-ocr-eval`, with 6 new.
   `clippy -D warnings` and `cargo fmt --check` are clean. The UI was not touched.
 
+### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
+
+- **Autosave (ADR 0040):**
+  - After each edit, undo or redo, a modified document's current bytes (a valid PDF: the file
+    as opened plus each edit's incremental update) are written to a recovery file 2 seconds
+    later. A burst of edits writes once.
+  - The state store's new `recovery` table (schema 3) records each file's original path, name,
+    time, and the original's size and modification time.
+  - The file goes away when the document is saved, undone back to its saved revision, or closed
+    or quit without saving.
+- **Recovery:**
+  - The first window's startup lists recovery files no open document holds. A dialog offers
+    each: Restore, Discard, or Decide later (offered again at the next start).
+  - A restored document opens modified. When the original is unchanged, undo goes back to it;
+    when it changed or is gone, Save asks for a new file (`save_as_required`).
+  - An encrypted recovery file uses the usual password prompt; a wrong password asks again.
+  - Save-and-close no longer closes the tab when that Save As is cancelled.
+- **Self-test:** after a page is duplicated the document has a recovery file, and undo back to
+  the file removes it (a devtools command, `selftest_has_recovery_file`).
+- **CI fix:** the macOS and Windows runners draw the page at under 1 pixel per point, where a
+  note's icon and a text box have 19–38 matching pixels. The fixed 50-pixel bar failed them.
+  The bar now follows the render scale (8 px per square px/pt, at least 8).
+- **CI fix (Windows):** the shell's unit-test binary failed to start
+  (STATUS_ENTRYPOINT_NOT_FOUND) once autosave made test code reach the Tauri runtime. Tauri
+  embeds its Common Controls v6 manifest into the app binary only. `build.rs` now has the
+  linker embed the same manifest (`windows-app-manifest.xml`) into every binary, tests included.
+- **Comments panel (ADR 0041):**
+  - A fourth view of the side panel lists every comment the app knows: author, date, the
+    marked text (read in logical order, Arabic too), its replies, and whether it is resolved.
+  - Filter by status, type and author; sort by page, latest activity, or author. Choosing a
+    comment scrolls to it and selects it.
+  - Reply and Resolve/Reopen write standard annotations: `/IRT` replies and `/Review` states,
+    with empty appearances so they draw nothing. Threads from other viewers (replies to
+    replies, several states, groups) are followed; removing a comment takes its thread along.
+  - Our parser reads the thread structure (PDFium's safe API exposes no `/IRT`); PDFium reads
+    the decrypted text, names and dates.
+  - "Your name on comments" (a setting) signs new annotations of every kind. The system's
+    user name is never written unasked.
+- **Closing M2:**
+  - **Split** (ADR 0016 amendment): at top-level bookmarks (one file per entry, named after
+    it; titles made safe for file names) and by file size (each file holds as many pages as
+    fit, measured by writing it). The split dialog offers all three ways and lists the
+    bookmark titles.
+  - **Inserting from password-protected files:** the page area asks for each file's password
+    in turn, then inserts them all as one undo step.
+  - **Budgets:** search, scrolling, jumps and memory measured against `main`; no regression
+    (table in M2).
+  - **Demo script:** `docs/demos/m2.md`.
+- **Tests:** 259 Rust and 153 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark), autosave and the comments panel included. CI is green on macOS,
+  Linux and Windows.
+
+### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes, text boxes)
+
+- **CI on PR #2:** a slow macOS runner failed the scroll benchmark's timing. On CI every
+  benchmark timing check now warns; only the app's own memory fails the run (ADR 0011). After
+  that, every check was green.
+- **Markup annotations (ADR 0017):**
+  - Highlight, underline, strikethrough and squiggly from the selection toolbar or the command
+    palette.
+  - Each is a standard annotation with its own appearance stream, written as an incremental
+    update, so undo covers it.
+  - A selection across pages is one undo step.
+  - Click a markup to select it; Delete (⌫ on a Mac) removes it, with its pop-up and replies.
+- **Encrypted files:**
+  - Objects an edit adds are now encrypted, with RC4 (40–128 bits), AES-128 and AES-256.
+  - The key is checked with the user or the owner password.
+  - Tested on seven encrypted variants made with qpdf.
+- **No flash after markup:**
+  - an annotation change paints the pages again instead of rebuilding the view;
+  - tiles, previews, thumbnails, and organizer images stay until their new renders arrive.
+- **Fix:** a tab's close button kept its English label after switching to Arabic (React Aria
+  cached the tab items).
+- **Self-test:** highlights the first page's text and checks the yellow on screen in the same
+  view, and undo; in English and Arabic.
+- **Merged `main`** into `m2-organize` twice: the Milestone 3 groundwork (to clear PR #2's
+  conflicts), then the rename to Mirsam.
+- **Ink and sticky notes (ADR 0018):**
+  - **The Comment tool** has Note, Draw and Erase-ink modes.
+  - **Ink** widens with pen pressure. A preview stands in until the page repaints, and the
+    eraser removes whole strokes.
+  - **Notes** are `/Text` annotations with their text in `/Contents`. Their icon stands upright
+    on turned pages.
+  - **The note editor's** text field takes its direction from the text (`dir="auto"`).
+  - **The annotation module** is now a folder: markup, ink, notes.
+- **Text boxes (ADR 0019):**
+  - **Shaped text:** M3's `typeset` lays out English, Arabic and mixed text. The new
+    `pdf::text` writer draws it with embedded IBM Plex subsets (the text half of the
+    content-stream writer).
+  - **Layout:** a box stands upright on turned pages; its height fits the text and grows
+    downward when the text changes; saving it empty removes it.
+  - **Tests:** each box is flattened with qpdf and read back by our extractor, exactly, in
+    logical order.
+  - **Extraction:** word-space markers are now read inside form XObjects too, which flattened
+    Arabic needed.
+- **Tests:** 238 Rust and 142 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark): markup, an Arabic note, an Arabic text box, and a pressure stroke,
+  each painted and undone.
+
 ### Rename to Mirsam — 2026-11-22
 
 The owner chose the name **Mirsam** (مرسام). Renamed everything a user or reader sees: window
@@ -450,6 +658,24 @@ Things that were not obvious:
   Linux-made fixtures matches macOS (ADR 0008).
 - **Printing on Linux** verified in CI: four rotated pages exported in 203 ms, each on paper of
   the right orientation.
+- **Milestone 1 closed** and merged to `main` (PR #1, every CI check green). The owner decided
+  that the memory budget covers the app's own process.
+- **Milestone 2 started** on `m2-organize`:
+  - **Editing model (ADR 0014):** each edit is an incremental update written by our own writer,
+    and undo is a stack of them.
+  - **Page edits** (rotate, delete, duplicate, insert blank) on the current page, with undo and
+    redo, in the core, the shell, and the UI.
+  - **Self-test:** checks an edit and its undo in the real app in both directions.
+  - **Save and Save As** (ADR 0015). The app asks before closing a modified tab, window, or the
+    whole app; the self-test checks the window prompt.
+  - **Page organizer:** the Pages tool shows a page grid with multi-select, drag to reorder,
+    and move earlier/later. The self-test drives it on multi-page files.
+  - **`selftest.sh`** now refuses to run when port 1420 already serves a UI. It used to test
+    another checkout's UI silently.
+  - **Draft PR #2** is open with Auto-fix on.
+  - **Pages across files** (ADR 0016): insert pages from other PDFs (also merges), extract
+    pages to a new file, split into files of N pages. A notice says what was written.
+  - **Tests:** 147 Rust and 129 UI tests pass on this Mac.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 

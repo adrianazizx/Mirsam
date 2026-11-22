@@ -1,15 +1,23 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   type AppInfo,
   type Backend,
+  type BookmarkPart,
+  type DocumentComment,
+  type EditOutcome,
+  type InsertOutcome,
   isBackendError,
   type OpenOutcome,
   type OutlineItem,
+  type PageAnnotation,
   type PageSize,
   type RecentFile,
   type RenderedPage,
   type RenderStats,
+  type RestoreOutcome,
+  type SaveOutcome,
   type SearchResults,
   type SelftestConfig,
   type Startup,
@@ -137,6 +145,39 @@ export const tauriBackend: Backend = {
   },
   newWindow: () => invoke<void>("new_window"),
   printDocument: (documentId) => invoke<void>("print_document", { documentId }),
+  editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
+  undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
+  redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
+  addMarkup: (documentId, kind, pages) =>
+    invoke<EditOutcome>("add_markup", { documentId, kind, pages }),
+  addInk: (documentId, page, strokes) =>
+    invoke<EditOutcome>("add_ink", { documentId, page, strokes }),
+  addNote: (documentId, page, x, y, contents) =>
+    invoke<EditOutcome>("add_note", { documentId, page, x, y, contents }),
+  addTextBox: (documentId, page, x, y, width, contents) =>
+    invoke<EditOutcome>("add_text_box", { documentId, page, x, y, width, contents }),
+  setAnnotationContents: (documentId, page, index, contents) =>
+    invoke<EditOutcome>("set_annotation_contents", { documentId, page, index, contents }),
+  removeAnnotations: (documentId, page, indices) =>
+    invoke<EditOutcome>("remove_annotations", { documentId, page, indices }),
+  pageAnnotations: (documentId, page) =>
+    invoke<PageAnnotation[]>("page_annotations", { documentId, page }),
+  // Addressed to one window: listen on this window only.
+  onCloseRequested: (listener) =>
+    getCurrentWebviewWindow().listen("close-requested", () => listener()),
+  onQuitRequested: (listener) =>
+    getCurrentWebviewWindow().listen("quit-requested", () => listener()),
+  closeWindowDiscarding: () => invoke<void>("close_window_discarding"),
+  quitDiscarding: () => invoke<void>("quit_discarding"),
+  saveDocument: (documentId) => invoke<SaveOutcome>("save_document", { documentId }),
+  insertPagesFromFiles: (documentId, at) =>
+    invoke<InsertOutcome | null>("insert_pages_from_files", { documentId, at }),
+  unlockInsert: (token, password) => invoke<InsertOutcome>("unlock_insert", { token, password }),
+  extractPages: (documentId, pages) =>
+    invoke<string | null>("extract_pages", { documentId, pages }),
+  splitDocument: (documentId, by) => invoke<number | null>("split_document", { documentId, by }),
+  bookmarkParts: (documentId) => invoke<BookmarkPart[]>("bookmark_parts", { documentId }),
+  saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>
     listen<{ key: string; value: string }>("settings-changed", (event) =>
@@ -149,6 +190,17 @@ export const tauriBackend: Backend = {
     invoke<void>("selftest_report", { report: { results, canvasPng } }),
   renderStats: async () => ((await hasDevtools()) ? invoke<RenderStats>("render_stats") : null),
   windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
+  documentComments: (documentId) => invoke<DocumentComment[]>("document_comments", { documentId }),
+  replyToComment: (documentId, page, index, contents) =>
+    invoke<EditOutcome>("reply_to_comment", { documentId, page, index, contents }),
+  setCommentResolved: (documentId, page, index, resolved) =>
+    invoke<EditOutcome>("set_comment_resolved", { documentId, page, index, resolved }),
+  restoreRecovery: (token) => invoke<RestoreOutcome>("restore_recovery", { token }),
+  unlockRecovery: (token, password) =>
+    invoke<RestoreOutcome>("unlock_recovery", { token, password }),
+  discardRecovery: (token) => invoke<void>("discard_recovery", { token }),
+  hasRecoveryFile: async (id) =>
+    (await hasDevtools()) ? invoke<boolean>("selftest_has_recovery_file", { id }) : null,
   shellRssKb: async () => ((await hasDevtools()) ? invoke<number | null>("spike_rss_kb") : null),
   selftestLog: async (message) => {
     if (await hasDevtools()) await invoke<void>("selftest_log", { message });

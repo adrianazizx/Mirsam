@@ -1,14 +1,24 @@
 import { create } from "zustand";
 import type {
   DocumentInfo,
+  EditOutcome,
   OutlineItem,
   PageSize,
   RecentFile,
+  RecoveryInfo,
+  SaveOutcome,
   SearchHit,
   SearchOptions,
 } from "../backend";
 import type { Locale } from "../i18n";
+import type { SelectedAnnotation } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
+import {
+  type CommentFilter,
+  type CommentSort,
+  DEFAULT_COMMENT_FILTER,
+  MAX_AUTHOR,
+} from "./comments";
 import { clampZoom } from "./zoom";
 
 export const TOOLS = [
@@ -26,7 +36,7 @@ export type ToolId = (typeof TOOLS)[number];
 export type ThemePreference = "system" | "light" | "dark";
 /** How pages themselves are tinted, independent of the UI theme (spec section 4). */
 export type ReadingTheme = "normal" | "sepia" | "night";
-export type LeftPanel = "thumbnails" | "outline" | "search";
+export type LeftPanel = "thumbnails" | "outline" | "search" | "comments";
 
 export interface SearchState {
   query: string;
@@ -71,13 +81,55 @@ export interface OpenDocument extends DocumentInfo {
   search: SearchState;
   /** Whether text is selected in this document's page view. */
   hasSelection: boolean;
+  /** The annotation selected (clicked) in the page view: markup, ink, or a note. */
+  selectedAnnotation: SelectedAnnotation | null;
+  /** Bumped by every edit, undo, and redo that changes pages: views showing pages start over. */
+  revision: number;
+  /**
+   * Bumped when only annotations changed (ADR 0017): views keep their layout
+   * and paint the pages again.
+   */
+  paint: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Differs from the file as opened or last saved. */
+  modified: boolean;
+  /** Pages selected in the page organizer (zero-based, ascending). */
+  selectedPages: number[];
 }
+
+/** The Comment tool's modes (ADR 0018). */
+export type CommentTool = "note" | "textBox" | "pen" | "eraser";
+
+/**
+ * A note or text box being written before it is added (ADRs 0018, 0019):
+ * where it goes (its top-left corner in displayed-page points) and how wide
+ * (a note's icon, or the text box).
+ */
+export interface PendingNote {
+  documentId: number;
+  kind: "note" | "textBox";
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+}
+
+/** A close that waits for the user: something holds unsaved changes (ADR 0015). */
+export type ClosePrompt =
+  | { kind: "tab"; documentId: number; name: string }
+  | { kind: "window" }
+  | { kind: "quit" };
 
 export interface PendingUnlock {
   token: number;
   name: string;
   /** The last password was wrong. */
   retry: boolean;
+  /** A recovery file's password, not a file's (ADR 0040). */
+  recovery?: boolean;
+  /** A file's whose pages are being inserted (ADR 0016): where, and the page count before. */
+  insert?: { documentId: number; at: number; pageCount: number };
 }
 
 export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
@@ -95,9 +147,21 @@ export interface AppState {
   /** The open side panel at the inline start, or null when it is closed. */
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
+  /** The name written on new comments (ADR 0041); none when empty. */
+  commentAuthor: string;
+  /** The comments panel's filters and order (not kept between sessions). */
+  commentFilter: CommentFilter;
+  commentSort: CommentSort;
   activeTool: ToolId;
+  /** What a press on a page does while the Comment tool is active. */
+  commentTool: CommentTool;
+  /** A note being written before it is added: where its icon goes. */
+  pendingNote: PendingNote | null;
   documents: OpenDocument[];
   activeDocumentId: number | null;
+  /** Unsaved changes an earlier session left, waiting for restore or discard (ADR 0040). */
+  recoveries: RecoveryInfo[];
+  setRecoveries(recoveries: RecoveryInfo[]): void;
   /** Encrypted files waiting for a password; the first one is being asked for. */
   unlocks: PendingUnlock[];
   /** Recent files for the start screen; null until loaded. */
@@ -112,19 +176,41 @@ export interface AppState {
   setReadingTheme(theme: ReadingTheme): void;
   setLeftPanel(panel: LeftPanel | null): void;
   setSearchOptions(options: SearchOptions): void;
+  setCommentAuthor(name: string): void;
+  setCommentFilter(patch: Partial<CommentFilter>): void;
+  setCommentSort(sort: CommentSort): void;
   setActiveTool(tool: ToolId): void;
+  setCommentTool(tool: CommentTool): void;
+  setPendingNote(note: PendingNote | null): void;
   addDocument(info: DocumentInfo, options?: { activate?: boolean }): void;
   removeDocument(id: number): void;
   activateDocument(id: number): void;
   /** Moves a tab to `index` in tab order (reading order). */
   moveDocument(id: number, index: number): void;
   updateDocument(id: number, patch: Partial<Omit<OpenDocument, keyof DocumentInfo>>): void;
+  /**
+   * Takes the document to the revision an edit, undo, or redo left it at.
+   * Page numbers may have moved, so the outline, labels, search hits, and
+   * selection are dropped and reload; the current page stays where it can.
+   */
+  applyEdit(id: number, outcome: EditOutcome): void;
+  /** After Save or Save As: the name may change, and the document is no longer modified. */
+  applySave(id: number, outcome: SaveOutcome): void;
+  setSelectedPages(id: number, pages: number[]): void;
+  closePrompt: ClosePrompt | null;
+  setClosePrompt(prompt: ClosePrompt | null): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
   pushUnlock(unlock: PendingUnlock): void;
   /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
   resolveUnlock(next: PendingUnlock | null): void;
   setRecents(recents: RecentFile[] | null): void;
   setError(code: string | null): void;
+  /** A message about something done elsewhere (a file written), under `notices.`. */
+  notice: { key: string; values?: Record<string, string> } | null;
+  setNotice(notice: { key: string; values?: Record<string, string> } | null): void;
+  /** The split dialog is open (asks how many pages per file). */
+  splitPrompt: boolean;
+  setSplitPrompt(open: boolean): void;
   setGalleryOpen(open: boolean): void;
   setPaletteOpen(open: boolean): void;
   /** Applies settings read from the shell's store at startup. */
@@ -142,7 +228,7 @@ const CACHE_KEY = "safha.preferences";
 
 type Persisted = Pick<
   AppState,
-  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions"
+  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
 >;
 
 const DEFAULTS: Persisted = {
@@ -151,6 +237,7 @@ const DEFAULTS: Persisted = {
   readingTheme: "normal",
   leftPanel: null,
   searchOptions: DEFAULT_SEARCH_OPTIONS,
+  commentAuthor: "",
 };
 
 /** Parses stored strings, ignoring anything unknown or malformed. */
@@ -167,10 +254,18 @@ export function parseSettings(raw: Record<string, string | undefined>): Partial<
   ) {
     out.readingTheme = raw.readingTheme;
   }
-  if (raw.leftPanel === "thumbnails" || raw.leftPanel === "outline" || raw.leftPanel === "search") {
+  if (
+    raw.leftPanel === "thumbnails" ||
+    raw.leftPanel === "outline" ||
+    raw.leftPanel === "search" ||
+    raw.leftPanel === "comments"
+  ) {
     out.leftPanel = raw.leftPanel;
   } else if (raw.leftPanel === "none") {
     out.leftPanel = null;
+  }
+  if (typeof raw.commentAuthor === "string") {
+    out.commentAuthor = raw.commentAuthor.trim().slice(0, MAX_AUTHOR);
   }
   if (raw["search.options"]) {
     try {
@@ -259,11 +354,34 @@ export const useAppStore = create<AppState>((set, get) => {
   return {
     ...loadCached(),
     activeTool: "select",
+    commentTool: "note",
+    pendingNote: null,
+    commentFilter: DEFAULT_COMMENT_FILTER,
+    commentSort: "page",
+    setCommentAuthor: (name) => update("commentAuthor", name.trim().slice(0, MAX_AUTHOR)),
+    setCommentFilter(patch) {
+      set((state) => ({ commentFilter: { ...state.commentFilter, ...patch } }));
+    },
+    setCommentSort(commentSort) {
+      set({ commentSort });
+    },
+    recoveries: [],
+    setRecoveries(recoveries) {
+      set({ recoveries });
+    },
     documents: [],
     activeDocumentId: null,
     unlocks: [],
     recents: null,
     errorCode: null,
+    notice: null,
+    setNotice(notice) {
+      set({ notice });
+    },
+    splitPrompt: false,
+    setSplitPrompt(open) {
+      set({ splitPrompt: open });
+    },
     galleryOpen: false,
     paletteOpen: false,
 
@@ -273,7 +391,13 @@ export const useAppStore = create<AppState>((set, get) => {
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),
     setSearchOptions: (searchOptions) => update("searchOptions", searchOptions),
     setActiveTool(activeTool) {
-      set({ activeTool });
+      set({ activeTool, pendingNote: null });
+    },
+    setCommentTool(commentTool) {
+      set({ commentTool, pendingNote: null });
+    },
+    setPendingNote(pendingNote) {
+      set({ pendingNote });
     },
     addDocument(info, options) {
       if (get().documents.some((open) => open.id === info.id)) {
@@ -296,6 +420,13 @@ export const useAppStore = create<AppState>((set, get) => {
         outline: null,
         search: IDLE_SEARCH,
         hasSelection: false,
+        selectedAnnotation: null,
+        revision: 0,
+        paint: 0,
+        canUndo: info.canUndo ?? false,
+        canRedo: false,
+        modified: info.modified ?? false,
+        selectedPages: [],
       };
       set((state) => ({
         documents: [...state.documents, document],
@@ -338,6 +469,65 @@ export const useAppStore = create<AppState>((set, get) => {
           next.zoom = clampZoom(next.zoom);
           return next;
         }),
+      }));
+    },
+    applyEdit(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id !== id
+            ? open
+            : !outcome.pagesChanged
+              ? {
+                  // The same pages: everything on them stays, they are painted again.
+                  ...open,
+                  paint: open.paint + 1,
+                  selectedAnnotation: null,
+                  canUndo: outcome.canUndo,
+                  canRedo: outcome.canRedo,
+                  modified: outcome.modified,
+                }
+              : {
+                  ...open,
+                  pageCount: outcome.pageCount,
+                  page: Math.min(open.page, Math.max(0, outcome.pageCount - 1)),
+                  pageSize: null,
+                  labels: null,
+                  outline: null,
+                  search: IDLE_SEARCH,
+                  hasSelection: false,
+                  selectedAnnotation: null,
+                  revision: open.revision + 1,
+                  // Page numbers moved; the command that edited says what is selected next.
+                  selectedPages: [],
+                  canUndo: outcome.canUndo,
+                  canRedo: outcome.canRedo,
+                  modified: outcome.modified,
+                },
+        ),
+      }));
+    },
+    closePrompt: null,
+    setClosePrompt(prompt) {
+      set({ closePrompt: prompt });
+    },
+    setSelectedPages(id, pages) {
+      const sorted = [...new Set(pages)].sort((a, b) => a - b);
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id
+            ? {
+                ...open,
+                selectedPages: sorted.filter((page) => page >= 0 && page < open.pageCount),
+              }
+            : open,
+        ),
+      }));
+    },
+    applySave(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id ? { ...open, name: outcome.name, modified: outcome.modified } : open,
+        ),
       }));
     },
     updateSearch(id, patch) {

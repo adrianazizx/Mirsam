@@ -39,6 +39,8 @@ interface Item {
   element: HTMLButtonElement;
   image: HTMLDivElement;
   canvas: HTMLCanvasElement | null;
+  /** The image from before a refresh, shown until the new one replaces it. */
+  stale: HTMLCanvasElement | null;
   label: HTMLSpanElement;
 }
 
@@ -48,7 +50,7 @@ const MOUNT_MARGIN = 1;
 export class ThumbnailStrip {
   private readonly options: ThumbnailOptions;
   private readonly list: HTMLDivElement;
-  private readonly client: TileClient;
+  private client: TileClient;
   private readonly items = new Map<number, Item>();
   private sizes: PageSize[] | null = null;
   /** One row per page: its top and bottom in the list. */
@@ -63,14 +65,7 @@ export class ThumbnailStrip {
     this.list.className = options.classNames.list;
     this.list.style.position = "relative";
     options.container.append(this.list);
-    this.client = new TileClient(
-      options.backend,
-      options.documentId,
-      (wanted, bitmap) => this.onRendered(wanted, bitmap),
-      (wanted, error) => console.warn("thumbnail render failed", wanted, error),
-      undefined,
-      "thumbnails",
-    );
+    this.client = this.newClient();
     options.container.addEventListener("scroll", this.update, { passive: true });
     options.container.addEventListener("keydown", this.onKeyDown);
     options.backend.pageSizes(options.documentId).then(
@@ -83,6 +78,34 @@ export class ThumbnailStrip {
       },
       (error: unknown) => console.warn("thumbnails: page sizes unavailable", error),
     );
+  }
+
+  private newClient(): TileClient {
+    return new TileClient(
+      this.options.backend,
+      this.options.documentId,
+      (wanted, bitmap) => this.onRendered(wanted, bitmap),
+      (wanted, error) => console.warn("thumbnail render failed", wanted, error),
+      undefined,
+      "thumbnails",
+    );
+  }
+
+  /**
+   * Draws every thumbnail again (only annotations changed); each keeps its
+   * old image until the new one replaces it.
+   */
+  refresh(): void {
+    if (this.destroyed) return;
+    this.client.close();
+    this.client = this.newClient();
+    for (const item of this.items.values()) {
+      if (!item.canvas) continue;
+      if (item.stale) releaseCanvas(item.stale);
+      item.stale = item.canvas;
+      item.canvas = null;
+    }
+    this.update();
   }
 
   destroy(): void {
@@ -206,7 +229,7 @@ export class ThumbnailStrip {
     const label = document.createElement("span");
     label.className = classNames.label;
     element.append(image, label);
-    const item: Item = { page, element, image, canvas: null, label };
+    const item: Item = { page, element, image, canvas: null, stale: null, label };
     this.applyLabel(item);
     if (page === this.current) this.markCurrent(item, true);
     this.items.set(page, item);
@@ -239,7 +262,13 @@ export class ThumbnailStrip {
     if (context) drawRendered(context, bitmap);
     releaseRendered(bitmap);
     canvas.setAttribute("aria-hidden", "true");
-    item.image.append(canvas);
+    if (item.stale) {
+      item.stale.replaceWith(canvas);
+      releaseCanvas(item.stale);
+      item.stale = null;
+    } else {
+      item.image.append(canvas);
+    }
     item.canvas = canvas;
   }
 
@@ -259,9 +288,13 @@ export class ThumbnailStrip {
 }
 
 function release(item: Item): void {
-  if (item.canvas) {
-    item.canvas.width = 0;
-    item.canvas.height = 0;
-  }
+  if (item.canvas) releaseCanvas(item.canvas);
+  if (item.stale) releaseCanvas(item.stale);
   item.element.remove();
+}
+
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0;
+  canvas.height = 0;
+  canvas.remove();
 }

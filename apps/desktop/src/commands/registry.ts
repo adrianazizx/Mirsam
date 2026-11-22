@@ -1,13 +1,26 @@
-import { backend, isBackendError, type OpenOutcome } from "../backend";
+import {
+  backend,
+  type EditOutcome,
+  isBackendError,
+  type MarkupKind,
+  type OpenOutcome,
+  type PageEdit,
+  type RestoreOutcome,
+  type SplitBy,
+  type StrokePoint,
+} from "../backend";
 import {
   type AppState,
+  type CommentTool,
   type LeftPanel,
   type OpenDocument,
   type ReadingTheme,
   selectActiveDocument,
   useAppStore,
 } from "../state/appStore";
+import type { CommentFilter, CommentSort } from "../state/comments";
 import { stepZoom } from "../state/zoom";
+import { NOTE_SIZE, type SelectedAnnotation, TEXT_BOX_WIDTH } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { getViewer } from "../viewer/registry";
 import { isMac } from "./platform";
@@ -22,6 +35,8 @@ import { isMac } from "./platform";
 export interface Shortcut {
   /** `KeyboardEvent.key`, lower-cased for letters. */
   key: string;
+  /** Another key that does the same (Backspace for Delete: a Mac's delete key). */
+  alternate?: string;
   /** Cmd on macOS, Ctrl elsewhere. */
   mod?: boolean;
   /** The Control key itself on every platform (Ctrl+Tab). */
@@ -59,6 +74,34 @@ export interface CommandArg {
   index?: number;
   /** `file.close`, `tabs.move`: a tab other than the active one. */
   documentId?: number;
+  /** `file.close`: close even with unsaved changes (the user chose not to save). */
+  force?: boolean;
+  /** `pages.move`: the pages to move (zero-based, ascending). */
+  pages?: number[];
+  /** `pages.move`: the index the first moved page takes in the result. */
+  to?: number;
+  /** `pages.splitInto`: how to split. */
+  split?: SplitBy;
+  /** `note.save`: the note's text. */
+  text?: string;
+  /** `note.place`, `textBox.place`: the top-left corner, in displayed-page points. */
+  x?: number;
+  y?: number;
+  /** `textBox.place`: the box's width, in points. */
+  width?: number;
+  /** `ink.add`: the pen's strokes, in displayed-page points. */
+  strokes?: StrokePoint[][];
+  /** `ink.erase`: the ink annotations touched, by index. */
+  indices?: number[];
+  /** `recovery.restore`, `recovery.discard`: the recovery file's token (`token` above). */
+  /** `comment.show`: the annotation to scroll to and select (`page`, `index` as for replies). */
+  annotation?: SelectedAnnotation;
+  /** `comment.resolve`: resolved (true) or open again (false). */
+  resolved?: boolean;
+  /** `comments.filter`: the filters to change. */
+  filter?: Partial<CommentFilter>;
+  /** `comments.sort`. */
+  sort?: CommentSort;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -70,6 +113,12 @@ export type CommandId =
   | "file.open"
   | "file.close"
   | "file.print"
+  | "file.saveAndClose"
+  | "window.closeDiscarding"
+  | "app.quitDiscarding"
+  | "app.cancelClose"
+  | "file.save"
+  | "file.saveAs"
   | "file.openRecent"
   | "file.forgetRecent"
   | "file.clearRecents"
@@ -83,6 +132,39 @@ export type CommandId =
   | "tabs.moveToNewWindow"
   | "window.new"
   | "edit.copy"
+  | "markup.highlight"
+  | "markup.underline"
+  | "markup.strikeOut"
+  | "markup.squiggly"
+  | "annotation.delete"
+  | "recovery.restore"
+  | "recovery.discard"
+  | "recovery.later"
+  | "comment.note"
+  | "comment.textBox"
+  | "textBox.place"
+  | "comment.pen"
+  | "comment.eraser"
+  | "note.place"
+  | "note.save"
+  | "note.cancel"
+  | "ink.add"
+  | "ink.erase"
+  | "edit.undo"
+  | "edit.redo"
+  | "pages.rotateClockwise"
+  | "pages.rotateCounterclockwise"
+  | "pages.delete"
+  | "pages.duplicate"
+  | "pages.insertBlank"
+  | "pages.moveEarlier"
+  | "pages.moveLater"
+  | "pages.move"
+  | "pages.open"
+  | "pages.insertFromFile"
+  | "pages.extract"
+  | "pages.split"
+  | "pages.splitInto"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -101,6 +183,13 @@ export type CommandId =
   | "view.toggleLeftPanel"
   | "view.showThumbnails"
   | "view.showOutline"
+  | "view.showComments"
+  | "comment.show"
+  | "comment.reply"
+  | "comment.resolve"
+  | "comments.filter"
+  | "comments.sort"
+  | "comments.setAuthor"
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
@@ -123,6 +212,97 @@ const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
+const hasAnnotationSelected = (state: AppState) =>
+  Boolean(selectActiveDocument(state)?.selectedAnnotation);
+/** A note is being written: a new one, or the selected one. */
+const isWritingNote = (state: AppState) =>
+  (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
+  ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
+const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
+const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
+
+/**
+ * The pages a page command acts on: the organizer's selection when it has
+ * one, else the page being read. Ascending.
+ */
+export function targetPages(state: AppState = store()): number[] {
+  const active = selectActiveDocument(state);
+  if (!active) return [];
+  if (state.activeTool === "pages" && active.selectedPages.length > 0) return active.selectedPages;
+  return [active.page];
+}
+
+/**
+ * Applies a page edit to the active document (ADR 0014). `select`: the pages
+ * to select afterwards, in the edited document.
+ */
+async function editActive(
+  edit: (active: OpenDocument, pages: number[]) => PageEdit,
+  select: (pages: number[], edit: PageEdit) => number[] = () => [],
+): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  const pages = targetPages();
+  const change = edit(active, pages);
+  store().applyEdit(active.id, await backend.editPages(active.id, change));
+  store().setSelectedPages(active.id, select(pages, change));
+}
+
+/** Where moved pages land: the first at `to` of the result, the rest after it. */
+function landed(edit: PageEdit, count: number): number[] {
+  return edit.kind === "move" ? Array.from({ length: count }, (_, i) => edit.to + i) : [];
+}
+
+/**
+ * `to` for moving `pages` one step earlier or later: the index the first of
+ * them takes in the result. Null when they cannot move that way.
+ */
+export function moveTarget(pages: number[], pageCount: number, step: -1 | 1): number | null {
+  const first = pages[0];
+  if (first === undefined) return null;
+  const contiguous = pages.every((page, i) => page === first + i);
+  if (step < 0) return first === 0 && contiguous ? null : Math.max(0, first - 1);
+  const last = pageCount - pages.length;
+  return first >= last && contiguous ? null : Math.min(last, first + 1);
+}
+
+/**
+ * `to` for dropping `pages` before or after `target` (an index before the
+ * move): how many unmoved pages precede the drop point.
+ */
+export function dropTarget(pages: number[], target: number, after: boolean): number {
+  const point = target + (after ? 1 : 0);
+  const moving = new Set(pages);
+  let to = 0;
+  for (let page = 0; page < point; page += 1) if (!moving.has(page)) to += 1;
+  return to;
+}
+
+/** Marks the selected text (ADR 0017): one annotation per page, in one undo step. */
+async function markSelection(kind: MarkupKind): Promise<void> {
+  const active = selectActiveDocument(store());
+  const viewer = active ? getViewer(active.id) : undefined;
+  if (!active || !viewer) return;
+  const pages = viewer.selectionMarks();
+  if (pages.length === 0) return;
+  const outcome = await backend.addMarkup(active.id, kind, pages);
+  viewer.clearSelection();
+  store().applyEdit(active.id, outcome);
+}
+
+/** Switches to the Comment tool in one of its modes (ADR 0018). */
+function chooseCommentTool(tool: CommentTool) {
+  store().setActiveTool("comment");
+  store().setCommentTool(tool);
+}
+
+async function stepActive(step: "undo" | "redo"): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  const outcome =
+    step === "undo" ? await backend.undoEdit(active.id) : await backend.redoEdit(active.id);
+  store().applyEdit(active.id, outcome);
+}
 
 /** Makes `page` current and scrolls the viewer to it. */
 function navigateTo(active: OpenDocument, page: number) {
@@ -161,12 +341,76 @@ function setReadingTheme(theme: ReadingTheme) {
 }
 
 /** Error codes with their own message under `errors.`; anything else is "generic". */
-const KNOWN_ERRORS = ["invalid_pdf", "engine_unavailable", "file_missing", "print_failed"];
+const KNOWN_ERRORS = [
+  "invalid_pdf",
+  "engine_unavailable",
+  "file_missing",
+  "print_failed",
+  "save_failed",
+  "io_error",
+  "edit_unsupported",
+  "invalid_edit",
+  "text_failed",
+  "no_bookmarks",
+];
 
 function reportError(error: unknown) {
   const code = isBackendError(error) && KNOWN_ERRORS.includes(error.code) ? error.code : "generic";
   console.error("command failed", error);
   store().setError(code);
+}
+
+/**
+ * Puts a restored recovery file in a tab (ADR 0040), dropping the tab of its
+ * original that it replaces, or queues its password prompt.
+ */
+function acceptRestore(restored: RestoreOutcome) {
+  if (restored.replaced !== null) store().removeDocument(restored.replaced);
+  const { outcome } = restored;
+  if (outcome.kind === "opened") {
+    store().addDocument(outcome.document);
+  } else {
+    store().pushUnlock({
+      token: outcome.token,
+      name: outcome.name,
+      retry: outcome.retry,
+      recovery: true,
+    });
+  }
+}
+
+/**
+ * Saves a document to its file. A recovered document whose original changed
+ * since (ADR 0040) asks where instead. False when the user cancelled that.
+ */
+async function saveDocument(id: number): Promise<boolean> {
+  try {
+    store().applySave(id, await backend.saveDocument(id));
+    return true;
+  } catch (error) {
+    if (!isBackendError(error) || error.code !== "save_as_required") throw error;
+    const outcome = await backend.saveDocumentAs(id);
+    if (outcome) store().applySave(id, outcome);
+    return outcome !== null;
+  }
+}
+
+/** Pages inserted from files: the new revision, with the inserted pages selected. */
+function applyInsert(
+  insert: { documentId: number; at: number; pageCount: number },
+  edit: EditOutcome,
+) {
+  store().applyEdit(insert.documentId, edit);
+  const added = Math.max(0, edit.pageCount - insert.pageCount);
+  store().setSelectedPages(
+    insert.documentId,
+    Array.from({ length: added }, (_, i) => insert.at + i),
+  );
+}
+
+/** The recovery file `token` is dealt with: it leaves the list. */
+function settleRecovery(token: number) {
+  store().setRecoveries(store().recoveries.filter((entry) => entry.token !== token));
 }
 
 /** Puts an opened file in a tab, or queues its password prompt. */
@@ -309,8 +553,239 @@ const COMMANDS: Command[] = [
     async run(arg) {
       const id = arg?.documentId ?? selectActiveDocument(store())?.id;
       if (id === undefined) return;
+      const open = store().documents.find((candidate) => candidate.id === id);
+      if (open?.modified && !arg?.force) {
+        store().setClosePrompt({ kind: "tab", documentId: id, name: open.name });
+        return;
+      }
+      store().setClosePrompt(null);
       store().removeDocument(id);
       await backend.closeDocument(id);
+    },
+  },
+  {
+    id: "file.saveAndClose",
+    paletteHidden: true,
+    async run(arg) {
+      const id = arg?.documentId;
+      if (id === undefined) return;
+      if (await saveDocument(id)) await runCommand("file.close", { documentId: id, force: true });
+    },
+  },
+  {
+    id: "window.closeDiscarding",
+    paletteHidden: true,
+    async run() {
+      store().setClosePrompt(null);
+      await backend.closeWindowDiscarding();
+    },
+  },
+  {
+    id: "app.quitDiscarding",
+    paletteHidden: true,
+    async run() {
+      store().setClosePrompt(null);
+      await backend.quitDiscarding();
+    },
+  },
+  {
+    id: "app.cancelClose",
+    paletteHidden: true,
+    run() {
+      store().setClosePrompt(null);
+    },
+  },
+  {
+    id: "file.save",
+    shortcut: { key: "s", mod: true },
+    isEnabled: (state) => selectActiveDocument(state)?.modified ?? false,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (active) await saveDocument(active.id);
+    },
+  },
+  {
+    id: "file.saveAs",
+    shortcut: { key: "s", mod: true, shift: true },
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const outcome = await backend.saveDocumentAs(active.id);
+      if (outcome) store().applySave(active.id, outcome);
+    },
+  },
+  {
+    id: "edit.undo",
+    shortcut: { key: "z", mod: true },
+    isEnabled: canUndo,
+    run: () => stepActive("undo"),
+  },
+  {
+    id: "edit.redo",
+    shortcut: { key: "z", mod: true, shift: true },
+    isEnabled: canRedo,
+    run: () => stepActive("redo"),
+  },
+  {
+    id: "pages.rotateClockwise",
+    isEnabled: hasDocument,
+    run: () =>
+      editActive(
+        (_, pages) => ({ kind: "rotate", pages, quarterTurns: 1 }),
+        (pages) => pages,
+      ),
+  },
+  {
+    id: "pages.rotateCounterclockwise",
+    isEnabled: hasDocument,
+    run: () =>
+      editActive(
+        (_, pages) => ({ kind: "rotate", pages, quarterTurns: -1 }),
+        (pages) => pages,
+      ),
+  },
+  {
+    id: "pages.delete",
+    // A document keeps at least one page.
+    isEnabled: (state) =>
+      targetPages(state).length > 0 &&
+      targetPages(state).length < (selectActiveDocument(state)?.pageCount ?? 0),
+    run: () => editActive((_, pages) => ({ kind: "delete", pages })),
+  },
+  {
+    id: "pages.duplicate",
+    isEnabled: hasDocument,
+    // Each copy lands right after its page; the copies are selected.
+    run: () =>
+      editActive(
+        (_, pages) => ({ kind: "duplicate", pages }),
+        (pages) => pages.map((page, i) => page + i + 1),
+      ),
+  },
+  {
+    id: "pages.insertBlank",
+    isEnabled: hasDocument,
+    // After the last target page, the size of the current page (A4 until it is known).
+    run: () =>
+      editActive(
+        (active, pages) => ({
+          kind: "insertBlank",
+          at: (pages[pages.length - 1] ?? active.page) + 1,
+          width: active.pageSize?.width ?? 595,
+          height: active.pageSize?.height ?? 842,
+        }),
+        (_, edit) => (edit.kind === "insertBlank" ? [edit.at] : []),
+      ),
+  },
+  {
+    id: "pages.moveEarlier",
+    isEnabled: (state) =>
+      moveTarget(targetPages(state), selectActiveDocument(state)?.pageCount ?? 0, -1) !== null,
+    run: () =>
+      editActive(
+        (active, pages) => ({
+          kind: "move",
+          pages,
+          to: moveTarget(pages, active.pageCount, -1) ?? 0,
+        }),
+        (pages, edit) => landed(edit, pages.length),
+      ),
+  },
+  {
+    id: "pages.moveLater",
+    isEnabled: (state) =>
+      moveTarget(targetPages(state), selectActiveDocument(state)?.pageCount ?? 0, 1) !== null,
+    run: () =>
+      editActive(
+        (active, pages) => ({
+          kind: "move",
+          pages,
+          to: moveTarget(pages, active.pageCount, 1) ?? active.pageCount,
+        }),
+        (pages, edit) => landed(edit, pages.length),
+      ),
+  },
+  {
+    // Drag and drop in the page organizer: `pages` land at `to` of the result.
+    id: "pages.move",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const pages = arg?.pages;
+      if (!active || !pages?.length || arg?.to === undefined) return;
+      const to = arg.to;
+      store().applyEdit(active.id, await backend.editPages(active.id, { kind: "move", pages, to }));
+      store().setSelectedPages(
+        active.id,
+        pages.map((_, i) => to + i),
+      );
+    },
+  },
+  {
+    // Merging is inserting at the end; in the organizer, after the selection.
+    id: "pages.insertFromFile",
+    isEnabled: hasDocument,
+    async run() {
+      const state = store();
+      const active = selectActiveDocument(state);
+      if (!active) return;
+      const inOrganizer = state.activeTool === "pages" && active.selectedPages.length > 0;
+      const last = active.selectedPages[active.selectedPages.length - 1] ?? 0;
+      const at = inOrganizer ? last + 1 : active.pageCount;
+      const outcome = await backend.insertPagesFromFiles(active.id, at);
+      if (!outcome) return;
+      const insert = { documentId: active.id, at, pageCount: active.pageCount };
+      if (outcome.kind === "inserted") {
+        applyInsert(insert, outcome.edit);
+      } else {
+        store().pushUnlock({ ...outcome, insert });
+      }
+    },
+  },
+  {
+    id: "pages.extract",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const name = await backend.extractPages(active.id, targetPages());
+      if (name) store().setNotice({ key: "extracted", values: { name } });
+    },
+  },
+  {
+    // Asks how to split, then `pages.splitInto` writes the files.
+    id: "pages.split",
+    isEnabled: (state) => (selectActiveDocument(state)?.pageCount ?? 0) > 1,
+    run() {
+      store().setSplitPrompt(true);
+    },
+  },
+  {
+    id: "pages.splitInto",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      store().setSplitPrompt(false);
+      const active = selectActiveDocument(store());
+      const split = arg?.split;
+      if (!active || !split) return;
+      if (split.kind === "pages" && (!Number.isInteger(split.size) || split.size < 1)) return;
+      if (split.kind === "bytes" && !(split.limit >= 1)) return;
+      const count = await backend.splitDocument(active.id, split);
+      if (count !== null) store().setNotice({ key: "split", values: { count: String(count) } });
+    },
+  },
+  {
+    // Opens a page from the organizer in the page view.
+    id: "pages.open",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      if (arg?.page === undefined) return;
+      store().setActiveTool("select");
+      await runCommand("view.goToPage", { page: arg.page });
     },
   },
   {
@@ -355,6 +830,28 @@ const COMMANDS: Command[] = [
     async run(arg) {
       const pending = store().unlocks[0];
       if (!pending || arg?.password === undefined) return;
+      if (pending.insert) {
+        const outcome = await backend.unlockInsert(pending.token, arg.password);
+        if (outcome.kind === "inserted") {
+          store().resolveUnlock(null);
+          applyInsert(pending.insert, outcome.edit);
+        } else {
+          store().resolveUnlock({ ...outcome, insert: pending.insert });
+        }
+        return;
+      }
+      if (pending.recovery) {
+        const restored = await backend.unlockRecovery(pending.token, arg.password);
+        const { outcome } = restored;
+        if (outcome.kind === "opened") {
+          store().resolveUnlock(null);
+          if (restored.replaced !== null) store().removeDocument(restored.replaced);
+          store().addDocument(outcome.document);
+        } else {
+          store().resolveUnlock({ ...outcome, recovery: true });
+        }
+        return;
+      }
       const outcome = await backend.unlockDocument(pending.token, arg.password);
       if (outcome.kind === "opened") {
         store().resolveUnlock(null);
@@ -442,6 +939,181 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "markup.highlight",
+    isEnabled: hasSelection,
+    run: () => markSelection("highlight"),
+  },
+  {
+    id: "markup.underline",
+    isEnabled: hasSelection,
+    run: () => markSelection("underline"),
+  },
+  {
+    id: "markup.strikeOut",
+    isEnabled: hasSelection,
+    run: () => markSelection("strikeOut"),
+  },
+  {
+    id: "markup.squiggly",
+    isEnabled: hasSelection,
+    run: () => markSelection("squiggly"),
+  },
+  {
+    id: "annotation.delete",
+    shortcut: { key: "Delete", alternate: "Backspace", notInFields: true },
+    isEnabled: hasAnnotationSelected,
+    async run() {
+      const active = selectActiveDocument(store());
+      const selected = active?.selectedAnnotation;
+      if (!active || !selected) return;
+      const outcome = await backend.removeAnnotations(active.id, selected.page, [selected.index]);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "recovery.restore",
+    paletteHidden: true,
+    isEnabled: (state) => state.recoveries.length > 0,
+    async run(arg) {
+      if (arg?.token === undefined) return;
+      const restored = await backend.restoreRecovery(arg.token);
+      settleRecovery(arg.token);
+      acceptRestore(restored);
+    },
+  },
+  {
+    id: "recovery.discard",
+    paletteHidden: true,
+    isEnabled: (state) => state.recoveries.length > 0,
+    async run(arg) {
+      if (arg?.token === undefined) return;
+      await backend.discardRecovery(arg.token);
+      settleRecovery(arg.token);
+    },
+  },
+  {
+    // Offered again at the next start.
+    id: "recovery.later",
+    paletteHidden: true,
+    isEnabled: (state) => state.recoveries.length > 0,
+    run: () => store().setRecoveries([]),
+  },
+  { id: "comment.note", isEnabled: hasDocument, run: () => chooseCommentTool("note") },
+  { id: "comment.textBox", isEnabled: hasDocument, run: () => chooseCommentTool("textBox") },
+  { id: "comment.pen", isEnabled: hasDocument, run: () => chooseCommentTool("pen") },
+  { id: "comment.eraser", isEnabled: hasDocument, run: () => chooseCommentTool("eraser") },
+  {
+    // A press with the note tool: the note is added once its text is saved.
+    id: "note.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      getViewer(active.id)?.clearSelection();
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "note",
+        page: arg.page,
+        x: arg.x,
+        y: arg.y,
+        width: NOTE_SIZE,
+      });
+    },
+  },
+  {
+    // A press with the text box tool: the box is added once its text is saved.
+    id: "textBox.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      getViewer(active.id)?.clearSelection();
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "textBox",
+        page: arg.page,
+        x: arg.x,
+        y: arg.y,
+        width: arg.width ?? TEXT_BOX_WIDTH,
+      });
+    },
+  },
+  {
+    id: "note.save",
+    paletteHidden: true,
+    isEnabled: isWritingNote,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const text = arg?.text ?? "";
+      const pending = store().pendingNote;
+      if (pending && pending.documentId === active.id) {
+        store().setPendingNote(null);
+        // An empty new note or text box is none.
+        if (text.trim() === "") return;
+        const { page, x, y, width } = pending;
+        const outcome =
+          pending.kind === "textBox"
+            ? await backend.addTextBox(active.id, page, x, y, width, text)
+            : await backend.addNote(active.id, page, x, y, text);
+        store().applyEdit(active.id, outcome);
+        return;
+      }
+      const note = active.selectedAnnotation;
+      if (note?.kind !== "note" && note?.kind !== "textBox") return;
+      getViewer(active.id)?.clearSelection();
+      if ((note.contents ?? "") === text) return;
+      // A text box emptied of its text goes.
+      const outcome =
+        note.kind === "textBox" && text.trim() === ""
+          ? await backend.removeAnnotations(active.id, note.page, [note.index])
+          : await backend.setAnnotationContents(active.id, note.page, note.index, text);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "note.cancel",
+    paletteHidden: true,
+    isEnabled: isWritingNote,
+    run() {
+      store().setPendingNote(null);
+      const active = selectActiveDocument(store());
+      if (active) getViewer(active.id)?.clearSelection();
+    },
+  },
+  {
+    id: "ink.add",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const page = arg?.page;
+      if (!active || page === undefined || !arg?.strokes?.length) return;
+      try {
+        store().applyEdit(active.id, await backend.addInk(active.id, page, arg.strokes));
+      } catch (error) {
+        // Not added: the stroke on screen must not stay as if it were.
+        getViewer(active.id)?.clearInkPreview(page);
+        throw error;
+      }
+    },
+  },
+  {
+    id: "ink.erase",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || !arg.indices?.length) return;
+      store().applyEdit(
+        active.id,
+        await backend.removeAnnotations(active.id, arg.page, arg.indices),
+      );
+    },
+  },
+  {
     id: "edit.selectAll",
     shortcut: { key: "a", mod: true, notInFields: true },
     isEnabled: (state) => hasDocument(state) && state.activeTool === "select",
@@ -453,7 +1125,7 @@ const COMMANDS: Command[] = [
   {
     id: "edit.deselect",
     shortcut: { key: "Escape", notInFields: true },
-    isEnabled: hasSelection,
+    isEnabled: (state) => hasSelection(state) || hasAnnotationSelected(state),
     run() {
       const active = selectActiveDocument(store());
       if (active) getViewer(active.id)?.clearSelection();
@@ -561,6 +1233,74 @@ const COMMANDS: Command[] = [
   },
   { id: "view.showThumbnails", run: () => showPanel("thumbnails") },
   { id: "view.showOutline", run: () => showPanel("outline") },
+  { id: "view.showComments", run: () => showPanel("comments") },
+  {
+    // From the comments panel: the comment on its page, selected (ADR 0041).
+    id: "comment.show",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      const annotation = arg?.annotation;
+      if (!active || !annotation) return;
+      // The organizer shows no page view: back to the pages.
+      if (store().activeTool === "pages") store().setActiveTool("select");
+      store().updateDocument(active.id, { page: annotation.page });
+      getViewer(active.id)?.showAnnotation(annotation);
+    },
+  },
+  {
+    id: "comment.reply",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const text = arg?.text ?? "";
+      if (!active || arg?.page === undefined || arg.index === undefined || text.trim() === "") {
+        return;
+      }
+      const outcome = await backend.replyToComment(active.id, arg.page, arg.index, text);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "comment.resolve",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.index === undefined) return;
+      const outcome = await backend.setCommentResolved(
+        active.id,
+        arg.page,
+        arg.index,
+        arg.resolved ?? true,
+      );
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "comments.filter",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.filter) store().setCommentFilter(arg.filter);
+    },
+  },
+  {
+    id: "comments.sort",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.sort) store().setCommentSort(arg.sort);
+    },
+  },
+  {
+    // The name written on new comments; the shell reads the stored setting.
+    id: "comments.setAuthor",
+    paletteHidden: true,
+    run(arg) {
+      store().setCommentAuthor(arg?.text ?? "");
+    },
+  },
   { id: "view.readingNormal", run: () => setReadingTheme("normal") },
   { id: "view.readingSepia", run: () => setReadingTheme("sepia") },
   { id: "view.readingNight", run: () => setReadingTheme("night") },
@@ -674,7 +1414,8 @@ export async function runCommand(id: CommandId, arg?: CommandArg): Promise<void>
 export function matchesShortcut(shortcut: Shortcut, event: KeyboardEvent, mac = isMac): boolean {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   // "+" is Shift+"=" on most layouts; accept either for zoom in.
-  const keyMatches = key === shortcut.key || (shortcut.key === "=" && key === "+");
+  const keyMatches =
+    key === shortcut.key || key === shortcut.alternate || (shortcut.key === "=" && key === "+");
   const shiftMatches = shortcut.key === "=" || event.shiftKey === Boolean(shortcut.shift);
   if (shortcut.ctrl) {
     return keyMatches && event.ctrlKey && !event.metaKey && !event.altKey && shiftMatches;
@@ -715,6 +1456,8 @@ export function shortcutLabel(id: CommandId, mac = isMac): string | null {
     PageDown: "PgDn",
     PageUp: "PgUp",
     Escape: "Esc",
+    // A Mac's delete key sends Backspace.
+    Delete: mac ? "⌫" : "Del",
     Tab: mac ? "⇥" : "Tab",
   };
   const key = names[shortcut.key] ?? shortcut.key.toUpperCase();

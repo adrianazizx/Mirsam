@@ -1,6 +1,8 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
+import { backend } from "../backend";
+import { setMockInsertIsLocked, setMockRecoveries } from "../backend/mock";
 import { paletteMatch } from "../components/palette/match";
 import { pageFromInput } from "../components/shell/StatusBar";
 import {
@@ -10,6 +12,7 @@ import {
   selectActiveDocument,
   useAppStore,
 } from "../state/appStore";
+import { DEFAULT_COMMENT_FILTER } from "../state/comments";
 import { commandForEvent, isCommandEnabled, runCommand, shortcutLabel } from "./registry";
 
 const key = (init: KeyboardEventInit & { target?: EventTarget }) => {
@@ -20,13 +23,18 @@ const key = (init: KeyboardEventInit & { target?: EventTarget }) => {
 
 beforeEach(() => {
   localStorage.clear();
+  setMockRecoveries([]);
   useAppStore.setState({
     locale: "en",
     documents: [],
     activeDocumentId: null,
     errorCode: null,
     unlocks: [],
+    recoveries: [],
     leftPanel: null,
+    commentAuthor: "",
+    commentFilter: DEFAULT_COMMENT_FILTER,
+    commentSort: "page",
     activeTool: "select",
   });
 });
@@ -126,12 +134,14 @@ describe("settings, palette, and page labels", () => {
         theme: "purple",
         readingTheme: "night",
         leftPanel: "none",
+        commentAuthor: "  Reviewer  ",
         "search.options": '{"wholeWord":true,"regex":"yes"}',
       }),
     ).toEqual({
       locale: "ar",
       readingTheme: "night",
       leftPanel: null,
+      commentAuthor: "Reviewer",
       searchOptions: {
         caseSensitive: false,
         wholeWord: true,
@@ -197,5 +207,224 @@ describe("password prompt", () => {
     });
     expect(useAppStore.getState().unlocks).toHaveLength(0);
     expect(selectActiveDocument(useAppStore.getState())?.name).toBe("سري — Confidential.pdf");
+  });
+});
+
+describe("recovering unsaved changes", () => {
+  const savedAt = Date.UTC(2026, 10, 22, 9, 30) / 1000;
+
+  it("offers each document once, restores one with its changes, and discards the other", async () => {
+    setMockRecoveries([
+      { token: 11, name: "عقد إيجار — Lease Agreement.pdf", savedAt, originalChanged: false },
+      { token: 12, name: "draft.pdf", savedAt, originalChanged: true },
+    ]);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Recover unsaved changes?" })).toBeTruthy();
+    expect(screen.getByText("draft.pdf")).toBeTruthy();
+    // Only the entry whose original changed says it is saved as a new file.
+    expect(screen.getAllByText(/has changed since/)).toHaveLength(1);
+    expect(screen.getAllByText(/^Last change /)).toHaveLength(2);
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Restore" })[0] as HTMLElement);
+    });
+    const restored = selectActiveDocument(useAppStore.getState());
+    expect(restored?.modified).toBe(true);
+    expect(restored?.canUndo).toBe(true);
+    expect(useAppStore.getState().recoveries.map((entry) => entry.token)).toEqual([12]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    });
+    expect(useAppStore.getState().recoveries).toHaveLength(0);
+    expect(screen.queryByRole("heading", { name: "Recover unsaved changes?" })).toBeNull();
+  });
+
+  it("asks for an encrypted recovery file's password, again after a wrong one", async () => {
+    setMockRecoveries([
+      { token: 21, name: "سري — Confidential.pdf", savedAt, originalChanged: false },
+    ]);
+    render(<App />);
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+    });
+    expect(useAppStore.getState().unlocks[0]?.recovery).toBe(true);
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "wrong" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    });
+    expect(useAppStore.getState().unlocks[0]?.retry).toBe(true);
+    expect(useAppStore.getState().unlocks[0]?.recovery).toBe(true);
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "1234" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    });
+    expect(useAppStore.getState().unlocks).toHaveLength(0);
+    const restored = selectActiveDocument(useAppStore.getState());
+    expect(restored?.name).toBe("سري — Confidential.pdf");
+    expect(restored?.modified).toBe(true);
+  });
+
+  it("keeps them for the next start when the answer is later, in Arabic too", async () => {
+    setMockRecoveries([{ token: 31, name: "draft.pdf", savedAt, originalChanged: true }]);
+    render(<App />);
+    act(() => useAppStore.getState().setLocale("ar"));
+    expect(
+      await screen.findByRole("heading", { name: "استعادة التغييرات غير المحفوظة؟" }),
+    ).toBeTruthy();
+    expect(screen.getByText(/^آخر تغيير /)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "لاحقًا" }));
+    });
+    expect(useAppStore.getState().recoveries).toHaveLength(0);
+    expect(useAppStore.getState().documents).toHaveLength(0);
+  });
+});
+
+describe("comments panel", () => {
+  const addNote = async (id: number, page: number, text: string) => {
+    await act(async () => {
+      useAppStore.getState().applyEdit(id, await backend.addNote(id, page, 30, 40, text));
+    });
+  };
+
+  it("lists, answers, resolves and filters comments, signed with the chosen name", async () => {
+    render(<App />);
+    act(() => useAppStore.getState().addDocument({ id: 41, name: "review.pdf", pageCount: 240 }));
+    await addNote(41, 0, "First note");
+    await act(async () => {
+      await runCommand("view.showComments");
+    });
+    const panel = await screen.findByTestId("comments");
+    await within(panel).findByText("First note");
+    expect(within(panel).getByText("No name")).toBeTruthy();
+
+    // A name chosen in the panel signs what comes next.
+    const name = within(panel).getByLabelText("Your name on comments");
+    fireEvent.change(name, { target: { value: "مراجِع" } });
+    await act(async () => {
+      fireEvent.blur(name);
+    });
+    expect(useAppStore.getState().commentAuthor).toBe("مراجِع");
+    await addNote(41, 2, "راجع البند ٤");
+    await within(panel).findByText("راجع البند ٤");
+    expect(within(panel).getByRole("heading", { name: "Page 3" })).toBeTruthy();
+
+    // Reply to the first comment.
+    const first = () => within(panel).getAllByTestId("comment")[0] as HTMLElement;
+    fireEvent.click(within(first()).getByRole("button", { name: "Reply" }));
+    fireEvent.change(within(first()).getByLabelText("Your reply"), { target: { value: "Agreed" } });
+    await act(async () => {
+      fireEvent.click(within(first()).getByRole("button", { name: "Reply" }));
+    });
+    await within(first()).findByText("Agreed");
+    expect(within(first()).getAllByText("مراجِع")).toHaveLength(1);
+
+    // Resolve it, then filter.
+    await act(async () => {
+      fireEvent.click(within(first()).getByRole("button", { name: "Resolve" }));
+    });
+    await within(first()).findByText("Resolved");
+    expect(within(first()).getByRole("button", { name: "Reopen" })).toBeTruthy();
+    await act(async () => {
+      await runCommand("comments.filter", { filter: { status: "open" } });
+    });
+    expect(within(panel).queryByText("First note")).toBeNull();
+    expect(within(panel).getByText("راجع البند ٤")).toBeTruthy();
+    await act(async () => {
+      await runCommand("comments.filter", { filter: { status: "resolved", kind: "textBoxes" } });
+    });
+    expect(within(panel).getByText("No comments match these filters.")).toBeTruthy();
+
+    // Undo takes the resolution back.
+    await act(async () => {
+      await runCommand("comments.filter", { filter: DEFAULT_COMMENT_FILTER });
+      await runCommand("edit.undo");
+    });
+    await within(first()).findByRole("button", { name: "Resolve" });
+
+    // Choosing a comment goes to its page.
+    fireEvent.click(within(panel).getByRole("button", { name: "Note on page 3: show it" }));
+    expect(selectActiveDocument(useAppStore.getState())?.page).toBe(2);
+  });
+
+  it("speaks Arabic, right to left", async () => {
+    render(<App />);
+    act(() => {
+      useAppStore.getState().setLocale("ar");
+      useAppStore.getState().addDocument({ id: 42, name: "عقد.pdf", pageCount: 240 });
+    });
+    await act(async () => {
+      await runCommand("view.showComments");
+    });
+    expect(await screen.findByText("لا تعليقات في هذا المستند بعد.")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "التعليقات" })).toBeTruthy();
+    await addNote(42, 0, "ملاحظة");
+    const panel = screen.getByTestId("comments");
+    await within(panel).findByText("ملاحظة");
+    // The UI's own numbers are Western digits in Arabic too (i18n `formatTag`).
+    expect(within(panel).getByRole("heading", { name: "الصفحة 1" })).toBeTruthy();
+    expect(within(panel).getByText("بلا اسم")).toBeTruthy();
+  });
+});
+
+describe("split dialog", () => {
+  it("splits by pages, at top-level bookmarks, or by file size", async () => {
+    render(<App />);
+    act(() => useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 }));
+    await act(async () => {
+      await runCommand("pages.split");
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Split into files" });
+    expect(within(dialog).getByLabelText("Pages per file")).toBeTruthy();
+
+    // The mock's outline starts parts at its three top-level entries, named in the dialog.
+    fireEvent.click(await within(dialog).findByRole("radio", { name: "At top-level bookmarks" }));
+    const list = await within(dialog).findByTestId("split-bookmarks");
+    expect(list.textContent).toContain("عقد إيجار");
+    expect(list.querySelector("bdi")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: "By file size" }));
+    expect(within(dialog).getByLabelText("Largest file, in MB")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: "At top-level bookmarks" }));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Choose a folder…" }));
+    });
+    expect(useAppStore.getState().splitPrompt).toBe(false);
+    expect(useAppStore.getState().notice).toEqual({ key: "split", values: { count: "3" } });
+  });
+});
+
+describe("inserting from a password-protected file", () => {
+  it("asks for its password in the page area, then inserts and selects the pages", async () => {
+    setMockInsertIsLocked(true);
+    try {
+      render(<App />);
+      const before = (await backend.pageSizes(43)).length;
+      act(() =>
+        useAppStore.getState().addDocument({ id: 43, name: "merge.pdf", pageCount: before }),
+      );
+      await act(async () => {
+        await runCommand("pages.insertFromFile");
+      });
+      expect(await screen.findByText("Enter the password to insert pages from")).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Insert" }));
+      });
+      expect(await screen.findByText("That password is not correct. Try again.")).toBeTruthy();
+      expect(useAppStore.getState().unlocks[0]?.insert?.documentId).toBe(43);
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "1234" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Insert" }));
+      });
+      expect(useAppStore.getState().unlocks).toHaveLength(0);
+      const merged = selectActiveDocument(useAppStore.getState());
+      expect(merged?.pageCount).toBe(before + 3);
+      expect(merged?.selectedPages).toEqual([before, before + 1, before + 2]);
+    } finally {
+      setMockInsertIsLocked(false);
+    }
   });
 });

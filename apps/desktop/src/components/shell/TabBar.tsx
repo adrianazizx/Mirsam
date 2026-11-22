@@ -17,9 +17,15 @@ export function TabBar() {
   // Ids and names only, so scrolling (current page) and zooming do not re-render the tabs.
   const ids = useAppStore(useShallow((state) => state.documents.map((open) => open.id)));
   const names = useAppStore(useShallow((state) => state.documents.map((open) => open.name)));
+  const modified = useAppStore(useShallow((state) => state.documents.map((open) => open.modified)));
   const documents = useMemo(
-    () => ids.map((id, index) => ({ id, name: names[index] ?? "" })),
-    [ids, names],
+    () =>
+      ids.map((id, index) => ({
+        id,
+        name: names[index] ?? "",
+        modified: modified[index] ?? false,
+      })),
+    [ids, names, modified],
   );
   const theme = useAppStore((state) => state.theme);
   const isDark = resolvedTheme(theme) === "dark";
@@ -63,8 +69,15 @@ export function TabBar() {
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
     >
-      <TabList aria-label={t("tabs.label")} items={documents} className={styles.tabs}>
-        {(document: { id: number; name: string }) => (
+      <TabList
+        aria-label={t("tabs.label")}
+        items={documents}
+        // React Aria keeps rendered items while `items` is unchanged: re-render them on a
+        // language switch, or the close buttons keep their old labels.
+        dependencies={[t]}
+        className={styles.tabs}
+      >
+        {(document: { id: number; name: string; modified: boolean }) => (
           <Tab
             id={document.id}
             data-document-id={document.id}
@@ -76,6 +89,9 @@ export function TabBar() {
           >
             {/* A file name can be in either script regardless of UI language. */}
             <bdi className={styles.name}>{document.name}</bdi>
+            {document.modified && (
+              <span className={styles.modified} role="img" aria-label={t("tabs.modified")} />
+            )}
             <AriaButton
               className={styles.close}
               aria-label={t("tabs.close", { name: document.name })}
