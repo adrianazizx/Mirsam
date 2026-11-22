@@ -58,6 +58,7 @@
   --size-signature-pad: 160px; /* the height of the pad a signature is drawn on */
   --size-signature-preview: 44px; /* a kept signature's preview */
   --size-signature-text: 32px; /* a typed signature's preview text */
+  --size-fill-handle: 10px; /* a selected Fill & Sign item's corner handle */
   --border-width: 1px;
   --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;

@@ -115,6 +115,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         redactMark: styles.redactMark ?? "",
         redactPreview: styles.redactPreview ?? "",
         fillMoving: styles.fillMoving ?? "",
+        fillHandle: styles.fillHandle ?? "",
       },
       initial: {
         zoomMode: current.zoomMode,

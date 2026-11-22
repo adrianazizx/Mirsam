@@ -501,8 +501,9 @@ Plan, in order:
 - [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
   click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
   - Moved by dragging (a dashed outline shows where it lands) or with the arrow keys (1 pt, Shift
-    10 pt). Resized in 25% steps, with text keeping its size for later changes.
-  - **Gaps:** no drag handles to resize; no moving to another page; fixed colours and sizes.
+    10 pt). Resized by dragging a corner handle (in proportion, about the opposite corner) or in
+    25% steps; text keeps its size for later changes.
+  - **Gaps:** no moving to another page; fixed colours and sizes.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -622,6 +623,18 @@ encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11b
     pass.
   - **Checked in the browser preview** against the mock: placing a tick, dragging it at once, and
     Shift+→ three times.
+- **Corner handles to resize Fill & Sign items** (added on request; its own PR, after the drag one):
+  - **Handles:** a selected item shows four. Dragging one resizes the item about the opposite corner,
+    in proportion (`resizedRect`), at least 6 pt, and on its page.
+  - **Letting go** goes through `fill.move` (`SetRect`), and the item stays selected.
+  - **Grabbing:** a handle reaches 7 px outward but only a quarter of the item inward, so a small
+    tick can still be dragged by its middle. Resize cursors show over the handles.
+  - **Also fixed:** a doc comment the drag change had left above the wrong method.
+  - **Tests:** a viewer test (the handles appear on selection, the corner drag, and the middle still
+    moving the item) and `resizedRect` unit tests (proportion, the anchor, the minimum, the page
+    edge). 196 UI tests pass.
+  - **Checked in the browser preview:** a drawn signature selected, then enlarged by its
+    bottom-right handle.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 

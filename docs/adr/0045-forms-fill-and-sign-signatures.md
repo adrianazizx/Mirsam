@@ -180,6 +180,15 @@ listed but not filled here.
       toolbar's or a list's arrow keys keep their meaning. Each nudge is one undo step.
     - After an edit the viewer reads the visible pages' annotations again at once, so an item just
       placed can be dragged without first moving the pointer over it.
+  - **Resizing:** a selected item shows a handle at each corner. Dragging a handle resizes the item
+    about the opposite corner.
+    - It keeps its proportions: the appearance is fitted to the box, so a change of aspect would
+      stretch it. It is at least 6 pt, and stays on its page.
+    - Letting go is the same `fill.move` (one `SetRect`). Fill text takes the new size into its
+      `/DA`, as with Smaller and Larger.
+    - A handle reaches 7 px outward but only a quarter of the item inward, so a small item (a
+      14 pt tick) still has a middle to drag it by.
+    - Smaller and Larger stay as the keyboard and single-click way to resize.
 - **New signature** dialog: Draw (an SVG pad with pressure), Type (Naskh or Sans, previewed), or
   Image (the native dialog).
 
@@ -207,8 +216,8 @@ paper in both themes (`--color-ink` on `--color-page-paper`, a new contrast pair
     - Fields are filled in the panel, not on the page itself.
     - Form creation, import/export (FDF/XFDF), and flattening are P1.
   - **Fill & Sign:**
-    - An item is resized in 25% steps from the panel or toolbar, not by dragging a handle.
     - An item moves only on its own page; dragging it onto another page stops at the edge.
+    - Handles resize in proportion only; text cannot be reflowed into a different shape.
     - Fill text and marks are black, at 11 pt and 14 pt.
   - **Signatures and the shell:**
     - Typed-signature previews use the webview's fonts (Amiri where the system has it). The PDF is
