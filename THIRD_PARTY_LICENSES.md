@@ -21,7 +21,7 @@ PDFium: Its own third-party notices ship in third_party/pdfium/<platform>/licens
 
 SQLite: Compiled into the app from source by rusqlite's `bundled` feature; public domain.
 
-## Rust crates (489)
+## Rust crates (497)
 
 | Component | Version | Licence | Source |
 |---|---|---|---|
@@ -34,6 +34,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | alloc-stdlib | 0.3.0 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
 | android_system_properties | 0.1.6 | MIT OR Apache-2.0 | https://github.com/nical/android_system_properties |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 | https://github.com/dtolnay/anyhow |
+| arrayvec | 0.7.8 | MIT OR Apache-2.0 | https://github.com/bluss/arrayvec |
 | atk | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | atk-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/atomic-waker |
@@ -125,6 +126,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | encoding_rs | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause | https://github.com/hsivonen/encoding_rs |
 | equivalent | 1.0.3 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/equivalent |
 | erased-serde | 0.4.11 | MIT OR Apache-2.0 | https://github.com/dtolnay/erased-serde |
+| euclid | 0.22.14 | MIT OR Apache-2.0 | https://github.com/servo/euclid |
 | fallible-iterator | 0.3.0 | MIT/Apache-2.0 | https://github.com/sfackler/rust-fallible-iterator |
 | fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 | https://github.com/sfackler/fallible-streaming-iterator |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand |
@@ -134,6 +136,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | flate2 | 1.1.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs |
 | fnv | 1.0.7 | Apache-2.0 / MIT | https://github.com/servo/rust-fnv |
 | foldhash | 0.2.0 | Zlib | https://github.com/orlp/foldhash |
+| font-types | 0.11.3 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | font-types | 0.12.7 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | foreign-types | 0.5.0 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types |
 | foreign-types-macros | 0.2.4 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types |
@@ -227,6 +230,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | json-patch | 4.2.0 | MIT/Apache-2.0 | https://github.com/idubrov/json-patch |
 | jsonptr | 0.7.1 | MIT OR Apache-2.0 | https://github.com/chanced/jsonptr |
 | keyboard-types | 0.8.3 | MIT OR Apache-2.0 | https://github.com/rust-windowing/keyboard-types |
+| kurbo | 0.13.1 | Apache-2.0 OR MIT | https://github.com/linebender/kurbo |
 | libappindicator | 0.9.0 | Apache-2.0 OR MIT | https://crates.io/crates/libappindicator |
 | libappindicator-sys | 0.9.0 | Apache-2.0 OR MIT | https://crates.io/crates/libappindicator-sys |
 | libc | 0.2.191 | MIT OR Apache-2.0 | https://github.com/rust-lang/libc |
@@ -301,6 +305,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | pkg-config | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/pkg-config-rs |
 | plist | 1.10.4 | MIT | https://github.com/ebarnard/rust-plist/ |
 | png | 0.18.1 | MIT OR Apache-2.0 | https://github.com/image-rs/image-png |
+| polycool | 0.4.0 | MIT OR Apache-2.0 | https://github.com/linebender/kurbo |
 | portable-atomic | 1.15.0 | Apache-2.0 OR MIT | https://github.com/taiki-e/portable-atomic |
 | portable-atomic-util | 0.2.8 | Apache-2.0 OR MIT | https://github.com/taiki-e/portable-atomic-util |
 | potential_utf | 0.1.6 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
@@ -320,6 +325,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | rand_core | 0.10.1 | MIT OR Apache-2.0 | https://github.com/rust-random/rand_core |
 | rangemap | 1.8.0 | MIT/Apache-2.0 | https://github.com/jeffparsons/rangemap |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib | https://github.com/rust-windowing/raw-window-handle |
+| read-fonts | 0.39.2 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | read-fonts | 0.47.0 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | redox_syscall | 0.5.18 | MIT | https://gitlab.redox-os.org/redox-os/syscall |
 | redox_users | 0.5.3 | MIT | https://gitlab.redox-os.org/redox-os/users |
@@ -365,6 +371,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | simd-adler32 | 0.3.10 | MIT | https://github.com/mcountryman/simd-adler32 |
 | simdutf8 | 0.1.5 | MIT OR Apache-2.0 | https://github.com/rusticstuff/simdutf8 |
 | siphasher | 1.0.4 | MIT OR Apache-2.0 | https://github.com/jedisct1/rust-siphash |
+| skrifa | 0.42.1 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | slab | 0.4.12 | MIT | https://github.com/tokio-rs/slab |
 | smallvec | 1.16.6 | MIT OR Apache-2.0 | https://github.com/smallvec/smallvec |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/socket2 |
@@ -501,6 +508,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | winnow | 1.0.5 | MIT | https://github.com/winnow-rs/winnow |
 | winreg | 0.56.0 | MIT | https://github.com/gentoo90/winreg-rs |
 | wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wit-bindgen |
+| write-fonts | 0.48.1 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | writeable | 0.6.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | wry | 0.57.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/wry |
 | x11 | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |

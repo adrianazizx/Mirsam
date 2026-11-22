@@ -25,6 +25,7 @@ miniz_oxide = "0.9"
 harfrust = "0.16.1"
 icu_segmenter = { version = "2.4", default-features = false, features = ["compiled_data"] }
 icu_properties = "2.4"
+subsetter = "0.2.6"
 
 [lints]
 workspace = true

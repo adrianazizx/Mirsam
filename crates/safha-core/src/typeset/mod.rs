@@ -28,11 +28,13 @@ mod font;
 mod itemize;
 mod lines;
 mod shape;
+mod subset;
 
 use std::ops::Range;
 
 pub use font::{FontFace, LineMetrics};
 pub use lines::layout;
+pub use subset::{FontSubset, SubsetGlyph, subset_fonts};
 
 /// Why a layout could not be made.
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +45,8 @@ pub enum TypesetError {
     Shape(String),
     #[error("invalid spans: {0}")]
     Spans(String),
+    #[error("the font cannot be subset: {0}")]
+    Subset(String),
 }
 
 impl TypesetError {
@@ -52,6 +56,7 @@ impl TypesetError {
             TypesetError::FontParse => "font_unreadable",
             TypesetError::Shape(_) => "shaping_failed",
             TypesetError::Spans(_) => "invalid_text_spans",
+            TypesetError::Subset(_) => "font_subset_failed",
         }
     }
 }
