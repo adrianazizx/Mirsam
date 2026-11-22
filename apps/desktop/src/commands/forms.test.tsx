@@ -157,6 +157,39 @@ describe("Fill & Sign (ADR 0045)", () => {
     expect(useAppStore.getState().fillTool).toBeNull();
   });
 
+  it("moves an item to where it is dragged, and nudges it with the arrow keys", async () => {
+    await runCommand("fill.check");
+    await runCommand("fill.place", { page: 0, x: 107, y: 107 });
+    const [placed] = await annotations();
+    const rect = placed?.rects[0];
+    if (!placed || !rect) throw new Error("no mark");
+    const item = { page: 0, index: placed.index, kind: placed.kind, contents: null, rect };
+
+    await runCommand("fill.move", { annotation: item, rect: { ...rect, x: 300, y: 250 } });
+    expect((await annotations())[0]?.rects[0]).toEqual({ x: 300, y: 250, width: 14, height: 14 });
+    expect(active()?.canUndo).toBe(true);
+
+    // Arrow keys move the selected item while the page view has the focus.
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { ...item, rect: { ...rect, x: 300, y: 250 } },
+    });
+    expect(isCommandEnabled("fill.moveRight")).toBe(true);
+    await runCommand("fill.moveRight");
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { ...item, rect: { ...rect, x: 301, y: 250 } },
+    });
+    await runCommand("fill.moveDownMore");
+    expect((await annotations())[0]?.rects[0]).toMatchObject({ x: 301, y: 260 });
+
+    // In a text field they keep their own meaning.
+    useAppStore.getState().updateDocument(1, { selectedAnnotation: { ...item, rect } });
+    const field = document.createElement("input");
+    document.body.append(field);
+    field.focus();
+    expect(isCommandEnabled("fill.moveRight")).toBe(false);
+    field.remove();
+  });
+
   it("keeps a drawn signature as initials", async () => {
     await runCommand("signature.newInitials");
     await runCommand("signature.saveDrawn", {

@@ -204,7 +204,16 @@
       "signature": "Place a signature",
       "place": "Place on the page",
       "larger": "Larger",
-      "smaller": "Smaller"
+      "smaller": "Smaller",
+      "move": "Move a Fill & Sign item",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moveLeftMore": "Move left 10 points",
+      "moveRightMore": "Move right 10 points",
+      "moveUpMore": "Move up 10 points",
+      "moveDownMore": "Move down 10 points"
     },
     "signatures": {
       "load": "Load signatures"
@@ -634,7 +643,7 @@
     "fillHeading": "Fill",
     "tools": "What a click on the page places",
     "hint": {
-      "select": "Click an item you placed to select it.",
+      "select": "Click an item you placed to select it. Drag it, or use the arrow keys, to move it.",
       "text": "Click on the page where the text goes.",
       "date": "Click on the page where today's date goes.",
       "check": "Click each box to tick.",

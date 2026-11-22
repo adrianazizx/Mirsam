@@ -583,8 +583,10 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     - Fields in encrypted object streams are not listed.
 - [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
   click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
-  - Resized in 25% steps, with text keeping its size for later changes.
-  - **Gaps:** no drag to move or drag handles to resize; fixed colours and sizes.
+  - Moved by dragging (a dashed outline shows where it lands) or with the arrow keys (1 pt, Shift
+    10 pt). Resized by dragging a corner handle (in proportion, about the opposite corner) or in
+    25% steps; text keeps its size for later changes.
+  - **Gaps:** no moving to another page; fixed colours and sizes.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -897,6 +899,32 @@ encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11b
 - **Merged with `main` again after the M4 pipeline** (PRs #12 and #15): `ocr` and `forms` both
   added to `lib.rs`, both branches made `png` and `serde_json` normal dependencies, and the session
   logs met at the top of this list.
+- **Drag to move Fill & Sign items** (added on request after PR #16 merged; its own PR):
+  - **In the viewer:** a press on an item, with the Sign or Select tool, drags it. A dashed outline
+    shows where it lands, kept on its page. A press that does not travel selects it.
+  - **`fill.move`** applies the drag as one undo step through `SetRect`, and the item stays
+    selected.
+  - **Arrow keys** nudge the selected item 1 pt, and Shift+arrow 10 pt, only while the page view has
+    the focus (8 commands).
+  - **After an edit** the viewer reloads the visible pages' annotations, so a just-placed item drags
+    at once.
+  - **Tests:** a viewer test drags in both modes (including the page edge and a press that stays);
+    a command test covers the move, the nudges, and the arrow keys left to text fields. 193 UI tests
+    pass.
+  - **Checked in the browser preview** against the mock: placing a tick, dragging it at once, and
+    Shift+→ three times.
+- **Corner handles to resize Fill & Sign items** (added on request; its own PR, after the drag one):
+  - **Handles:** a selected item shows four. Dragging one resizes the item about the opposite corner,
+    in proportion (`resizedRect`), at least 6 pt, and on its page.
+  - **Letting go** goes through `fill.move` (`SetRect`), and the item stays selected.
+  - **Grabbing:** a handle reaches 7 px outward but only a quarter of the item inward, so a small
+    tick can still be dragged by its middle. Resize cursors show over the handles.
+  - **Also fixed:** a doc comment the drag change had left above the wrong method.
+  - **Tests:** a viewer test (the handles appear on selection, the corner drag, and the middle still
+    moving the item) and `resizedRect` unit tests (proportion, the anchor, the minimum, the page
+    edge). 196 UI tests pass.
+  - **Checked in the browser preview:** a drawn signature selected, then enlarged by its
+    bottom-right handle.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 
