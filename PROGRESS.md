@@ -454,8 +454,23 @@ Plan, in order:
     - Vocalized Amiri is weak (IoU-x 0.21–0.70).
     - No truth yet for skewed or warped pages.
     - The detector costs 4–10 s per page on PaddlePaddle's CPU backend (ONNX Runtime not tried).
-- [ ] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
-      verification with no silent invention
+- [~] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
+      verification with no silent invention. In slices:
+  - [x] **1. Recognition from Rust** (ADR 0032): `safha_core::ocr`.
+    - The `OcrEngine` trait, and `NuqtaEngine` over `llama-server` run as a child process.
+    - A Pillow-exact resize, and word confidence from token probabilities.
+    - Examples `ocr_eval` and `ocr_page`.
+    - **Result:** over the eval set, byte-identical text to the benchmark on all 47 pages (0.89%
+      CER), at 8.3 s per page on Metal and 141 s on the CPU.
+  - [ ] **2. Word boxes in Rust:** the PP-OCRv5 detector through ONNX Runtime, and ADR 0031's
+        alignment.
+  - [ ] **3. Reconcile and verify:**
+    - Re-read numbers, dates, IDs and low-confidence lines from crops.
+    - Find omitted lines.
+    - Flag what still disagrees, never voting silently. A plain vote of 0.8B + Apple Vision
+      against the 4B only reaches 94.2% of fields, and swaps one wrong number for another.
+    - Re-check the mixed and numbers gates.
+  - [ ] **4. Assembly into the text layer** in logical order (spec §6.3).
 - [ ] Background jobs with draft-then-quality results; survives restart
 - [ ] Word-level confidence, pages-needing-review list
 - [ ] Searchable-PDF output in logical order
@@ -497,6 +512,35 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 pipeline slice 1 — 2026-11-22 (recognition from Rust; branch `pomidor/m4-pipeline`)
+
+- **`safha_core::ocr`** (ADR 0032, accepted):
+  - **`OcrEngine` and `NuqtaEngine`.** `llama-server` runs as a child process: loopback only,
+    a per-run API key, stopped on drop, typed error codes.
+  - **`OcrImage`.** PNG in and out, and a Lanczos resize that matches Pillow bit for bit, so
+    the model sees the benchmark's pixels.
+  - **Text and confidence.** Markup removal as in the benchmark, and word confidence from
+    llama-server's token probabilities, across UTF-8 characters split between tokens.
+- **Measured through Rust** (`examples/ocr_eval.rs`):
+  - Nuqta 4B Q8_0 wrote byte-identical text to the benchmark's llama.cpp run on all 47 pages:
+    0.89% CER, no regression.
+  - 8.3 s per page on Metal, and 141 s on the CPU over 4 pages (same text).
+  - `examples/ocr_page.rs` reads rendered PDF pages: English, Arabic, and a rotated page.
+- **Finding for slice 3:** letting Nuqta 0.8B and Apple Vision outvote the 4B on digit words only
+  lifts fields from 93.6% to 94.2%, and on a fax page it swapped one wrong number for another. So
+  reconcile must re-read and flag, not vote.
+- **Dependencies:** `ureq` 3.5.2 without TLS, plus `ureq-proto` and `utf8-zero` (all MIT OR
+  Apache-2.0). `base64` 0.23 and `png` 0.18 were already in the tree. `cargo deny` and the licence
+  report pass.
+- **Tests:**
+  - `cargo test --workspace` passes: 350 tests, plus 1 ignored (the real-model test,
+    `tests/ocr.rs`, which passes with `--ignored` locally).
+  - 18 new unit tests.
+  - `clippy -D warnings` and `fmt --check` are clean.
+  - No UI changes; no command reaches the UI yet.
+- **Setup note:** this worktree's `target/` had been created as a real directory inside OneDrive.
+  `scripts/dev-setup.sh` now redirects it to the cache.
 
 ### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
 
