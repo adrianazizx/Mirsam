@@ -12,8 +12,8 @@
 //! ([`redact`]), save ([`save`]), keep local app state ([`store`]), lay out
 //! text for writing ([`typeset`]), and write it into pages ([`text_edit`]) in
 //! the bundled families ([`fonts`]); stamp headers, footers, page numbers and
-//! watermarks ([`stamp`]), export pages as images and text ([`export`]), and
-//! compress ([`compress`]).
+//! watermarks ([`stamp`]), export pages as images and text ([`export`]),
+//! compress ([`compress`]), and recognise page images ([`ocr`]).
 
 pub mod annotate;
 mod bitmap;
@@ -28,6 +28,7 @@ mod error;
 pub mod export;
 pub mod fonts;
 pub mod jpeg;
+pub mod ocr;
 pub mod outline;
 mod pdf;
 pub mod recovery;
