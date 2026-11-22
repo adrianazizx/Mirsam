@@ -183,6 +183,8 @@ export interface ViewerClassNames {
   noteEditor: string;
   /** Anchor element the selection toolbar is rendered into. */
   selectionToolbar: string;
+  /** The canvas that shows the pages during a zoom gesture. */
+  gesture?: string;
   /** An area marked for redaction, and the one being dragged (ADR 0042). */
   redactMark?: string;
   redactPreview?: string;
@@ -235,18 +237,21 @@ const MOUNT_MARGIN = 1;
 const TILE_MARGIN = 0.25;
 /** A zoom gesture is over once no zoom event arrived for this long; then sharp tiles are fetched. */
 const ZOOM_SETTLE_MS = 140;
-/**
- * During a zoom gesture the page area is scaled with a CSS transform, which
- * WebKit applies on the compositor without repainting anything. A real
- * relayout (pages resized, pages mounted) happens only once the gesture has
- * scaled the layout this far, or this long after the last one, and when it
- * ends. Resizing every page on every wheel event made WebKit repaint dozens of
- * stretched canvases per frame: half the frames of a pinch took over 20 ms and
- * the webview grew by 160 MB (ADR 0011).
+/*
+ * During a zoom gesture nothing is laid out again. The pages on screen are
+ * drawn, scaled about the point under the pointer, into one canvas over the
+ * viewport, from the previews and tiles they already have; the page area
+ * underneath is hidden. Pages the gesture brings into view are mounted (so
+ * their previews are fetched) but not shown. The real layout happens once,
+ * when the gesture ends.
+ *
+ * Scaling the page area itself with a CSS transform, laid out again every
+ * 250 ms or 0.5–1.5× of scale, cost WebKit's compositor a dropped frame at
+ * each relayout and more as a zoom-out revealed more of the scaled layer
+ * tree: an extreme pinch-out (×1/20 in 1.2 s) dropped 3–6 frames, p95 25–31
+ * ms. One canvas costs the compositor the same at any scale (ADR 0011,
+ * pinch-out amendment).
  */
-const GESTURE_MIN_RATIO = 0.5;
-const GESTURE_MAX_RATIO = 1.5;
-const GESTURE_RELAYOUT_MS = 250;
 /**
  * Preview canvases kept (detached) for pages that left the mount range, so a
  * page that comes back — scrolling back, or many at once while zooming out —
@@ -315,9 +320,21 @@ export interface ViewerProfile {
   mounts: number;
   /** Longest single update, relayout, or draw. */
   longestMs: number;
+  /**
+   * When set, what happened and when (`performance.now()`), so a benchmark
+   * can line slow frames up with the viewer's own steps.
+   */
+  trace: ViewerTraceEvent[] | null;
 }
 
-export function emptyProfile(): ViewerProfile {
+export interface ViewerTraceEvent {
+  at: number;
+  kind: "scale" | "relayout" | "mount" | "unmount" | "preview" | "tile";
+  page?: number;
+  ms?: number;
+}
+
+export function emptyProfile(trace = false): ViewerProfile {
   return {
     updates: 0,
     updateMs: 0,
@@ -327,6 +344,7 @@ export function emptyProfile(): ViewerProfile {
     drawMs: 0,
     mounts: 0,
     longestMs: 0,
+    trace: trace ? [] : null,
   };
 }
 
@@ -362,15 +380,18 @@ export class ViewerController {
   private zooming = false;
   private zoomSettleTimer: number | null = null;
   /**
-   * A zoom gesture in progress: the layout is at `layoutZoom`, and a CSS
-   * scale about `origin` (content px, the point under the pointer when the
-   * layout was made) shows `this.zoom`. `at` is the pointer (viewport px).
+   * A zoom gesture in progress: the layout is still at `layoutZoom`, and the
+   * gesture canvas shows it at `this.zoom`, scaled about `origin` (a point of
+   * the page area, under the pointer when the gesture began). `at` is the
+   * pointer (viewport px).
    */
   private gesture: {
     layoutZoom: number;
     origin: { x: number; y: number };
     at: { x: number; y: number };
-    laidOutAt: number;
+    canvas: HTMLCanvasElement | null;
+    /** The page colour (a token), read once per gesture. */
+    paper: string;
   } | null = null;
   private readonly slots = new Map<number, Slot>();
   /** Detached preview canvases by page, least recently used first. */
@@ -512,6 +533,7 @@ export class ViewerController {
     this.resizeObserver.disconnect();
     this.dprQuery?.removeEventListener("change", this.onDevicePixelRatioChange);
     if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
+    if (this.gesture?.canvas) releaseCanvas(this.gesture.canvas);
     for (const slot of this.slots.values()) releaseSlot(slot);
     this.content.remove();
     this.slots.clear();
@@ -630,7 +652,8 @@ export class ViewerController {
   }
 
   snapshot(): ViewerSnapshot {
-    const view = this.viewRect();
+    // During a zoom gesture, what the gesture canvas shows.
+    const view = this.shownRect();
     const visible: ViewerSnapshot["visible"] = [];
     if (this.layout) {
       for (const rowIndex of rowsInBand(this.layout.rows, view.y0, view.y1)) {
@@ -1577,6 +1600,8 @@ export class ViewerController {
   // ------------------------------------------------------------ events
 
   private readonly onScroll = () => {
+    // The gesture canvas covers the viewport where the gesture began.
+    this.settleGesture();
     if (this.pinned && Math.abs(this.container.scrollTop - this.pinned.scrollTop) > 1) {
       this.pinned = null;
     }
@@ -1599,50 +1624,128 @@ export class ViewerController {
     this.callbacks.onZoom(next, "custom");
   };
 
-  /** One step of a zoom gesture: a CSS scale when it can, a real relayout when it must. */
+  /** One step of a zoom gesture: the gesture canvas shows the layout at `next`. */
   private zoomBy(next: number, at: { x: number; y: number }): void {
-    const now = performance.now();
-    const gesture = this.gesture;
-    if (gesture) {
-      const ratio = next / gesture.layoutZoom;
-      if (
-        ratio > GESTURE_MIN_RATIO &&
-        ratio < GESTURE_MAX_RATIO &&
-        now - gesture.laidOutAt < GESTURE_RELAYOUT_MS
-      ) {
-        this.zoom = next;
-        gesture.at = at;
-        // Scale the existing raster rather than re-rasterizing at each step.
-        this.content.style.willChange = "transform";
-        this.content.style.transformOrigin = `${gesture.origin.x}px ${gesture.origin.y}px`;
-        this.content.style.transform = `scale(${ratio})`;
-        return;
-      }
+    if (!this.gesture) {
+      const origin = { x: this.container.scrollLeft + at.x, y: this.container.scrollTop + at.y };
+      this.gesture = { layoutZoom: this.zoom, origin, at, canvas: null, paper: "" };
     }
-    this.clearTransform();
-    this.applyZoom(next, at);
-    this.gesture = {
-      layoutZoom: next,
-      origin: { x: this.container.scrollLeft + at.x, y: this.container.scrollTop + at.y },
-      at,
-      laidOutAt: now,
+    const gesture = this.gesture;
+    this.zoom = next;
+    gesture.at = at;
+    this.profile?.trace?.push({
+      at: performance.now(),
+      kind: "scale",
+      ms: next / gesture.layoutZoom,
+    });
+    // Mount what the gesture brings into view, so its previews are on the way.
+    this.update();
+    this.drawGesture(gesture);
+  }
+
+  /**
+   * What the page area shows in layout coordinates: the viewport, or during
+   * a zoom gesture the part of the layout the gesture canvas shows.
+   */
+  private shownRect(): Rect {
+    const view = this.viewRect();
+    const gesture = this.gesture;
+    if (!gesture) return view;
+    const { origin } = gesture;
+    const ratio = this.zoom / gesture.layoutZoom;
+    return {
+      x0: origin.x + (view.x0 - origin.x) / ratio,
+      x1: origin.x + (view.x1 - origin.x) / ratio,
+      y0: origin.y + (view.y0 - origin.y) / ratio,
+      y1: origin.y + (view.y1 - origin.y) / ratio,
     };
   }
 
-  private clearTransform(): void {
-    if (!this.content.style.transform) return;
-    this.content.style.transform = "";
-    this.content.style.transformOrigin = "";
-    this.content.style.willChange = "";
+  /**
+   * Draws the mounted pages the gesture shows, scaled, into the gesture
+   * canvas: paper, the preview, and whatever tiles the page has (at any
+   * scale). Search hits, the selection and shadows return when the gesture
+   * ends.
+   */
+  private drawGesture(gesture: NonNullable<typeof this.gesture>): void {
+    const sizes = this.sizes;
+    if (!sizes) return;
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    const dpr = this.devicePixelRatio;
+    const scrollX = this.container.scrollLeft;
+    const scrollY = this.container.scrollTop;
+    let canvas = gesture.canvas;
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.className = this.classNames.gesture ?? "";
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      const style = canvas.style;
+      // Over the viewport: the page area does not scroll during a gesture.
+      style.insetInlineStart = `${scrollX}px`;
+      style.insetBlockStart = `${scrollY}px`;
+      style.inlineSize = `${width}px`;
+      style.blockSize = `${height}px`;
+      this.container.append(canvas);
+      this.content.dataset.zooming = "";
+      gesture.canvas = canvas;
+      gesture.paper = getComputedStyle(canvas).getPropertyValue("--color-page-paper");
+    }
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const { origin } = gesture;
+    const ratio = this.zoom / gesture.layoutZoom;
+    // Layout px → canvas px: scaled by `ratio` about `origin`, less the scroll.
+    context.setTransform(
+      ratio * dpr,
+      0,
+      0,
+      ratio * dpr,
+      (origin.x * (1 - ratio) - scrollX) * dpr,
+      (origin.y * (1 - ratio) - scrollY) * dpr,
+    );
+    const shown = this.shownRect();
+    context.fillStyle = gesture.paper;
+    for (const slot of this.slots.values()) {
+      const box = slot.box;
+      const size = sizes[slot.page];
+      if (!box || !size || !intersect(shown, boxRect(box))) continue;
+      context.fillRect(box.x, box.y, box.width, box.height);
+      const preview = slot.preview ?? slot.stalePreview;
+      if (preview && preview.width > 0) {
+        context.drawImage(preview, box.x, box.y, box.width, box.height);
+      }
+      for (const { canvas: tile, scale, tile: rect } of slot.tiles.values()) {
+        if (tile.width === 0) continue;
+        const pixels = pagePixelSize(size, scale);
+        context.drawImage(
+          tile,
+          box.x + (rect.x / pixels.width) * box.width,
+          box.y + (rect.y / pixels.height) * box.height,
+          (rect.width / pixels.width) * box.width,
+          (rect.height / pixels.height) * box.height,
+        );
+      }
+    }
   }
 
-  /** Ends a zoom gesture: a scaled-but-not-laid-out view gets its real layout. */
+  /** Ends a zoom gesture: the real layout at the gesture's zoom replaces the gesture canvas. */
   private settleGesture(): void {
     const gesture = this.gesture;
+    if (!gesture) return;
+    // The point shown under the pointer stays there.
+    const shown = this.shownRect();
+    const perPixel = (shown.x1 - shown.x0) / Math.max(1, this.container.clientWidth);
+    const point = { x: shown.x0 + gesture.at.x * perPixel, y: shown.y0 + gesture.at.y * perPixel };
+    const layoutAnchor = this.layout ? anchorAt(this.layout, point.x, point.y) : null;
     this.gesture = null;
-    if (!gesture || !this.content.style.transform) return;
-    this.clearTransform();
-    this.applyZoom(this.zoom, gesture.at);
+    this.relayout(layoutAnchor ? { anchor: layoutAnchor, at: gesture.at } : null);
+    if (gesture.canvas) releaseCanvas(gesture.canvas);
+    delete this.content.dataset.zooming;
+    this.update();
   }
 
   private onResize(): void {
@@ -1681,8 +1784,8 @@ export class ViewerController {
     if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
     this.zoomSettleTimer = window.setTimeout(() => {
       this.zoomSettleTimer = null;
-      this.settleGesture();
       this.zooming = false;
+      this.settleGesture();
       this.update();
     }, ZOOM_SETTLE_MS);
   }
@@ -1719,6 +1822,7 @@ export class ViewerController {
     profile.relayouts += 1;
     profile.relayoutMs += ms;
     profile.longestMs = Math.max(profile.longestMs, ms);
+    profile.trace?.push({ at: started, kind: "relayout", ms });
   }
 
   private relayoutNow(anchor: { anchor: Anchor; at: { x: number; y: number } } | null): void {
@@ -1815,7 +1919,7 @@ export class ViewerController {
     const layout = this.layout;
     const sizes = this.sizes;
     if (!layout || !sizes || this.destroyed) return;
-    const view = this.viewRect();
+    const view = this.shownRect();
     const height = view.y1 - view.y0;
     const centre = { x: (view.x0 + view.x1) / 2, y: (view.y0 + view.y1) / 2 };
 
@@ -1825,8 +1929,9 @@ export class ViewerController {
     for (const rowIndex of rowsInBand(layout.rows, mountBand.y0, mountBand.y1)) {
       for (const page of layout.rows[rowIndex]?.pages ?? []) mounted.add(page);
     }
+    // During a zoom gesture pages only come: the gesture canvas draws from them.
     for (const [page, slot] of this.slots) {
-      if (!mounted.has(page)) {
+      if (!mounted.has(page) && !this.gesture) {
         this.unmountSlot(slot);
         this.slots.delete(page);
       }
@@ -1932,7 +2037,10 @@ export class ViewerController {
   // ------------------------------------------------------------ DOM
 
   private mountSlot(page: number, box: PageBox): Slot {
-    if (this.profile) this.profile.mounts += 1;
+    if (this.profile) {
+      this.profile.mounts += 1;
+      this.profile.trace?.push({ at: performance.now(), kind: "mount", page });
+    }
     const element = document.createElement("div");
     element.className = this.classNames.page;
     element.dataset.page = String(page);
@@ -2017,6 +2125,7 @@ export class ViewerController {
     profile.draws += 1;
     profile.drawMs += ms;
     profile.longestMs = Math.max(profile.longestMs, ms);
+    profile.trace?.push({ at: started, kind: wanted.kind, page: wanted.page, ms });
   }
 
   private drawRendered(wanted: Wanted, bitmap: RenderedPage): void {
@@ -2085,6 +2194,7 @@ export class ViewerController {
 
   /** Takes a page off screen: its tiles are freed, its preview kept for its return. */
   private unmountSlot(slot: Slot): void {
+    this.profile?.trace?.push({ at: performance.now(), kind: "unmount", page: slot.page });
     if (slot.stalePreview) releaseCanvas(slot.stalePreview);
     slot.stalePreview = null;
     const preview = slot.preview;

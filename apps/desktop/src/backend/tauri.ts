@@ -7,6 +7,7 @@ import {
   type BlockEditOutcome,
   type BookmarkPart,
   type DocumentComment,
+  type DocumentsArrived,
   type EditOutcome,
   type InsertOutcome,
   isBackendError,
@@ -174,6 +175,10 @@ export const tauriBackend: Backend = {
   pageAnnotations: (documentId, page) =>
     invoke<PageAnnotation[]>("page_annotations", { documentId, page }),
   // Addressed to one window: listen on this window only.
+  onDocumentsArrived: (listener) =>
+    getCurrentWebviewWindow().listen<DocumentsArrived>("documents-arrived", (event) =>
+      listener(event.payload),
+    ),
   onCloseRequested: (listener) =>
     getCurrentWebviewWindow().listen("close-requested", () => listener()),
   onQuitRequested: (listener) =>

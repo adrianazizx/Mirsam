@@ -3240,6 +3240,8 @@ name = "safha-desktop"
 version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
+ "dirs",
+ "getrandom 0.3.4",
  "gtk",
  "safha-core",
  "serde",
@@ -3247,6 +3249,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

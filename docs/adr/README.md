@@ -16,7 +16,7 @@ number and says so.
 | [0008](0008-text-extraction-and-search.md) | Text extraction in reading order (geometry + bidi + producer quirks) and Arabic-aware search | Accepted |
 | [0009](0009-viewer-rendering-pipeline.md) | Viewer: one render thread, viewport generations, 64 MiB tile cache, imperative tiled viewer | Accepted; frame-rate and blank-time budgets not yet measured |
 | [0010](0010-navigation-search-selection-ui.md) | Navigation UI: side panel, search, visual-select/logical-copy selection, palette, reading themes, local state, password prompt | Accepted |
-| [0011](0011-tiles-as-images-and-gesture-zoom.md) | Tiles as BMP images over the `safha` scheme (supersedes 0004's transport); compositor-only zoom gestures; fair frame criterion | Accepted; pinch-out and total memory still over budget |
+| [0011](0011-tiles-as-images-and-gesture-zoom.md) | Tiles as BMP images over the `safha` scheme (supersedes 0004's transport); zoom gestures drawn into one canvas, laid out once at the end (amended: was a CSS transform); fair frame criterion | Accepted; amended for pinch-out |
 | [0012](0012-reading-preferences-windows-printing.md) | Reading preferences from the catalog (own safe reader), several windows, tab reordering; printing through the platform's PDF viewer | Accepted; printing proposed (unverified) |
 | [0013](0013-printing-on-linux.md) | Printing on Linux: GTK's print dialog, each page rendered by PDFium at the printer's resolution | Proposed; checked in CI by printing to a file |
 | [0014](0014-edits-as-incremental-updates.md) | Edits as incremental updates written by our own writer; undo as a stack of them; documents keep their bytes (and, in memory, their password) | Accepted for page edits and annotations (0017) |
@@ -32,6 +32,7 @@ number and says so.
 | [0040](0040-autosave-and-recovery.md) | Autosave: each modified document's current bytes in a recovery file 2 s after its last change; restored at startup (undo back to the original when unchanged, Save As when it changed); encrypted ones ask for the password | Accepted |
 | [0041](0041-comments-panel.md) | Comments panel: threads read by our parser (`/IRT`, review states) with PDFium's text; replies and resolve as hidden-appearance annotations; authors only by the user's chosen name; filter, sort, go to | Accepted |
 | [0042](0042-true-redaction-and-sanitize.md) | True redaction by rewriting content streams (glyphs cut by code with exact gap compensation, image pixels, paths, annotations, metadata scrubbed), checked by extraction; Arabic-aware pattern presets; sanitize; marks in the UI until applied | Accepted; JPEG pixels and encrypted files open |
+| [0046](0046-one-running-copy.md) | One running copy per state directory: an OS file lock, a later copy hands its documents over a loopback port with a secret token and exits; macOS "open document" events open in the running copy | Accepted; Windows and Linux untested |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
 crypto/PAdES library (M5), Office → PDF (post-1.0).

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { I18nProvider } from "react-aria-components";
-import { backend, isBackendError } from "./backend";
+import { backend, type DocumentsArrived, isBackendError } from "./backend";
 import {
   acceptOutcome,
   commandForEvent,
@@ -22,6 +22,14 @@ import {
   useAppStore,
 } from "./state/appStore";
 import { getViewer } from "./viewer/registry";
+
+/** Documents that arrived while running open as tabs; the last one is shown. */
+function acceptArrivals({ documents, error }: DocumentsArrived) {
+  documents.forEach((outcome, index) => {
+    acceptOutcome(outcome, { activate: index === documents.length - 1 });
+  });
+  if (error) useAppStore.getState().setError(error);
+}
 
 /**
  * Writes the open tabs (the session restored at the next launch) now and
@@ -118,9 +126,13 @@ export function App() {
   }, []);
 
   // Startup: stored settings, then the previous session's tabs and the
-  // document the app was launched with ("Open with", file association). Only
+  // documents the app was launched with ("Open with", file association). Only
   // then are tab changes written back as the session: an empty window must not
   // overwrite the session it is about to restore.
+  //
+  // Documents that arrive later (another copy of the app handed them over,
+  // ADR 0046) are listened for first: until the shell has given out the
+  // startup documents it adds arrivals to them, and afterwards it sends them.
   useEffect(() => {
     setSettingsWriter((key, value) => {
       backend
@@ -132,19 +144,39 @@ export function App() {
       (error: unknown) => console.warn("settings unavailable", error),
     );
     let unsubscribe = () => {};
+    let stopArrivals = () => {};
     let cancelled = false;
+    // A document that arrives while the startup documents are on their way
+    // is the one the user just asked for: it stays in front.
+    let starting = true;
+    let arrivedWhileStarting = false;
     backend
-      .startup()
+      .onDocumentsArrived((arrived) => {
+        if (starting && arrived.documents.length > 0) arrivedWhileStarting = true;
+        acceptArrivals(arrived);
+      })
+      .then(
+        (unlisten) => {
+          if (cancelled) unlisten();
+          else stopArrivals = unlisten;
+        },
+        (error: unknown) => console.warn("cannot receive documents from elsewhere", error),
+      )
+      .then(() => backend.startup())
       .then(({ documents, active, recoveries }) => {
+        starting = false;
         for (const outcome of documents) acceptOutcome(outcome, { activate: false });
         // Unsaved changes an earlier session left (ADR 0040).
         if (recoveries?.length) useAppStore.getState().setRecoveries(recoveries);
         const store = useAppStore.getState();
         const first = store.documents[0];
         const target = active ?? (store.activeDocumentId === null ? first?.id : undefined);
-        if (target !== undefined && target !== null) store.activateDocument(target);
+        if (!arrivedWhileStarting && target !== undefined && target !== null) {
+          store.activateDocument(target);
+        }
       })
       .catch((error: unknown) => {
+        starting = false;
         useAppStore.getState().setError(isBackendError(error) ? error.code : "generic");
       })
       .finally(() => {
@@ -153,6 +185,7 @@ export function App() {
     return () => {
       cancelled = true;
       unsubscribe();
+      stopArrivals();
     };
   }, []);
 

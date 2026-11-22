@@ -116,6 +116,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       textBoxPending: "text-box-pending",
       noteEditor: "note-editor",
       selectionToolbar: "selection-toolbar",
+      gesture: "gesture",
     },
     initial: {
       zoomMode: "custom",
@@ -256,34 +257,60 @@ describe("viewer controller", () => {
     viewer.destroy();
   });
 
-  it("scales with a CSS transform during a zoom gesture and lays out when it ends", async () => {
+  it("draws a zoom gesture into one canvas and lays out only when it ends", async () => {
     const { viewer, container, callbacks } = setup();
     await settle();
     const content = container.querySelector<HTMLElement>("[data-viewer-content]");
-    const pinch = () =>
+    const pinch = (deltaY: number) =>
       container.dispatchEvent(
         new WheelEvent("wheel", {
-          deltaY: -5,
+          deltaY,
           ctrlKey: true,
           clientX: 500,
           clientY: 400,
           cancelable: true,
         }),
       );
-    const height = () => content?.style.blockSize;
-    pinch(); // the first step lays out at the new zoom
-    const laidOut = height();
-    pinch(); // later small steps only scale
-    pinch();
-    expect(content?.style.transform).toMatch(/^scale\(1\.\d+\)$/);
-    expect(height()).toBe(laidOut);
-    const zoom = callbacks.onZoom.mock.lastCall?.[0];
-    expect(zoom).toBeCloseTo(0.75 * Math.exp(0.15));
-    // 140 ms without zoom events ends the gesture: a real layout, no transform.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    const height = content?.style.blockSize;
+    const mounted = () => container.querySelectorAll("[data-page]").length;
+    expect(mounted()).toBe(4);
+
+    // Zooming out by e: nothing is laid out, the gesture canvas covers the
+    // hidden page area, and the pages it brings into view are mounted.
+    for (let step = 0; step < 4; step += 1) pinch(25);
+    expect(content?.style.blockSize).toBe(height);
     expect(content?.style.transform).toBe("");
-    expect(height()).not.toBe(laidOut);
+    expect(content?.dataset.zooming).toBe("");
+    expect(container.querySelectorAll("canvas.gesture")).toHaveLength(1);
+    expect(mounted()).toBe(9);
+    // What the canvas shows: 800 / (1/e) CSS px about y = 400, rows 0 to 3.
+    expect(viewer.snapshot().visible.map(({ page }) => page)).toEqual([0, 1, 2, 3]);
+    const zoom = callbacks.onZoom.mock.lastCall?.[0];
+    expect(zoom).toBeCloseTo(0.75 * Math.exp(-1));
+
+    // 140 ms without zoom events ends the gesture: one real layout.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(container.querySelector("canvas.gesture")).toBeNull();
+    expect(content?.dataset.zooming).toBeUndefined();
+    expect(content?.style.blockSize).not.toBe(height);
     expect(viewer.snapshot().zoom).toBeCloseTo(zoom ?? 0);
+    viewer.destroy();
+  });
+
+  it("keeps the pages mounted while a zoom gesture narrows the view", async () => {
+    const { viewer, container } = setup();
+    await settle();
+    const mounted = () => container.querySelectorAll("[data-page]").length;
+    for (let step = 0; step < 4; step += 1) {
+      container.dispatchEvent(
+        new WheelEvent("wheel", { deltaY: -25, ctrlKey: true, clientX: 500, clientY: 400 }),
+      );
+    }
+    // The canvas draws from them; they leave only once the gesture is over.
+    expect(mounted()).toBe(4);
+    expect(viewer.snapshot().visible.map(({ page }) => page)).toEqual([0, 1]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(container.querySelector("canvas.gesture")).toBeNull();
     viewer.destroy();
   });
 

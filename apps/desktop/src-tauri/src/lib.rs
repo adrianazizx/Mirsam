@@ -9,6 +9,7 @@ mod commands;
 mod diagnostics;
 mod editing;
 mod error;
+mod instance;
 mod navigation;
 #[cfg(target_os = "linux")]
 mod print_linux;
@@ -19,7 +20,7 @@ mod spike_tiles;
 mod state;
 mod viewer;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use state::AppState;
@@ -91,20 +92,50 @@ macro_rules! product_commands {
 
 pub fn run() {
     let started = Instant::now();
+    let context = tauri::generate_context!();
+    let documents = launch_documents();
+
+    // One running copy per state directory (ADR 0046): a later copy hands
+    // its documents over and exits before it shows anything.
+    let mut state_dir = state_dir(&context.config().identifier);
+    let mut instance = None;
+    if let Some(dir) = &state_dir {
+        match instance::claim(dir, &documents) {
+            Ok(instance::Claim::HandedOver) => return,
+            Ok(instance::Claim::Primary(claimed)) => instance = Some(claimed),
+            // Another copy holds the directory but does not answer (hung, or
+            // still quitting): run, but write nothing there.
+            Err(err @ instance::InstanceError::NoAnswer(_)) => {
+                eprintln!("safha: {err}; running without recents, session or recovery");
+                state_dir = None;
+            }
+            Err(err) => eprintln!("safha: {err}; other copies of the app cannot be detected"),
+        }
+    }
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::new(started, startup_document_path()))
+        .manage(AppState::new(started, documents))
         // Tiles: BMP images fetched by the webview (ADR 0011).
         .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
-        .setup(|app| {
+        .setup(move |app| {
             app.state::<AppState>().set_app(app.handle().clone());
-            open_store(app);
+            if let Some(dir) = &state_dir {
+                open_store(app, dir);
+            }
+            if let Some(instance) = instance.take() {
+                let (quitting, handle) = (app.handle().clone(), app.handle().clone());
+                instance.serve(
+                    move || !quitting.state::<AppState>().exiting(),
+                    move |documents| commands::open_arrivals(&handle, documents),
+                );
+            }
             #[cfg(feature = "devtools")]
             diagnostics::prepare_window(app);
             Ok(())
         })
         .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true) => window.state::<AppState>().focused(window.label()),
             // A window holding unsaved changes asks its UI first (ADR 0015);
             // the UI closes it again once the user confirms.
             tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -157,8 +188,15 @@ pub fn run() {
             spike_tiles::spike_rss_kb,
         ]);
 
-    let app = builder.build(tauri::generate_context!()).expect("failed to start the Mirsam desktop shell");
+    let app = builder.build(context).expect("failed to start the Mirsam desktop shell");
     app.run(|handle, event| {
+        // macOS asks the running app to open files (Finder, "Open with",
+        // `open -a`) rather than starting another copy.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = &event {
+            let documents = urls.iter().filter_map(|url| url.to_file_path().ok()).collect();
+            commands::open_arrivals(handle, documents);
+        }
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
             let state = handle.state::<AppState>();
             // Unsaved changes: ask in the window of the first such document
@@ -178,31 +216,46 @@ pub fn run() {
     });
 }
 
-/// Opens the local state store in the app data directory, or in
+/// Where the app keeps its state: the app data directory (as Tauri resolves
+/// it: the platform's data directory and the bundle identifier), or
 /// `SAFHA_STATE_DIR` (self-tests and benchmarks, which must not read or touch
-/// the user's recents and session). Without a store the app still runs; it
-/// just forgets everything at exit.
-fn open_store(app: &tauri::App) {
-    let dir =
-        std::env::var_os("SAFHA_STATE_DIR").map(PathBuf::from).or_else(|| app.path().app_data_dir().ok());
-    let Some(dir) = dir else {
+/// the user's recents and session).
+fn state_dir(identifier: &str) -> Option<PathBuf> {
+    let dir = std::env::var_os("SAFHA_STATE_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::data_dir().map(|data| data.join(identifier)));
+    if dir.is_none() {
         eprintln!("safha: no app data directory; recents and positions will not be kept");
-        return;
-    };
+    }
+    dir
+}
+
+/// Opens the local state store in `dir`. Without a store the app still
+/// runs; it just forgets everything at exit.
+fn open_store(app: &tauri::App, dir: &Path) {
     match safha_core::store::Store::open(&dir.join("state.sqlite3")) {
         Ok(store) => app.state::<AppState>().set_store(store),
         Err(err) => eprintln!("safha: could not open the state store in {}: {err}", dir.display()),
     }
     // Recovery files of documents with unsaved changes, beside the store (ADR 0040).
-    recovery::open_files(&app.state::<AppState>(), &dir);
+    recovery::open_files(&app.state::<AppState>(), dir);
 }
 
-/// A PDF handed to us at launch: the first command-line argument that is not a
-/// flag ("Open with", file associations), or `SAFHA_OPEN` during development.
-fn startup_document_path() -> Option<PathBuf> {
-    std::env::args_os()
+/// The PDFs handed to us at launch, as absolute paths: the command-line
+/// arguments that are not flags ("Open with", file associations, a shell),
+/// or `SAFHA_OPEN` during development.
+fn launch_documents() -> Vec<PathBuf> {
+    let mut documents: Vec<PathBuf> = std::env::args_os()
         .skip(1)
-        .find(|arg| !arg.to_string_lossy().starts_with('-'))
-        .or_else(|| std::env::var_os("SAFHA_OPEN"))
+        .filter(|arg| !arg.to_string_lossy().starts_with('-'))
         .map(PathBuf::from)
+        .collect();
+    if documents.is_empty()
+        && let Some(path) = std::env::var_os("SAFHA_OPEN")
+    {
+        documents.push(PathBuf::from(path));
+    }
+    // A copy that hands them over runs in another directory than the one
+    // receiving them.
+    documents.into_iter().map(|path| std::path::absolute(&path).unwrap_or(path)).collect()
 }

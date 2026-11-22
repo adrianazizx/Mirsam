@@ -1046,6 +1046,7 @@ export const mockBackend: Backend = {
   printDocument: async () => {},
   moveToNewWindow: async () => {},
   onSettingChanged: async () => () => {},
+  onDocumentsArrived: async () => () => {},
   onCloseRequested: async () => () => {},
   onQuitRequested: async () => () => {},
   closeWindowDiscarding: async () => {},

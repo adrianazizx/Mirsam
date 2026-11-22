@@ -74,6 +74,9 @@ Canvas churn is not a factor.
 
 ### Zoom gestures
 
+*Superseded for pinch and Ctrl/Cmd+wheel by the pinch-out amendment at the end: gestures are now
+drawn into one canvas and laid out once, at the end.*
+
 - **Pinch and Ctrl/Cmd+wheel scale the page area with a CSS transform** (with
   `will-change: transform`) about the point under the pointer.
 - **A real relayout happens only in three cases:**
@@ -192,3 +195,84 @@ case stays open; ordinary pinches meet the budget.
 The spec's 500 MB budget for the 1,000-page document covers **the app's own process**, which
 measured 339 MB in the release benchmark. The system webview's processes are measured and
 reported but not budgeted. `check-scroll-benchmark.mjs` and the spec's §11 now say so.
+
+## Amendment (2026-11-23): pinch-out, zoom gestures drawn into one canvas
+
+### What the slow frames were
+
+The benchmark now traces each frame of the zoom phases. It records the interval, and the
+main-thread time from the frame's animation callback to the first task after WebKit's rendering
+update. Both are lined up with the viewer's own steps: relayouts, mounts, previews and tiles drawn
+(`ViewerProfile.trace`). Release build, 1,000 pages. With the CSS transform:
+
+- **Frames that only change the transform** cost 3–4 ms of main-thread time and arrive on time.
+- **Each relayout during the gesture** costs one slow frame. A pinch-out had 6 of them: the
+  first event, then one every 250 ms. The relayout frame takes 9–18 ms on the main thread, and
+  the next interval is 22–57 ms. A relayout also cleared `will-change`, so WebKit destroyed the
+  page area's compositing layer and built it again on the next frame.
+- **Late in a pinch-out**, with the layout shown at under a tenth of its scale, frames ran 25–58
+  ms even with no relayout, on ~3 ms of main-thread work. That is WebKit's compositor handling a
+  large layer tree scaled far down.
+
+So it was not one cost. Session 6's three experiments each removed a part of one.
+
+### Variants
+
+Release build, `SAFHA_SELFTEST_SPIKE=scroll:zoom` (the zoom phases only, 3 pinch-ins and
+3 pinch-outs per launch). The machine was loaded by other builds (load average 40–80 on 14
+cores), so each variant ran beside a fresh baseline:
+
+| Variant | Pinch-out p95 | Dropped per pinch-out | Pinch-in p95 |
+|---|---|---|---|
+| Baseline (CSS transform), three batches | 28–31 ms | 5.0–6.0 | 21–23 ms |
+| Pages paint no background or shadow | 24 ms | 3.0 | 19 ms |
+| Each page its own layer (`will-change`) | 25 ms | 3.3 | 19 ms |
+| Canvases their own layers | 27 ms | 6.0 | 21 ms |
+| Relayout at 0.25× not 0.5×, wider mount band | 42 ms | 6.0 | 24 ms |
+| Keep the layer across relayouts | 29 ms | 6.0 | 25 ms |
+| … and no time-based relayouts | 36 ms | 5.3 | 19 ms |
+| No relayout during the gesture (transform only) | 28 ms | 4.7 | 19 ms |
+| **One canvas over the viewport (adopted)** | **19 ms** | **0.2** | **20 ms** |
+
+### Decision
+
+During a pinch or a Ctrl/Cmd+wheel gesture nothing is laid out again:
+
+- **One canvas over the viewport.** It draws the pages the gesture shows, scaled about the point
+  under the pointer, from what they already have: paper, the preview, and any tiles at any
+  scale. The page area underneath is hidden (`visibility: hidden`), so the compositor handles
+  one layer at any scale. The canvas takes the reading theme's filter, as pages do.
+- **Pages the gesture brings into view are mounted** but stay hidden. Their previews are fetched
+  for the canvas to draw. No page is unmounted during a gesture.
+- **One relayout when the gesture ends** (140 ms without an event, or a scroll, resize or view
+  change). The page area point under the pointer stays there, and the canvas is released.
+- **The viewer's snapshot** (`visible`, and so the benchmark's blank-page check) reports what the
+  canvas shows during a gesture.
+- **Given up during a gesture:** page shadows, search hits, the selection and other overlays.
+  They return when the gesture ends. Sharp tiles were already not fetched until then.
+
+### Measured
+
+Release build, 1,000 pages, window visible, page area 960 × 716 CSS px, the full benchmark run
+3 times each, alternating builds, under the same load (40–80):
+
+| | Before (CSS transform) | After (one canvas) | Budget |
+|---|---|---|---|
+| Pinch-out ×1/20 in 1.2 s: p95, dropped | 27 / 34 / 29 ms; 6 / 8 / 5 | **18 / 19 / 19 ms; 0 / 2 / 1** | p95 ≤ 20 ms |
+| Pinch-in ×6: p95, dropped | 20 / 23 / 21 ms; 0 | 20 / 17 / 18 ms; 0 | p95 ≤ 20 ms |
+| End of a pinch-out (one relayout): longest frame | 33–39 ms | 41–45 ms | — |
+| End of a pinch-in, 25 frames: p95 | 17–20 ms | 23–25 ms | not budgeted (< 40 frames) |
+| Scroll 4,000 / 12,000 px/s, fling: worst p95 | 23 ms | 19 ms | ≤ 20 ms |
+| Dropped frames, all phases | 0.7 / 1.2 / 1.2% | **0.2 / 0.5 / 0.4%** | ≤ 1% |
+| Longest blank page | 14 ms | 20 ms | ≤ 100 ms |
+| Random jump → preview, p95 | 27–86 ms | 20–57 ms | ≤ 100 ms |
+| App's own memory at end | 284–337 MB | 295–321 MB | < 500 MB |
+| Benchmark verdict | fails 3 of 3 | **passes 3 of 3** | |
+
+The cost of a gesture now sits in its last frame, once, instead of in 5–8 frames while the
+fingers move. The before figures are worse than this ADR's first table (p95 25 ms, 3 dropped)
+because the machine was loaded; the comparison is between builds under the same load.
+
+Not measured here: Windows (WebView2) and Linux (WebKitGTK). Drawing into a 2D canvas works the
+same there, and CI's shell self-test covers the viewer on both.
+

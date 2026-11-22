@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (M4 runtime and word-box side track, merged with `main` after session M5-a).
+Last updated: 2026-11-23 (viewer and shell side track: pinch-out within budget, one running copy).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -135,13 +135,16 @@ by anything found so far.
 - [x] Render scheduler: one render thread, priority queue, cancellation by viewport generation,
       64 MiB byte-capped LRU keyed by (document, revision, page, scale, rect), previews then tiles
       (ADR 0009)
-- [~] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI — measured with a visible window
+- [x] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI — measured with a visible window
       (ADR 0011). Release build, 1,000 pages:
       - scrolling at 4,000 and 12,000 px/s and flinging drops no frames;
       - 0.2% of all frames are dropped;
       - pinch-in is clean;
       - no page is blank longer than 12 ms; random jumps show a preview within 16 ms.
-      **Still over budget:** an extreme pinch-out (×1/20 in 1.2 s) drops 3 frames, p95 25 ms.
+      - **Extreme pinch-out (×1/20 in 1.2 s) is within budget since 2026-11-23:** p95 18–19 ms,
+        0–2 dropped frames, against 27–34 ms and 5–8 before, measured under the same heavy
+        machine load. Zoom gestures are drawn into one canvas and laid out once, at the end
+        (ADR 0011 amendment).
 - [x] View modes: single / continuous / two-page / book; RTL page order. A document's own
       `/ViewerPreferences /Direction` and `/PageLayout` set its defaults, read by our own safe
       catalog reader (ADR 0012): an Arabic book that asks for right-to-left spreads opens that way
@@ -175,9 +178,9 @@ by anything found so far.
 - [x] Tiles on Windows and Linux. The shell self-test passes on WebView2 and on WebKitGTK in
       CI: first page 99–155 ms on virtual machines (ADR 0011, session 6 amendment). The memory
       experiment is WebKit-on-macOS only.
-- [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
-      pinch-out (above). Memory is within budget: the app's process, by the owner's decision.
-      Session 6 tested three causes of the pinch-out drops; none was it (ADR 0011).
+- [x] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes, extreme pinch-out
+      included since 2026-11-23 (3 of 3 benchmark runs). Memory is within budget: the app's
+      process, by the owner's decision.
 - [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures):
       - Pages with a trustworthy text layer: 69 of 70 blocks verbatim, and every word of their
         ground truth is found by search as typed (542 words, `tests/search.rs`).
@@ -209,7 +212,7 @@ Test status at the end of session 6:
 M1 closed in session 6 at the owner's go-ahead, with these items carried forward:
 
 - confirm printing on screen on macOS and Windows (owner item 13);
-- pinch-out frames (needs WebKit's own profiler).
+- ~~pinch-out frames~~ done 2026-11-23 (ADR 0011 amendment).
 
 ## M2 — Annotate and organize — done; merged from `m2-organize` (PR #2) with the open items below
 
@@ -291,8 +294,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       - at startup a dialog offers each one: restore (undo goes back to the original when it
         is unchanged; Save asks where when it changed) or discard, or decide later;
       - encrypted documents stay encrypted, and restoring asks for the password.
-      - Gap: running a single copy of the app is not enforced. A second copy started while
-        the first runs would offer the first one's recovery files.
+      - One copy runs per state directory (ADR 0046, 2026-11-23). A second launch hands its
+        documents to the running copy and exits, so recovery files and the store have one
+        writer.
 - [x] Budgets not regressed (spec §11; measurements below)
 
 ### M2 measurements (Apple-silicon MacBook, macOS 26, session 8)
@@ -326,8 +330,8 @@ M2 closed in session 8 at the owner's go-ahead, with these items carried forward
   cannot be edited or deleted from the panel; XFDF import and export, summaries and
   flattening (P1).
 - **Organizer:** pointer dragging is untested by automation.
-- **Autosave:** a single running copy is not enforced.
-- **From M1:** extreme pinch-out, and printing on screen (owner item 13).
+- ~~**Autosave:** a single running copy is not enforced.~~ Done 2026-11-23 (ADR 0046).
+- **From M1:** printing on screen (owner item 13). ~~Extreme pinch-out~~ done 2026-11-23.
 
 ## M3 — Text engine — started in session 9 on branch `m3-text` (groundwork merged to `main` ahead of M2)
 
@@ -497,6 +501,61 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Viewer and shell side track — 2026-11-23 (pinch-out; one running copy; branch `pomidor/viewer-shell-gaps-84e4f5`)
+
+Two gaps carried since M1 and M2, worked in parallel with M4–M7.
+
+- **Pinch-out within budget (ADR 0011 amendment).**
+  - **Cause, found with a per-frame trace** now in the benchmark: every relayout during a
+    gesture cost one slow frame, partly because clearing `will-change` rebuilt the page area's
+    compositing layer. Far into a zoom-out the compositor was slow even without relayouts.
+  - **Variants tried:** 8 cheaper CSS variants, none within budget (table in the ADR).
+  - **Fix:** a gesture is drawn into one canvas over the viewport from the previews and tiles the
+    pages already have, and the layout happens once, at the end.
+  - **Release build, full benchmark, 3 runs each, alternating builds:**
+
+    | | Before | After |
+    |---|---|---|
+    | Pinch-out p95 | 27–34 ms | 18–19 ms |
+    | Pinch-out dropped frames | 5–8 | 0–2 |
+    | All phases dropped | 0.7–1.2% | 0.2–0.5% |
+    | Benchmark verdict | fails 3 of 3 | passes 3 of 3 |
+
+  - **No regressions:** scrolling, flinging, pinch-in, blank pages (≤ 20 ms), jumps (preview
+    p95 ≤ 57 ms) and memory (app ≤ 321 MB) are all within budget.
+  - **Trade-off:** the gesture's one relayout is its last frame (41–45 ms after a pinch-out; the
+    25 frames after a pinch-in have p95 23–25 ms, too short a phase for the p95 rule).
+  - **Conditions:** other sessions' builds kept the load average at 40–80 on 14 cores, so all
+    figures are higher than session 4's quiet-machine ones. Compare builds, not sessions.
+  - **New benchmark mode:** `SAFHA_SELFTEST_SPIKE=scroll:zoom` runs only the zoom phases, three
+    times over: a 30-second loop for work on zooming.
+- **One running copy (ADR 0046).**
+  - **Mechanism:** an OS file lock on `<state dir>/instance.lock`. A later copy sends its
+    documents' absolute paths over loopback TCP with a secret token and exits.
+  - **macOS:** "open document" Apple Events (Finder, `open -a`) open in the running copy.
+  - **Where documents go:** the window used last, as the active tab. A document that arrives
+    while the app is still starting joins the startup documents.
+  - **Why not Tauri's single-instance plugin:** it is keyed by bundle identifier, which would
+    make parallel self-tests hand PDFs to each other or to the owner's copy. On macOS it is not
+    a lock.
+  - **Dependencies:** no new crates; `getrandom` and `dirs` were already in the tree.
+  - **Tests:** 7 new unit tests in `instance.rs` and 2 in `state.rs`.
+  - **End to end:** `scripts/instance-selftest.sh` passes on macOS: the second copy exits 0 in
+    under 1 s and its PDF becomes the active tab. `open -a` was checked by hand.
+  - **Not tested:** Windows and Linux. CI does not run the new script yet; M7 owns the CI
+    files.
+  - **Known limit:** `open -n` on macOS loses its file; the running copy only comes forward.
+
+Test status at the end of this track (this Mac):
+
+- **Rust:** 347 workspace tests pass. Clippy is clean with and without `devtools`, `cargo fmt`
+  is clean, `cargo deny` is ok, and the licence report is current (no new crates).
+- **UI:** 171 tests pass. `tsc` and Biome are clean.
+- **End to end, release build:**
+  - the shell self-test passes in English (light) and Arabic (dark);
+  - `scripts/instance-selftest.sh` passes;
+  - the zoom gestures in Arabic (dark): pinch-out p95 18 ms, nothing dropped, no blank page.
 
 ### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
 
