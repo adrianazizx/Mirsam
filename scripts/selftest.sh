@@ -31,6 +31,14 @@ rm -f "$OUT/report.json" "$OUT/canvas.png"
 # and nothing written back to them.
 rm -rf "$OUT/state"
 
+# The debug app loads its UI from http://localhost:1420 (tauri.conf.json). A
+# server already there (another checkout's, another session's) would be
+# tested instead of this checkout's UI, so refuse rather than test the wrong code.
+if curl --silent --output /dev/null http://localhost:1420/; then
+  echo "port 1420 is already serving a UI (another dev server?); stop it so this checkout's UI is tested" >&2
+  exit 2
+fi
+
 cd "$ROOT/apps/desktop"
 pnpm exec vite --port 1420 --strictPort >"$OUT/vite.log" 2>&1 &
 VITE_PID=$!

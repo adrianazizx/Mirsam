@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { backend } from "../backend";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
-import { commandForEvent, isCommandEnabled, runCommand, shortcutLabel } from "./registry";
+import {
+  commandForEvent,
+  dropTarget,
+  isCommandEnabled,
+  moveTarget,
+  runCommand,
+  shortcutLabel,
+  targetPages,
+} from "./registry";
 
 const key = (init: KeyboardEventInit) => new KeyboardEvent("keydown", init);
 
@@ -121,6 +129,44 @@ describe("command registry", () => {
     await runCommand("file.close", { documentId: 1, force: true });
     expect(useAppStore.getState().documents).toEqual([]);
     expect(useAppStore.getState().closePrompt).toBeNull();
+  });
+
+  it("works out where moved pages land", () => {
+    // One step: a block moves past its neighbour; a scattered selection gathers.
+    expect(moveTarget([3, 4], 10, -1)).toBe(2);
+    expect(moveTarget([0, 1], 10, -1)).toBeNull();
+    expect(moveTarget([0, 5], 10, -1)).toBe(0);
+    expect(moveTarget([3, 4], 10, 1)).toBe(4);
+    expect(moveTarget([8, 9], 10, 1)).toBeNull();
+    expect(moveTarget([2, 9], 10, 1)).toBe(3);
+    // Dropping: how many unmoved pages precede the drop point.
+    expect(dropTarget([0, 1], 3, true)).toBe(2); // after page 4 → pages 3, 4 come first
+    expect(dropTarget([5], 0, false)).toBe(0);
+    expect(dropTarget([2, 6], 4, false)).toBe(3);
+  });
+
+  it("acts on the organizer's selection, and keeps the moved pages selected", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    useAppStore.getState().updateDocument(1, { page: 7 });
+    useAppStore.getState().setSelectedPages(1, [5, 3]);
+    // Outside the organizer the current page is the target.
+    expect(targetPages()).toEqual([7]);
+    useAppStore.getState().setActiveTool("pages");
+    expect(targetPages()).toEqual([3, 5]);
+
+    await runCommand("pages.moveEarlier");
+    // The mock keeps its edits between tests: count relative to here.
+    const before = selectActiveDocument(useAppStore.getState())?.pageCount ?? 0;
+    expect(selectActiveDocument(useAppStore.getState())?.selectedPages).toEqual([2, 3]);
+    await runCommand("pages.duplicate");
+    const doc = selectActiveDocument(useAppStore.getState());
+    expect(doc?.pageCount).toBe(before + 2);
+    expect(doc?.selectedPages).toEqual([3, 5]);
+    await runCommand("pages.move", { pages: [3, 5], to: 0 });
+    expect(selectActiveDocument(useAppStore.getState())?.selectedPages).toEqual([0, 1]);
+    expect(isCommandEnabled("pages.moveEarlier")).toBe(false);
+    for (let i = 0; i < 2; i += 1) await runCommand("edit.undo");
+    expect(selectActiveDocument(useAppStore.getState())?.pageCount).toBe(before);
   });
 
   it("keeps the last page: deleting needs two", () => {

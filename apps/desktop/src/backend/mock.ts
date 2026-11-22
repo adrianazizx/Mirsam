@@ -355,6 +355,8 @@ interface Job {
   lane: Lane;
   generation: number;
   page: number;
+  /** The page's original content after edits (-1: a blank page). */
+  original: number;
   tile: TileRequest;
   priority: Priority;
   seq: number;
@@ -385,7 +387,9 @@ function pump() {
   busy = true;
   setTimeout(() => {
     busy = false;
-    job.resolve(drawTile(job.page, job.tile));
+    job.resolve(
+      job.original < 0 ? blank(job.tile.width, job.tile.height) : drawTile(job.original, job.tile),
+    );
     pump();
   }, 1);
 }
@@ -495,12 +499,15 @@ export const mockBackend: Backend = {
   },
   documentOutline: async (documentId) => (documentId === SAMPLE.id ? OUTLINE : []),
   pageLabels: async () => null,
-  pageText: async (_documentId, page) => textLayer(page),
+  pageText: async (documentId, page) => {
+    const original = pagesOf(documentId)[page] ?? page;
+    return original < 0 ? { blocks: [], direction: "ltr", quality: "noText" } : textLayer(original);
+  },
   searchDocument: async (documentId, query, options) => {
     const hits = search(documentId, query, options);
     return { hits: hits.slice(0, 5000), truncated: hits.length > 5000 };
   },
-  renderTile: (_documentId, requestGeneration, page, tile, priority, lane = "main") =>
+  renderTile: (documentId, requestGeneration, page, tile, priority, lane = "main") =>
     new Promise<RenderedPage>((resolve, reject) => {
       if (requestGeneration < generations[lane]) {
         reject(CANCELLED);
@@ -510,6 +517,7 @@ export const mockBackend: Backend = {
         lane,
         generation: requestGeneration,
         page,
+        original: pagesOf(documentId)[page] ?? page,
         tile,
         priority,
         seq: ++seq,

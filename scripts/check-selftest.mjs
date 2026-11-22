@@ -65,6 +65,10 @@ if (nav) {
     check(editing.pagesAfterEdit === editing.pagesBefore + 1, `duplicating gave ${editing.pagesAfterEdit} pages`);
     check(editing.repainted, "the edited document was not painted");
     check(editing.closePrompted, "closing a window with unsaved changes did not ask first");
+    if (editing.pagesBefore >= 2) {
+      check(editing.organizer?.gridImages > 0, "the page organizer drew no page");
+      check(editing.organizer?.moved, "moving the first page later did not put it second");
+    }
     check(editing.pagesAfterUndo === editing.pagesBefore, `undo left ${editing.pagesAfterUndo} pages`);
     check(editing.modifiedAfterUndo === false, "undo back to the file still counts as modified");
   }
@@ -90,7 +94,8 @@ if (nav) {
     const e = nav.editing;
     console.log(
       `  editing: duplicate ${e.pagesBefore} → ${e.pagesAfterEdit} pages in ${e.editMs} ms, ` +
-        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}, close asked ${e.closePrompted}`,
+        `undo → ${e.pagesAfterUndo}, repainted ${e.repainted}, close asked ${e.closePrompted}` +
+        (e.organizer ? `; organizer: ${e.organizer.gridImages} pages drawn, move ${e.organizer.moved}` : ""),
     );
   }
 }

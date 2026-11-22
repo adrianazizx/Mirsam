@@ -79,6 +79,8 @@ export interface OpenDocument extends DocumentInfo {
   canRedo: boolean;
   /** Differs from the file as opened or last saved. */
   modified: boolean;
+  /** Pages selected in the page organizer (zero-based, ascending). */
+  selectedPages: number[];
 }
 
 /** A close that waits for the user: something holds unsaved changes (ADR 0015). */
@@ -141,6 +143,7 @@ export interface AppState {
   applyEdit(id: number, outcome: EditOutcome): void;
   /** After Save or Save As: the name may change, and the document is no longer modified. */
   applySave(id: number, outcome: SaveOutcome): void;
+  setSelectedPages(id: number, pages: number[]): void;
   closePrompt: ClosePrompt | null;
   setClosePrompt(prompt: ClosePrompt | null): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
@@ -324,6 +327,7 @@ export const useAppStore = create<AppState>((set, get) => {
         canUndo: false,
         canRedo: false,
         modified: false,
+        selectedPages: [],
       };
       set((state) => ({
         documents: [...state.documents, document],
@@ -382,6 +386,8 @@ export const useAppStore = create<AppState>((set, get) => {
                 search: IDLE_SEARCH,
                 hasSelection: false,
                 revision: open.revision + 1,
+                // Page numbers moved; the command that edited says what is selected next.
+                selectedPages: [],
                 canUndo: outcome.canUndo,
                 canRedo: outcome.canRedo,
                 modified: outcome.modified,
@@ -393,6 +399,19 @@ export const useAppStore = create<AppState>((set, get) => {
     closePrompt: null,
     setClosePrompt(prompt) {
       set({ closePrompt: prompt });
+    },
+    setSelectedPages(id, pages) {
+      const sorted = [...new Set(pages)].sort((a, b) => a - b);
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id
+            ? {
+                ...open,
+                selectedPages: sorted.filter((page) => page >= 0 && page < open.pageCount),
+              }
+            : open,
+        ),
+      }));
     },
     applySave(id, outcome) {
       set((state) => ({

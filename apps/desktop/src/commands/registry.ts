@@ -61,6 +61,10 @@ export interface CommandArg {
   documentId?: number;
   /** `file.close`: close even with unsaved changes (the user chose not to save). */
   force?: boolean;
+  /** `pages.move`: the pages to move (zero-based, ascending). */
+  pages?: number[];
+  /** `pages.move`: the index the first moved page takes in the result. */
+  to?: number;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -98,6 +102,10 @@ export type CommandId =
   | "pages.delete"
   | "pages.duplicate"
   | "pages.insertBlank"
+  | "pages.moveEarlier"
+  | "pages.moveLater"
+  | "pages.move"
+  | "pages.open"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -140,14 +148,62 @@ const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelect
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
 const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
 const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
-const hasPages = (count: number) => (state: AppState) =>
-  (selectActiveDocument(state)?.pageCount ?? 0) >= count;
 
-/** Applies a page edit to the active document (ADR 0014). */
-async function editActive(edit: (active: OpenDocument) => PageEdit): Promise<void> {
+/**
+ * The pages a page command acts on: the organizer's selection when it has
+ * one, else the page being read. Ascending.
+ */
+export function targetPages(state: AppState = store()): number[] {
+  const active = selectActiveDocument(state);
+  if (!active) return [];
+  if (state.activeTool === "pages" && active.selectedPages.length > 0) return active.selectedPages;
+  return [active.page];
+}
+
+/**
+ * Applies a page edit to the active document (ADR 0014). `select`: the pages
+ * to select afterwards, in the edited document.
+ */
+async function editActive(
+  edit: (active: OpenDocument, pages: number[]) => PageEdit,
+  select: (pages: number[], edit: PageEdit) => number[] = () => [],
+): Promise<void> {
   const active = selectActiveDocument(store());
   if (!active) return;
-  store().applyEdit(active.id, await backend.editPages(active.id, edit(active)));
+  const pages = targetPages();
+  const change = edit(active, pages);
+  store().applyEdit(active.id, await backend.editPages(active.id, change));
+  store().setSelectedPages(active.id, select(pages, change));
+}
+
+/** Where moved pages land: the first at `to` of the result, the rest after it. */
+function landed(edit: PageEdit, count: number): number[] {
+  return edit.kind === "move" ? Array.from({ length: count }, (_, i) => edit.to + i) : [];
+}
+
+/**
+ * `to` for moving `pages` one step earlier or later: the index the first of
+ * them takes in the result. Null when they cannot move that way.
+ */
+export function moveTarget(pages: number[], pageCount: number, step: -1 | 1): number | null {
+  const first = pages[0];
+  if (first === undefined) return null;
+  const contiguous = pages.every((page, i) => page === first + i);
+  if (step < 0) return first === 0 && contiguous ? null : Math.max(0, first - 1);
+  const last = pageCount - pages.length;
+  return first >= last && contiguous ? null : Math.min(last, first + 1);
+}
+
+/**
+ * `to` for dropping `pages` before or after `target` (an index before the
+ * move): how many unmoved pages precede the drop point.
+ */
+export function dropTarget(pages: number[], target: number, after: boolean): number {
+  const point = target + (after ? 1 : 0);
+  const moving = new Set(pages);
+  let to = 0;
+  for (let page = 0; page < point; page += 1) if (!moving.has(page)) to += 1;
+  return to;
 }
 
 async function stepActive(step: "undo" | "redo"): Promise<void> {
@@ -430,35 +486,109 @@ const COMMANDS: Command[] = [
   {
     id: "pages.rotateClockwise",
     isEnabled: hasDocument,
-    run: () => editActive((active) => ({ kind: "rotate", pages: [active.page], quarterTurns: 1 })),
+    run: () =>
+      editActive(
+        (_, pages) => ({ kind: "rotate", pages, quarterTurns: 1 }),
+        (pages) => pages,
+      ),
   },
   {
     id: "pages.rotateCounterclockwise",
     isEnabled: hasDocument,
-    run: () => editActive((active) => ({ kind: "rotate", pages: [active.page], quarterTurns: -1 })),
+    run: () =>
+      editActive(
+        (_, pages) => ({ kind: "rotate", pages, quarterTurns: -1 }),
+        (pages) => pages,
+      ),
   },
   {
     id: "pages.delete",
     // A document keeps at least one page.
-    isEnabled: hasPages(2),
-    run: () => editActive((active) => ({ kind: "delete", pages: [active.page] })),
+    isEnabled: (state) =>
+      targetPages(state).length > 0 &&
+      targetPages(state).length < (selectActiveDocument(state)?.pageCount ?? 0),
+    run: () => editActive((_, pages) => ({ kind: "delete", pages })),
   },
   {
     id: "pages.duplicate",
     isEnabled: hasDocument,
-    run: () => editActive((active) => ({ kind: "duplicate", pages: [active.page] })),
+    // Each copy lands right after its page; the copies are selected.
+    run: () =>
+      editActive(
+        (_, pages) => ({ kind: "duplicate", pages }),
+        (pages) => pages.map((page, i) => page + i + 1),
+      ),
   },
   {
     id: "pages.insertBlank",
     isEnabled: hasDocument,
-    // After the current page, the size of the current page (A4 until it is known).
+    // After the last target page, the size of the current page (A4 until it is known).
     run: () =>
-      editActive((active) => ({
-        kind: "insertBlank",
-        at: active.page + 1,
-        width: active.pageSize?.width ?? 595,
-        height: active.pageSize?.height ?? 842,
-      })),
+      editActive(
+        (active, pages) => ({
+          kind: "insertBlank",
+          at: (pages[pages.length - 1] ?? active.page) + 1,
+          width: active.pageSize?.width ?? 595,
+          height: active.pageSize?.height ?? 842,
+        }),
+        (_, edit) => (edit.kind === "insertBlank" ? [edit.at] : []),
+      ),
+  },
+  {
+    id: "pages.moveEarlier",
+    isEnabled: (state) =>
+      moveTarget(targetPages(state), selectActiveDocument(state)?.pageCount ?? 0, -1) !== null,
+    run: () =>
+      editActive(
+        (active, pages) => ({
+          kind: "move",
+          pages,
+          to: moveTarget(pages, active.pageCount, -1) ?? 0,
+        }),
+        (pages, edit) => landed(edit, pages.length),
+      ),
+  },
+  {
+    id: "pages.moveLater",
+    isEnabled: (state) =>
+      moveTarget(targetPages(state), selectActiveDocument(state)?.pageCount ?? 0, 1) !== null,
+    run: () =>
+      editActive(
+        (active, pages) => ({
+          kind: "move",
+          pages,
+          to: moveTarget(pages, active.pageCount, 1) ?? active.pageCount,
+        }),
+        (pages, edit) => landed(edit, pages.length),
+      ),
+  },
+  {
+    // Drag and drop in the page organizer: `pages` land at `to` of the result.
+    id: "pages.move",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const pages = arg?.pages;
+      if (!active || !pages?.length || arg?.to === undefined) return;
+      const to = arg.to;
+      store().applyEdit(active.id, await backend.editPages(active.id, { kind: "move", pages, to }));
+      store().setSelectedPages(
+        active.id,
+        pages.map((_, i) => to + i),
+      );
+    },
+  },
+  {
+    // Opens a page from the organizer in the page view.
+    id: "pages.open",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      if (arg?.page === undefined) return;
+      store().setActiveTool("select");
+      await runCommand("view.goToPage", { page: arg.page });
+    },
   },
   {
     id: "file.print",

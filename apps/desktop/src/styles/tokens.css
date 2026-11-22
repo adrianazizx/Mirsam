@@ -42,6 +42,9 @@
   --size-side-panel: 248px;
   /* Thumbnails are drawn this wide (CSS px), read by src/viewer/thumbnails.ts */
   --size-thumbnail: 128px;
+  /* The page organizer: a page image's width, and the gap between pages. */
+  --size-page-grid-image: 168px;
+  --size-page-grid-gap: 16px;
   --size-search-result: 56px; /* row height of the virtualized results list */
   --size-palette: 560px;
   --size-palette-row: 36px;

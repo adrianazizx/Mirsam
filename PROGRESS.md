@@ -208,9 +208,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
    own writer, and undo pops the last one. PDFium's safe API cannot reorder pages without
    breaking the outline and links, and cannot save incrementally. Validated on the corpus with
    PDFium and `qpdf --check`.
-2. **Page organizer:** rotate, delete, duplicate and insert blank work on the current page, with
-   undo and redo, and are in the palette. Still to do: moving pages, and a page grid with
-   multi-select and drag to reorder.
+2. ~~**Page organizer**~~ **done:** the Pages tool shows a page grid with multi-select, drag to
+   reorder, and move earlier/later (keyboard and palette). Rotate, delete, duplicate and insert
+   act on the selection, or on the current page in the page view, with undo and redo.
 3. ~~**Safe save**~~ **done (ADR 0015):** Save and Save As (temp file → validate → atomic
    rename). The original is never written in place; signed files are saved incrementally. The
    app asks before a modified tab, window, or the app closes.
@@ -223,9 +223,14 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 
 - [ ] Markup, notes, text boxes, ink
 - [ ] Comments panel
-- [~] Page organizer (reorder/rotate/delete/merge/split/extract): rotate, delete, duplicate and
-      insert blank on the current page, from the palette, in both directions; the core also
-      moves pages. No page grid yet.
+- [~] Page organizer (reorder/rotate/delete/merge/split/extract):
+      - The Pages tool shows a virtualized grid (React Aria `GridList` + `GridLayout`).
+      - Select pages with click, Shift and Cmd/Ctrl; drag to reorder; move earlier or later.
+      - Rotate, delete, duplicate and insert act on the selection.
+      - Both directions: the grid flows right to left in Arabic.
+      - Still to come: merging, extracting and splitting (slice 4).
+      - Pointer dragging is untested: browser automation cannot start a native drag. The drop
+        arithmetic is unit-tested, and the move commands are the keyboard path.
 - [x] Undo journal: undo and redo for page edits (`EditHistory`, ADR 0014); annotations will
       use it too
 - [x] Safe save pipeline (ADR 0015):
@@ -320,8 +325,12 @@ Plan, in order: every later slice edits documents, so the editing model and savi
   - **Self-test:** checks an edit and its undo in the real app in both directions.
   - **Save and Save As** (ADR 0015). The app asks before closing a modified tab, window, or the
     whole app; the self-test checks the window prompt.
+  - **Page organizer:** the Pages tool shows a page grid with multi-select, drag to reorder,
+    and move earlier/later. The self-test drives it on multi-page files.
+  - **`selftest.sh`** now refuses to run when port 1420 already serves a UI. It used to test
+    another checkout's UI silently.
   - **Draft PR #2** is open with Auto-fix on.
-  - **Tests:** 142 Rust and 126 UI tests pass on this Mac.
+  - **Tests:** 142 Rust and 128 UI tests pass on this Mac.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 

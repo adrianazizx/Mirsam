@@ -143,11 +143,35 @@ async function navigationChecks(documentId: number) {
     if (isTauri()) {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("selftest_request_close");
-      closePrompted = await waitFor(() => useAppStore.getState().closePrompt?.kind === "window", 5_000);
+      closePrompted = await waitFor(
+        () => useAppStore.getState().closePrompt?.kind === "window",
+        5_000,
+      );
       await runCommand("app.cancelClose");
     }
     await runCommand("edit.undo");
     const pagesAfterUndo = (await backend.pageSizes(documentId)).length;
+
+    // The page organizer, when there is more than one page: its grid draws,
+    // and moving the first page later puts it second.
+    let organizer: { gridImages: number; moved: boolean } | null = null;
+    if (pagesBefore >= 2) {
+      const text = async (page: number) =>
+        (await backend.pageText(documentId, page)).blocks
+          .map((block) => block.lines.map((line) => line.text).join("\n"))
+          .join("\n\n");
+      const first = await text(0);
+      useAppStore.getState().setActiveTool("pages");
+      const drawn = await waitFor(() => document.querySelector('[role="grid"] canvas') !== null, 10_000);
+      const gridImages = drawn ? document.querySelectorAll('[role="grid"] canvas').length : 0;
+      useAppStore.getState().setSelectedPages(documentId, [0]);
+      await runCommand("pages.moveLater");
+      const moved = (await text(1)) === first && first.length > 0;
+      await runCommand("edit.undo");
+      useAppStore.getState().setActiveTool("select");
+      await waitForPagePainted(0, 10_000);
+      organizer = { gridImages, moved };
+    }
     const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
     return {
       pagesBefore,
@@ -156,6 +180,7 @@ async function navigationChecks(documentId: number) {
       editMs,
       repainted,
       closePrompted,
+      organizer,
       modifiedAfterUndo: open?.modified ?? null,
       revision: open?.revision ?? null,
     };

@@ -208,8 +208,9 @@ jobs:
         run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/warmup en light || true
       - name: English, light
         run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/en en light
+      # Three pages, so the self-test also drives the page organizer.
       - name: Arabic, dark
-        run: scripts/selftest.sh fixtures/out/chrome/contract-two-column.pdf selftest-out/ar ar dark
+        run: scripts/selftest.sh fixtures/out/derived/page-labels.pdf selftest-out/ar ar dark
       - name: Check the reports
         run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
       # GTK's print path, exported to a file instead of the dialog (ADR 0013):

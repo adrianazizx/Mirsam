@@ -97,7 +97,11 @@
       "rotateCounterclockwise": "Rotate page counterclockwise",
       "delete": "Delete page",
       "duplicate": "Duplicate page",
-      "insertBlank": "Insert blank page after this one"
+      "insertBlank": "Insert blank page after this one",
+      "moveEarlier": "Move pages earlier",
+      "moveLater": "Move pages later",
+      "move": "Move pages",
+      "open": "Open page"
     }
   },
   "viewer": {
@@ -218,5 +222,11 @@
     "closeAnyway": "Close without saving",
     "quitAnyway": "Quit without saving",
     "cancel": "Cancel"
+  },
+  "pages": {
+    "organizer": "Organize the pages of {{name}}",
+    "actions": "Page actions",
+    "grid": "Pages of {{name}}",
+    "selected": "Selected: {{count}}"
   }
 }
