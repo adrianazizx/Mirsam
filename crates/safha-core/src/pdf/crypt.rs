@@ -189,9 +189,9 @@ impl Crypt {
         self.reverse(self.strings, number, generation, data)
     }
 
-    /// The inverse of [`encrypt_stream`](Self::encrypt_stream), for tests.
-    #[cfg(test)]
-    fn decrypt_stream(&self, number: u32, generation: u16, data: &[u8]) -> Option<Vec<u8>> {
+    /// The inverse of [`encrypt_stream`](Self::encrypt_stream): a stream of
+    /// object `number` as written, decrypted (a page's content, to read it).
+    pub(crate) fn decrypt_stream(&self, number: u32, generation: u16, data: &[u8]) -> Option<Vec<u8>> {
         self.reverse(self.streams, number, generation, data)
     }
 

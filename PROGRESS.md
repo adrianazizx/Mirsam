@@ -342,8 +342,14 @@ Plan, in order:
    `contenteditable` came within a pixel with the UI's own fonts, but it cannot draw a PDF's
    embedded fonts, which in-place editing must reuse. Typing on our surface takes one frame
    (17 ms) on WebKit. WebView2 and WebKitGTK are not measured yet.
-4. **Page analysis → edit model:** text objects with font, size, matrix and colour, then
-   lines, then blocks; direction, alignment, spacing, lists.
+4. ~~**Page analysis → edit model**~~ **done (ADR 0023):**
+   - blocks with styled runs (font, size, colour), alignment and line pitch;
+   - each block traced to the content-stream operations that drew it, by our own content
+     reader;
+   - removing a block's operations removes exactly that block: checked on all 144 fully traced
+     fixture blocks, with no pixel changed outside them.
+
+   Still to do: indentation, lists, and text inside forms.
 5. **In-place editing with reflow** inside a block's box: reuse the embedded font when it has
    the glyphs, otherwise substitute for the whole paragraph (with an indicator); remove the
    block's text objects and write the new ones, keeping z-order and clipping.
@@ -469,7 +475,19 @@ Plan, in order:
     up to 416 Arabic characters), with 0.4–1.9 ms of engine time.
   - Decision: our own surface, because only it can draw a PDF's embedded fonts.
   - New in `typeset`: `caret_stops` and `glyph_outline`, the real editor's first pieces.
-- **Tests:** 273 Rust and 155 UI tests pass on this Mac.
+- **Page analysis (ADR 0023):**
+  - Each block now carries styled runs, alignment, line pitch, and the content-stream
+    operations that drew it, read by a new content reader (`pdf::content`).
+  - **Tracing:**
+    - PDFium numbers right-to-left text in reading order, while Chrome draws it left to
+      right a glyph at a time, so characters are matched to operations by position, object
+      by object;
+    - offset marks take the nearest operation;
+    - glyphs with no Unicode mapping (Arabic dots drawn apart) go to the block they are in.
+  - **Removing a block** (`without_text`) blanks its operations in a new content stream.
+  - **Corpus result:** 6 of 8,450 characters untraced. Every other block is removed with no
+    pixel changed outside it.
+- **Tests:** 285 Rust and 155 UI tests pass on this Mac.
 
 ### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
 

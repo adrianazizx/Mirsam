@@ -22,6 +22,12 @@
 //! numbers (`pdf::crypt`). Copied resources that hold strings would no longer
 //! decrypt under the page's number; such a page is refused.
 
+mod analyze;
+
+use analyze::decoded_contents;
+pub use analyze::{BlockAlign, EditBlock, EditLine, PageAnalysis, RunStyle, SourceOp, StyledRun};
+pub(crate) use analyze::{CharInfo, build as build_analysis, page_ops};
+
 use crate::edit::{PageTree, Start, contains_string, set};
 use crate::error::{Error, Result};
 use crate::fonts::{FontFamily, for_text};
@@ -198,6 +204,66 @@ pub fn add_text_update(
     set(&mut page, b"Contents", Object::Array(contents));
     set(&mut page, b"Resources", Object::Dict(resources));
     update.object(leaf.number, leaf.generation, &Object::Dict(page));
+    Ok(update.finish(form, file.trailer.clone(), section, next_number))
+}
+
+/// The bytes to append to `bytes` to take the text-showing operations `ops`
+/// (from [`crate::Document::edit_blocks`] of the same revision) off page
+/// `page`: an incremental update (ADR 0023). Each content stream they are in
+/// is written again, under a new number, with those operations blanked out;
+/// the page's `/Contents` points at the new streams. Everything else keeps
+/// its bytes, so graphics, z-order, and clipping are untouched; and a stream
+/// other pages share is left as it is for them.
+pub fn remove_text_update(
+    bytes: &[u8],
+    password: Option<&str>,
+    page: usize,
+    ops: &[SourceOp],
+) -> Result<Vec<u8>> {
+    if ops.is_empty() {
+        return Err(Error::InvalidEdit("no text to remove"));
+    }
+    let Start { file, section, form, mut next_number } = Start::read(bytes)?;
+    let tree = PageTree::read(&file)?;
+    let leaf =
+        tree.leaves.get(page).ok_or(Error::PageOutOfRange { index: page, count: tree.leaves.len() })?;
+    let crypt = Crypt::of(&file, password)?;
+    let mut contents = page_contents(&file, &leaf.dict)?;
+    let (mut streams, complete) = decoded_contents(&file, crypt.as_ref(), &contents);
+    if !complete {
+        return Err(Error::EditUnsupported("the page's content cannot be read"));
+    }
+    let mut changed = vec![false; streams.len()];
+    for op in ops {
+        let stream = streams.get_mut(op.stream).ok_or(Error::InvalidEdit("no such content stream"))?;
+        let bytes = stream.get_mut(op.range.clone()).ok_or(Error::InvalidEdit("no such operation"))?;
+        // Blanks keep every other operator where it was, and its neighbours apart.
+        bytes.fill(b' ');
+        changed[op.stream] = true;
+    }
+    let mut update = Update::new(bytes);
+    for (index, data) in streams.iter().enumerate() {
+        if !changed[index] {
+            continue;
+        }
+        let number = next_number;
+        next_number = number.checked_add(1).ok_or(Error::EditUnsupported("it has too many objects"))?;
+        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(data, 6);
+        let data = match crypt.as_ref() {
+            Some(crypt) => crypt.encrypt_stream(number, 0, &compressed),
+            None => compressed,
+        };
+        update.stream(
+            number,
+            0,
+            Dict(vec![(b"Filter".to_vec(), Object::Name(b"FlateDecode".to_vec()))]),
+            &data,
+        );
+        contents[index] = Object::Ref(number, 0);
+    }
+    let mut dict = leaf.dict.clone();
+    set(&mut dict, b"Contents", Object::Array(contents));
+    update.object(leaf.number, leaf.generation, &Object::Dict(dict));
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
 }
 
