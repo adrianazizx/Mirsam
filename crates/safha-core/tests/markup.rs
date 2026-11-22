@@ -320,12 +320,15 @@ fn annotated_pdf() -> Vec<u8> {
 fn an_annots_array_of_its_own_is_rewritten_in_place() {
     let document = engine().open_bytes(annotated_pdf(), None).expect("opens");
     let (markup, _) = document.page_annotations(0).expect("markup");
-    // The highlight and the reply (a note); the pop-up and the link are not listed.
+    // The highlight; the pop-up, the reply (in the highlight's thread, ADR
+    // 0041) and the link are not on the page as annotations of their own.
     assert_eq!(
         markup.iter().map(|m| (m.index, m.kind)).collect::<Vec<_>>(),
-        [(0, AnnotationKind::Highlight), (2, AnnotationKind::Note)]
+        [(0, AnnotationKind::Highlight)]
     );
-    assert_eq!(markup[1].contents.as_deref(), Some("A reply"));
+    let comments = document.comments().expect("comments");
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].replies.iter().map(|r| r.contents.as_str()).collect::<Vec<_>>(), ["A reply"]);
 
     // Adding appends to the array object; the page still points at it.
     let rect = ViewRect { x: 10.0, y: 40.0, width: 60.0, height: 12.0 };
@@ -337,7 +340,7 @@ fn an_annots_array_of_its_own_is_rewritten_in_place() {
     let (markup, _) = added.page_annotations(0).expect("markup");
     assert_eq!(
         markup.iter().map(|m| (m.index, m.kind)).collect::<Vec<_>>(),
-        [(0, AnnotationKind::Highlight), (2, AnnotationKind::Note), (4, AnnotationKind::StrikeOut)]
+        [(0, AnnotationKind::Highlight), (4, AnnotationKind::StrikeOut)]
     );
 
     // Removing the highlight takes its pop-up and the reply along; the link stays.

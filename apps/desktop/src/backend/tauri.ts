@@ -4,6 +4,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   type AppInfo,
   type Backend,
+  type DocumentComment,
   type EditOutcome,
   isBackendError,
   type OpenOutcome,
@@ -186,6 +187,11 @@ export const tauriBackend: Backend = {
     invoke<void>("selftest_report", { report: { results, canvasPng } }),
   renderStats: async () => ((await hasDevtools()) ? invoke<RenderStats>("render_stats") : null),
   windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
+  documentComments: (documentId) => invoke<DocumentComment[]>("document_comments", { documentId }),
+  replyToComment: (documentId, page, index, contents) =>
+    invoke<EditOutcome>("reply_to_comment", { documentId, page, index, contents }),
+  setCommentResolved: (documentId, page, index, resolved) =>
+    invoke<EditOutcome>("set_comment_resolved", { documentId, page, index, resolved }),
   restoreRecovery: (token) => invoke<RestoreOutcome>("restore_recovery", { token }),
   unlockRecovery: (token, password) =>
     invoke<RestoreOutcome>("unlock_recovery", { token, password }),

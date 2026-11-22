@@ -55,6 +55,35 @@ export interface PageAnnotation {
   strokes: [number, number][][];
 }
 
+/** A reply in a comment's thread (ADR 0041). */
+export interface CommentReply {
+  index: number;
+  author: string | null;
+  /** Unix seconds. */
+  modified: number | null;
+  contents: string;
+}
+
+/** A comment as the comments panel lists it (ADR 0041). */
+export interface DocumentComment {
+  page: number;
+  /** Its position in the page's annotations; what the comment commands take. */
+  index: number;
+  kind: AnnotationKind;
+  author: string | null;
+  /** Unix seconds. */
+  modified: number | null;
+  /** A note's or text box's text, or a comment on markup. */
+  contents: string | null;
+  /** For markup, the page's text under it. */
+  markedText: string | null;
+  /** Where it is on the displayed page. */
+  rect: ViewRect;
+  resolved: boolean;
+  /** Oldest first. */
+  replies: CommentReply[];
+}
+
 /** A point of a pen stroke on the displayed page, with the pen's pressure (0–1). */
 export interface StrokePoint {
   x: number;
@@ -439,6 +468,22 @@ export interface Backend {
   discardRecovery(token: number): Promise<void>;
   /** Whether a document's changes are kept in a recovery file; devtools builds only (the self-test). */
   hasRecoveryFile(documentId: number): Promise<boolean | null>;
+  /** Every comment in the document, page by page (ADR 0041). */
+  documentComments(documentId: number): Promise<DocumentComment[]>;
+  /** Answers a comment; signed with the `commentAuthor` setting. */
+  replyToComment(
+    documentId: number,
+    page: number,
+    index: number,
+    contents: string,
+  ): Promise<EditOutcome>;
+  /** Marks a comment resolved, or open again. */
+  setCommentResolved(
+    documentId: number,
+    page: number,
+    index: number,
+    resolved: boolean,
+  ): Promise<EditOutcome>;
   /** Removes annotations of one page (with their pop-ups and replies) in one undo step. */
   removeAnnotations(documentId: number, page: number, indices: number[]): Promise<EditOutcome>;
   /** The page's annotations of the kinds the app writes. */

@@ -30,6 +30,7 @@
   /* Sizes */
   --size-hit: 32px; /* minimum pointer target on desktop */
   --size-icon: 18px;
+  --size-icon-sm: 14px; /* inline with small text */
   --size-tabbar: 40px;
   --size-rail: 48px;
   --size-statusbar: 32px;
@@ -52,7 +53,9 @@
   --size-palette-row: 36px;
   --size-unlock-panel: 400px;
   --size-selection-toolbar-span: 480px;
+  --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
   --border-width: 1px;
+  --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;
 
   /* Typography */

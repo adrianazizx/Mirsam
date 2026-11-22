@@ -10,6 +10,7 @@
 //! when it is an object of its own). In an encrypted file the new objects,
 //! and new strings in changed ones, are encrypted (`pdf::crypt`).
 
+mod comments;
 mod ink;
 mod markup;
 mod note;
@@ -20,6 +21,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) use comments::threads;
+pub use comments::{Comment, Reply};
 pub use ink::{Ink, InkPoint};
 pub use markup::{Markup, MarkupKind, Quad};
 pub use note::{NOTE_SIZE, Note};
@@ -113,10 +116,25 @@ pub enum AnnotationEdit {
     },
     /// Removes the annotation at `index` of the page's `/Annots` (as
     /// [`crate::Document::page_annotations`] numbers them), with its pop-up
-    /// and replies. Only the kinds in [`AnnotationKind`].
+    /// and its thread (replies, replies to them, review states). Only the
+    /// kinds in [`AnnotationKind`].
     Remove {
         page: usize,
         index: usize,
+    },
+    /// Answers the comment at `index` (ADR 0041): a `/Text` annotation
+    /// with `/IRT`, drawn nowhere on the page.
+    Reply {
+        page: usize,
+        index: usize,
+        contents: String,
+    },
+    /// Marks the comment at `index` resolved (`/State /Completed`) or open
+    /// again (`/State /None`), with a new review state in its thread.
+    SetResolved {
+        page: usize,
+        index: usize,
+        resolved: bool,
     },
 }
 
@@ -124,10 +142,22 @@ pub enum AnnotationEdit {
 pub(crate) const MAX_COORDINATE: f32 = 1.0e6;
 /// The longest note, in UTF-16 code units.
 pub const MAX_CONTENTS: usize = 20_000;
+/// The longest author name (`/T`), in UTF-16 code units.
+pub const MAX_AUTHOR: usize = 256;
 
 /// The bytes to append to `bytes` to apply `edit`. `password` is the one the
 /// document was opened with, needed to encrypt new objects and strings.
-pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &AnnotationEdit) -> Result<Vec<u8>> {
+/// `author` names who made new annotations (`/T`); none when empty.
+pub fn annotation_update(
+    bytes: &[u8],
+    password: Option<&str>,
+    author: Option<&str>,
+    edit: &AnnotationEdit,
+) -> Result<Vec<u8>> {
+    let author = author.map(str::trim).filter(|author| !author.is_empty());
+    if author.is_some_and(|author| author.encode_utf16().count() > MAX_AUTHOR) {
+        return Err(Error::InvalidEdit("an author's name holds at most 256 characters"));
+    }
     let Start { file, section, form, mut next_number } = Start::read(bytes)?;
     let tree = PageTree::read(&file)?;
     let leaf = |page: usize| {
@@ -136,6 +166,7 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
     let mut writer = Writer {
         file: &file,
         password,
+        author,
         crypt: None,
         update: Update::new(bytes),
         next_number: &mut next_number,
@@ -229,16 +260,25 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
                 .ok_or(Error::EditUnsupported("this annotation cannot be read"))?;
             kind_of(&dict)
                 .ok_or(Error::InvalidEdit("only markup, ink, notes, and text boxes can be removed so far"))?;
-            // Its pop-up, and replies to it (with theirs), go with it.
+            // Its pop-up, and its thread (replies, replies to those, review
+            // states, each with its pop-up), go with it.
             let mut doomed = vec![target.clone()];
             doomed.extend(popup(&dict));
             if matches!(target, Object::Ref(..)) {
-                for item in &annots.items {
-                    if let Some(reply) = resolve_dict(&file, item)
-                        && reply.get(b"IRT") == Some(&target)
-                    {
-                        doomed.push(item.clone());
-                        doomed.extend(popup(&reply));
+                let entries: Vec<(Object, Dict)> = annots
+                    .items
+                    .iter()
+                    .filter_map(|item| Some((item.clone(), resolve_dict(&file, item)?)))
+                    .filter(|(_, dict)| dict.get(b"IRT").is_some())
+                    .collect();
+                let mut thread = vec![target.clone()];
+                while let Some(parent) = thread.pop() {
+                    for (item, reply) in &entries {
+                        if reply.get(b"IRT") == Some(&parent) && !doomed.contains(item) {
+                            doomed.push(item.clone());
+                            doomed.extend(popup(reply));
+                            thread.push(item.clone());
+                        }
                     }
                 }
             }
@@ -250,9 +290,56 @@ pub fn annotation_update(bytes: &[u8], password: Option<&str>, edit: &Annotation
             });
             annots.write(&mut writer.update, leaf);
         }
+        AnnotationEdit::Reply { page, index, contents } => {
+            check_contents(contents)?;
+            if contents.trim().is_empty() {
+                return Err(Error::InvalidEdit("a reply needs some text"));
+            }
+            let leaf = leaf(*page)?;
+            let (target, rect) = thread_target(&file, leaf, *index)?;
+            let entries = comments::thread_entries(&target, Some(contents), None);
+            writer.add_with(
+                leaf,
+                b"Text",
+                Note::DEFAULT_COLOR,
+                &comments::empty_appearance(rect),
+                entries,
+                comments::REPLY_FLAGS,
+            )?;
+        }
+        AnnotationEdit::SetResolved { page, index, resolved } => {
+            let leaf = leaf(*page)?;
+            let (target, rect) = thread_target(&file, leaf, *index)?;
+            let entries = comments::thread_entries(&target, None, Some(*resolved));
+            writer.add_with(
+                leaf,
+                b"Text",
+                Note::DEFAULT_COLOR,
+                &comments::empty_appearance(rect),
+                entries,
+                comments::STATE_FLAGS,
+            )?;
+        }
     }
     let update = writer.update;
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
+}
+
+/// The pages that have annotations (a non-empty `/Annots`), or `None` where
+/// our parser cannot read the page tree (then any page may have some).
+pub(crate) fn annotated_pages(bytes: &[u8]) -> Option<std::collections::HashSet<usize>> {
+    let Start { file, .. } = Start::read(bytes).ok()?;
+    let tree = PageTree::read(&file).ok()?;
+    let mut out = std::collections::HashSet::new();
+    for (index, leaf) in tree.leaves.iter().enumerate() {
+        match Annots::read(&file, leaf) {
+            Ok(annots) if annots.items.is_empty() => {}
+            _ => {
+                out.insert(index);
+            }
+        }
+    }
+    Some(out)
 }
 
 /// The strokes (`/InkList`) of each ink annotation on `page`, by position in
@@ -293,6 +380,26 @@ pub fn ink_strokes(bytes: &[u8], page: usize) -> HashMap<usize, Vec<Vec<(f32, f3
         out.insert(index, strokes);
     }
     out
+}
+
+/// The comment at `index` of the page's `/Annots` that a reply or a review
+/// state can answer: an object of its own (`/IRT` names it), of a kind the
+/// app knows, that answers nothing itself. Its reference and `/Rect`.
+fn thread_target(file: &File<'_>, leaf: &Leaf, index: usize) -> Result<(Object, [f32; 4])> {
+    let annots = Annots::read(file, leaf)?;
+    let target = annots.items.get(index).cloned().ok_or(Error::InvalidEdit("no such annotation"))?;
+    if !matches!(target, Object::Ref(..)) {
+        return Err(Error::EditUnsupported("this annotation is not an object of its own"));
+    }
+    let dict = resolve_dict(file, &target).ok_or(Error::EditUnsupported("this annotation cannot be read"))?;
+    if kind_of(&dict).is_none() {
+        return Err(Error::InvalidEdit("only markup, ink, notes, and text boxes take replies so far"));
+    }
+    if dict.get(b"IRT").is_some() {
+        return Err(Error::InvalidEdit("a reply is answered in its comment's thread"));
+    }
+    let rect = rect_of(file, &dict).ok_or(Error::EditUnsupported("this annotation has no place"))?;
+    Ok((target, rect))
 }
 
 fn number(object: &Object) -> Option<f32> {
@@ -345,6 +452,8 @@ pub(crate) fn in_range((x, y): (f32, f32)) -> bool {
 struct Writer<'a, 'f> {
     file: &'a File<'f>,
     password: Option<&'a str>,
+    /// `/T` of new annotations.
+    author: Option<&'a str>,
     /// The file's security handler, once asked for (`None` before).
     crypt: Option<Option<Crypt>>,
     update: Update,
@@ -392,7 +501,8 @@ impl Writer<'_, '_> {
     }
 
     /// Appends the appearance stream and the annotation, and adds the
-    /// annotation to the page's `/Annots`. `entries` go after `/Rect`.
+    /// annotation to the page's `/Annots`. `entries` go after `/Rect`. It
+    /// prints with the page, as in other viewers.
     fn add(
         &mut self,
         leaf: &Leaf,
@@ -400,6 +510,19 @@ impl Writer<'_, '_> {
         color: [f32; 3],
         appearance: &Appearance,
         entries: Vec<(Vec<u8>, Object)>,
+    ) -> Result<()> {
+        self.add_with(leaf, subtype, color, appearance, entries, 4)
+    }
+
+    /// [`Writer::add`] with its annotation flags (`/F`).
+    fn add_with(
+        &mut self,
+        leaf: &Leaf,
+        subtype: &[u8],
+        color: [f32; 3],
+        appearance: &Appearance,
+        entries: Vec<(Vec<u8>, Object)>,
+        flags: i64,
     ) -> Result<()> {
         let annotation = self.take_number()?;
         let stream = self.write_appearance(appearance)?;
@@ -412,10 +535,12 @@ impl Writer<'_, '_> {
             (b"Rect".to_vec(), Object::Array(appearance.rect.iter().map(|v| real(*v)).collect())),
         ];
         dict.extend(entries);
+        if let Some(author) = self.author {
+            dict.push((b"T".to_vec(), Object::Str(text_string(author))));
+        }
         dict.extend([
             (b"C".to_vec(), Object::Array(color.iter().map(|v| real(*v)).collect())),
-            // Print: annotations print with the page, as in other viewers.
-            (b"F".to_vec(), Object::Int(4)),
+            (b"F".to_vec(), Object::Int(flags)),
             (b"P".to_vec(), Object::Ref(leaf.number, leaf.generation)),
             (b"NM".to_vec(), Object::Str(unique_name())),
             (b"M".to_vec(), Object::Str(now.clone())),
@@ -572,6 +697,49 @@ fn pdf_date(time: SystemTime) -> Vec<u8> {
         .into_bytes()
 }
 
+/// A PDF date (`D:YYYYMMDDHHmmSSOHH'mm`, ISO 32000-2, 7.9.4) in Unix
+/// seconds. Everything after the year is optional; a missing offset is UTC.
+pub(crate) fn parse_pdf_date(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let text = text.strip_prefix("D:").unwrap_or(text);
+    let digits = text.bytes().take_while(u8::is_ascii_digit).count();
+    if digits < 4 {
+        return None;
+    }
+    let field = |at: usize, len: usize, default: i64| -> Option<i64> {
+        if at + len > digits { Some(default) } else { text.get(at..at + len)?.parse().ok() }
+    };
+    let (year, month, day) = (field(0, 4, 0)?, field(4, 2, 1)?, field(6, 2, 1)?);
+    let (hour, minute, second) = (field(8, 2, 0)?, field(10, 2, 0)?, field(12, 2, 0)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    let rest = text.get(digits..).unwrap_or("");
+    let offset = match rest.as_bytes().first() {
+        Some(sign @ (b'+' | b'-')) => {
+            let numbers: Vec<i64> =
+                rest[1..].split(|c: char| !c.is_ascii_digit()).filter_map(|n| n.parse().ok()).collect();
+            let minutes = numbers.first().copied().unwrap_or(0) * 60 + numbers.get(1).copied().unwrap_or(0);
+            if *sign == b'+' { minutes } else { -minutes }
+        }
+        _ => 0,
+    };
+    let days = days_from_civil(year, month, day);
+    Some(days * 86_400 + hour * 3600 + minute * 60 + second - offset * 60)
+}
+
+/// Days from 1970-01-01 to a proleptic Gregorian date (Howard Hinnant's
+/// `days_from_civil`).
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let yoe = year.rem_euclid(400);
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 /// Year, month, day of a day count from 1970-01-01 (proleptic Gregorian;
 /// Howard Hinnant's `civil_from_days`).
 fn civil_from_days(days: i64) -> (i64, i64, i64) {
@@ -606,6 +774,24 @@ mod tests {
         assert_eq!(pdf_date(time), b"D:20010909014640Z");
         assert_eq!(civil_from_days(0), (1970, 1, 1));
         assert_eq!(civil_from_days(19_782), (2024, 2, 29));
+    }
+
+    #[test]
+    fn dates_are_read_back_with_their_offsets() {
+        assert_eq!(parse_pdf_date("D:20010909014640Z"), Some(1_000_000_000));
+        let written = pdf_date(UNIX_EPOCH + std::time::Duration::from_secs(1_795_000_000));
+        assert_eq!(parse_pdf_date(std::str::from_utf8(&written).expect("ascii")), Some(1_795_000_000));
+        // 03:00 in Riyadh is midnight UTC.
+        assert_eq!(parse_pdf_date("D:20261122030000+03'00'"), parse_pdf_date("D:20261122000000Z"));
+        assert_eq!(parse_pdf_date("D:20261121190000-05'00"), parse_pdf_date("D:20261122000000"));
+        assert_eq!(parse_pdf_date("D:2026"), parse_pdf_date("D:20260101000000Z"));
+        assert_eq!(parse_pdf_date("1970"), Some(0));
+        assert_eq!(parse_pdf_date("D:20261322"), None, "month 13");
+        assert_eq!(parse_pdf_date("yesterday"), None);
+        for days in [-1, 0, 59, 19_782, 20_779] {
+            let (y, m, d) = civil_from_days(days);
+            assert_eq!(days_from_civil(y, m, d), days);
+        }
     }
 
     #[test]

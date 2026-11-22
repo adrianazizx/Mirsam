@@ -95,6 +95,16 @@ if (nav) {
     check(notes.boxMatches, "the text box's Arabic text did not come back as written");
     check(notes.boxPainted && notes.boxPixels > enough, `the text box was not painted (${of(notes.boxPixels)})`);
     check(notes.erased, "the eraser did not remove the stroke");
+    // The comments panel (ADR 0041).
+    const comments = notes.comments;
+    check(
+      JSON.stringify(comments?.kinds) === JSON.stringify(["ink", "note", "textBox"]),
+      `the comments listed were ${JSON.stringify(comments?.kinds)}`,
+    );
+    check(comments?.replied, "the reply to the note did not read back");
+    check(comments?.resolved, "the note was not resolved");
+    check(comments?.panelItems >= 3, `the comments panel showed ${comments?.panelItems} comments`);
+    check(comments?.replyOnPage === 3, `replies and states counted as page annotations (${comments?.replyOnPage})`);
     check(notes.cleared, "undo did not take the note, the text box, and the stroke away");
   }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
@@ -148,7 +158,8 @@ if (nav) {
     console.log(
       `  notes, text boxes, ink: note ${n.notePixels} px, text kept ${n.noteMatches}; ` +
         `text box ${n.boxPixels} px, text kept ${n.boxMatches}; stroke ${n.inkPixels} px, ` +
-        `erased ${n.erased}, undone ${n.cleared}`,
+        `erased ${n.erased}, undone ${n.cleared}; comments ${JSON.stringify(n.comments?.kinds)}, ` +
+        `reply ${n.comments?.replied}, resolved ${n.comments?.resolved}, ${n.comments?.panelItems} in the panel`,
     );
   }
   if (nav.editing) {

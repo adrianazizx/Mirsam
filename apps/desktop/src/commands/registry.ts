@@ -16,8 +16,9 @@ import {
   selectActiveDocument,
   useAppStore,
 } from "../state/appStore";
+import type { CommentFilter, CommentSort } from "../state/comments";
 import { stepZoom } from "../state/zoom";
-import { NOTE_SIZE, TEXT_BOX_WIDTH } from "../viewer/controller";
+import { NOTE_SIZE, type SelectedAnnotation, TEXT_BOX_WIDTH } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { getViewer } from "../viewer/registry";
 import { isMac } from "./platform";
@@ -91,6 +92,14 @@ export interface CommandArg {
   /** `ink.erase`: the ink annotations touched, by index. */
   indices?: number[];
   /** `recovery.restore`, `recovery.discard`: the recovery file's token (`token` above). */
+  /** `comment.show`: the annotation to scroll to and select (`page`, `index` as for replies). */
+  annotation?: SelectedAnnotation;
+  /** `comment.resolve`: resolved (true) or open again (false). */
+  resolved?: boolean;
+  /** `comments.filter`: the filters to change. */
+  filter?: Partial<CommentFilter>;
+  /** `comments.sort`. */
+  sort?: CommentSort;
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -172,6 +181,13 @@ export type CommandId =
   | "view.toggleLeftPanel"
   | "view.showThumbnails"
   | "view.showOutline"
+  | "view.showComments"
+  | "comment.show"
+  | "comment.reply"
+  | "comment.resolve"
+  | "comments.filter"
+  | "comments.sort"
+  | "comments.setAuthor"
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
@@ -1189,6 +1205,74 @@ const COMMANDS: Command[] = [
   },
   { id: "view.showThumbnails", run: () => showPanel("thumbnails") },
   { id: "view.showOutline", run: () => showPanel("outline") },
+  { id: "view.showComments", run: () => showPanel("comments") },
+  {
+    // From the comments panel: the comment on its page, selected (ADR 0041).
+    id: "comment.show",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      const annotation = arg?.annotation;
+      if (!active || !annotation) return;
+      // The organizer shows no page view: back to the pages.
+      if (store().activeTool === "pages") store().setActiveTool("select");
+      store().updateDocument(active.id, { page: annotation.page });
+      getViewer(active.id)?.showAnnotation(annotation);
+    },
+  },
+  {
+    id: "comment.reply",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const text = arg?.text ?? "";
+      if (!active || arg?.page === undefined || arg.index === undefined || text.trim() === "") {
+        return;
+      }
+      const outcome = await backend.replyToComment(active.id, arg.page, arg.index, text);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "comment.resolve",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.index === undefined) return;
+      const outcome = await backend.setCommentResolved(
+        active.id,
+        arg.page,
+        arg.index,
+        arg.resolved ?? true,
+      );
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "comments.filter",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.filter) store().setCommentFilter(arg.filter);
+    },
+  },
+  {
+    id: "comments.sort",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.sort) store().setCommentSort(arg.sort);
+    },
+  },
+  {
+    // The name written on new comments; the shell reads the stored setting.
+    id: "comments.setAuthor",
+    paletteHidden: true,
+    run(arg) {
+      store().setCommentAuthor(arg?.text ?? "");
+    },
+  },
   { id: "view.readingNormal", run: () => setReadingTheme("normal") },
   { id: "view.readingSepia", run: () => setReadingTheme("sepia") },
   { id: "view.readingNight", run: () => setReadingTheme("night") },

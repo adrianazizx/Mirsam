@@ -12,7 +12,7 @@ use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use safha_core::annotate::{
-    AnnotationEdit, AnnotationKind, Ink, InkPoint, Markup, MarkupKind, Note, Quad, TextBox,
+    AnnotationEdit, AnnotationKind, Ink, InkPoint, Markup, MarkupKind, Note, Quad, Reply, TextBox,
 };
 use safha_core::edit::{Change, EditHistory, PageEdit};
 use safha_core::view::ViewRect;
@@ -92,6 +92,18 @@ pub struct MarkedPage {
     rects: Vec<ViewRect>,
 }
 
+/// The setting that names who makes new annotations (ADR 0041).
+pub const COMMENT_AUTHOR: &str = "commentAuthor";
+
+/// The name new annotations are signed with (`/T`): the user's own choice
+/// (the `commentAuthor` setting), never guessed from the system. None when
+/// unset.
+fn author(state: &AppState) -> Option<String> {
+    let name = state.store()?.setting(COMMENT_AUTHOR).ok().flatten()?;
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 /// Applies annotation edits to a document as one undo step.
 fn edit_annotations(
     state: &AppState,
@@ -102,7 +114,7 @@ fn edit_annotations(
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let edits = edits(&document)?;
-    let (revision, update) = document.with_annotation_edits(&edits)?;
+    let (revision, update) = document.with_annotation_edits_by(&edits, author(state).as_deref())?;
     history.push_annotations(update);
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
@@ -235,6 +247,88 @@ pub async fn remove_annotations(
     edit_annotations(&state, document_id, |_| {
         Ok(indices.into_iter().map(|index| AnnotationEdit::Remove { page, index }).collect())
     })
+}
+
+/// Answers a comment (ADR 0041).
+#[tauri::command]
+pub async fn reply_to_comment(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    index: usize,
+    contents: String,
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |_| Ok(vec![AnnotationEdit::Reply { page, index, contents }]))
+}
+
+/// Marks a comment resolved, or open again (ADR 0041).
+#[tauri::command]
+pub async fn set_comment_resolved(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    index: usize,
+    resolved: bool,
+) -> CommandResult<EditOutcome> {
+    edit_annotations(&state, document_id, |_| Ok(vec![AnnotationEdit::SetResolved { page, index, resolved }]))
+}
+
+/// A comment as the comments panel lists it (ADR 0041).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentWire {
+    page: usize,
+    /// What `reply_to_comment`, `set_comment_resolved` and
+    /// `remove_annotations` take.
+    index: usize,
+    kind: AnnotationKind,
+    author: Option<String>,
+    /// Unix seconds.
+    modified: Option<i64>,
+    contents: Option<String>,
+    marked_text: Option<String>,
+    /// Where it is on the displayed page.
+    rect: ViewRect,
+    resolved: bool,
+    replies: Vec<Reply>,
+}
+
+/// Every comment in a document, page by page.
+#[tauri::command]
+pub async fn document_comments(
+    state: State<'_, AppState>,
+    document_id: u32,
+) -> CommandResult<Vec<CommentWire>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    tauri::async_runtime::spawn_blocking(move || comments_of(&document))
+        .await
+        .map_err(|err| CommandError::new("engine_error", err.to_string()))?
+}
+
+fn comments_of(document: &safha_core::Document) -> CommandResult<Vec<CommentWire>> {
+    let mut views = std::collections::HashMap::new();
+    let mut out = Vec::new();
+    for comment in document.comments()? {
+        let view = match views.entry(comment.page) {
+            std::collections::hash_map::Entry::Occupied(known) => *known.get(),
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                *slot.insert(document.view_transform(comment.page)?)
+            }
+        };
+        out.push(CommentWire {
+            page: comment.page,
+            index: comment.index,
+            kind: comment.kind,
+            author: comment.author,
+            modified: comment.modified,
+            contents: comment.contents,
+            marked_text: comment.marked_text,
+            rect: view.rect(comment.bounds),
+            resolved: comment.resolved,
+            replies: comment.replies,
+        });
+    }
+    Ok(out)
 }
 
 /// An annotation as the UI hit-tests and shows it.
@@ -559,7 +653,70 @@ pub fn quit_discarding(app: AppHandle, state: State<'_, AppState>) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+    use std::time::Instant;
+
+    use safha_core::store::Store;
+
     use super::*;
+    use crate::state::MAIN_WINDOW;
+
+    #[test]
+    fn comments_are_signed_with_the_chosen_name_and_answered() {
+        let dir = std::env::temp_dir().join(format!("safha-comments-shell-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/out/chrome/en-paragraphs.pdf");
+        assert!(fixture.is_file(), "fixture corpus missing: run `node fixtures/generate.mjs`");
+        let state = AppState::new(Instant::now(), None);
+        state.set_store(Store::open(&dir.join("state.sqlite3")).expect("store"));
+        let outcome = crate::commands::open_path(&state, &fixture, None, MAIN_WINDOW).expect("opens");
+        let id =
+            serde_json::to_value(&outcome).expect("json")["document"]["id"].as_u64().expect("opened") as u32;
+        let note = |state: &AppState, text: &str| {
+            edit_annotations(state, id, |document| {
+                let view = document.view_transform(0)?;
+                Ok(vec![AnnotationEdit::AddNote {
+                    page: 0,
+                    note: Note {
+                        rect: Note::rect_at(10.0, 10.0, &view),
+                        contents: text.into(),
+                        color: Note::DEFAULT_COLOR,
+                    },
+                }])
+            })
+            .expect("adds a note")
+        };
+
+        // No name chosen: none is written (the system's user name is not guessed).
+        note(&state, "first");
+        let comments = comments_of(&state.document(id).expect("document")).expect("comments");
+        assert_eq!(comments[0].author, None);
+
+        state.store().expect("store").set_setting(COMMENT_AUTHOR, "  مراجِع  ").expect("set");
+        note(&state, "second");
+        let comments = comments_of(&state.document(id).expect("document")).expect("comments");
+        assert_eq!(comments[1].author.as_deref(), Some("مراجِع"));
+        // Displayed-page coordinates, where the note was put.
+        assert!((comments[1].rect.x - 10.0).abs() < 0.5 && (comments[1].rect.y - 10.0).abs() < 0.5);
+
+        let index = comments[0].index;
+        edit_annotations(&state, id, |_| {
+            Ok(vec![AnnotationEdit::Reply { page: 0, index, contents: "تم".into() }])
+        })
+        .expect("replies");
+        let outcome = edit_annotations(&state, id, |_| {
+            Ok(vec![AnnotationEdit::SetResolved { page: 0, index, resolved: true }])
+        })
+        .expect("resolves");
+        assert!(!outcome.pages_changed && outcome.can_undo);
+        let comments = comments_of(&state.document(id).expect("document")).expect("comments");
+        assert_eq!(comments.len(), 2);
+        assert!(comments[0].resolved);
+        assert_eq!(comments[0].replies[0].author.as_deref(), Some("مراجِع"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn edits_arrive_in_the_shape_the_ui_sends() {

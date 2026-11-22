@@ -733,6 +733,18 @@ export class ViewerController {
     this.setSelectedAnnotation(null);
   }
 
+  /**
+   * Scrolls an annotation into view, a little below the top, and selects it
+   * as a click on it would (the comments panel, ADR 0041).
+   */
+  showAnnotation(annotation: SelectedAnnotation): void {
+    const height = this.sizes?.[annotation.page]?.height ?? 0;
+    const above = 24;
+    this.goToPage(annotation.page, height > 0 ? (annotation.rect.y - above) / height : 0);
+    this.setSelection(null);
+    this.setSelectedAnnotation(annotation);
+  }
+
   /** The selected text's runs, page by page: what marking it covers (ADR 0017). */
   selectionMarks(): MarkedPage[] {
     return [...this.selectionRects]

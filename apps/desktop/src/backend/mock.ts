@@ -1,6 +1,8 @@
 import type {
   AnnotationKind,
   Backend,
+  CommentReply,
+  DocumentComment,
   DocumentInfo,
   EditOutcome,
   KeptRequest,
@@ -172,6 +174,32 @@ interface MockMarkup {
   rects: ViewRect[];
   contents: string | null;
   strokes: [number, number][][];
+  /** Its thread (ADR 0041): who and when, replies, and whether it is resolved. */
+  author?: string | null;
+  modified?: number;
+  replies?: CommentReply[];
+  resolved?: boolean;
+}
+
+/** Who and when, for a new annotation or reply: the `commentAuthor` setting, now. */
+function signed(): { author: string | null; modified: number } {
+  const author = (loadSettings().commentAuthor ?? "").trim();
+  return { author: author === "" ? null : author, modified: Math.floor(Date.now() / 1000) };
+}
+
+/** Changes the comment at `index` of `page`, as one undoable step. */
+function withComment(
+  documentId: number,
+  page: number,
+  index: number,
+  change: (comment: MockMarkup) => MockMarkup,
+): EditOutcome {
+  const next = withMarkup(documentId, page, (list) => {
+    const found = list[index];
+    if (!found) throw { code: "invalid_edit", detail: "no such annotation" };
+    return list.map((item, i) => (i === index ? change(item) : item));
+  });
+  return pushState(documentId, next);
 }
 
 /**
@@ -651,7 +679,7 @@ export const mockBackend: Backend = {
       const markup = new Map(state.markup);
       markup.set(original, [
         ...(markup.get(original) ?? []),
-        { kind, rects, contents: null, strokes: [] },
+        { kind, rects, contents: null, strokes: [], ...signed() },
       ]);
       state = { pages: state.pages, markup, change: "annotations" };
     }
@@ -673,6 +701,7 @@ export const mockBackend: Backend = {
       rects: [rect],
       contents: null,
       strokes: strokes.map((stroke) => stroke.map((p): [number, number] => [p.x, p.y])),
+      ...signed(),
     };
     return pushState(
       documentId,
@@ -685,6 +714,7 @@ export const mockBackend: Backend = {
       rects: [{ x, y, width: 20, height: 20 }],
       contents,
       strokes: [],
+      ...signed(),
     };
     return pushState(
       documentId,
@@ -699,6 +729,7 @@ export const mockBackend: Backend = {
       rects: [{ x, y, width, height: lines * 16 + 4 }],
       contents,
       strokes: [],
+      ...signed(),
     };
     return pushState(
       documentId,
@@ -728,9 +759,44 @@ export const mockBackend: Backend = {
     const state = stateOf(documentId);
     const original = state.pages[page];
     return (original === undefined ? [] : (state.markup.get(original) ?? [])).map(
-      (markup, index) => ({ index, ...markup }),
+      ({ kind, rects, contents, strokes }, index) => ({ index, kind, rects, contents, strokes }),
     );
   },
+  documentComments: async (documentId) => {
+    const state = stateOf(documentId);
+    return state.pages.flatMap((original, page) =>
+      (state.markup.get(original) ?? []).map(
+        (item, index): DocumentComment => ({
+          page,
+          index,
+          kind: item.kind,
+          author: item.author ?? null,
+          modified: item.modified ?? null,
+          contents:
+            item.kind === "note" || item.kind === "textBox" ? (item.contents ?? null) : null,
+          // The mock's pages have no text of their own.
+          markedText: null,
+          rect: item.rects.reduce((box, rect) => ({
+            x: Math.min(box.x, rect.x),
+            y: Math.min(box.y, rect.y),
+            width: Math.max(box.x + box.width, rect.x + rect.width) - Math.min(box.x, rect.x),
+            height: Math.max(box.y + box.height, rect.y + rect.height) - Math.min(box.y, rect.y),
+          })),
+          resolved: item.resolved ?? false,
+          replies: item.replies ?? [],
+        }),
+      ),
+    );
+  },
+  replyToComment: async (documentId, page, index, contents) => {
+    if (contents.trim() === "") throw { code: "invalid_edit", detail: "a reply needs some text" };
+    return withComment(documentId, page, index, (comment) => {
+      const reply = { index: 1000 + (comment.replies?.length ?? 0), contents, ...signed() };
+      return { ...comment, replies: [...(comment.replies ?? []), reply] };
+    });
+  },
+  setCommentResolved: async (documentId, page, index, resolved) =>
+    withComment(documentId, page, index, (comment) => ({ ...comment, resolved })),
   // The mock "picks" a file whose pages are the sample's first three.
   insertPagesFromFiles: async (documentId, at) => {
     const state = stateOf(documentId);

@@ -51,7 +51,8 @@
       "showOutline": "عرض الفهرس",
       "readingNormal": "الصفحات: عادي",
       "readingSepia": "الصفحات: بني دافئ",
-      "readingNight": "الصفحات: ليلي"
+      "readingNight": "الصفحات: ليلي",
+      "showComments": "إظهار التعليقات"
     },
     "app": {
       "toggleTheme": "تبديل المظهر",
@@ -94,7 +95,15 @@
       "note": "إضافة ملاحظة",
       "textBox": "إضافة مربع نص",
       "pen": "رسم",
-      "eraser": "مسح الرسم"
+      "eraser": "مسح الرسم",
+      "show": "إظهار التعليق",
+      "reply": "الرد على التعليق",
+      "resolve": "تحديد التعليق كمحلول"
+    },
+    "comments": {
+      "filter": "تصفية التعليقات",
+      "sort": "ترتيب التعليقات",
+      "setAuthor": "تحديد اسمك على التعليقات"
     },
     "note": {
       "place": "وضع ملاحظة",
@@ -210,7 +219,8 @@
     "outline": "الفهرس",
     "search": "البحث",
     "close": "إخفاء اللوحة الجانبية",
-    "noDocument": "افتح مستندًا لترى صفحاته هنا."
+    "noDocument": "افتح مستندًا لترى صفحاته هنا.",
+    "comments": "التعليقات"
   },
   "thumbnails": {
     "name": "الصفحة {{page}}",
@@ -299,5 +309,48 @@
   },
   "comment": {
     "tools": "أدوات التعليق"
+  },
+  "comments": {
+    "loading": "جارٍ تحميل التعليقات…",
+    "empty": "لا تعليقات في هذا المستند بعد.",
+    "noMatch": "لا تعليقات تطابق عوامل التصفية هذه.",
+    "status": "العرض",
+    "statusAll": "كل التعليقات",
+    "statusOpen": "المفتوحة",
+    "statusResolved": "المحلولة",
+    "kind": "النوع",
+    "kindAll": "كل الأنواع",
+    "kindMarkup": "تمييز النص",
+    "kindNotes": "الملاحظات",
+    "kindTextBoxes": "مربعات النص",
+    "kindInk": "الرسومات",
+    "author": "الكاتب",
+    "authorAll": "الجميع",
+    "noAuthor": "بلا اسم",
+    "sort": "الترتيب",
+    "sortPage": "ترتيب الصفحات",
+    "sortNewest": "آخر نشاط",
+    "sortAuthor": "حسب الكاتب",
+    "page": "الصفحة {{page}}",
+    "show": "{{kind}} في الصفحة {{page}}: إظهاره",
+    "kinds": {
+      "highlight": "تظليل",
+      "underline": "تسطير",
+      "strikeOut": "يتوسطه خط",
+      "squiggly": "تسطير متموج",
+      "ink": "رسم",
+      "note": "ملاحظة",
+      "textBox": "مربع نص"
+    },
+    "resolvedBadge": "محلول",
+    "replies": "الردود",
+    "reply": "رد",
+    "replyLabel": "ردك",
+    "send": "إرسال الرد",
+    "cancel": "إلغاء",
+    "resolve": "تحديد كمحلول",
+    "reopen": "إعادة الفتح",
+    "yourName": "اسمك على التعليقات",
+    "yourNamePlaceholder": "غير محدد: لا يُكتب اسم على التعليقات"
   }
 }

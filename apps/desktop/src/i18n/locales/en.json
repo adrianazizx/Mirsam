@@ -51,7 +51,8 @@
       "showOutline": "Show the outline",
       "readingNormal": "Pages: normal",
       "readingSepia": "Pages: sepia",
-      "readingNight": "Pages: night"
+      "readingNight": "Pages: night",
+      "showComments": "Show comments"
     },
     "app": {
       "toggleTheme": "Switch theme",
@@ -94,7 +95,15 @@
       "note": "Add note",
       "textBox": "Add text box",
       "pen": "Draw",
-      "eraser": "Erase ink"
+      "eraser": "Erase ink",
+      "show": "Show comment",
+      "reply": "Reply to comment",
+      "resolve": "Resolve comment"
+    },
+    "comments": {
+      "filter": "Filter comments",
+      "sort": "Sort comments",
+      "setAuthor": "Set your name on comments"
     },
     "note": {
       "place": "Place a note",
@@ -210,7 +219,8 @@
     "outline": "Outline",
     "search": "Search",
     "close": "Hide the side panel",
-    "noDocument": "Open a document to see its pages here."
+    "noDocument": "Open a document to see its pages here.",
+    "comments": "Comments"
   },
   "thumbnails": {
     "name": "Page {{page}}",
@@ -299,5 +309,48 @@
   },
   "comment": {
     "tools": "Comment tools"
+  },
+  "comments": {
+    "loading": "Loading comments…",
+    "empty": "No comments in this document yet.",
+    "noMatch": "No comments match these filters.",
+    "status": "Show",
+    "statusAll": "All comments",
+    "statusOpen": "Open",
+    "statusResolved": "Resolved",
+    "kind": "Type",
+    "kindAll": "All types",
+    "kindMarkup": "Text markup",
+    "kindNotes": "Notes",
+    "kindTextBoxes": "Text boxes",
+    "kindInk": "Drawings",
+    "author": "Author",
+    "authorAll": "Everyone",
+    "noAuthor": "No name",
+    "sort": "Order",
+    "sortPage": "Page order",
+    "sortNewest": "Latest activity",
+    "sortAuthor": "By author",
+    "page": "Page {{page}}",
+    "show": "{{kind}} on page {{page}}: show it",
+    "kinds": {
+      "highlight": "Highlight",
+      "underline": "Underline",
+      "strikeOut": "Strikethrough",
+      "squiggly": "Squiggly underline",
+      "ink": "Drawing",
+      "note": "Note",
+      "textBox": "Text box"
+    },
+    "resolvedBadge": "Resolved",
+    "replies": "Replies",
+    "reply": "Reply",
+    "replyLabel": "Your reply",
+    "send": "Reply",
+    "cancel": "Cancel",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "yourName": "Your name on comments",
+    "yourNamePlaceholder": "Not set: comments carry no name"
   }
 }

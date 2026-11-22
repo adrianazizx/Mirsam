@@ -235,7 +235,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 7. ~~**Autosave and recovery**~~ **done (ADR 0040):** a modified document's current bytes go
    to a recovery file 2 seconds after its last change. At the next start the app offers to
    restore or discard them.
-8. **Comments panel** (P1, if time allows in M2).
+8. ~~**Comments panel**~~ **done (ADR 0041):** filter, sort, reply, resolve, and go to each
+   comment. Replies and review states are standard `/IRT` threads, and new annotations carry
+   the name the user chose.
 
 - [~] Markup, notes, text boxes, ink:
       - Markup is done (ADR 0017): highlight, underline, strikethrough, squiggly; select and
@@ -245,7 +247,15 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       - Text boxes are done (ADR 0019): Arabic, English and mixed text shaped with embedded
         font subsets; they read back exactly once flattened; encrypted files work.
       - Not yet: callouts, choosing fonts, sizes and colours, and moving annotations.
-- [ ] Comments panel
+- [~] Comments panel (ADR 0041):
+      - lists markup, notes, text boxes and drawings with author, date, the marked text,
+        replies, and whether resolved; threads written by other viewers are followed;
+      - filter by status, type and author; sort by page, latest activity, or author;
+      - reply and resolve (or reopen), as standard annotations that draw nothing; undo covers
+        them; removing a comment removes its thread;
+      - "Your name on comments" signs new annotations of every kind; no name is guessed.
+      - Not yet: shapes, stamps and other kinds from other tools; editing or deleting a single
+        reply; XFDF import/export, summaries, flattening (P1).
 - [~] Page organizer (reorder/rotate/delete/merge/split/extract):
       - The Pages tool shows a virtualized grid (React Aria `GridList` + `GridLayout`).
       - Select pages with click, Shift and Cmd/Ctrl; drag to reorder; move earlier or later.
@@ -361,7 +371,7 @@ parallel with M2 and merged by pull request at the owner's request.
 
 ## Session log
 
-### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery)
+### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel)
 
 - **Autosave (ADR 0040):**
   - After each edit, undo or redo, a modified document's current bytes (a valid PDF: the file
@@ -383,8 +393,20 @@ parallel with M2 and merged by pull request at the owner's request.
 - **CI fix:** the macOS and Windows runners draw the page at under 1 pixel per point, where a
   note's icon and a text box have 19–38 matching pixels. The fixed 50-pixel bar failed them.
   The bar now follows the render scale (8 px per square px/pt, at least 8).
-- **Tests:** 247 Rust and 146 UI tests pass on this Mac. The self-test passes in English (LTR)
-  and Arabic (RTL, dark), autosave included.
+- **Comments panel (ADR 0041):**
+  - A fourth view of the side panel lists every comment the app knows: author, date, the
+    marked text (read in logical order, Arabic too), its replies, and whether it is resolved.
+  - Filter by status, type and author; sort by page, latest activity, or author. Choosing a
+    comment scrolls to it and selects it.
+  - Reply and Resolve/Reopen write standard annotations: `/IRT` replies and `/Review` states,
+    with empty appearances so they draw nothing. Threads from other viewers (replies to
+    replies, several states, groups) are followed; removing a comment takes its thread along.
+  - Our parser reads the thread structure (PDFium's safe API exposes no `/IRT`); PDFium reads
+    the decrypted text, names and dates.
+  - "Your name on comments" (a setting) signs new annotations of every kind. The system's
+    user name is never written unasked.
+- **Tests:** 254 Rust and 151 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark), autosave and the comments panel included.
 
 ### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes, text boxes)
 

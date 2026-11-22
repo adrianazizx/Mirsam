@@ -49,6 +49,65 @@ pub struct Document {
     engine: &'static crate::Engine,
 }
 
+/// The kind of an annotation the app knows, by PDFium's reading of it.
+fn annotation_kind(
+    annotation: &pdfium_render::prelude::PdfPageAnnotation<'_>,
+) -> Option<crate::annotate::AnnotationKind> {
+    use crate::annotate::AnnotationKind;
+    Some(match annotation.annotation_type() {
+        PdfPageAnnotationType::Highlight => AnnotationKind::Highlight,
+        PdfPageAnnotationType::Underline => AnnotationKind::Underline,
+        PdfPageAnnotationType::Strikeout => AnnotationKind::StrikeOut,
+        PdfPageAnnotationType::Squiggly => AnnotationKind::Squiggly,
+        PdfPageAnnotationType::Ink => AnnotationKind::Ink,
+        PdfPageAnnotationType::Text => AnnotationKind::Note,
+        PdfPageAnnotationType::FreeText => AnnotationKind::TextBox,
+        _ => return None,
+    })
+}
+
+fn is_markup(kind: crate::annotate::AnnotationKind) -> bool {
+    use crate::annotate::AnnotationKind;
+    matches!(
+        kind,
+        AnnotationKind::Highlight
+            | AnnotationKind::Underline
+            | AnnotationKind::StrikeOut
+            | AnnotationKind::Squiggly
+    )
+}
+
+/// Page-space rectangles an annotation covers: one per quad for markup,
+/// else its bounds.
+fn annotation_rects(annotation: &pdfium_render::prelude::PdfPageAnnotation<'_>) -> Vec<crate::text::Rect> {
+    let rect = |left: f32, bottom: f32, right: f32, top: f32| crate::text::Rect { left, bottom, right, top };
+    let points = annotation.attachment_points();
+    let mut rects: Vec<_> = (0..points.len())
+        .filter_map(|q| points.get(q).ok())
+        .map(|quad| rect(quad.left().value, quad.bottom().value, quad.right().value, quad.top().value))
+        .filter(|r| r.width() > 0.0 && r.height() > 0.0)
+        .collect();
+    if rects.is_empty()
+        && let Ok(bounds) = annotation.bounds()
+    {
+        rects.push(rect(
+            bounds.left().value,
+            bounds.bottom().value,
+            bounds.right().value,
+            bounds.top().value,
+        ));
+    }
+    rects
+}
+
+/// `text` cut to `limit` characters, with an ellipsis when cut.
+fn excerpt(text: &str, limit: usize) -> String {
+    match text.char_indices().nth(limit) {
+        Some((at, _)) => format!("{}…", text[..at].trim_end()),
+        None => text.to_string(),
+    }
+}
+
 impl Document {
     pub(crate) fn new(
         inner: PdfDocument<'static>,
@@ -96,6 +155,16 @@ impl Document {
         &self,
         edits: &[crate::annotate::AnnotationEdit],
     ) -> Result<(Document, Vec<u8>)> {
+        self.with_annotation_edits_by(edits, None)
+    }
+
+    /// [`Document::with_annotation_edits`], with new annotations signed by
+    /// `author` (`/T`, ADR 0041).
+    pub fn with_annotation_edits_by(
+        &self,
+        edits: &[crate::annotate::AnnotationEdit],
+        author: Option<&str>,
+    ) -> Result<(Document, Vec<u8>)> {
         if edits.is_empty() {
             return Err(Error::InvalidEdit("no annotation edits given"));
         }
@@ -103,7 +172,7 @@ impl Document {
         let start = bytes.len();
         for edit in edits {
             // Each update builds on the last: appended together they are one.
-            let update = crate::annotate::annotation_update(&bytes, self.password.as_deref(), edit)?;
+            let update = crate::annotate::annotation_update(&bytes, self.password.as_deref(), author, edit)?;
             bytes.extend_from_slice(&update);
         }
         let update = bytes[start..].to_vec();
@@ -111,7 +180,9 @@ impl Document {
     }
 
     /// The page's annotations of the kinds this app writes (markup, ink,
-    /// notes), and the map from page space to the page as displayed.
+    /// notes, text boxes), and the map from page space to the page as
+    /// displayed. Replies and review states are left out: they belong to
+    /// another annotation's thread and are not on the page (ADR 0041).
     pub fn page_annotations(
         &self,
         index: usize,
@@ -125,39 +196,20 @@ impl Document {
         // `/Annots`, which changing or removing it needs.
         for position in 0..annotations.len() {
             let Ok(annotation) = annotations.get(position) else { continue };
-            let kind = match annotation.annotation_type() {
-                PdfPageAnnotationType::Highlight => AnnotationKind::Highlight,
-                PdfPageAnnotationType::Underline => AnnotationKind::Underline,
-                PdfPageAnnotationType::Strikeout => AnnotationKind::StrikeOut,
-                PdfPageAnnotationType::Squiggly => AnnotationKind::Squiggly,
-                PdfPageAnnotationType::Ink => AnnotationKind::Ink,
-                PdfPageAnnotationType::Text => AnnotationKind::Note,
-                PdfPageAnnotationType::FreeText => AnnotationKind::TextBox,
-                _ => continue,
-            };
-            let rect =
-                |left: f32, bottom: f32, right: f32, top: f32| crate::text::Rect { left, bottom, right, top };
-            let points = annotation.attachment_points();
-            let mut rects: Vec<_> = (0..points.len())
-                .filter_map(|q| points.get(q).ok())
-                .map(|quad| {
-                    rect(quad.left().value, quad.bottom().value, quad.right().value, quad.top().value)
-                })
-                .filter(|r| r.width() > 0.0 && r.height() > 0.0)
-                .collect();
-            if rects.is_empty()
-                && let Ok(bounds) = annotation.bounds()
-            {
-                rects.push(rect(
-                    bounds.left().value,
-                    bounds.bottom().value,
-                    bounds.right().value,
-                    bounds.top().value,
-                ));
-            }
+            let Some(kind) = annotation_kind(&annotation) else { continue };
             let contents = matches!(kind, AnnotationKind::Note | AnnotationKind::TextBox)
                 .then(|| annotation.contents().unwrap_or_default());
-            out.push(AnnotationInfo { index: position, kind, rects, contents, strokes: Vec::new() });
+            out.push(AnnotationInfo {
+                index: position,
+                kind,
+                rects: annotation_rects(&annotation),
+                contents,
+                strokes: Vec::new(),
+            });
+        }
+        if out.iter().any(|info| info.kind == AnnotationKind::Note) {
+            let threads = crate::annotate::threads(&self.bytes, index);
+            out.retain(|info| !threads.answers(info.index));
         }
         if out.iter().any(|info| info.kind == AnnotationKind::Ink) {
             let mut strokes = crate::annotate::ink_strokes(&self.bytes, index);
@@ -168,6 +220,127 @@ impl Document {
             }
         }
         Ok((out, ViewTransform::of_page(&page)?))
+    }
+
+    /// Every comment in the document, page by page in `/Annots` order: the
+    /// annotations of the kinds this app knows that answer nothing, each with
+    /// its author, date, text, replies, and whether it is resolved (ADR 0041).
+    /// Markup carries the page's text under it.
+    pub fn comments(&self) -> Result<Vec<crate::annotate::Comment>> {
+        use std::collections::HashMap;
+
+        use crate::annotate::{AnnotationKind, Comment, Reply};
+
+        /// What PDFium reads of one annotation (decrypted).
+        struct Read {
+            position: usize,
+            kind: AnnotationKind,
+            author: Option<String>,
+            modified: Option<i64>,
+            contents: Option<String>,
+            rects: Vec<crate::text::Rect>,
+        }
+        /// The longest excerpt of marked text, in characters.
+        const EXCERPT: usize = 500;
+
+        // Loading a page costs; our parser knows which have annotations.
+        let annotated = crate::annotate::annotated_pages(&self.bytes);
+        let mut out = Vec::new();
+        for index in 0..self.page_count() {
+            if annotated.as_ref().is_some_and(|pages| !pages.contains(&index)) {
+                continue;
+            }
+            let page = self.page(index)?;
+            let annotations = page.annotations();
+            let mut read = Vec::new();
+            for position in 0..annotations.len() {
+                let Ok(annotation) = annotations.get(position) else { continue };
+                let Some(kind) = annotation_kind(&annotation) else { continue };
+                read.push(Read {
+                    position,
+                    kind,
+                    author: annotation.creator().filter(|author| !author.trim().is_empty()),
+                    modified: annotation
+                        .modification_date()
+                        .or_else(|| annotation.creation_date())
+                        .and_then(|date| crate::annotate::parse_pdf_date(&date)),
+                    contents: annotation.contents().filter(|contents| !contents.trim().is_empty()),
+                    rects: annotation_rects(&annotation),
+                });
+            }
+            if read.is_empty() {
+                continue;
+            }
+            let threads = crate::annotate::threads(&self.bytes, index);
+            let text = read
+                .iter()
+                .any(|entry| is_markup(entry.kind) && !threads.answers(entry.position))
+                .then(|| self.page_text(index).ok())
+                .flatten();
+
+            let mut comments: Vec<Comment> = Vec::new();
+            let mut at = HashMap::new();
+            for entry in &read {
+                if threads.answers(entry.position) {
+                    continue;
+                }
+                let Some(bounds) = entry.rects.iter().copied().reduce(crate::text::Rect::union) else {
+                    continue;
+                };
+                let marked_text = text
+                    .as_ref()
+                    .filter(|_| is_markup(entry.kind))
+                    .map(|text| excerpt(&text.text_in(&entry.rects), EXCERPT))
+                    .filter(|marked| !marked.is_empty());
+                at.insert(entry.position, comments.len());
+                comments.push(Comment {
+                    page: index,
+                    index: entry.position,
+                    kind: entry.kind,
+                    author: entry.author.clone(),
+                    modified: entry.modified,
+                    contents: entry.contents.clone(),
+                    marked_text,
+                    bounds,
+                    resolved: false,
+                    replies: Vec::new(),
+                });
+            }
+            // Replies, oldest first (undated ones by their place in `/Annots`).
+            let order = |entry: &Read| (entry.modified.unwrap_or(i64::MIN), entry.position);
+            let mut replies: Vec<(usize, &Read)> = read
+                .iter()
+                .filter_map(|entry| threads.replies.get(&entry.position).map(|&root| (root, entry)))
+                .collect();
+            replies.sort_by_key(|(_, entry)| order(entry));
+            for (root, entry) in replies {
+                if let Some(&i) = at.get(&root) {
+                    comments[i].replies.push(Reply {
+                        index: entry.position,
+                        author: entry.author.clone(),
+                        modified: entry.modified,
+                        contents: entry.contents.clone().unwrap_or_default(),
+                    });
+                }
+            }
+            // The latest review state counts.
+            let mut latest: HashMap<usize, ((i64, usize), bool)> = HashMap::new();
+            for entry in &read {
+                let Some(&(root, Some(resolved))) = threads.states.get(&entry.position) else { continue };
+                let key = order(entry);
+                let state = latest.entry(root).or_insert((key, resolved));
+                if key >= state.0 {
+                    *state = (key, resolved);
+                }
+            }
+            for (root, (_, resolved)) in latest {
+                if let Some(&i) = at.get(&root) {
+                    comments[i].resolved = resolved;
+                }
+            }
+            out.extend(comments);
+        }
+        Ok(out)
     }
 
     /// The map from page space to the page as displayed.

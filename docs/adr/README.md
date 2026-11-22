@@ -27,6 +27,7 @@ number and says so.
 | [0019](0019-text-boxes-and-the-text-writer.md) | Text boxes drawn with shaped text and embedded font subsets (`pdf::text`, the text half of the content-stream writer); word spaces read inside form XObjects | Accepted |
 | [0020](0020-text-layout-engine.md) | Text layout engine `safha_core::typeset`: bidi + script + font itemization, harfrust shaping, UAX #14 breaking, per-line reordering; backend-neutral positioned glyph runs; font subsets (variable fonts instanced) and font matching | Accepted (M3 groundwork) |
 | [0040](0040-autosave-and-recovery.md) | Autosave: each modified document's current bytes in a recovery file 2 s after its last change; restored at startup (undo back to the original when unchanged, Save As when it changed); encrypted ones ask for the password | Accepted |
+| [0041](0041-comments-panel.md) | Comments panel: threads read by our parser (`/IRT`, review states) with PDFium's text; replies and resolve as hidden-appearance annotations; authors only by the user's chosen name; filter, sort, go to | Accepted |
 
 Still to be decided, each with its own spike (see `docs/SPEC.md`): in-place editor surface (M3),
 OCR engines (M4), crypto/PAdES library (M5), Office → PDF (post-1.0).

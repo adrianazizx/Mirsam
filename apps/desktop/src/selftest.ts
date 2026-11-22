@@ -403,9 +403,28 @@ async function notesAndInkChecks(documentId: number) {
   const inkPainted = inkPixels > enough;
   const ink = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "ink");
 
+  // The comments panel (ADR 0041): the three listed, a reply and a resolve
+  // read back from the file, then both undone (two of the undos below).
+  await runCommand("view.showComments");
+  const replyText = "تم — done";
+  if (note) await runCommand("comment.reply", { page: 0, index: note.index, text: replyText });
+  if (note) await runCommand("comment.resolve", { page: 0, index: note.index, resolved: true });
+  const listed = await backend.documentComments(documentId);
+  const thread = listed.find((comment) => comment.kind === "note");
+  await waitFor(() => document.querySelectorAll('[data-testid="comment"]').length >= 3, 5_000);
+  const comments = {
+    kinds: listed.map((comment) => comment.kind).sort(),
+    replied: thread?.replies[0]?.contents === replyText,
+    resolved: thread?.resolved ?? false,
+    panelItems: document.querySelectorAll('[data-testid="comment"]').length,
+    replyOnPage: (await backend.pageAnnotations(documentId, 0)).length,
+  };
+  await runCommand("view.showThumbnails");
+
   await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
   const erased = !(await backend.pageAnnotations(documentId, 0)).some((a) => a.kind === "ink");
-  for (let i = 0; i < 4; i += 1) await runCommand("edit.undo");
+  // The erase, the resolve, the reply, the stroke, the text box, the note.
+  for (let i = 0; i < 6; i += 1) await runCommand("edit.undo");
   const cleared = (await backend.pageAnnotations(documentId, 0)).length === 0;
   return {
     scale,
@@ -421,6 +440,7 @@ async function notesAndInkChecks(documentId: number) {
     inkPoints: ink?.strokes[0]?.length ?? 0,
     erased,
     cleared,
+    comments,
   };
 }
 

@@ -446,8 +446,15 @@ struct SettingChanged {
 
 /// The settings the UI may store. A closed list: the webview cannot use the
 /// store as general-purpose storage.
-const SETTINGS: &[&str] =
-    &["locale", "theme", "readingTheme", "leftPanel", "session.restore", "search.options"];
+const SETTINGS: &[&str] = &[
+    "locale",
+    "theme",
+    "readingTheme",
+    "leftPanel",
+    "session.restore",
+    "search.options",
+    crate::editing::COMMENT_AUTHOR,
+];
 
 /// Opens `path` in a tab of `window`, or switches to it if that window has it
 /// open already.

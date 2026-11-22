@@ -13,6 +13,12 @@ import type {
 import type { Locale } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
+import {
+  type CommentFilter,
+  type CommentSort,
+  DEFAULT_COMMENT_FILTER,
+  MAX_AUTHOR,
+} from "./comments";
 import { clampZoom } from "./zoom";
 
 export const TOOLS = [
@@ -30,7 +36,7 @@ export type ToolId = (typeof TOOLS)[number];
 export type ThemePreference = "system" | "light" | "dark";
 /** How pages themselves are tinted, independent of the UI theme (spec section 4). */
 export type ReadingTheme = "normal" | "sepia" | "night";
-export type LeftPanel = "thumbnails" | "outline" | "search";
+export type LeftPanel = "thumbnails" | "outline" | "search" | "comments";
 
 export interface SearchState {
   query: string;
@@ -139,6 +145,11 @@ export interface AppState {
   /** The open side panel at the inline start, or null when it is closed. */
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
+  /** The name written on new comments (ADR 0041); none when empty. */
+  commentAuthor: string;
+  /** The comments panel's filters and order (not kept between sessions). */
+  commentFilter: CommentFilter;
+  commentSort: CommentSort;
   activeTool: ToolId;
   /** What a press on a page does while the Comment tool is active. */
   commentTool: CommentTool;
@@ -163,6 +174,9 @@ export interface AppState {
   setReadingTheme(theme: ReadingTheme): void;
   setLeftPanel(panel: LeftPanel | null): void;
   setSearchOptions(options: SearchOptions): void;
+  setCommentAuthor(name: string): void;
+  setCommentFilter(patch: Partial<CommentFilter>): void;
+  setCommentSort(sort: CommentSort): void;
   setActiveTool(tool: ToolId): void;
   setCommentTool(tool: CommentTool): void;
   setPendingNote(note: PendingNote | null): void;
@@ -212,7 +226,7 @@ const CACHE_KEY = "safha.preferences";
 
 type Persisted = Pick<
   AppState,
-  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions"
+  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
 >;
 
 const DEFAULTS: Persisted = {
@@ -221,6 +235,7 @@ const DEFAULTS: Persisted = {
   readingTheme: "normal",
   leftPanel: null,
   searchOptions: DEFAULT_SEARCH_OPTIONS,
+  commentAuthor: "",
 };
 
 /** Parses stored strings, ignoring anything unknown or malformed. */
@@ -237,10 +252,18 @@ export function parseSettings(raw: Record<string, string | undefined>): Partial<
   ) {
     out.readingTheme = raw.readingTheme;
   }
-  if (raw.leftPanel === "thumbnails" || raw.leftPanel === "outline" || raw.leftPanel === "search") {
+  if (
+    raw.leftPanel === "thumbnails" ||
+    raw.leftPanel === "outline" ||
+    raw.leftPanel === "search" ||
+    raw.leftPanel === "comments"
+  ) {
     out.leftPanel = raw.leftPanel;
   } else if (raw.leftPanel === "none") {
     out.leftPanel = null;
+  }
+  if (typeof raw.commentAuthor === "string") {
+    out.commentAuthor = raw.commentAuthor.trim().slice(0, MAX_AUTHOR);
   }
   if (raw["search.options"]) {
     try {
@@ -331,6 +354,15 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTool: "select",
     commentTool: "note",
     pendingNote: null,
+    commentFilter: DEFAULT_COMMENT_FILTER,
+    commentSort: "page",
+    setCommentAuthor: (name) => update("commentAuthor", name.trim().slice(0, MAX_AUTHOR)),
+    setCommentFilter(patch) {
+      set((state) => ({ commentFilter: { ...state.commentFilter, ...patch } }));
+    },
+    setCommentSort(commentSort) {
+      set({ commentSort });
+    },
     recoveries: [],
     setRecoveries(recoveries) {
       set({ recoveries });
