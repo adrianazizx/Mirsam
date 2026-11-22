@@ -77,9 +77,12 @@ impl Engine {
     /// The engine never holds the source file open, so the original on disk
     /// stays untouched and replaceable (spec section 9, "Document model and saving").
     pub fn open_bytes(&'static self, bytes: Vec<u8>, password: Option<&str>) -> Result<Document> {
+        // Read before PDFium takes the bytes: the catalog's reading preferences,
+        // which PDFium exposes only through an `unsafe` call.
+        let hints = crate::catalog::catalog_hints(&bytes);
         let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
         let inner = self.pdfium.load_pdf_from_byte_vec(bytes, password)?;
-        Ok(Document::new(inner))
+        Ok(Document::new(inner, hints))
     }
 
     /// Reads `path` fully into memory and opens it.

@@ -47,15 +47,22 @@ pub struct RecentFile {
     pub exists: bool,
 }
 
-/// The tabs that were open when the app last quit.
+/// The windows and tabs that were open when the app last quit.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Session {
+    /// In window order; the first is the main window.
+    pub windows: Vec<SessionWindow>,
+}
+
+/// One window's tabs.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SessionWindow {
     pub files: Vec<PathBuf>,
     pub active: Option<usize>,
 }
 
 /// Bumped whenever `migrate` gains a step.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const MAX_RECENTS: i64 = 200;
 
 pub struct Store {
@@ -188,31 +195,48 @@ impl Store {
         let mut connection = self.connection.lock().unwrap_or_else(PoisonError::into_inner);
         let transaction = connection.transaction()?;
         transaction.execute("DELETE FROM session_tabs", [])?;
-        for (position, path) in session.files.iter().enumerate() {
-            let active = session.active == Some(position);
-            transaction.execute(
-                "INSERT INTO session_tabs (position, path, active) VALUES (?1, ?2, ?3)",
-                params![i64::try_from(position).unwrap_or(i64::MAX), key_of(path), active],
-            )?;
+        let mut position = 0i64;
+        for (window, tabs) in session.windows.iter().enumerate() {
+            for (index, path) in tabs.files.iter().enumerate() {
+                transaction.execute(
+                    "INSERT INTO session_tabs (position, path, active, window) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        position,
+                        key_of(path),
+                        tabs.active == Some(index),
+                        i64::try_from(window).unwrap_or(i64::MAX)
+                    ],
+                )?;
+                position += 1;
+            }
         }
         transaction.commit()?;
         Ok(())
     }
 
-    /// The saved session, skipping files that no longer exist.
+    /// The saved session, skipping files that no longer exist and windows
+    /// left with none.
     pub fn session(&self) -> StoreResult<Session> {
-        let rows: Vec<(PathBuf, bool)> = self.with(|db| {
-            let mut statement = db.prepare("SELECT path, active FROM session_tabs ORDER BY position")?;
-            let rows =
-                statement.query_map([], |row| Ok((PathBuf::from(row.get::<_, String>(0)?), row.get(1)?)))?;
+        let rows: Vec<(PathBuf, bool, i64)> = self.with(|db| {
+            let mut statement =
+                db.prepare("SELECT path, active, window FROM session_tabs ORDER BY window, position")?;
+            let rows = statement.query_map([], |row| {
+                Ok((PathBuf::from(row.get::<_, String>(0)?), row.get(1)?, row.get(2)?))
+            })?;
             rows.collect()
         })?;
         let mut session = Session::default();
-        for (path, active) in rows.into_iter().filter(|(path, _)| path.is_file()) {
-            if active {
-                session.active = Some(session.files.len());
+        let mut current: Option<i64> = None;
+        for (path, active, window) in rows.into_iter().filter(|(path, _, _)| path.is_file()) {
+            if current != Some(window) {
+                session.windows.push(SessionWindow::default());
+                current = Some(window);
             }
-            session.files.push(path);
+            let Some(tabs) = session.windows.last_mut() else { continue };
+            if active {
+                tabs.active = Some(tabs.files.len());
+            }
+            tabs.files.push(path);
         }
         Ok(session)
     }
@@ -269,6 +293,15 @@ fn migrate(db: &Connection) -> StoreResult<()> {
                  active INTEGER NOT NULL
              );
              PRAGMA user_version = 1;
+             COMMIT;",
+        )?;
+    }
+    if version < 2 {
+        // Several windows, each with its own tabs.
+        db.execute_batch(
+            "BEGIN;
+             ALTER TABLE session_tabs ADD COLUMN window INTEGER NOT NULL DEFAULT 0;
+             PRAGMA user_version = 2;
              COMMIT;",
         )?;
     }
@@ -334,14 +367,62 @@ mod tests {
         let a = temp_file(&dir, "a.pdf");
         let b = temp_file(&dir, "b.pdf");
         let c = temp_file(&dir, "c.pdf");
-        store
-            .save_session(&Session { files: vec![a.clone(), b.clone(), c.clone()], active: Some(2) })
-            .expect("saves");
+        let window = SessionWindow { files: vec![a.clone(), b.clone(), c.clone()], active: Some(2) };
+        store.save_session(&Session { windows: vec![window] }).expect("saves");
         std::fs::remove_file(&b).expect("removes");
         let session = store.session().expect("reads");
-        assert_eq!(session.files.len(), 2);
-        assert_eq!(session.active, Some(1));
-        assert!(session.files[1].ends_with("c.pdf"));
+        assert_eq!(session.windows.len(), 1);
+        assert_eq!(session.windows[0].files.len(), 2);
+        assert_eq!(session.windows[0].active, Some(1));
+        assert!(session.windows[0].files[1].ends_with("c.pdf"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn session_keeps_each_window_and_drops_emptied_ones() {
+        let dir = scratch();
+        let store = Store::in_memory().expect("opens");
+        let a = temp_file(&dir, "a.pdf");
+        let b = temp_file(&dir, "b.pdf");
+        let gone = temp_file(&dir, "gone.pdf");
+        let windows = vec![
+            SessionWindow { files: vec![a.clone()], active: Some(0) },
+            SessionWindow { files: vec![gone.clone()], active: Some(0) },
+            SessionWindow { files: vec![b.clone()], active: None },
+        ];
+        store.save_session(&Session { windows }).expect("saves");
+        std::fs::remove_file(&gone).expect("removes");
+        let session = store.session().expect("reads");
+        assert_eq!(session.windows.len(), 2);
+        assert!(session.windows[1].files[0].ends_with("b.pdf"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_version_1_database_gains_windows_and_keeps_its_session() {
+        let dir = scratch();
+        let path = dir.join("v1.sqlite3");
+        let file = temp_file(&dir, "kept.pdf");
+        {
+            let db = Connection::open(&path).expect("opens");
+            db.execute_batch(
+                "CREATE TABLE recent_files (path TEXT PRIMARY KEY, name TEXT NOT NULL, last_opened INTEGER NOT NULL, seq INTEGER NOT NULL);
+                 CREATE TABLE view_state (path TEXT PRIMARY KEY, page INTEGER NOT NULL, zoom_mode TEXT NOT NULL, zoom REAL NOT NULL, page_offset REAL NOT NULL, saved INTEGER NOT NULL);
+                 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 CREATE TABLE session_tabs (position INTEGER PRIMARY KEY, path TEXT NOT NULL, active INTEGER NOT NULL);
+                 PRAGMA user_version = 1;",
+            )
+            .expect("creates a version 1 schema");
+            db.execute(
+                "INSERT INTO session_tabs (position, path, active) VALUES (0, ?1, 1)",
+                params![key_of(&file)],
+            )
+            .expect("inserts");
+        }
+        let store = Store::open(&path).expect("migrates");
+        let session = store.session().expect("reads");
+        assert_eq!(session.windows.len(), 1);
+        assert_eq!(session.windows[0].active, Some(0));
         let _ = std::fs::remove_dir_all(dir);
     }
 

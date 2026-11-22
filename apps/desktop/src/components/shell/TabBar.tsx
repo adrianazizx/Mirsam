@@ -1,14 +1,16 @@
 import { Command, FolderOpen, Languages, Moon, Search, Sun, X } from "lucide-react";
-import { useMemo } from "react";
+import { type PointerEvent as ReactPointerEvent, useMemo, useRef } from "react";
 import { Button as AriaButton, Tab, TabList } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { resolvedTheme, runCommand, shortcutLabel } from "../../commands/registry";
+import { directionOf } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
 import { CommandButton } from "../ui/CommandButton";
 import { Tooltip } from "../ui/Tooltip";
 import styles from "./TabBar.module.css";
+import { DRAG_THRESHOLD, dropIndex } from "./tabDrag";
 
 export function TabBar() {
   const { t } = useTranslation();
@@ -21,13 +23,51 @@ export function TabBar() {
   );
   const theme = useAppStore((state) => state.theme);
   const isDark = resolvedTheme(theme) === "dark";
+  const locale = useAppStore((state) => state.locale);
+  const drag = useRef<{ id: number; startX: number; dragging: boolean } | null>(null);
+
+  // Dragging a tab reorders it, live, through `tabs.move` (keyboard:
+  // Ctrl+Shift+PageUp/PageDown). Tabs are found by their data attribute.
+  const onPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    const tab = (event.target as HTMLElement).closest<HTMLElement>("[data-document-id]");
+    if (event.button !== 0 || !tab) return;
+    drag.current = { id: Number(tab.dataset.documentId), startX: event.clientX, dragging: false };
+  };
+  const onPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const current = drag.current;
+    if (!current) return;
+    if (!current.dragging) {
+      if (Math.abs(event.clientX - current.startX) < DRAG_THRESHOLD) return;
+      current.dragging = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    const tabs = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-document-id]")];
+    const centres = tabs.map((tab) => {
+      const box = tab.getBoundingClientRect();
+      return box.left + box.width / 2;
+    });
+    const from = tabs.findIndex((tab) => Number(tab.dataset.documentId) === current.id);
+    const to = dropIndex(centres, from, event.clientX, directionOf(locale));
+    if (to !== from) void runCommand("tabs.move", { documentId: current.id, index: to });
+  };
+  const onPointerEnd = (event: ReactPointerEvent<HTMLElement>) => {
+    if (drag.current?.dragging) event.currentTarget.releasePointerCapture(event.pointerId);
+    drag.current = null;
+  };
 
   return (
-    <header className={styles.bar}>
+    <header
+      className={styles.bar}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+    >
       <TabList aria-label={t("tabs.label")} items={documents} className={styles.tabs}>
         {(document: { id: number; name: string }) => (
           <Tab
             id={document.id}
+            data-document-id={document.id}
             className={styles.tab}
             // Middle-click closes a tab, as in browsers.
             onAuxClick={(event: React.MouseEvent) => {

@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 4).
+Last updated: 2026-11-22 (session 5).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -53,6 +53,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     WebKit alone needs about 155 MB with just one page on screen. A budget for the shell only, or
     a separate one for the webview (say 400 MB), is achievable today; 500 MB in total is not
     without deeper work. ADR 0011 has the numbers. Which do you want?
+13. **Try Print once (Cmd/Ctrl+P).** Printing goes through the platform's own PDF viewer
+    (ADR 0012): a window shows the PDF and the system print panel opens over it. This session
+    could not see the screen, so it is unverified. If you see a blank window, or the panel prints
+    only part of the document, say so; the fallback is printing pages as images.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -61,8 +65,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — runs on GitHub. The first run failed before the Rust steps
-      (fixes in session 4; see owner item 3). The macOS self-test job passes
+- [~] CI on Windows/macOS/Linux — runs on GitHub. The first runs failed (fixes in sessions 4
+      and 5; see owner item 3); a green run on PR #1 is still to be confirmed
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -126,13 +130,18 @@ by anything found so far.
       - pinch-in is clean;
       - no page is blank longer than 12 ms; random jumps show a preview within 16 ms.
       **Still over budget:** an extreme pinch-out (×1/20 in 1.2 s) drops 3 frames, p95 25 ms.
-- [~] View modes: single / continuous / two-page / book; RTL page order — done. Reading
-      `/ViewerPreferences /Direction` is not (needs an `unsafe` PDFium call)
+- [x] View modes: single / continuous / two-page / book; RTL page order. A document's own
+      `/ViewerPreferences /Direction` and `/PageLayout` set its defaults, read by our own safe
+      catalog reader (ADR 0012): an Arabic book that asks for right-to-left spreads opens that way
 - [x] Thumbnails, outline, page labels, go-to-page (ADR 0010) — thumbnail strip on its own render
       lane; outline tree; the page field shows and accepts labels (`i`, `1`, `2`) and Arabic-Indic
       digits. Verified in the real app in both directions
-- [~] Tabs — close button, middle-click, Ctrl+Tab / Ctrl+Shift+Tab, reopening a file switches to its
-      tab. **Not done:** reordering by drag, multiple windows
+- [x] Tabs and windows (ADR 0012):
+      - tabs: close button, middle-click, Ctrl+Tab / Ctrl+Shift+Tab, reordering by drag and by
+        Ctrl+Shift+PageUp/PageDown in reading order;
+      - windows: New Window (Cmd/Ctrl+N) and Move Tab to New Window; a window's documents close
+        with it; the session restores every window; settings follow across windows.
+      Checked in the real app: the self-test opens a second window
 - [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 83/118 corpus blocks verbatim
       (was 46), 67/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for OCR;
       identical text on pages rotated 0/90/180/270°
@@ -145,7 +154,8 @@ by anything found so far.
       (missing files marked), a second launch restores tabs, each file reopens where it was left
 - [x] Reading themes (normal, sepia, night) and command palette (⌘K, matches English and Arabic
       titles in either UI language)
-- [ ] Printing
+- [~] Printing — Cmd/Ctrl+P prints through the platform's PDF viewer (ADR 0012). Built, but not
+      yet seen working on screen (owner item 13); Linux needs another path
 - [x] Open password-protected PDFs — inline prompt; wrong password asks again; never stored
 - [ ] Re-run the tile-transport spike on Windows and Linux
 - [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
@@ -162,18 +172,17 @@ rejected as invalid, so run it again):
 - debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
 - release: `(cd apps/desktop && pnpm tauri build --features devtools --bundles app) && scripts/scroll-benchmark.sh <out> release`
 
-Test status at the end of session 4:
+Test status at the end of session 5:
 
-- **Rust:** 106 tests pass. Clippy is clean with and without `devtools`.
-- **UI:** 117 tests pass. Biome, `tsc` and the production build are clean.
-- **End to end:** self-tests pass in English/light and Arabic/dark on the new tile transport. The
-  scroll benchmark ran visibly in debug and release.
+- **Rust:** 118 tests pass. Clippy is clean with and without `devtools`, `cargo deny` is ok, and
+  the licence report is current.
+- **UI:** 121 tests pass. Biome, `tsc` and the production build are clean.
+- **End to end:** self-tests pass in English/light and Arabic/dark. The Arabic run also opens a
+  second window and the right-to-left book. The scroll benchmark ran visibly in session 4.
 
 Remaining M1 work:
 
-- printing;
-- multiple windows and reordering tabs by drag;
-- reading `/ViewerPreferences /Direction`;
+- confirm printing on screen (owner item 13), and a Linux path;
 - the tile spike on Windows and Linux (the new tile scheme included);
 - pinch-out frames;
 - the memory budget decision.
@@ -239,6 +248,38 @@ Remaining M1 work:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
+
+- **Reading preferences:** `safha_core::catalog` reads `/ViewerPreferences /Direction` and
+  `/PageLayout` without `unsafe`. It handles classic and stream cross-references, incremental
+  updates, and Flate object streams. New fixtures: `derived/rtl-book.pdf` and
+  `derived/rtl-book-objstm.pdf` (24 in all).
+- **Tabs:** reordering by drag and by keyboard, in reading order.
+- **Windows:** multiple windows with per-window sessions (store schema 2) and settings broadcast.
+- **Printing:** through the platform's PDF viewer, still unverified.
+- **CI:** the first CI run's fixes were pushed as PR #1 (Auto-fix on). PR #1's first run then
+  failed three checks, fixed in `40a9331`:
+  - Windows: the 1,000-page fixture's qpdf arguments overflowed the command line; they now go
+    through an `@file`.
+  - Linux and Windows: tests skip CoreText fixtures only where the manifest records the producer
+    as unavailable.
+  - macOS self-test: an unmeasured warm-up launch, because a cold first launch took 461 ms to the
+    first preview.
+
+Status: 118 Rust tests and 121 UI tests pass. Clippy is clean both ways. Self-tests pass, with a
+second window opened in the real app and the right-to-left book opening right to left in book
+layout.
+
+Things that were not obvious:
+
+- WebKit's print panel cannot be checked from a session that cannot see the screen: the print
+  window opened, but `screencapture` was refused and the window reported itself hidden.
+- Closing the last window must keep its tabs in the session (they are what the next launch
+  restores), and so must quitting, which closes every window. `RunEvent::ExitRequested` marks
+  the second case.
+- qpdf's JSON round trip (`--json-output=2` → edit → `--json-input`) is a clean way to make
+  fixtures with specific catalog entries.
 
 ### Session 4 — 2026-11-22 (Milestone 1: the exit-test measurement)
 

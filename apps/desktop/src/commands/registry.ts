@@ -55,9 +55,9 @@ export interface CommandArg {
   password?: string;
   /** `search.run`. */
   query?: string;
-  /** `search.goTo`: index into the hits. */
+  /** `search.goTo`: index into the hits. `tabs.move`: the new position in tab order. */
   index?: number;
-  /** `file.close`: a tab other than the active one. */
+  /** `file.close`, `tabs.move`: a tab other than the active one. */
   documentId?: number;
 }
 
@@ -69,6 +69,7 @@ export const SEARCH_INPUT_ID = "search-input";
 export type CommandId =
   | "file.open"
   | "file.close"
+  | "file.print"
   | "file.openRecent"
   | "file.forgetRecent"
   | "file.clearRecents"
@@ -76,6 +77,11 @@ export type CommandId =
   | "file.cancelUnlock"
   | "tabs.next"
   | "tabs.previous"
+  | "tabs.moveEarlier"
+  | "tabs.moveLater"
+  | "tabs.move"
+  | "tabs.moveToNewWindow"
+  | "window.new"
   | "edit.copy"
   | "edit.selectAll"
   | "edit.deselect"
@@ -190,6 +196,13 @@ function moveTab(direction: 1 | -1) {
   if (next) store().activateDocument(next.id);
 }
 
+function shiftTab(direction: 1 | -1) {
+  const { documents, activeDocumentId } = store();
+  const index = documents.findIndex((open) => open.id === activeDocumentId);
+  if (index >= 0 && activeDocumentId !== null)
+    store().moveDocument(activeDocumentId, index + direction);
+}
+
 /** Copies text: through a `copy` event first (works inside the key press), then the async API. */
 async function writeClipboard(text: string) {
   let copied = false;
@@ -301,6 +314,15 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "file.print",
+    shortcut: { key: "p", mod: true },
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (active) await backend.printDocument(active.id);
+    },
+  },
+  {
     id: "file.openRecent",
     paletteHidden: true,
     async run(arg) {
@@ -365,6 +387,49 @@ const COMMANDS: Command[] = [
     shortcut: { key: "Tab", ctrl: true, shift: true },
     isEnabled: (state) => state.documents.length > 1,
     run: () => moveTab(-1),
+  },
+  {
+    // Tab order is reading order: "earlier" is to the left in English and to
+    // the right in Arabic, so the commands are named by order, not side.
+    id: "tabs.moveEarlier",
+    shortcut: { key: "PageUp", ctrl: true, shift: true },
+    isEnabled: (state) => state.documents.findIndex((d) => d.id === state.activeDocumentId) > 0,
+    run: () => shiftTab(-1),
+  },
+  {
+    id: "tabs.moveLater",
+    shortcut: { key: "PageDown", ctrl: true, shift: true },
+    isEnabled: (state) => {
+      const index = state.documents.findIndex((d) => d.id === state.activeDocumentId);
+      return index >= 0 && index < state.documents.length - 1;
+    },
+    run: () => shiftTab(1),
+  },
+  {
+    id: "tabs.move",
+    paletteHidden: true,
+    isEnabled: (state) => state.documents.length > 1,
+    run(arg) {
+      if (arg?.documentId !== undefined && arg.index !== undefined) {
+        store().moveDocument(arg.documentId, arg.index);
+      }
+    },
+  },
+  {
+    id: "tabs.moveToNewWindow",
+    isEnabled: (state) => state.documents.length > 1,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      await backend.moveToNewWindow(active.id);
+      // The document stays open; it now belongs to the new window.
+      store().removeDocument(active.id);
+    },
+  },
+  {
+    id: "window.new",
+    shortcut: { key: "n", mod: true },
+    run: () => backend.newWindow(),
   },
   {
     id: "edit.copy",

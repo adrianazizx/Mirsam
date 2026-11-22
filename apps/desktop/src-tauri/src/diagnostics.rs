@@ -70,6 +70,15 @@ pub fn selftest_log(message: String) {
     eprintln!("[selftest] {message}");
 }
 
+/// Labels of the open windows, for the self-test's multi-window check.
+#[tauri::command]
+pub fn window_labels(app: AppHandle) -> Vec<String> {
+    use tauri::Manager as _;
+    let mut labels: Vec<String> = app.webview_windows().into_keys().collect();
+    labels.sort();
+    labels
+}
+
 /// Render-queue and tile-cache counters, for the scroll benchmark.
 #[tauri::command]
 pub fn render_stats(state: State<'_, AppState>) -> safha_core::render::RenderStats {

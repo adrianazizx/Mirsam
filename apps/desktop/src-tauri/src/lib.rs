@@ -27,6 +27,9 @@ macro_rules! product_commands {
             commands::app_info,
             commands::open_document_dialog,
             commands::startup,
+            commands::new_window,
+            commands::move_to_new_window,
+            commands::print_document,
             commands::unlock_document,
             commands::cancel_unlock,
             commands::close_document,
@@ -62,6 +65,18 @@ pub fn run() {
             #[cfg(feature = "devtools")]
             diagnostics::prepare_window(app);
             Ok(())
+        })
+        // A window's documents close with it. Its tabs leave the saved
+        // session too, unless the app is quitting or it was the last window.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let state = window.state::<AppState>();
+                if state.close_window(window.label())
+                    && let Err(err) = commands::write_session(&state)
+                {
+                    eprintln!("safha: could not save the session: {}", err.detail);
+                }
+            }
         });
 
     // Release bundles expose only the product commands. The self-test harness and
@@ -73,6 +88,7 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("safha-tile", spike_tiles::protocol)
         .invoke_handler(product_commands![
             diagnostics::render_stats,
+            diagnostics::window_labels,
             diagnostics::webview_rss_kb,
             diagnostics::selftest_log,
             diagnostics::selftest_config,
@@ -84,7 +100,13 @@ pub fn run() {
             spike_tiles::spike_rss_kb,
         ]);
 
-    builder.run(tauri::generate_context!()).expect("failed to start the Safha desktop shell");
+    let app = builder.build(tauri::generate_context!()).expect("failed to start the Safha desktop shell");
+    app.run(|handle, event| {
+        // Quitting closes every window; their tabs are the session to restore.
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            handle.state::<AppState>().set_exiting();
+        }
+    });
 }
 
 /// Opens the local state store in the app data directory, or in

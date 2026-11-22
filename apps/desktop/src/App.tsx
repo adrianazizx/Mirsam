@@ -81,6 +81,23 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // A setting changed in another window (language, theme, reading theme).
+  useEffect(() => {
+    let stop = () => {};
+    let live = true;
+    backend
+      .onSettingChanged((key, value) => useAppStore.getState().applySetting(key, value))
+      .then((unlisten) => {
+        if (live) stop = unlisten;
+        else unlisten();
+      })
+      .catch((error: unknown) => console.warn("cannot follow other windows' settings", error));
+    return () => {
+      live = false;
+      stop();
+    };
+  }, []);
+
   // Copy from the Edit menu (or any copy not started by our shortcut) takes
   // the page view's selection, in logical order.
   useEffect(() => {

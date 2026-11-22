@@ -11,6 +11,7 @@
 //! ([`store`]).
 
 mod bitmap;
+pub mod catalog;
 mod document;
 mod engine;
 mod error;

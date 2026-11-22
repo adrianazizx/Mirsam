@@ -39,11 +39,18 @@ pub struct TileRequest {
 /// An open PDF document.
 pub struct Document {
     inner: PdfDocument<'static>,
+    hints: crate::catalog::CatalogHints,
 }
 
 impl Document {
-    pub(crate) fn new(inner: PdfDocument<'static>) -> Self {
-        Self { inner }
+    pub(crate) fn new(inner: PdfDocument<'static>, hints: crate::catalog::CatalogHints) -> Self {
+        Self { inner, hints }
+    }
+
+    /// The document's own reading preferences: `/ViewerPreferences /Direction`
+    /// and `/PageLayout`, where it states them (see [`crate::catalog`]).
+    pub fn catalog_hints(&self) -> crate::catalog::CatalogHints {
+        self.hints
     }
 
     pub fn page_count(&self) -> usize {
@@ -101,6 +108,11 @@ impl Document {
     /// will be a separate API; this one exists for diagnostics and fixtures.
     pub fn page_text_raw(&self, index: usize) -> Result<String> {
         Ok(self.page(index)?.text()?.all())
+    }
+
+    /// The document as PDF bytes, as PDFium would save it (with any edits).
+    pub fn to_pdf_bytes(&self) -> Result<Vec<u8>> {
+        Ok(self.inner.save_to_bytes()?)
     }
 
     /// The document outline (bookmarks), as a tree.

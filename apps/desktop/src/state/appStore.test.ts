@@ -39,3 +39,24 @@ describe("app store documents", () => {
     expect(selectActiveDocument(useAppStore.getState())).toMatchObject({ page: 0, zoom: 0.1 });
   });
 });
+
+describe("document defaults", () => {
+  it("opens with the document's own page order and layout", () => {
+    useAppStore.getState().addDocument({
+      id: 9,
+      name: "كتاب.pdf",
+      pageCount: 4,
+      readingDirection: "rtl",
+      pageLayout: "book",
+    });
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      pageOrder: "rtl",
+      viewMode: "book",
+    });
+    useAppStore.getState().addDocument({ id: 10, name: "plain.pdf", pageCount: 4 });
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      pageOrder: "ltr",
+      viewMode: "continuous",
+    });
+  });
+});

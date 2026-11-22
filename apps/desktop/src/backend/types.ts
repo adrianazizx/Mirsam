@@ -12,6 +12,12 @@ export interface DocumentInfo {
   pageCount: number;
   /** Where the file was left the last time it was open, if ever. */
   viewState?: SavedViewState | null;
+  /**
+   * The document's own reading preferences (its catalog's /ViewerPreferences
+   * /Direction and /PageLayout), the defaults for page order and layout.
+   */
+  readingDirection?: "ltr" | "rtl" | null;
+  pageLayout?: "single" | "continuous" | "spread" | "book" | null;
 }
 
 /** A document's remembered position (safha_core::store::ViewState). */
@@ -295,10 +301,26 @@ export interface Backend {
     lane?: Lane,
   ): Promise<void>;
   closeDocument(documentId: number): Promise<void>;
+  /** Opens an empty window. */
+  newWindow(): Promise<void>;
+  /**
+   * Prints a document through the platform's own PDF viewer and print panel
+   * (ADR 0012; unverified on screen so far).
+   */
+  printDocument(documentId: number): Promise<void>;
+  /** Gives the document's tab to a new window; the caller drops its own tab. */
+  moveToNewWindow(documentId: number): Promise<void>;
+  /**
+   * Calls `listener` whenever any window stores a setting, so every window
+   * follows a change made in one. Returns a function that stops listening.
+   */
+  onSettingChanged(listener: (key: string, value: string) => void): Promise<() => void>;
   selftestConfig(): Promise<SelftestConfig | null>;
   selftestReport(results: unknown, canvasPng: string | null): Promise<void>;
   /** Devtools builds only; null elsewhere. */
   renderStats(): Promise<RenderStats | null>;
+  /** Labels of the open windows; devtools builds only. */
+  windowLabels(): Promise<string[] | null>;
   /** Resident memory of the shell process in kilobytes; devtools builds only. */
   shellRssKb(): Promise<number | null>;
   /**

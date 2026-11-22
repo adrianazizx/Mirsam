@@ -57,6 +57,7 @@ if (nav) {
     check(nav.searchHitMarks > 0, "search hits were not drawn on page 1");
   }
   check(nav.thumbnailDrawn, "no thumbnail was drawn");
+  check((nav.windows?.length ?? 0) >= 2, `a new window did not open (windows: ${JSON.stringify(nav.windows)})`);
 }
 
 if (failures.length > 0) {
@@ -73,6 +74,6 @@ if (nav) {
   console.log(
     `  navigation: selected ${nav.selection.length} chars in ${nav.selectionRects} runs; ` +
       `"${nav.query}": ${nav.searchHits} hits in ${nav.searchMs.toFixed(0)} ms; ` +
-      `outline ${nav.outlineItems} items; ${nav.thumbnails} thumbnails mounted`,
+      `outline ${nav.outlineItems} items; ${nav.thumbnails} thumbnails mounted; windows ${JSON.stringify(nav.windows)}`,
   );
 }

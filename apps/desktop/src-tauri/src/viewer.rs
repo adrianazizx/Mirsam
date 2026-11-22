@@ -72,6 +72,10 @@ pub fn tile_protocol<R: tauri::Runtime>(
     request: http::Request<Vec<u8>>,
     responder: UriSchemeResponder,
 ) {
+    if request.uri().path().trim_matches('/') == "document" {
+        document_response(ctx.app_handle(), request.uri(), responder);
+        return;
+    }
     let request = match parse_tile_request(request.uri()) {
         Ok(request) => request,
         Err(detail) => {
@@ -87,6 +91,44 @@ pub fn tile_protocol<R: tauri::Runtime>(
     app.state::<AppState>().render.submit(request, move |outcome| {
         // Encoding copies a megabyte; keep it off the render thread.
         tauri::async_runtime::spawn_blocking(move || responder.respond(tile_response(outcome)));
+    });
+}
+
+/// `safha://localhost/document?doc=N`: the document as PDF bytes, for a
+/// window that shows it with the platform's own PDF viewer (printing).
+fn document_response<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    uri: &http::Uri,
+    responder: UriSchemeResponder,
+) {
+    let id = uri
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("doc="))
+        .and_then(|id| id.parse::<u32>().ok());
+    let Some(document) = id.and_then(|id| app.state::<AppState>().document(id)) else {
+        responder.respond(error_response(
+            http::StatusCode::NOT_FOUND,
+            "unknown_document",
+            "no such document",
+        ));
+        return;
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let response = match document.to_pdf_bytes() {
+            Ok(bytes) => http::Response::builder()
+                .header(http::header::CONTENT_TYPE, "application/pdf")
+                .header(http::header::CACHE_CONTROL, "no-store")
+                .body(bytes)
+                .unwrap_or_else(|err| {
+                    error_response(http::StatusCode::INTERNAL_SERVER_ERROR, "engine_error", &err.to_string())
+                }),
+            Err(err) => {
+                error_response(http::StatusCode::UNPROCESSABLE_ENTITY, "engine_error", &err.to_string())
+            }
+        };
+        responder.respond(response);
     });
 }
 

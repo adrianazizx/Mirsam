@@ -25,7 +25,8 @@
       "forgetRecent": "Remove from recent files",
       "clearRecents": "Clear recent files",
       "unlock": "Open with password",
-      "cancelUnlock": "Cancel opening"
+      "cancelUnlock": "Cancel opening",
+      "print": "Print…"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -56,7 +57,11 @@
     },
     "tabs": {
       "next": "Next tab",
-      "previous": "Previous tab"
+      "previous": "Previous tab",
+      "moveEarlier": "Move tab earlier",
+      "moveLater": "Move tab later",
+      "move": "Move tab",
+      "moveToNewWindow": "Move tab to a new window"
     },
     "edit": {
       "copy": "Copy",
@@ -74,6 +79,9 @@
       "toggleRegex": "Regular expression",
       "toggleArabic": "Ignore Arabic marks and letter variants",
       "toggleTaMarbuta": "Treat ة and ه as the same"
+    },
+    "window": {
+      "new": "New window"
     }
   },
   "viewer": {

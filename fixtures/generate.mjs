@@ -266,6 +266,49 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
     description: "chrome/mixed-inline four times, rotated 0, 90, 180 and 270 degrees.",
   });
 
+  // An Arabic "book" that states its own reading preferences in its catalog:
+  // /ViewerPreferences /Direction /R2L (bound on the right) and /PageLayout
+  // /TwoPageRight (spreads with the first page alone). Edited through qpdf's
+  // JSON form; a second copy keeps the catalog in a compressed object stream
+  // indexed by a cross-reference stream.
+  if (["ar-plain", "ar-sans", "ar-vocalized", "ar-lam-alef"].every((id) => base(id))) {
+    const book = derived("rtl-book.tmp.pdf");
+    execFileSync(qpdf, [
+      "--empty",
+      "--pages",
+      ...["ar-plain", "ar-sans", "ar-vocalized", "ar-lam-alef"].map(src),
+      "--",
+      book,
+    ]);
+    const json = JSON.parse(
+      execFileSync(qpdf, ["--json-output=2", "--json-stream-data=inline", "--json-key=qpdf", book], {
+        encoding: "utf8",
+        maxBuffer: 256 * 1024 * 1024,
+      }),
+    );
+    const objects = json.qpdf[1];
+    const catalog = objects[`obj:${objects.trailer.value["/Root"]}`].value;
+    catalog["/ViewerPreferences"] = { "/Direction": "/R2L" };
+    catalog["/PageLayout"] = "/TwoPageRight";
+    const edited = derived("rtl-book.tmp.json");
+    writeFileSync(edited, JSON.stringify(json));
+    execFileSync(qpdf, ["--json-input", edited, derived("rtl-book.pdf")]);
+    execFileSync(qpdf, ["--object-streams=generate", derived("rtl-book.pdf"), derived("rtl-book-objstm.pdf")]);
+    rmSync(book);
+    rmSync(edited);
+    const hints = { direction: "R2L", pageLayout: "TwoPageRight" };
+    add("rtl-book.pdf", {
+      pages: 4,
+      catalog: hints,
+      description: "Four Arabic pages whose catalog asks for right-to-left binding and two-page spreads.",
+    });
+    add("rtl-book-objstm.pdf", {
+      pages: 4,
+      catalog: hints,
+      description: "rtl-book.pdf with its catalog in an object stream (qpdf --object-streams=generate).",
+    });
+  }
+
   // A file cut off mid-stream: opening it must fail cleanly or recover, never crash.
   const whole = readFileSync(src("mixed-inline"));
   writeFileSync(derived("truncated.pdf"), whole.subarray(0, Math.floor(whole.length * 0.6)));

@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   type AppInfo,
   type Backend,
@@ -134,12 +135,20 @@ export const tauriBackend: Backend = {
   closeDocument: async (documentId) => {
     await invoke<boolean>("close_document", { documentId });
   },
+  newWindow: () => invoke<void>("new_window"),
+  printDocument: (documentId) => invoke<void>("print_document", { documentId }),
+  moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
+  onSettingChanged: (listener) =>
+    listen<{ key: string; value: string }>("settings-changed", (event) =>
+      listener(event.payload.key, event.payload.value),
+    ),
   // The commands below exist only in `devtools` builds of the shell.
   selftestConfig: async () =>
     (await hasDevtools()) ? invoke<SelftestConfig | null>("selftest_config") : null,
   selftestReport: (results, canvasPng) =>
     invoke<void>("selftest_report", { report: { results, canvasPng } }),
   renderStats: async () => ((await hasDevtools()) ? invoke<RenderStats>("render_stats") : null),
+  windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
   shellRssKb: async () => ((await hasDevtools()) ? invoke<number | null>("spike_rss_kb") : null),
   selftestLog: async (message) => {
     if (await hasDevtools()) await invoke<void>("selftest_log", { message });

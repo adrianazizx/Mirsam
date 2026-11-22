@@ -116,6 +116,8 @@ export interface AppState {
   addDocument(info: DocumentInfo, options?: { activate?: boolean }): void;
   removeDocument(id: number): void;
   activateDocument(id: number): void;
+  /** Moves a tab to `index` in tab order (reading order). */
+  moveDocument(id: number, index: number): void;
   updateDocument(id: number, patch: Partial<Omit<OpenDocument, keyof DocumentInfo>>): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
   pushUnlock(unlock: PendingUnlock): void;
@@ -127,6 +129,8 @@ export interface AppState {
   setPaletteOpen(open: boolean): void;
   /** Applies settings read from the shell's store at startup. */
   hydrate(settings: Record<string, string>): void;
+  /** Applies a setting another window stored (not written back). */
+  applySetting(key: string, value: string): void;
 }
 
 /**
@@ -284,13 +288,10 @@ export const useAppStore = create<AppState>((set, get) => {
         pageOffset: saved ? Math.min(Math.max(0, saved.pageOffset), 1) : 0,
         ...initialZoom(info),
         pageSize: null,
-        viewMode: "continuous",
-        // TODO(M1): default to the document's /ViewerPreferences /Direction (R2L
-        // for many Arabic books). pdfium-render 0.9.6 binds FPDF_VIEWERREF_GetName
-        // only as an `unsafe fn` with no safe wrapper, and `unsafe` is denied in
-        // this workspace; reading it needs an upstream safe API or our own
-        // catalog parse in safha-core. Until then: left to right.
-        pageOrder: "ltr",
+        // The document's own preferences (safha_core::catalog), else continuous,
+        // left to right. Many Arabic books ask for right-to-left spreads.
+        viewMode: info.pageLayout ?? "continuous",
+        pageOrder: info.readingDirection === "rtl" ? "rtl" : "ltr",
         labels: null,
         outline: null,
         search: IDLE_SEARCH,
@@ -316,6 +317,17 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     activateDocument(id) {
       if (get().documents.some((open) => open.id === id)) set({ activeDocumentId: id });
+    },
+    moveDocument(id, index) {
+      set((state) => {
+        const from = state.documents.findIndex((open) => open.id === id);
+        const moving = state.documents[from];
+        if (!moving) return {};
+        const rest = state.documents.filter((open) => open.id !== id);
+        const to = Math.min(Math.max(0, Math.trunc(index)), rest.length);
+        if (to === from) return {};
+        return { documents: [...rest.slice(0, to), moving, ...rest.slice(to)] };
+      });
     },
     updateDocument(id, patch) {
       set((state) => ({
@@ -356,6 +368,12 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     setPaletteOpen(paletteOpen) {
       set({ paletteOpen });
+    },
+    applySetting(key, value) {
+      const parsed = parseSettings({ [key]: value });
+      if (Object.keys(parsed).length === 0) return;
+      set(parsed);
+      writeCache(get());
     },
     hydrate(settings) {
       // The store is the source of truth: a setting it does not have is the

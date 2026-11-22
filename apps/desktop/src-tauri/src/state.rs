@@ -39,7 +39,19 @@ pub struct OpenFile {
     pub name: String,
     /// The search index, built by the first search.
     pub index: Arc<IndexCache>,
+    /// Label of the window whose tab shows it.
+    pub window: String,
 }
+
+/// One window's tabs, as its UI last reported them (for the session).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WindowTabs {
+    pub ids: Vec<u32>,
+    pub active: Option<u32>,
+}
+
+/// The label of the first window, from tauri.conf.json.
+pub const MAIN_WINDOW: &str = "main";
 
 pub struct AppState {
     /// Process start, for the self-test's cold-start timing.
@@ -54,6 +66,11 @@ pub struct AppState {
     /// file by token, never by path.
     recents: Mutex<HashMap<u32, PathBuf>>,
     next_id: AtomicU32,
+    /// Every window's tabs, in the order the windows opened (main first).
+    windows: Mutex<Vec<(String, WindowTabs)>>,
+    /// Set once the app is quitting: closing windows then must not drop
+    /// their tabs from the saved session.
+    exiting: AtomicBool,
     /// The one render thread and tile cache for every open document.
     pub render: RenderService,
     /// Local state (recents, positions, settings, session). Set once at
@@ -72,6 +89,8 @@ impl AppState {
             locked: Mutex::new(HashMap::new()),
             recents: Mutex::new(HashMap::new()),
             next_id: AtomicU32::new(1),
+            windows: Mutex::new(vec![(MAIN_WINDOW.to_string(), WindowTabs::default())]),
+            exiting: AtomicBool::new(false),
             render: RenderService::new(render_config()),
             store: OnceLock::new(),
         }
@@ -100,12 +119,17 @@ impl AppState {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn insert_document(&self, document: Document, path: PathBuf) -> (u32, Arc<Document>) {
+    pub fn insert_document(&self, document: Document, path: PathBuf, window: &str) -> (u32, Arc<Document>) {
         let id = self.next_token();
         let document = Arc::new(document);
         let name = display_name(&path);
-        let file =
-            OpenFile { document: Arc::clone(&document), path, name, index: Arc::new(IndexCache::new()) };
+        let file = OpenFile {
+            document: Arc::clone(&document),
+            path,
+            name,
+            index: Arc::new(IndexCache::new()),
+            window: window.to_string(),
+        };
         lock(&self.documents).insert(id, file);
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.open_document(lane.render_id(id), document.clone());
@@ -125,23 +149,111 @@ impl AppState {
         lock(&self.documents).get(&id).map(|file| file.path.clone())
     }
 
-    /// The id of an open document showing the same file as `path`, if any.
-    pub fn find_open(&self, path: &Path) -> Option<u32> {
+    /// The id of a document in `window` showing the same file as `path`, if
+    /// any. Another window may have the same file open in its own tab.
+    pub fn find_open(&self, path: &Path, window: &str) -> Option<u32> {
         let wanted = std::fs::canonicalize(path).ok()?;
         lock(&self.documents)
             .iter()
+            .filter(|(_, file)| file.window == window)
             .find(|(_, file)| std::fs::canonicalize(&file.path).ok().as_ref() == Some(&wanted))
             .map(|(id, _)| *id)
     }
 
-    /// (id, name, page count) of every open document, oldest first.
-    pub fn open_documents(&self) -> Vec<(u32, String, usize)> {
+    /// (id, name) of the documents in `window`, in its tab order where known,
+    /// then oldest first.
+    pub fn open_documents(&self, window: &str) -> Vec<(u32, String)> {
+        let order = self.window_tabs(window).ids;
         let mut open: Vec<_> = lock(&self.documents)
             .iter()
-            .map(|(id, file)| (*id, file.name.clone(), file.document.page_count()))
+            .filter(|(_, file)| file.window == window)
+            .map(|(id, file)| (*id, file.name.clone()))
             .collect();
-        open.sort_by_key(|(id, _, _)| *id);
+        open.sort_by_key(|(id, _)| (order.iter().position(|known| known == id).unwrap_or(usize::MAX), *id));
         open
+    }
+
+    /// Moves a document's tab to another window.
+    pub fn move_to_window(&self, id: u32, window: &str) -> bool {
+        match lock(&self.documents).get_mut(&id) {
+            Some(file) => file.window = window.to_string(),
+            None => return false,
+        }
+        let mut windows = lock(&self.windows);
+        for (_, tabs) in windows.iter_mut() {
+            tabs.ids.retain(|known| *known != id);
+            if tabs.active == Some(id) {
+                tabs.active = None;
+            }
+        }
+        if let Some((_, tabs)) = windows.iter_mut().find(|(label, _)| label == window) {
+            tabs.ids.push(id);
+            tabs.active = Some(id);
+        }
+        true
+    }
+
+    /// A label for a new window, registered (with no tabs yet) in window order.
+    pub fn add_window(&self) -> String {
+        let label = format!("window-{}", self.next_token());
+        lock(&self.windows).push((label.clone(), WindowTabs::default()));
+        label
+    }
+
+    pub fn set_window_tabs(&self, window: &str, tabs: WindowTabs) {
+        let mut windows = lock(&self.windows);
+        match windows.iter_mut().find(|(label, _)| label == window) {
+            Some((_, known)) => *known = tabs,
+            None => windows.push((window.to_string(), tabs)),
+        }
+    }
+
+    pub fn window_tabs(&self, window: &str) -> WindowTabs {
+        lock(&self.windows)
+            .iter()
+            .find(|(label, _)| label == window)
+            .map(|(_, tabs)| tabs.clone())
+            .unwrap_or_default()
+    }
+
+    /// Every window's tabs as file paths, in window order, for the session.
+    pub fn session_windows(&self) -> Vec<(Vec<PathBuf>, Option<usize>)> {
+        let windows = lock(&self.windows).clone();
+        windows
+            .into_iter()
+            .map(|(_, tabs)| {
+                let files: Vec<(u32, PathBuf)> =
+                    tabs.ids.iter().filter_map(|id| Some((*id, self.path_of(*id)?))).collect();
+                let active = tabs.active.and_then(|active| files.iter().position(|(id, _)| *id == active));
+                (files.into_iter().map(|(_, path)| path).collect::<Vec<_>>(), active)
+            })
+            .filter(|(files, _)| !files.is_empty())
+            .collect()
+    }
+
+    /// A window closed: its documents close with it. Returns whether the
+    /// session should be rewritten — not while quitting, and not for the
+    /// last window, whose tabs are what the next launch restores.
+    pub fn close_window(&self, window: &str) -> bool {
+        let ids: Vec<u32> = lock(&self.documents)
+            .iter()
+            .filter(|(_, file)| file.window == window)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            self.remove_document(id);
+        }
+        let mut windows = lock(&self.windows);
+        let others = windows.iter().filter(|(label, _)| label != window).count();
+        if self.exiting.load(Ordering::SeqCst) || others == 0 {
+            return false;
+        }
+        windows.retain(|(label, _)| label != window);
+        true
+    }
+
+    pub fn set_exiting(&self) {
+        self.exiting.store(true, Ordering::SeqCst);
     }
 
     /// Closes a document: queued renders cancelled, cached tiles dropped, a
@@ -206,4 +318,44 @@ fn render_config() -> RenderConfig {
         config.cache_bytes = megabytes.saturating_mul(1024 * 1024);
     }
     config
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state() -> AppState {
+        AppState::new(Instant::now(), None)
+    }
+
+    #[test]
+    fn closing_a_window_drops_its_tabs_from_the_session_unless_it_is_the_last_or_the_app_quits() {
+        let state = state();
+        let second = state.add_window();
+        state.set_window_tabs(MAIN_WINDOW, WindowTabs { ids: vec![1], active: Some(1) });
+        state.set_window_tabs(&second, WindowTabs { ids: vec![2], active: Some(2) });
+        // Another window remains: the closed one leaves the session.
+        assert!(state.close_window(&second));
+        assert_eq!(state.window_tabs(&second), WindowTabs::default());
+        // The last window: its tabs stay, to be restored next time.
+        assert!(!state.close_window(MAIN_WINDOW));
+        assert_eq!(state.window_tabs(MAIN_WINDOW).ids, vec![1]);
+
+        let quitting = AppState::new(Instant::now(), None);
+        let other = quitting.add_window();
+        quitting.set_window_tabs(&other, WindowTabs { ids: vec![3], active: None });
+        quitting.set_exiting();
+        assert!(!quitting.close_window(&other));
+        assert_eq!(quitting.window_tabs(&other).ids, vec![3]);
+    }
+
+    #[test]
+    fn a_tab_moved_to_a_new_window_leaves_the_old_one() {
+        let state = state();
+        state.set_window_tabs(MAIN_WINDOW, WindowTabs { ids: vec![], active: None });
+        // No document 7 is open: nothing moves.
+        let second = state.add_window();
+        assert!(!state.move_to_window(7, &second));
+        assert!(second.starts_with("window-"));
+    }
 }

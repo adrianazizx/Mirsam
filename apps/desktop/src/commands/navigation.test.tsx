@@ -160,6 +160,26 @@ describe("settings, palette, and page labels", () => {
   });
 });
 
+describe("tabs", () => {
+  it("move in tab order and carry the id the drag code finds them by", async () => {
+    render(<App />);
+    act(() => {
+      for (const id of [1, 2, 3]) {
+        useAppStore.getState().addDocument({ id, name: `${id}.pdf`, pageCount: 1 });
+      }
+    });
+    expect(document.querySelector('[data-document-id="2"]')?.getAttribute("role")).toBe("tab");
+    await act(async () => {
+      await runCommand("tabs.moveEarlier"); // the active tab (3) moves before 2
+    });
+    expect(useAppStore.getState().documents.map((open) => open.id)).toEqual([1, 3, 2]);
+    await act(async () => {
+      await runCommand("tabs.move", { documentId: 1, index: 2 });
+    });
+    expect(useAppStore.getState().documents.map((open) => open.id)).toEqual([3, 2, 1]);
+  });
+});
+
 describe("password prompt", () => {
   it("asks again after a wrong password and opens with the right one", async () => {
     render(<App />);

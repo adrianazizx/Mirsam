@@ -437,9 +437,15 @@ export const mockBackend: Backend = {
   updateViewport: async (_documentId, next, keep, lane = "main") =>
     updateViewport(lane, next, keep),
   closeDocument: async () => {},
+  // One window in the browser.
+  newWindow: async () => {},
+  printDocument: async () => {},
+  moveToNewWindow: async () => {},
+  onSettingChanged: async () => () => {},
   selftestConfig: async () => null,
   selftestReport: async () => {},
   renderStats: async () => null,
+  windowLabels: async () => null,
   shellRssKb: async () => null,
   webviewRssKb: async () => null,
   selftestLog: async () => {},

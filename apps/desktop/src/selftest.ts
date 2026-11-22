@@ -1,3 +1,5 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { backend } from "./backend";
 import { runCommand } from "./commands/registry";
 import { useAppStore } from "./state/appStore";
@@ -127,6 +129,16 @@ async function navigationChecks(documentId: number) {
   );
   const thumbnails = document.querySelectorAll('[data-testid="thumbnails"] button').length;
 
+  // A second window opens, and the shell has both.
+  await runCommand("window.new");
+  let windows: string[] | null = null;
+  await waitFor(() => {
+    void backend.windowLabels().then((labels) => {
+      windows = labels;
+    });
+    return (windows?.length ?? 0) >= 2;
+  }, 5_000);
+
   return {
     textQuality: layer.quality,
     textBlocks: layer.blocks.length,
@@ -144,6 +156,7 @@ async function navigationChecks(documentId: number) {
     labels: labels?.slice(0, 5) ?? null,
     thumbnailDrawn,
     thumbnails,
+    windows,
   };
 }
 
@@ -157,6 +170,8 @@ async function navigationChecks(documentId: number) {
 export async function runSelftestIfRequested(): Promise<void> {
   const config = await backend.selftestConfig();
   if (!config) return;
+  // Only the main window runs it; windows it opens itself must not.
+  if (isTauri() && getCurrentWebviewWindow().label !== "main") return;
 
   const store = useAppStore.getState();
   store.setLocale(config.locale === "ar" ? "ar" : "en");
@@ -172,6 +187,22 @@ export async function runSelftestIfRequested(): Promise<void> {
   if (config.spike === "tile-transport" && painted) {
     const { runTileTransportSpike } = await import("./spikes/tileTransport");
     await backend.selftestReport(await runTileTransportSpike(painted.documentId), null);
+    return;
+  }
+  if (config.spike === "print" && painted) {
+    // Spike (ADR 0012): print through the platform's PDF viewer. The harness
+    // takes screenshots while this waits.
+    const { invoke } = await import("@tauri-apps/api/core");
+    const started = performance.now();
+    let error: string | null = null;
+    try {
+      await invoke("print_document", { documentId: painted.documentId });
+    } catch (caught) {
+      error = JSON.stringify(caught);
+    }
+    void backend.selftestLog(`print_document returned after ${performance.now() - started} ms`);
+    await new Promise((resolve) => window.setTimeout(resolve, 12_000));
+    await backend.selftestReport({ spike: "print", error }, null);
     return;
   }
   if (config.spike?.startsWith("tile-memory:") && painted) {

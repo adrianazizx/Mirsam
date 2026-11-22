@@ -8,14 +8,15 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use safha_core::store::{Session, ViewState};
-use safha_core::{Engine, PdfiumSource};
+use safha_core::catalog::{PageLayout, ReadingDirection};
+use safha_core::store::{Session, SessionWindow, ViewState};
+use safha_core::{Document, Engine, PdfiumSource};
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{CommandError, CommandResult};
-use crate::state::{AppState, display_name};
+use crate::state::{AppState, MAIN_WINDOW, WindowTabs, display_name};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +34,34 @@ pub struct DocumentInfo {
     page_count: usize,
     /// Where the file was left last time, if it was opened before.
     view_state: Option<ViewState>,
+    /// The document's own reading preferences (`/ViewerPreferences
+    /// /Direction`, `/PageLayout`), the defaults for its page order and layout.
+    reading_direction: Option<&'static str>,
+    page_layout: Option<&'static str>,
+}
+
+impl DocumentInfo {
+    fn new(id: u32, name: String, document: &Document, view_state: Option<ViewState>) -> Self {
+        let hints = document.catalog_hints();
+        Self {
+            id,
+            name,
+            page_count: document.page_count(),
+            view_state,
+            reading_direction: hints.direction.map(|direction| match direction {
+                ReadingDirection::LeftToRight => "ltr",
+                ReadingDirection::RightToLeft => "rtl",
+            }),
+            // In the UI's vocabulary (viewer/layout.ts): odd pages on the
+            // right means the first page stands alone, as in a book.
+            page_layout: hints.page_layout.map(|layout| match layout {
+                PageLayout::SinglePage => "single",
+                PageLayout::OneColumn => "continuous",
+                PageLayout::TwoColumnLeft | PageLayout::TwoPageLeft => "spread",
+                PageLayout::TwoColumnRight | PageLayout::TwoPageRight => "book",
+            }),
+        }
+    }
 }
 
 /// What opening a file led to.
@@ -81,30 +110,40 @@ pub fn app_info() -> AppInfo {
 #[tauri::command]
 pub async fn open_document_dialog(
     app: AppHandle,
+    window: WebviewWindow,
     state: State<'_, AppState>,
 ) -> CommandResult<Option<OpenOutcome>> {
     let picked = app.dialog().file().add_filter("PDF", &["pdf"]).blocking_pick_file();
     let Some(path) = picked.and_then(|file| file.into_path().ok()) else {
         return Ok(None);
     };
-    open_path(&state, &path, None).map(Some)
+    open_path(&state, &path, None, window.label()).map(Some)
 }
 
-/// What the UI shows when it starts. The first call restores the previous
-/// session's tabs and opens the document the app was launched with; a later
-/// call (the UI reloaded) returns the documents that are still open.
+/// What a window's UI shows when it starts.
+///
+/// The main window's first call restores the previous session: its own tabs,
+/// plus a new window for each other window that was open, and the document
+/// the app was launched with. Any other call (a new window, or a UI reload)
+/// returns the documents that window already has.
 #[tauri::command]
-pub async fn startup(state: State<'_, AppState>) -> CommandResult<Startup> {
-    if !state.begin_startup() {
+pub async fn startup(
+    app: AppHandle,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> CommandResult<Startup> {
+    let label = window.label();
+    if label != MAIN_WINDOW || !state.begin_startup() {
         let documents = state
-            .open_documents()
+            .open_documents(label)
             .into_iter()
-            .map(|(id, name, page_count)| {
+            .filter_map(|(id, name)| {
                 let view_state = state.path_of(id).and_then(|path| view_state_of(&state, &path));
-                OpenOutcome::Opened { document: DocumentInfo { id, name, page_count, view_state } }
+                let document = state.document(id)?;
+                Some(OpenOutcome::Opened { document: DocumentInfo::new(id, name, &document, view_state) })
             })
             .collect();
-        return Ok(Startup { documents, active: None });
+        return Ok(Startup { documents, active: state.window_tabs(label).active });
     }
 
     let mut documents = Vec::new();
@@ -113,17 +152,35 @@ pub async fn startup(state: State<'_, AppState>) -> CommandResult<Startup> {
     if restore.as_deref() != Some("false")
         && let Some(session) = state.store().and_then(|store| store.session().ok())
     {
-        for (position, path) in session.files.iter().enumerate() {
-            // A file that can no longer be read is left out; the rest still open.
-            let Ok(outcome) = open_path(&state, path, None) else { continue };
-            if session.active == Some(position) {
-                active = opened_id(&outcome);
+        for (index, saved) in session.windows.iter().enumerate() {
+            let target = if index == 0 { MAIN_WINDOW.to_string() } else { state.add_window() };
+            let mut tabs = WindowTabs::default();
+            for (position, path) in saved.files.iter().enumerate() {
+                // A file that can no longer be read is left out; the rest still open.
+                let Ok(outcome) = open_path(&state, path, None, &target) else { continue };
+                let id = opened_id(&outcome);
+                if let Some(id) = id {
+                    tabs.ids.push(id);
+                    if saved.active == Some(position) {
+                        tabs.active = Some(id);
+                    }
+                }
+                if index == 0 {
+                    documents.push(outcome);
+                }
             }
-            documents.push(outcome);
+            if index == 0 {
+                active = tabs.active;
+            }
+            let opened_any = !tabs.ids.is_empty();
+            state.set_window_tabs(&target, tabs);
+            if index > 0 && opened_any {
+                create_window(&app, &target)?;
+            }
         }
     }
     if let Some(path) = state.take_startup_document() {
-        let outcome = open_path(&state, &path, None)?;
+        let outcome = open_path(&state, &path, None, MAIN_WINDOW)?;
         active = opened_id(&outcome).or(active);
         if !documents
             .iter()
@@ -135,18 +192,87 @@ pub async fn startup(state: State<'_, AppState>) -> CommandResult<Startup> {
     Ok(Startup { documents, active })
 }
 
+/// Opens an empty window.
+#[tauri::command]
+pub async fn new_window(app: AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
+    let label = state.add_window();
+    create_window(&app, &label)
+}
+
+/// Moves a document's tab into a new window of its own; the calling window's
+/// UI drops the tab (without closing the document).
+#[tauri::command]
+pub async fn move_to_new_window(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    document_id: u32,
+) -> CommandResult<()> {
+    if state.document(document_id).is_none() {
+        return Err(CommandError::unknown_document(document_id));
+    }
+    let label = state.add_window();
+    state.move_to_window(document_id, &label);
+    create_window(&app, &label)
+}
+
+/// Prints a document: a window shows it with the platform's own PDF viewer
+/// (WebKit on macOS, WebView2 on Windows), and prints once it has loaded, so
+/// the system print panel prints the PDF itself, at full vector quality.
+/// SPIKE (ADR 0012): verifying what each platform does with it.
+#[tauri::command]
+pub async fn print_document(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    document_id: u32,
+) -> CommandResult<()> {
+    let name = state.path_of(document_id).map(|path| display_name(&path)).unwrap_or_default();
+    if state.document(document_id).is_none() {
+        return Err(CommandError::unknown_document(document_id));
+    }
+    let label = format!("print-{}", state.next_token());
+    let base = if cfg!(windows) { "http://safha.localhost" } else { "safha://localhost" };
+    let url = format!("{base}/document?doc={document_id}")
+        .parse::<tauri::Url>()
+        .map_err(|err| CommandError::new("window_error", err.to_string()))?;
+    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::CustomProtocol(url))
+        .title(name)
+        .inner_size(900.0, 1100.0)
+        .on_page_load(|window, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished
+                && let Err(err) = window.print()
+            {
+                eprintln!("safha: printing failed: {err}");
+            }
+        })
+        .build()
+        .map(drop)
+        .map_err(|err| CommandError::new("window_error", err.to_string()))
+}
+
+/// A window like the main one (tauri.conf.json) showing the same UI.
+pub fn create_window(app: &AppHandle, label: &str) -> CommandResult<()> {
+    tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
+        .title("Safha")
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(880.0, 560.0)
+        .build()
+        .map(drop)
+        .map_err(|err| CommandError::new("window_error", err.to_string()))
+}
+
 /// Tries the password for a file that needs one. A wrong password yields
 /// `NeedsPassword` again with `retry: true`. The password is used once and
 /// never stored or logged.
 #[tauri::command]
 pub async fn unlock_document(
+    window: WebviewWindow,
     state: State<'_, AppState>,
     token: u32,
     password: String,
 ) -> CommandResult<OpenOutcome> {
     let path =
         state.pending_path(token).ok_or_else(|| CommandError::new("unknown_token", "no file waiting"))?;
-    let outcome = open_path(&state, &path, Some(&password))?;
+    let outcome = open_path(&state, &path, Some(&password), window.label())?;
     if matches!(outcome, OpenOutcome::Opened { .. }) {
         state.forget_pending(token);
     }
@@ -184,13 +310,17 @@ pub fn recent_files(state: State<'_, AppState>, limit: usize) -> CommandResult<V
 }
 
 #[tauri::command]
-pub async fn open_recent(state: State<'_, AppState>, token: u32) -> CommandResult<OpenOutcome> {
+pub async fn open_recent(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    token: u32,
+) -> CommandResult<OpenOutcome> {
     let path =
         state.recent_path(token).ok_or_else(|| CommandError::new("unknown_token", "no such recent file"))?;
     if !path.is_file() {
         return Err(CommandError::new("file_missing", "the file has been moved or deleted"));
     }
-    open_path(&state, &path, None)
+    open_path(&state, &path, None, window.label())
 }
 
 #[tauri::command]
@@ -211,24 +341,25 @@ pub fn save_view_state(state: State<'_, AppState>, document_id: u32, view: ViewS
     store.save_view_state(&path, &view).map_err(store_error)
 }
 
-/// Remembers the open tabs, in order, for the next launch.
+/// Remembers the calling window's tabs, in order; the saved session holds
+/// every window's, for the next launch.
 #[tauri::command]
 pub fn save_session(
+    window: WebviewWindow,
     state: State<'_, AppState>,
     document_ids: Vec<u32>,
     active: Option<u32>,
 ) -> CommandResult<()> {
+    state.set_window_tabs(window.label(), WindowTabs { ids: document_ids, active });
+    write_session(&state)
+}
+
+/// Writes every window's tabs to the store.
+pub fn write_session(state: &AppState) -> CommandResult<()> {
     let Some(store) = state.store() else { return Ok(()) };
-    let mut session = Session::default();
-    for id in document_ids {
-        if let Some(path) = state.path_of(id) {
-            if active == Some(id) {
-                session.active = Some(session.files.len());
-            }
-            session.files.push(path);
-        }
-    }
-    store.save_session(&session).map_err(store_error)
+    let windows =
+        state.session_windows().into_iter().map(|(files, active)| SessionWindow { files, active }).collect();
+    store.save_session(&Session { windows }).map_err(store_error)
 }
 
 /// Every stored UI setting (`theme`, `locale`, …).
@@ -244,12 +375,32 @@ pub fn settings(state: State<'_, AppState>) -> CommandResult<HashMap<String, Str
     Ok(settings)
 }
 
+/// Stores a setting and tells every window, so all of them follow a change
+/// of language, theme, or reading theme made in one.
 #[tauri::command]
-pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> CommandResult<()> {
+pub fn set_setting(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> CommandResult<()> {
     if !SETTINGS.contains(&key.as_str()) || value.len() > 1024 {
         return Err(CommandError::new("invalid_setting", format!("unknown setting {key:?}")));
     }
-    state.store().map_or(Ok(()), |store| store.set_setting(&key, &value).map_err(store_error))
+    if let Some(store) = state.store() {
+        store.set_setting(&key, &value).map_err(store_error)?;
+    }
+    let _ = app.emit(SETTINGS_EVENT, SettingChanged { key, value });
+    Ok(())
+}
+
+/// Event sent to every window when a setting changes.
+pub const SETTINGS_EVENT: &str = "settings-changed";
+
+#[derive(Debug, Clone, Serialize)]
+struct SettingChanged {
+    key: String,
+    value: String,
 }
 
 /// The settings the UI may store. A closed list: the webview cannot use the
@@ -257,17 +408,19 @@ pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Co
 const SETTINGS: &[&str] =
     &["locale", "theme", "readingTheme", "leftPanel", "session.restore", "search.options"];
 
-/// Opens `path`, or switches to it if it is already open in a tab.
-pub fn open_path(state: &AppState, path: &Path, password: Option<&str>) -> CommandResult<OpenOutcome> {
-    if let Some(id) = state.find_open(path) {
+/// Opens `path` in a tab of `window`, or switches to it if that window has it
+/// open already.
+pub fn open_path(
+    state: &AppState,
+    path: &Path,
+    password: Option<&str>,
+    window: &str,
+) -> CommandResult<OpenOutcome> {
+    if let Some(id) = state.find_open(path, window) {
         let document = state.document(id).ok_or_else(|| CommandError::unknown_document(id))?;
-        let info = DocumentInfo {
-            id,
-            name: display_name(path),
-            page_count: document.page_count(),
-            view_state: None,
-        };
-        return Ok(OpenOutcome::Opened { document: info });
+        return Ok(OpenOutcome::Opened {
+            document: DocumentInfo::new(id, display_name(path), &document, None),
+        });
     }
     let engine = Engine::global(&PdfiumSource::Auto)?;
     let document = match engine.open_file(path, password) {
@@ -282,20 +435,13 @@ pub fn open_path(state: &AppState, path: &Path, password: Option<&str>) -> Comma
         Err(err) => return Err(err.into()),
     };
     let view_state = view_state_of(state, path);
-    let (id, document) = state.insert_document(document, path.to_path_buf());
+    let (id, document) = state.insert_document(document, path.to_path_buf(), window);
     if let Some(store) = state.store()
         && let Err(err) = store.record_open(path)
     {
         eprintln!("safha: could not record a recent file: {err}");
     }
-    Ok(OpenOutcome::Opened {
-        document: DocumentInfo {
-            id,
-            name: display_name(path),
-            page_count: document.page_count(),
-            view_state,
-        },
-    })
+    Ok(OpenOutcome::Opened { document: DocumentInfo::new(id, display_name(path), &document, view_state) })
 }
 
 fn view_state_of(state: &AppState, path: &Path) -> Option<ViewState> {
@@ -334,27 +480,45 @@ mod tests {
         let state = state_with_store();
         let path = fixture("derived/encrypted.pdf");
         assert!(path.is_file(), "fixture corpus missing: run `node fixtures/generate.mjs`");
-        let OpenOutcome::NeedsPassword { token, name, retry } = open_path(&state, &path, None).expect("asks")
+        let OpenOutcome::NeedsPassword { token, name, retry } =
+            open_path(&state, &path, None, MAIN_WINDOW).expect("asks")
         else {
             panic!("an encrypted file must ask for a password");
         };
         assert_eq!((name.as_str(), retry), ("encrypted.pdf", false));
         let pending = state.pending_path(token).expect("waiting");
-        let wrong = open_path(&state, &pending, Some("not it")).expect("asks again");
+        let wrong = open_path(&state, &pending, Some("not it"), MAIN_WINDOW).expect("asks again");
         assert!(matches!(wrong, OpenOutcome::NeedsPassword { retry: true, .. }));
         // fixtures/generate.mjs: ENCRYPTED_PASSWORD.
-        let opened = open_path(&state, &pending, Some("safha-test")).expect("opens");
+        let opened = open_path(&state, &pending, Some("safha-test"), MAIN_WINDOW).expect("opens");
         assert!(matches!(opened, OpenOutcome::Opened { .. }));
+    }
+
+    #[test]
+    fn a_book_that_asks_for_right_to_left_spreads_opens_that_way() {
+        let state = state_with_store();
+        let OpenOutcome::Opened { document } =
+            open_path(&state, &fixture("derived/rtl-book-objstm.pdf"), None, MAIN_WINDOW).expect("opens")
+        else {
+            panic!("opens");
+        };
+        assert_eq!((document.reading_direction, document.page_layout), (Some("rtl"), Some("book")));
+        let OpenOutcome::Opened { document } =
+            open_path(&state, &fixture("chrome/en-paragraphs.pdf"), None, MAIN_WINDOW).expect("opens")
+        else {
+            panic!("opens");
+        };
+        assert_eq!((document.reading_direction, document.page_layout), (None, None));
     }
 
     #[test]
     fn opening_a_file_twice_switches_to_its_tab_and_records_it_once() {
         let state = state_with_store();
         let path = fixture("chrome/en-paragraphs.pdf");
-        let first = opened_id(&open_path(&state, &path, None).expect("opens")).expect("opened");
-        let second = opened_id(&open_path(&state, &path, None).expect("opens")).expect("opened");
+        let first = opened_id(&open_path(&state, &path, None, MAIN_WINDOW).expect("opens")).expect("opened");
+        let second = opened_id(&open_path(&state, &path, None, MAIN_WINDOW).expect("opens")).expect("opened");
         assert_eq!(first, second);
-        assert_eq!(state.open_documents().len(), 1);
+        assert_eq!(state.open_documents(MAIN_WINDOW).len(), 1);
         let recents = state.store().expect("store").recents(10).expect("recents");
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].name, "en-paragraphs.pdf");
@@ -364,7 +528,7 @@ mod tests {
     fn a_document_remembers_where_it_was_left() {
         let state = state_with_store();
         let path = fixture("chrome/contract-two-column.pdf");
-        let id = opened_id(&open_path(&state, &path, None).expect("opens")).expect("opened");
+        let id = opened_id(&open_path(&state, &path, None, MAIN_WINDOW).expect("opens")).expect("opened");
         let left = ViewState { page: 0, zoom_mode: "custom".into(), zoom: 1.5, page_offset: 0.25 };
         state
             .store()
@@ -372,7 +536,8 @@ mod tests {
             .save_view_state(&state.path_of(id).expect("path"), &left)
             .expect("saves");
         assert!(state.remove_document(id));
-        let OpenOutcome::Opened { document } = open_path(&state, &path, None).expect("opens") else {
+        let OpenOutcome::Opened { document } = open_path(&state, &path, None, MAIN_WINDOW).expect("opens")
+        else {
             panic!("opens");
         };
         assert_eq!(document.view_state, Some(left));

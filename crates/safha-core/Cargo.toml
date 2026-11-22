@@ -16,6 +16,9 @@ unicode-normalization = "0.1.26"
 regex = { version = "1.13", default-features = false, features = ["std", "unicode", "perf"] }
 # Bundled: the same SQLite on every platform, no system library needed.
 rusqlite = { version = "0.43", features = ["bundled"] }
+# Inflate for the catalog reader's object and cross-reference streams; it can
+# cap the decompressed size, which untrusted input needs.
+miniz_oxide = "0.9"
 
 [lints]
 workspace = true
