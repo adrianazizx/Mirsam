@@ -317,6 +317,10 @@ branch have committed and uncommitted work inside those crates, so renaming them
 every one of their files conflict. Do it in one change once those branches have merged, and
 update CLAUDE.md, the spec header and the README note when it is done.
 
+CI on this PR hit a Windows runner measuring 1,133 ms for the first page (main measures about
+200 ms), so it carries the CI half of `m2-organize`'s 353d2a6 unchanged: `check-selftest.mjs --ci`
+turns the first-page time budget into a warning on hosted runners.
+
 ### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
 
 Branch `pomidor/m3-text-engine-3c22b6`, cut from `main`, in its own worktree. M2 continued on

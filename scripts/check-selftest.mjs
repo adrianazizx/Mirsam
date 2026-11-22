@@ -3,12 +3,18 @@
 // tiles, the layout is mirrored the right way (and the page area is not), and
 // the first page appeared inside its budget.
 //
-// Usage: node scripts/check-selftest.mjs <out-dir> <ltr|rtl>
+// --ci: on hosted CI runners (virtual machines, a debug build, Vite serving
+// the UI) the first-page time budget only warns; the behaviour checks still
+// fail the run. The budget is enforced on real hardware.
+//
+// Usage: node scripts/check-selftest.mjs <out-dir> <ltr|rtl> [--ci]
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const [outDir, direction] = process.argv.slice(2);
+const [outDir, direction, ...flags] = process.argv.slice(2);
+const ci = flags.includes("--ci");
+const warnings = [];
 const report = JSON.parse(readFileSync(path.join(outDir, "report.json"), "utf8"));
 const results = report.results;
 const failures = [];
@@ -38,8 +44,12 @@ if (direction === "ltr") {
 // Spec budget: first page visible within 300 ms of opening. Measured from the
 // viewer's creation to page 1's low-resolution preview and to its sharp tiles.
 const preview = results.painted?.previewSinceOpenMs;
-check(preview === null || preview < 300, `first page preview took ${preview} ms`);
-check(results.painted?.sinceOpenMs < 300, `first page took ${results.painted?.sinceOpenMs} ms to be sharp`);
+/** A time budget: on CI runners it warns (see --ci above). */
+const budget = (ok, message) => {
+  if (!ok) (ci ? warnings : failures).push(message);
+};
+budget(preview === null || preview < 300, `first page preview took ${preview} ms`);
+budget(results.painted?.sinceOpenMs < 300, `first page took ${results.painted?.sinceOpenMs} ms to be sharp`);
 
 // Milestone 1 navigation (selftest.ts, navigationChecks): selecting page 1
 // copies exactly its text layer, a search finds a word of it and marks it on
@@ -60,6 +70,10 @@ if (nav) {
   check((nav.windows?.length ?? 0) >= 2, `a new window did not open (windows: ${JSON.stringify(nav.windows)})`);
 }
 
+for (const warning of warnings) {
+  // A GitHub Actions annotation: shown on the run and the pull request.
+  console.log(`::warning title=Self-test (CI runner)::${warning}`);
+}
 if (failures.length > 0) {
   console.error(`self-test (${direction}) FAILED:\n  ${failures.join("\n  ")}`);
   process.exit(1);

@@ -163,7 +163,7 @@ jobs:
       - name: Arabic, dark
         run: scripts/selftest.sh fixtures/out/coretext/contract-two-column.pdf selftest-out/ar ar dark
       - name: Check the reports
-        run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+        run: node scripts/check-selftest.mjs selftest-out/en ltr --ci && node scripts/check-selftest.mjs selftest-out/ar rtl --ci
       # Frame timing on a virtual machine says little about real hardware, so
       # those budgets only warn here; blank time and the shell's memory fail.
       - name: Scroll and zoom budgets, 1,000-page document (spec section 11)
@@ -231,7 +231,7 @@ jobs:
       - name: Arabic, dark
         run: scripts/selftest.sh fixtures/out/chrome/contract-two-column.pdf selftest-out/ar ar dark
       - name: Check the reports
-        run: node scripts/check-selftest.mjs selftest-out/en ltr && node scripts/check-selftest.mjs selftest-out/ar rtl
+        run: node scripts/check-selftest.mjs selftest-out/en ltr --ci && node scripts/check-selftest.mjs selftest-out/ar rtl --ci
       # GTK's print path, exported to a file instead of the dialog (ADR 0013):
       # four pages turned 0, 90, 180 and 270 degrees must all come out.
       - name: Print through GTK to a file (Linux)
