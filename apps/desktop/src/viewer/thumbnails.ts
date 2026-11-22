@@ -1,4 +1,11 @@
-import type { Backend, PageSize, RenderedPage, TileRequest } from "../backend";
+import {
+  type Backend,
+  drawRendered,
+  type PageSize,
+  type RenderedPage,
+  releaseRendered,
+  type TileRequest,
+} from "../backend";
 import { pagePixelSize, tileId } from "./geometry";
 import { firstRowBelow, type Row } from "./layout";
 import { TileClient, type WantedTile } from "./tileClient";
@@ -221,13 +228,16 @@ export class ThumbnailStrip {
 
   private onRendered(wanted: WantedTile, bitmap: RenderedPage): void {
     const item = this.items.get(wanted.page);
-    if (!item || item.canvas) return;
+    if (!item || item.canvas) {
+      releaseRendered(bitmap);
+      return;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
-    canvas
-      .getContext("2d", { alpha: false })
-      ?.putImageData(new ImageData(bitmap.rgba, bitmap.width, bitmap.height), 0, 0);
+    const context = canvas.getContext("2d", { alpha: false });
+    if (context) drawRendered(context, bitmap);
+    releaseRendered(bitmap);
     canvas.setAttribute("aria-hidden", "true");
     item.image.append(canvas);
     item.canvas = canvas;

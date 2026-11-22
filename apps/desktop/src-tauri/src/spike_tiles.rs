@@ -13,9 +13,26 @@ use safha_core::TileRequest;
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::{Manager, State, UriSchemeContext, UriSchemeResponder, http};
 
-use crate::commands::encode_bitmap;
 use crate::error::{CommandError, CommandResult};
 use crate::state::AppState;
+
+/// Length of the little-endian header before the RGBA bytes of the spike's
+/// raw transports: width, height, render time in microseconds, flags (0).
+/// Read by `apps/desktop/src/backend/bitmap.ts`. The product's tiles travel
+/// as BMP images over the `safha` scheme instead (ADR 0011).
+pub const BITMAP_HEADER_LEN: usize = 16;
+
+/// A bitmap as raw bytes: a [`BITMAP_HEADER_LEN`]-byte header, then RGBA.
+pub fn encode_bitmap(bitmap: &safha_core::Bitmap, render_micros: u128) -> Vec<u8> {
+    let rgba = bitmap.to_rgba();
+    let mut out = Vec::with_capacity(BITMAP_HEADER_LEN + rgba.len());
+    out.extend_from_slice(&bitmap.width().to_le_bytes());
+    out.extend_from_slice(&bitmap.height().to_le_bytes());
+    out.extend_from_slice(&u32::try_from(render_micros).unwrap_or(u32::MAX).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&rgba);
+    out
+}
 
 fn render(state: &AppState, document_id: u32, page: usize, tile: TileRequest) -> CommandResult<Vec<u8>> {
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
@@ -79,8 +96,15 @@ pub fn spike_rss_kb() -> Option<u64> {
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
 }
 
+/// The tile as a plain 32-bit BMP (`Bitmap::encode_bmp`), for the Milestone 1
+/// memory experiment (ADR 0011).
+fn render_bmp(state: &AppState, document_id: u32, page: usize, tile: TileRequest) -> CommandResult<Vec<u8>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    Ok(document.render_tile(page, tile)?.encode_bmp())
+}
+
 /// Transport 3: a custom URI scheme the webview can `fetch()`.
-/// `safha-tile://localhost/<document>/<page>?scale=&x=&y=&w=&h=`
+/// `safha-tile://localhost/<document>/<page>?scale=&x=&y=&w=&h=[&format=bmp]`
 pub fn protocol<R: tauri::Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: http::Request<Vec<u8>>,
@@ -88,12 +112,23 @@ pub fn protocol<R: tauri::Runtime>(
 ) {
     let app = ctx.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let bmp =
+            request.uri().query().is_some_and(|query| query.split('&').any(|pair| pair == "format=bmp"));
         let result = parse(request.uri()).and_then(|(document_id, page, tile)| {
-            render(&app.state::<AppState>(), document_id, page, tile).map_err(|err| err.detail)
+            let state = app.state::<AppState>();
+            if bmp {
+                render_bmp(&state, document_id, page, tile)
+            } else {
+                render(&state, document_id, page, tile)
+            }
+            .map_err(|err| err.detail)
         });
         let response = match result {
             Ok(bytes) => http::Response::builder()
-                .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                .header(
+                    http::header::CONTENT_TYPE,
+                    if bmp { "image/bmp" } else { "application/octet-stream" },
+                )
                 .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                 .header(http::header::CACHE_CONTROL, "no-store")
                 .body(bytes),

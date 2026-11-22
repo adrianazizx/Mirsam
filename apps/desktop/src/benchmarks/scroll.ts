@@ -16,7 +16,7 @@ import { backend, type RenderStats } from "../backend";
 import { runCommand } from "../commands/registry";
 import { waitForPagePainted } from "../selftest";
 import { useAppStore } from "../state/appStore";
-import type { ViewerController } from "../viewer/controller";
+import { emptyProfile, type ViewerController, type ViewerProfile } from "../viewer/controller";
 import {
   PAGE_PREVIEW_EVENT,
   type PagePaintedDetail,
@@ -57,6 +57,9 @@ const DEADLINE_MS = 120_000;
 
 interface PhaseResult {
   name: string;
+  /** Where the viewer's own time went during the phase. */
+  profile: ViewerProfile;
+  memoryAfter: { shellRssMb: number | null; webviewRssMb: number | null };
   durationMs: number;
   frames: number;
   /** Frames delivered by the timer fallback: if any, frame statistics are invalid. */
@@ -65,6 +68,12 @@ interface PhaseResult {
   p95FrameMs: number;
   longestFrameMs: number;
   framesOver20Ms: number;
+  /**
+   * Frames that took over 25 ms: at 60 Hz (16.7 ms) at least one vsync was
+   * missed. WebKit's frame timestamps jitter by 1–2 ms even on an idle page,
+   * so this, not a p95 a hair above 16.7 ms, is what a reader sees as a stutter.
+   */
+  droppedFrames: number;
   /** Longest stretch any page spent on screen with nothing drawn on it. */
   maxBlankMs: number;
   blankEpisodes: number;
@@ -125,6 +134,7 @@ class Monitor {
       p95FrameMs: round(quantile(this.gaps, 0.95)),
       longestFrameMs: round(Math.max(0, ...this.gaps)),
       framesOver20Ms: this.gaps.filter((gap) => gap > 20).length,
+      droppedFrames: this.gaps.filter((gap) => gap > 25).length,
       maxBlankMs: round(Math.max(0, ...this.blanks)),
       blankEpisodes: this.blanks.length,
       blankEpisodesOver100Ms: this.blanks.filter((ms) => ms > 100).length,
@@ -168,6 +178,7 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
     }
     void backend.selftestLog(`phase "${name}" at ${since} ms (${document.visibilityState})`);
     const monitor = new Monitor(viewer);
+    viewer.profile = emptyProfile();
     const startTop = container.scrollTop;
     const startPage = viewer.snapshot().currentPage;
     const zoomStart = viewer.snapshot().zoom;
@@ -198,7 +209,11 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
       endPage: snapshot.currentPage,
       zoomStart: round(zoomStart),
       zoomEnd: round(snapshot.zoom),
+      profile: viewer.profile ?? emptyProfile(),
+      // Sampled after the phase's last frame, so it does not disturb it.
+      memoryAfter: await memory(),
     });
+    viewer.profile = null;
   };
 
   /** Scrolls at `speed` CSS px/s (a function of elapsed ms) for `ms`. */
@@ -238,11 +253,17 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
     useAppStore.getState().documents.find((open) => open.id === first.documentId)?.pageCount ?? 1;
   const jumps: { page: number; previewMs: number | null; sharpMs: number | null }[] = [];
   // Every render call during the jumps, to tell an IPC stall from a UI stall.
-  const calls: { page: number; w: number; sentAt: number; doneAt: number; micros: number }[] = [];
+  const calls: {
+    page: number;
+    w: number;
+    sentAt: number;
+    doneAt: number;
+    micros: number | null;
+  }[] = [];
   const renderTile = backend.renderTile;
-  backend.renderTile = async (documentId, generation, page, tile, priority) => {
+  backend.renderTile = async (documentId, generation, page, tile, priority, lane) => {
     const sentAt = performance.now();
-    const result = await renderTile(documentId, generation, page, tile, priority);
+    const result = await renderTile(documentId, generation, page, tile, priority, lane);
     calls.push({
       page,
       w: tile.width,
@@ -281,7 +302,7 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
           w: call.w,
           sent: round(call.sentAt - jumpedAt),
           done: round(call.doneAt - jumpedAt),
-          renderMs: round(call.micros / 1000),
+          renderMs: call.micros === null ? null : round(call.micros / 1000),
         })),
       });
     }
@@ -318,6 +339,10 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
   const memoryAtEnd = await memory();
   await sleep(2000);
   const memoryAfterIdle = await memory();
+  // WebKit frees garbage and returns memory to the system lazily; a longer
+  // idle separates retained memory from not-yet-reclaimed memory.
+  await sleep(13_000);
+  const memoryAfterIdle15s = await memory();
   const statsAfter = await backend.renderStats();
   const snapshot = viewer.snapshot();
 
@@ -339,6 +364,7 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
     summary: {
       longestFrameMs: Math.max(...scrollPhases.map((p) => p.longestFrameMs)),
       framesOver20Ms: scrollPhases.reduce((sum, p) => sum + p.framesOver20Ms, 0),
+      droppedFrames: scrollPhases.reduce((sum, p) => sum + p.droppedFrames, 0),
       frames: scrollPhases.reduce((sum, p) => sum + p.frames, 0),
       worstP95FrameMs: Math.max(...scrollPhases.map((p) => p.p95FrameMs)),
       maxBlankMs: Math.max(...phases.map((p) => p.maxBlankMs)),
@@ -366,6 +392,7 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
       afterJumps: memoryAfterJumps,
       atEnd: memoryAtEnd,
       afterIdle2s: memoryAfterIdle,
+      afterIdle15s: memoryAfterIdle15s,
     },
     renderStats: {
       before: statsBefore,

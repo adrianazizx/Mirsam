@@ -1,10 +1,12 @@
 import {
   type Backend,
   isCancelled,
+  isTileUnavailable,
   type KeptRequest,
   type Lane,
   type Priority,
   type RenderedPage,
+  releaseRendered,
   type TileRequest,
 } from "../backend";
 
@@ -77,7 +79,10 @@ export class TileClient {
   constructor(
     private readonly backend: Backend,
     private readonly documentId: number,
-    /** A requested tile arrived (possibly after it stopped being wanted). */
+    /**
+     * A requested tile arrived (possibly after it stopped being wanted). The
+     * callback owns it: it must `releaseRendered` it once drawn or dropped.
+     */
     private readonly onTile: (wanted: WantedTile, bitmap: RenderedPage) => void,
     /** A render failed for a reason other than cancellation. */
     private readonly onFailure: (wanted: WantedTile, error: unknown) => void,
@@ -165,7 +170,10 @@ export class TileClient {
       .then(
         (bitmap) => {
           settle();
-          if (this.closed) return;
+          if (this.closed) {
+            releaseRendered(bitmap);
+            return;
+          }
           this.stats.received += 1;
           if (bitmap.fromCache) this.stats.fromCache += 1;
           this.onTile(wanted, bitmap);
@@ -173,7 +181,12 @@ export class TileClient {
         (error: unknown) => {
           settle();
           if (this.closed) return;
-          if (isCancelled(error)) {
+          // The image transport cannot say why a tile did not arrive. One from
+          // an older generation was almost certainly cancelled by a viewport
+          // update; one from the current generation failed.
+          const cancelled =
+            isCancelled(error) || (isTileUnavailable(error) && generation < this.generation);
+          if (cancelled) {
             this.stats.cancelled += 1;
             // Only a request from an older generation can have lost a race with
             // a viewport update; anything else (a full queue, shutdown) waits

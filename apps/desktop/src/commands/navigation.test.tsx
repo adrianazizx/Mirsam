@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { paletteMatch } from "../components/palette/match";
 import { pageFromInput } from "../components/shell/StatusBar";
-import { IDLE_SEARCH, parseSettings, selectActiveDocument, useAppStore } from "../state/appStore";
+import {
+  IDLE_SEARCH,
+  parseSettings,
+  resetSettingsChanges,
+  selectActiveDocument,
+  useAppStore,
+} from "../state/appStore";
 import { commandForEvent, isCommandEnabled, runCommand, shortcutLabel } from "./registry";
 
 const key = (init: KeyboardEventInit & { target?: EventTarget }) => {
@@ -103,6 +109,16 @@ describe("shortcuts", () => {
 });
 
 describe("settings, palette, and page labels", () => {
+  it("take the store as the source of truth over the first-paint copy", () => {
+    resetSettingsChanges();
+    useAppStore.setState({ leftPanel: "thumbnails", readingTheme: "night" });
+    useAppStore.getState().setTheme("dark"); // changed before the store answered
+    useAppStore.getState().hydrate({ readingTheme: "sepia", theme: "light" });
+    expect(useAppStore.getState().leftPanel).toBeNull();
+    expect(useAppStore.getState().readingTheme).toBe("sepia");
+    expect(useAppStore.getState().theme).toBe("dark");
+  });
+
   it("parse stored settings and ignore anything unknown", () => {
     expect(
       parseSettings({

@@ -14,7 +14,7 @@ fn engine() -> &'static Engine {
 
 /// Fraction of pixels that are not near-white.
 fn ink_ratio(bitmap: &Bitmap) -> f64 {
-    let (pixels, _) = bitmap.as_rgba().as_chunks::<4>();
+    let (pixels, _) = bitmap.as_bgra().as_chunks::<4>();
     let ink = pixels.iter().filter(|px| px[0] < 200 || px[1] < 200 || px[2] < 200).count();
     ink as f64 / pixels.len() as f64
 }

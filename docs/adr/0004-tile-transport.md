@@ -1,7 +1,10 @@
 # 0004 — Tile transport: native PDFium in the core, raw binary over Tauri IPC
 
-Status: Accepted (Milestone 0 spike). Must be re-measured on Windows and Linux before M1 closes.
-Date: 2026-11-22.
+Status: Accepted (Milestone 0 spike); the transport choice is **superseded by ADR 0011**. Tiles
+now travel as BMP images over the `safha` URI scheme, loaded by image elements. This spike timed
+delivery; it could not see the webview's memory, which is where raw command responses cost
+200–400 MB. The rest of this record (native PDFium, no base64, no WebAssembly engine) stands.
+Must be re-measured on Windows and Linux before M1 closes. Date: 2026-11-22.
 
 ## Question
 

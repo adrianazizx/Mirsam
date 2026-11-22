@@ -168,15 +168,36 @@ export interface KeptRequest {
   priority: Priority;
 }
 
+/**
+ * A rendered rectangle, decoded and ready to draw (see `backend/rendered.ts`).
+ * Whoever receives one owns it and must `releaseRendered` it once drawn or
+ * dropped: an `ImageBitmap` holds its pixels until closed.
+ */
 export interface RenderedPage {
   width: number;
   height: number;
-  /** Time the engine spent rasterizing, in microseconds. */
-  renderMicros: number;
-  /** Served from the engine's tile cache rather than rendered for this request. */
-  fromCache: boolean;
-  /** Straight RGBA, row-major, exactly width * height * 4 bytes. */
-  rgba: Uint8ClampedArray<ArrayBuffer>;
+  /**
+   * Time the engine spent rasterizing, in microseconds, and whether the tile
+   * came from its cache — null where the transport does not say (the shell's
+   * image transport; its render queue counts both, see `renderStats`).
+   */
+  renderMicros: number | null;
+  fromCache: boolean | null;
+  /**
+   * From the shell: an image element the webview loaded and decoded from a
+   * BMP, so the pixels never became a JavaScript buffer (ADR 0011). From the
+   * in-browser mock: `ImageData`.
+   */
+  image: HTMLImageElement | ImageBitmap | ImageData;
+}
+
+/**
+ * A tile the image transport did not deliver: the engine cancelled it (the
+ * viewport moved on) or failed it. An image element cannot read the response,
+ * so the two look alike; the tile client tells them apart by generation.
+ */
+export function isTileUnavailable(value: unknown): boolean {
+  return isBackendError(value) && value.code === "tile_unavailable";
 }
 
 /** Render-queue counters (devtools builds only). */

@@ -1,16 +1,28 @@
-import type { RenderedPage } from "./types";
+/**
+ * The Milestone 0 tile-transport spike's raw wire format (ADR 0004): a 16-byte
+ * header, then RGBA. The product no longer uses it; its tiles arrive as BMP
+ * images decoded by the webview (ADR 0011).
+ */
+export interface RawBitmap {
+  width: number;
+  height: number;
+  renderMicros: number;
+  fromCache: boolean;
+  /** Straight RGBA, row-major, exactly width * height * 4 bytes. */
+  rgba: Uint8ClampedArray<ArrayBuffer>;
+}
 
 /** Bytes of little-endian header before the pixels: width, height, render µs, flags. */
 export const BITMAP_HEADER_LEN = 16;
 
-/** Header flag bit: served from the engine's tile cache (src-tauri/src/viewer.rs). */
+/** Header flag bit: served from the engine's tile cache. */
 export const FLAG_FROM_CACHE = 1;
 
 /**
  * Decodes a bitmap response without copying the pixels: the returned `rgba`
  * is a view over the response buffer.
  */
-export function decodeBitmap(buffer: ArrayBuffer): RenderedPage {
+export function decodeBitmap(buffer: ArrayBuffer): RawBitmap {
   if (buffer.byteLength < BITMAP_HEADER_LEN) {
     throw new Error("bitmap response is shorter than its header");
   }

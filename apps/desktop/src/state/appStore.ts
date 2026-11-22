@@ -229,6 +229,14 @@ function persist(key: keyof Persisted, state: Persisted) {
   writeCache(state);
 }
 
+/** Settings the user changed since launch; `hydrate` leaves them alone. */
+const changedSinceLaunch = new Set<keyof Persisted>();
+
+/** For tests: forget which settings were changed since launch. */
+export function resetSettingsChanges(): void {
+  changedSinceLaunch.clear();
+}
+
 function initialZoom(info: DocumentInfo): Pick<OpenDocument, "zoomMode" | "zoom"> {
   const saved = info.viewState;
   if (saved?.zoomMode === "custom" && Number.isFinite(saved.zoom)) {
@@ -239,6 +247,7 @@ function initialZoom(info: DocumentInfo): Pick<OpenDocument, "zoomMode" | "zoom"
 
 export const useAppStore = create<AppState>((set, get) => {
   const update = <K extends keyof Persisted>(key: K, value: Persisted[K]) => {
+    changedSinceLaunch.add(key);
     set({ [key]: value } as Partial<AppState>);
     persist(key, get());
   };
@@ -349,7 +358,13 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ paletteOpen });
     },
     hydrate(settings) {
-      set(parseSettings(settings));
+      // The store is the source of truth: a setting it does not have is the
+      // default, whatever the first-paint copy said (a cleared store, or a
+      // self-test's throwaway one, must not inherit an earlier session's).
+      // A setting changed since launch, before the store answered, stays.
+      const stored: Partial<Persisted> = { ...DEFAULTS, ...parseSettings(settings) };
+      for (const key of changedSinceLaunch) delete stored[key];
+      set(stored);
       // Refresh the first-paint copy from the source of truth.
       writeCache(get());
     },

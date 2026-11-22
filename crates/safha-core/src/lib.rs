@@ -21,7 +21,7 @@ pub mod store;
 pub mod text;
 pub mod view;
 
-pub use bitmap::Bitmap;
+pub use bitmap::{BMP_HEADER_LEN, Bitmap};
 pub use document::LoadedPage;
 pub use document::{Document, PageSize, TileRequest};
 pub use engine::{Engine, PdfiumSource};

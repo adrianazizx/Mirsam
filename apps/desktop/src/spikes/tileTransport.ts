@@ -7,9 +7,8 @@
  * Run with scripts/spike-tile-transport.sh.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { decodeBitmap } from "../backend/bitmap";
-import type { RenderedPage } from "../backend/types";
 import { nextFrame } from "../selftest";
+import { decodeBitmap, type RawBitmap } from "./rawBitmap";
 
 interface Tile {
   scale: number;
@@ -20,7 +19,7 @@ interface Tile {
 }
 
 /** A tile request in flight: resolves with the bitmap and the engine's render time. */
-type Transport = (documentId: number, tile: Tile) => Promise<RenderedPage>;
+type Transport = (documentId: number, tile: Tile) => Promise<RawBitmap>;
 
 const PAGE = 0;
 const WARMUP = 3;
@@ -56,7 +55,7 @@ const TRANSPORTS: Record<string, Transport> = {
   },
 
   channel: (documentId, tile) =>
-    new Promise<RenderedPage>((resolve, reject) => {
+    new Promise<RawBitmap>((resolve, reject) => {
       const channel = new Channel<ArrayBuffer>();
       channel.onmessage = (buffer) => resolve(decodeBitmap(buffer));
       invoke("spike_tile_channel", { documentId, page: PAGE, tile, channel }).catch(reject);
@@ -122,7 +121,7 @@ async function loadWasmEngine() {
   const initMs = performance.now() - startedAt;
 
   /** Renders a tile and hands `use` a zero-copy view of it in the wasm heap. */
-  const render = (tile: Tile, use: (bitmap: RenderedPage) => void) => {
+  const render = (tile: Tile, use: (bitmap: RawBitmap) => void) => {
     const startedRender = performance.now();
     const bitmap = module._FPDFBitmap_Create(tile.width, tile.height, 1);
     module._FPDFBitmap_FillRect(bitmap, 0, 0, tile.width, tile.height, 0xffffffff);
@@ -176,7 +175,7 @@ function summarize(samples: { total: number; render: number; block: number }[], 
   };
 }
 
-function paint(context: CanvasRenderingContext2D, bitmap: RenderedPage) {
+function paint(context: CanvasRenderingContext2D, bitmap: RawBitmap) {
   context.putImageData(new ImageData(bitmap.rgba, bitmap.width, bitmap.height), 0, 0);
 }
 

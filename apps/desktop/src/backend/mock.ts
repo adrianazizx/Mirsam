@@ -232,14 +232,16 @@ const OUTLINE: OutlineItem[] = [
   { title: "Signatures — التوقيعات", page: 239, top: null, children: [] },
 ];
 
+/** jsdom has no ImageData; tests only need the shape. */
+function blankImage(width: number, height: number): ImageData {
+  const data = new Uint8ClampedArray(width * height * 4).fill(255);
+  return typeof ImageData === "function"
+    ? new ImageData(data, width, height)
+    : ({ width, height, data, colorSpace: "srgb" } as ImageData);
+}
+
 function blank(width: number, height: number): RenderedPage {
-  return {
-    width,
-    height,
-    renderMicros: 0,
-    fromCache: false,
-    rgba: new Uint8ClampedArray(width * height * 4).fill(255),
-  };
+  return { width, height, renderMicros: 0, fromCache: false, image: blankImage(width, height) };
 }
 
 function drawTile(page: number, tile: TileRequest): RenderedPage {
@@ -287,13 +289,12 @@ function drawTile(page: number, tile: TileRequest): RenderedPage {
   ctx.font = `400 11px ${FONT}`;
   ctx.fillText(`— ${page + 1} —`, size.width / 2, size.height - MARGIN / 2);
 
-  const image = ctx.getImageData(0, 0, width, height);
   return {
     width,
     height,
     renderMicros: 0,
     fromCache: false,
-    rgba: new Uint8ClampedArray(image.data),
+    image: ctx.getImageData(0, 0, width, height),
   };
 }
 

@@ -243,13 +243,13 @@ fn render_tile_of(page: &PdfPage<'_>, size: PageSize, tile: TileRequest) -> Resu
             .render_form_data(true)
             .render_annotations(true)
             .clear_before_rendering(true)
-            .set_clear_color(PdfColor::WHITE);
+            .set_clear_color(PdfColor::WHITE)
+            // PDFium's native order (BGRA): no swap, and what a BMP holds.
+            .set_reverse_byte_order(false);
         page.render_into_bitmap_with_config(&mut bitmap, &config)?;
     }
 
-    // `PdfRenderConfig` renders with reversed byte order by default, so the
-    // buffer is already RGBA.
-    Bitmap::from_rgba(tile.width, tile.height, pixels)
+    Bitmap::from_bgra(tile.width, tile.height, pixels)
         .ok_or_else(|| Error::Pdfium("PDFium returned a bitmap of unexpected size".into()))
 }
 

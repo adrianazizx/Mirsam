@@ -107,7 +107,7 @@ struct CachedTile {
 impl Weighed for CachedTile {
     fn weight(&self) -> usize {
         // Pixels dominate; the constant covers the key, the map slots, and the Arc.
-        self.bitmap.as_rgba().len() + 128
+        self.bitmap.as_bgra().len() + 128
     }
 }
 

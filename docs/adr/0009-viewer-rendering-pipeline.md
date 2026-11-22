@@ -1,6 +1,7 @@
 # 0009 — Viewer rendering pipeline: one render thread, generations, and an imperative viewer
 
-Status: Accepted, with two budgets **not yet measured** (see "Open"). Date: 2026-11-22.
+Status: Accepted. The frame and blank-time budgets were measured with a visible window in
+session 4; that run changed the tile transport and the zoom gesture (ADR 0011). Date: 2026-11-22.
 
 ## Context
 
@@ -80,24 +81,20 @@ blank for more than 100 ms, < 500 MB on the 1,000-page file, first page ≤ 300 
 | First page after open: preview / sharp | 28–43 / 52–67 ms | 15–29 / 29–41 ms | ≤ 300 ms ✓ |
 | 1,000 page sizes (engine) | — | 8.6–11.3 ms | — |
 | Shell RSS after 40 random jumps | 293 MB | 272 MB | < 500 MB ✓ |
-| Frame pacing while scrolling and zooming | not measured | not measured | 60 fps |
-| Longest blank page while scrolling | not measured | not measured | ≤ 100 ms |
+| Frame pacing while scrolling and zooming | see ADR 0011 | see ADR 0011 | 60 fps |
+| Longest blank page while scrolling | see ADR 0011 | see ADR 0011 | ≤ 100 ms |
 
-The frame-driven phases could not run: the screen was locked for the whole measurement window.
+The frame-driven phases could not run here: the screen was locked for the whole measurement
+window. ADR 0011 has the visible-window numbers.
 
 ## Open
 
-- **Blank time on random jumps (hidden window).** Most jumps show a preview in 15–45 ms, but about
-  5 in 40 stall for 210–260 ms. Per-call timing shows the engine finished in 0.03–0.18 ms and the
-  responses reached JavaScript in a burst 250–370 ms later: the stall is in delivery into the
-  webview, not rendering or queueing. Likely macOS de-prioritizing a hidden WebContent process —
-  unverified for a visible window.
-- **WebKit's memory.** The WebContent process grew by 250–370 MB over 40 jumps (heuristic
-  measurement, hidden window) though live canvases are bounded — consistent with 1 MB response
-  buffers awaiting garbage collection, which WebKit also throttles when hidden. Shell + webview
-  reached ~717 MB (release). If a visible run confirms it: pool canvases, stop prefetching on jumps,
-  try the custom-protocol transport (ADR 0004's alternative), and decide whether the 500 MB budget
-  covers WebKit's own processes.
+- ~~Blank time on random jumps (hidden window).~~ Resolved. The 210–260 ms stalls happened only
+  in a hidden window. With a visible window the debug build showed a preview within 27 ms, and
+  after ADR 0011 the release build does so within 16 ms.
+- ~~WebKit's memory.~~ Confirmed with a visible window (above 1 GB). Traced to tile buffers handed
+  to JavaScript, and fixed by delivering tiles as images (ADR 0011). Whether the 500 MB budget
+  covers WebKit's own processes is still open.
 - `/ViewerPreferences /Direction` is not read yet (pdfium-render exposes it only through an `unsafe`
   call); page order defaults to left-to-right.
 - Windows and Linux, and a physical trackpad pinch, are untested.

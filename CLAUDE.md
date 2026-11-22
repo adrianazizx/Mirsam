@@ -68,7 +68,9 @@ third_party/pdfium/      downloaded binaries (git-ignored)
 - **Every user-facing string** exists in both `en.json` and `ar.json` (a test enforces parity).
 - **The UI never touches the filesystem.** Files are opened by Rust commands; the UI gets ids and
   file names, not paths. Do not add Tauri fs/shell permissions.
-- **Bitmaps cross IPC as raw bytes**, never base64/JSON (ADR 0004).
+- **Bitmaps reach the webview as images the webview decodes itself**: BMPs over the `safha` URI
+  scheme, loaded by `<img>` (ADR 0011). Never base64/JSON, and never as JavaScript buffers
+  (`ArrayBuffer`, `Blob`): WebKit keeps those hundreds of megabytes too long.
 - **Engine logic lives in `safha-core`**, so the CLI and tests reach it without a webview. The shell
   crate only adapts.
 - Rust: `unsafe` is denied workspace-wide; no `unwrap()` outside tests; errors are typed

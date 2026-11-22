@@ -174,6 +174,17 @@ export async function runSelftestIfRequested(): Promise<void> {
     await backend.selftestReport(await runTileTransportSpike(painted.documentId), null);
     return;
   }
+  if (config.spike?.startsWith("tile-memory:") && painted) {
+    const { runTileMemorySpike } = await import("./spikes/tileMemory");
+    const variant = config.spike.slice("tile-memory:".length);
+    try {
+      await backend.selftestReport(await runTileMemorySpike(painted.documentId, variant), null);
+    } catch (error) {
+      void backend.selftestLog(`tile-memory failed: ${String(error)}`);
+      await backend.selftestReport({ spike: "tile-memory", variant, error: String(error) }, null);
+    }
+    return;
+  }
   if (config.spike === "scroll" && painted) {
     const { runScrollBenchmark } = await import("./benchmarks/scroll");
     await backend.selftestReport(await runScrollBenchmark(painted), null);

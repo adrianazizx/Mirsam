@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 3).
+Last updated: 2026-11-22 (session 4).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -41,6 +41,11 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     measured (ADR 0005).
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
+12. **Does the 500 MB memory budget include WebKit?** On the 1,000-page benchmark (release build)
+    the shell stays under the budget at 339 MB, but the shell and WebKit together reach 726 MB.
+    WebKit alone needs about 155 MB with just one page on screen. A budget for the shell only, or
+    a separate one for the webview (say 400 MB), is achievable today; 500 MB in total is not
+    without deeper work. ADR 0011 has the numbers. Which do you want?
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -106,11 +111,13 @@ by anything found so far.
 - [x] Render scheduler: one render thread, priority queue, cancellation by viewport generation,
       64 MiB byte-capped LRU keyed by (document, revision, page, scale, rect), previews then tiles
       (ADR 0009)
-- [~] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI — built and self-tested in both
-      directions; **frame rate and scroll blank time not measured** (screen locked during the runs).
-      Random jumps in a hidden window: ~5 in 40 stall 210–260 ms before the preview appears
-      (delivery into WebKit, not rendering); WebKit's memory grows 250–370 MB over 40 jumps. Both
-      need a visible-window run before they count as problems (ADR 0009, "Open")
+- [~] Continuous scroll, zoom (pinch, Ctrl+scroll), HiDPI — measured with a visible window
+      (ADR 0011). Release build, 1,000 pages:
+      - scrolling at 4,000 and 12,000 px/s and flinging drops no frames;
+      - 0.2% of all frames are dropped;
+      - pinch-in is clean;
+      - no page is blank longer than 12 ms; random jumps show a preview within 16 ms.
+      **Still over budget:** an extreme pinch-out (×1/20 in 1.2 s) drops 3 frames, p95 25 ms.
 - [~] View modes: single / continuous / two-page / book; RTL page order — done. Reading
       `/ViewerPreferences /Direction` is not (needs an `unsafe` PDFium call)
 - [x] Thumbnails, outline, page labels, go-to-page (ADR 0010) — thumbnail strip on its own render
@@ -133,34 +140,35 @@ by anything found so far.
 - [ ] Printing
 - [x] Open password-protected PDFs — inline prompt; wrong password asks again; never stored
 - [ ] Re-run the tile-transport spike on Windows and Linux
-- [ ] Exit test: 1,000-page bilingual PDF at 60 fps (not measured: needs a visible window); Arabic
-      copy and search correct on all §6.6 fixtures (checked by the self-test per file run; not yet a
-      corpus-wide UI check)
+- [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
+      pinch-out (above), and memory if WebKit counts (owner question 12).
+- [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures): checked by the
+      self-test one file per run; not yet a corpus-wide UI check.
 
 Known extraction gaps (floors in `crates/safha-core/tests/text.rs`): a neutral between two LTR runs
 inside RTL text (`(64-bit)`), one split Amiri cluster, the bilingual table's heading direction.
 
-**Needs you:** run the scroll benchmark with the screen unlocked and the app window visible —
-`cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh /tmp/scroll debug`
-(and `release`), then `node scripts/check-scroll-benchmark.mjs /tmp/scroll`. It refuses to report
-numbers from a hidden window.
+To re-measure (screen unlocked; the release bundle sometimes opens hidden, and such a run is
+rejected as invalid, so run it again):
 
-Test status at the end of session 3:
+- debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
+- release: `(cd apps/desktop && pnpm tauri build --features devtools --bundles app) && scripts/scroll-benchmark.sh <out> release`
 
-- **Rust:** 103 tests pass, three runs in a row without a flake. Clippy is clean with and without
-  `devtools`, and `cargo deny` is ok.
-- **UI:** 114 tests pass. Biome, `tsc` and the production build are clean.
-- **End to end (debug app):** the self-test passes on the contract (English, light), on
-  `mixed-inline` and `page-labels` (Arabic, dark), and on the 1,000-page file. Two launches
-  sharing one state store restore the session.
+Test status at the end of session 4:
+
+- **Rust:** 106 tests pass. Clippy is clean with and without `devtools`.
+- **UI:** 117 tests pass. Biome, `tsc` and the production build are clean.
+- **End to end:** self-tests pass in English/light and Arabic/dark on the new tile transport. The
+  scroll benchmark ran visibly in debug and release.
 
 Remaining M1 work:
 
 - printing;
 - multiple windows and reordering tabs by drag;
 - reading `/ViewerPreferences /Direction`;
-- the tile spike on Windows and Linux;
-- the frame-rate half of the exit test.
+- the tile spike on Windows and Linux (the new tile scheme included);
+- pinch-out frames;
+- the memory budget decision.
 
 ## M2 — Annotate and organize
 
@@ -223,6 +231,52 @@ Remaining M1 work:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 4 — 2026-11-22 (Milestone 1: the exit-test measurement)
+
+The scroll benchmark ran with a visible window for the first time. In the debug build:
+
+- no blank pages;
+- 1–2% slow frames while scrolling, and up to half while pinching;
+- 1.37 GB of memory, of which more than 1 GB was WebKit's and was never returned.
+
+Changes:
+
+- **Tile transport replaced (ADR 0011):** tiles are now BMP images over the `safha` scheme,
+  loaded by `<img>`. In isolation, WebKit's growth per 2 GB of tiles fell from +170–190 MB to
+  +22–39 MB. The core's bitmaps are now BGRA, with `Bitmap::encode_bmp`.
+- **Zoom gestures** scale with a CSS transform and `will-change`, and lay out only now and then.
+- **Fairer frame rule:** the checker now counts dropped frames.
+- **Benchmark detail:** it records memory per phase, and the viewer's own time per phase.
+
+Result, release build:
+
+| | Before | After |
+|---|---|---|
+| Dropped frames | — | 0.2% |
+| Scrolling | 1–2% slow frames | no dropped frames |
+| Pinch-out | up to half the frames slow | 3 dropped |
+| Shell + WebKit at end | 1.37 GB | 726 MB |
+
+Things that were not obvious:
+
+- Handing tile bytes to JavaScript is what costs memory: an `ArrayBuffer` response or a fetched
+  `Blob` alike. WebKit's garbage collector reclaims them late and its heap stays at its
+  high-water mark. An `<img>` decodes natively and frees on `src = ""`.
+- WebKit rejects a `BITMAPV4` RGBA-bitfields BMP. Plain `BI_RGB` (BGRX) works, and is what PDFium
+  renders anyway. One comparison here was confounded: the plain variant also arrived three times
+  slower, which gives the garbage collector time. Delivery speed matters as much as format for
+  anything that passes through a `Blob`.
+- `createImageBitmap` options made no difference to memory.
+- Measured with counters, our JavaScript costs under 1 ms a frame. The slow frames were WebKit
+  repainting resized pages during zoom.
+- A CSS transform without `will-change` re-rasterizes at every new scale (+187 MB per pinch-in).
+- An idle WKWebView shows a p95 frame interval of 18–19 ms. A 17.5 ms p95 budget could never
+  pass; a missed vsync (over 25 ms) is the meaningful signal.
+- The self-test opens the thumbnail panel, and WebKit's `localStorage` copy carried that into the
+  next run despite the fresh state store. Settings missing from the store now fall back to their
+  defaults, and changes made before the store answers are kept.
+- The release bundle opened hidden in 3 of 5 benchmark launches, with the screen unlocked.
 
 ### Session 3 — 2026-11-22 (Milestone 1: navigation, search, selection)
 

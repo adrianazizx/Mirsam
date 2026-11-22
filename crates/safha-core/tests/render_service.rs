@@ -80,7 +80,7 @@ fn service_tiles_match_direct_renders_pixel_for_pixel() {
     ] {
         let via_service = render(&service, 3, tile).expect("renders");
         let direct = document.render_tile(3, tile).expect("renders directly");
-        assert_eq!(via_service.bitmap.as_rgba(), direct.as_rgba(), "{tile:?}");
+        assert_eq!(via_service.bitmap.as_bgra(), direct.as_bgra(), "{tile:?}");
         assert!(!via_service.from_cache);
         assert!(render(&service, 3, tile).expect("cached").from_cache);
     }

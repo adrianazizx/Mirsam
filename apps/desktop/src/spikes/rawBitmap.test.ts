@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BITMAP_HEADER_LEN, decodeBitmap, FLAG_FROM_CACHE } from "./bitmap";
+import { BITMAP_HEADER_LEN, decodeBitmap, FLAG_FROM_CACHE } from "./rawBitmap";
 
 function encode(
   width: number,

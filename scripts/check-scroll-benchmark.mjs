@@ -3,9 +3,12 @@
 // report, and prints the per-phase table.
 //
 // Budgets:
-//   - 60 fps while scrolling and zooming: the 95th-percentile frame interval in
-//     every phase is at most 17.5 ms (16.7 ms plus the webview's 1 ms timer
-//     resolution), and at most 1% of all frames take longer than 20 ms.
+//   - 60 fps while scrolling and zooming: at most 1% of all frames are dropped
+//     (an interval over 25 ms: at least one 60 Hz vsync missed), and in every
+//     phase of 40 frames or more the 95th-percentile interval is at most 20 ms. WKWebView's frame
+//     timestamps jitter by 1-2 ms even on an idle page (p95 18-19 ms with
+//     nothing happening), so a p95 just above 16.7 ms cannot tell smooth from
+//     not; a missed vsync can (ADR 0011).
 //   - No page area stays blank (neither preview nor sharp tiles) for more than
 //     100 ms at any point. While scrolling this is sampled every frame; for
 //     random jumps across the document it is timed by the viewer's own events
@@ -23,9 +26,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const BUDGET = {
-  p95FrameMs: 17.5,
-  slowFrameShare: 0.01,
-  slowFrameMs: 20,
+  p95FrameMs: 20,
+  p95MinFrames: 40,
+  droppedFrameShare: 0.01,
+  droppedFrameMs: 25,
   blankMs: 100,
   memoryMb: 500,
 };
@@ -46,12 +50,12 @@ if (r.spike !== "scroll") {
 const pad = (value, width) => String(value).padStart(width);
 console.log(
   `${"phase".padEnd(30)} ${pad("frames", 6)} ${pad("median", 7)} ${pad("p95", 6)} ${pad("max", 6)} ` +
-    `${pad(">20ms", 6)} ${pad("blank max", 9)} ${pad(">100ms", 6)} ${pad("pages", 6)} ${pad("zoom", 9)}`,
+    `${pad(">20ms", 6)} ${pad(">25ms", 6)} ${pad("blank max", 9)} ${pad(">100ms", 6)} ${pad("pages", 6)} ${pad("zoom", 9)}`,
 );
 for (const p of r.phases) {
   console.log(
     `${p.name.padEnd(30)} ${pad(p.frames, 6)} ${pad(p.medianFrameMs, 7)} ${pad(p.p95FrameMs, 6)} ` +
-      `${pad(p.longestFrameMs, 6)} ${pad(p.framesOver20Ms, 6)} ${pad(p.maxBlankMs, 9)} ` +
+      `${pad(p.longestFrameMs, 6)} ${pad(p.framesOver20Ms, 6)} ${pad(p.droppedFrames ?? "?", 6)} ${pad(p.maxBlankMs, 9)} ` +
       `${pad(p.blankEpisodesOver100Ms, 6)} ${pad(p.pagesSeen, 6)} ${pad(`${p.zoomStart}→${p.zoomEnd}`, 9)}`,
   );
 }
@@ -84,13 +88,15 @@ check(
     "frame and blank-time numbers are invalid; rerun with the screen unlocked and the window visible",
 );
 if (valid) {
-  for (const p of r.phases) {
+  // A p95 over a short idle phase (~20 frames) is its second-slowest frame;
+  // short phases count through the dropped-frame share below instead.
+  for (const p of r.phases.filter((phase) => phase.frames >= BUDGET.p95MinFrames)) {
     check(p.p95FrameMs <= BUDGET.p95FrameMs, `${p.name}: p95 frame ${p.p95FrameMs} ms > ${BUDGET.p95FrameMs} ms`);
   }
-  const share = summary.framesOver20Ms / Math.max(1, summary.frames);
+  const share = summary.droppedFrames / Math.max(1, summary.frames);
   check(
-    share <= BUDGET.slowFrameShare,
-    `${summary.framesOver20Ms} of ${summary.frames} frames over ${BUDGET.slowFrameMs} ms (${(share * 100).toFixed(1)}%)`,
+    share <= BUDGET.droppedFrameShare,
+    `${summary.droppedFrames} of ${summary.frames} frames dropped (over ${BUDGET.droppedFrameMs} ms, ${(share * 100).toFixed(1)}%)`,
   );
   check(summary.maxBlankMs <= BUDGET.blankMs, `a page stayed blank for ${summary.maxBlankMs} ms`);
 }

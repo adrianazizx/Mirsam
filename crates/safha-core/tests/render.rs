@@ -55,7 +55,7 @@ fn renders_page_as_top_left_origin_rgba() {
     let doc = engine().open_bytes(minimal_pdf(), None).expect("opens");
     let bitmap = doc.render_page(0, 2.0).expect("renders");
     assert_eq!((bitmap.width(), bitmap.height()), (400, 200));
-    assert_eq!(bitmap.as_rgba().len(), 400 * 200 * 4);
+    assert_eq!(bitmap.as_bgra().len(), 400 * 200 * 4);
     // PDF's bottom-left quarter is the bitmap's bottom-left quarter. Red (not blue)
     // here also proves the channel order is RGBA rather than PDFium's native BGRA.
     assert_eq!(bitmap.pixel(20, 180), Some(RED));

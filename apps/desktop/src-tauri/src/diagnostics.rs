@@ -43,6 +43,21 @@ pub fn prepare_window(app: &tauri::App) {
         return;
     }
     if let Some(window) = app.get_webview_window("main") {
+        // With several displays, a restored window can open on one the user
+        // is not looking at (or that is off), where it counts as hidden. Put
+        // it in the middle of the display under the pointer.
+        if let Ok(cursor) = window.cursor_position()
+            && let Ok(Some(monitor)) = window.monitor_from_point(cursor.x, cursor.y)
+            && let Ok(size) = window.outer_size()
+        {
+            let area = monitor.position();
+            let bounds = monitor.size();
+            let x = area.x
+                + (i32::try_from(bounds.width).unwrap_or(0) - i32::try_from(size.width).unwrap_or(0)) / 2;
+            let y = area.y
+                + (i32::try_from(bounds.height).unwrap_or(0) - i32::try_from(size.height).unwrap_or(0)) / 2;
+            let _ = window.set_position(tauri::PhysicalPosition::new(x.max(area.x), y.max(area.y)));
+        }
         let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
     }

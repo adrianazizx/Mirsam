@@ -32,7 +32,7 @@ const bitmap: RenderedPage = {
   height: 1,
   renderMicros: 10,
   fromCache: false,
-  rgba: new Uint8ClampedArray(4),
+  image: { width: 1, height: 1, data: new Uint8ClampedArray(4) } as ImageData,
 };
 
 function want(page: number, x: number, urgency: Priority["urgency"] = "visible"): WantedTile {
@@ -110,6 +110,24 @@ describe("tile client", () => {
     // The next update asks again.
     client.update([want(0, 0)], () => false);
     expect(calls).toHaveLength(2);
+  });
+
+  it("reads an undelivered image tile by its generation: older was cancelled, current failed", async () => {
+    const UNAVAILABLE = { code: "tile_unavailable", detail: "" };
+    const { backend, calls } = fakeBackend();
+    const onFailure = vi.fn();
+    const client = new TileClient(backend, 1, vi.fn(), onFailure, 0);
+    client.update([want(0, 0)], () => false);
+    client.update([want(0, 1)], () => false); // generation 1
+    client.update([want(0, 0), want(0, 1)], () => false);
+    calls[0]?.reject(UNAVAILABLE); // a generation-0 tile: lost to the viewport update
+    await flush();
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(3);
+    calls[2]?.reject(UNAVAILABLE); // a current-generation tile: a real failure
+    await flush();
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(3);
   });
 
   it("reports failures other than cancellation", async () => {

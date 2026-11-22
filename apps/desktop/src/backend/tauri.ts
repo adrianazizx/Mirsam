@@ -1,18 +1,88 @@
-import { invoke } from "@tauri-apps/api/core";
-import { decodeBitmap } from "./bitmap";
-import type {
-  AppInfo,
-  Backend,
-  OpenOutcome,
-  OutlineItem,
-  PageSize,
-  RecentFile,
-  RenderStats,
-  SearchResults,
-  SelftestConfig,
-  Startup,
-  TextLayer,
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import {
+  type AppInfo,
+  type Backend,
+  isBackendError,
+  type OpenOutcome,
+  type OutlineItem,
+  type PageSize,
+  type RecentFile,
+  type RenderedPage,
+  type RenderStats,
+  type SearchResults,
+  type SelftestConfig,
+  type Startup,
+  type TextLayer,
 } from "./types";
+
+/**
+ * A tile that has not arrived after this long is given up and asked for again
+ * at the next viewport update. A render takes milliseconds; this only guards
+ * against a load that never settles (seen twice in ~40 experiment runs, cause
+ * unknown; ADR 0011), which would otherwise leave a page on its preview.
+ */
+const TILE_TIMEOUT_MS = 10_000;
+
+let tileUrl: string | null = null;
+/**
+ * The shell's tile protocol: `safha://localhost/tile` (`http://safha.localhost/tile`
+ * on Windows). Asked of Tauri on first use: the module also loads outside Tauri.
+ */
+function tileBase(): string {
+  tileUrl ??= convertFileSrc("tile", "safha");
+  return tileUrl;
+}
+
+/**
+ * Tiles are fetched as BMP images and decoded by the webview itself (ADR
+ * 0011): the pixels never become a JavaScript buffer, which keeps WebKit's
+ * memory flat. Failures reject with the shell's error code (`cancelled` when
+ * the viewport moved on).
+ */
+/** The URL of one tile (exported for the memory experiment, spikes/tileMemory.ts). */
+export function tileUrlFor(query: URLSearchParams): string {
+  return `${tileBase()}?${query}`;
+}
+
+/**
+ * Tiles are BMP images the webview loads and decodes itself (ADR 0011): the
+ * pixels never become a JavaScript buffer or Blob, which keeps WebKit's memory
+ * flat (+36 MB per 2 GB of tiles, against +120–190 MB for every route that
+ * hands the bytes to JavaScript). An image element cannot read the response,
+ * so a cancelled or failed tile rejects as `tile_unavailable` and the tile
+ * client tells the two apart by generation.
+ */
+async function loadTile(query: URLSearchParams): Promise<RenderedPage> {
+  const image = new Image();
+  // The scheme answers with Access-Control-Allow-Origin: *, so canvases the
+  // tile is drawn into stay readable (the self-test reads them back).
+  image.crossOrigin = "anonymous";
+  image.decoding = "async";
+  image.src = tileUrlFor(query);
+  let timer: number | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = window.setTimeout(() => resolve("timeout"), TILE_TIMEOUT_MS);
+  });
+  try {
+    if ((await Promise.race([image.decode(), timeout])) === "timeout") {
+      image.src = "";
+      // Treated like a cancellation: asked for again at the next viewport update.
+      throw { code: "cancelled", detail: "the tile did not arrive in time" };
+    }
+  } catch (error) {
+    if (isBackendError(error)) throw error;
+    throw { code: "tile_unavailable", detail: "the tile was cancelled or failed" };
+  } finally {
+    window.clearTimeout(timer);
+  }
+  return {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    renderMicros: null,
+    fromCache: null,
+    image,
+  };
+}
 
 let devtools: Promise<boolean> | null = null;
 /** Whether the shell was built with the `devtools` feature (asked once). */
@@ -42,15 +112,21 @@ export const tauriBackend: Backend = {
   pageText: (documentId, page) => invoke<TextLayer>("page_text", { documentId, page }),
   searchDocument: (documentId, query, options) =>
     invoke<SearchResults>("search_document", { documentId, query, options }),
-  renderTile: async (documentId, generation, page, tile, priority, lane = "main") =>
-    decodeBitmap(
-      await invoke<ArrayBuffer>("render_tile", {
-        documentId,
-        generation,
-        page,
-        tile,
-        priority,
+  renderTile: (documentId, generation, page, tile, priority, lane = "main") =>
+    loadTile(
+      new URLSearchParams({
+        doc: String(documentId),
         lane,
+        gen: String(generation),
+        page: String(page),
+        // An f32 value printed in full; the shell narrows it back exactly.
+        scale: String(tile.scale),
+        x: String(tile.x),
+        y: String(tile.y),
+        w: String(tile.width),
+        h: String(tile.height),
+        u: priority.urgency,
+        d: String(priority.distance),
       }),
     ),
   updateViewport: (documentId, generation, keep, lane = "main") =>

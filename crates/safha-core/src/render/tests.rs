@@ -89,7 +89,7 @@ impl TilePage for FakePage {
             return Err(crate::Error::InvalidRenderRequest("fake failure"));
         }
         let pixels = vec![self.index as u8; (tile.width * tile.height * 4) as usize];
-        crate::Bitmap::from_rgba(tile.width, tile.height, pixels)
+        crate::Bitmap::from_bgra(tile.width, tile.height, pixels)
             .ok_or(crate::Error::InvalidRenderRequest("bad fake bitmap"))
     }
 }

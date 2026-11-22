@@ -43,7 +43,6 @@ macro_rules! product_commands {
             navigation::page_text,
             navigation::search_document,
             viewer::page_sizes,
-            viewer::render_tile,
             viewer::update_viewport,
             $($extra),*
         ]
@@ -56,6 +55,8 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new(started, startup_document_path()))
+        // Tiles: BMP images fetched by the webview (ADR 0011).
+        .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
         .setup(|app| {
             open_store(app);
             #[cfg(feature = "devtools")]

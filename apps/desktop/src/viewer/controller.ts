@@ -1,12 +1,14 @@
-import type {
-  Backend,
-  PageSize,
-  RenderedPage,
-  SearchHit,
-  TextLayer,
-  TileRequest,
-  Urgency,
-  ViewRect,
+import {
+  type Backend,
+  type PageSize,
+  type RenderedPage,
+  releaseRendered,
+  renderedCanvas,
+  type SearchHit,
+  type TextLayer,
+  type TileRequest,
+  type Urgency,
+  type ViewRect,
 } from "../backend";
 import { clampZoom } from "../state/zoom";
 import {
@@ -156,7 +158,23 @@ const MOUNT_MARGIN = 1;
 const TILE_MARGIN = 0.25;
 /** A zoom gesture is over once no zoom event arrived for this long; then sharp tiles are fetched. */
 const ZOOM_SETTLE_MS = 140;
-/** Previews kept in memory for pages that left the mount range, for instant return. */
+/**
+ * During a zoom gesture the page area is scaled with a CSS transform, which
+ * WebKit applies on the compositor without repainting anything. A real
+ * relayout (pages resized, pages mounted) happens only once the gesture has
+ * scaled the layout this far, or this long after the last one, and when it
+ * ends. Resizing every page on every wheel event made WebKit repaint dozens of
+ * stretched canvases per frame: half the frames of a pinch took over 20 ms and
+ * the webview grew by 160 MB (ADR 0011).
+ */
+const GESTURE_MIN_RATIO = 0.5;
+const GESTURE_MAX_RATIO = 1.5;
+const GESTURE_RELAYOUT_MS = 250;
+/**
+ * Preview canvases kept (detached) for pages that left the mount range, so a
+ * page that comes back — scrolling back, or many at once while zooming out —
+ * shows its preview with no round trip and no redraw.
+ */
 const PREVIEW_CACHE_PAGES = 48;
 /** Text layers kept for selection; pages inside the selection are never dropped. */
 const TEXT_LAYER_PAGES = 64;
@@ -201,7 +219,40 @@ interface HitMark {
   active: boolean;
 }
 
+/**
+ * Time the viewer itself spends, by kind, while a benchmark profiles it
+ * (`ViewerController.profile`). WKWebView's clock has 1 ms resolution, so
+ * single calls read 0 or 1; sums over many calls are what is meaningful.
+ */
+export interface ViewerProfile {
+  updates: number;
+  updateMs: number;
+  relayouts: number;
+  relayoutMs: number;
+  draws: number;
+  drawMs: number;
+  mounts: number;
+  /** Longest single update, relayout, or draw. */
+  longestMs: number;
+}
+
+export function emptyProfile(): ViewerProfile {
+  return {
+    updates: 0,
+    updateMs: 0,
+    relayouts: 0,
+    relayoutMs: 0,
+    draws: 0,
+    drawMs: 0,
+    mounts: 0,
+    longestMs: 0,
+  };
+}
+
 export class ViewerController {
+  /** Set by benchmarks to count where the viewer's time goes; null otherwise. */
+  profile: ViewerProfile | null = null;
+
   private readonly backend: Backend;
   private readonly documentId: number;
   private readonly container: HTMLElement;
@@ -229,8 +280,20 @@ export class ViewerController {
   private pinned: { page: number; scrollTop: number } | null = null;
   private zooming = false;
   private zoomSettleTimer: number | null = null;
+  /**
+   * A zoom gesture in progress: the layout is at `layoutZoom`, and a CSS
+   * scale about `origin` (content px, the point under the pointer when the
+   * layout was made) shows `this.zoom`. `at` is the pointer (viewport px).
+   */
+  private gesture: {
+    layoutZoom: number;
+    origin: { x: number; y: number };
+    at: { x: number; y: number };
+    laidOutAt: number;
+  } | null = null;
   private readonly slots = new Map<number, Slot>();
-  private readonly previews = new Map<number, RenderedPage>();
+  /** Detached preview canvases by page, least recently used first. */
+  private readonly previews = new Map<number, HTMLCanvasElement>();
   private readonly previewShownAt = new Map<number, number>();
   private readonly failed = new Set<string>();
   private readonly resizeObserver: ResizeObserver;
@@ -331,6 +394,7 @@ export class ViewerController {
     for (const slot of this.slots.values()) releaseSlot(slot);
     this.content.remove();
     this.slots.clear();
+    for (const canvas of this.previews.values()) releaseCanvas(canvas);
     this.previews.clear();
   }
 
@@ -346,13 +410,17 @@ export class ViewerController {
       return;
     }
     if (modeChanged) {
+      this.settleGesture();
       const anchor = this.anchorForCurrentPage();
       this.relayout(anchor);
       this.update();
       return;
     }
     const target = next.zoomMode === "fit-width" ? this.fitZoom() : clampZoom(next.zoom);
-    if (Math.abs(target - this.zoom) > 1e-6) this.applyZoom(target, null);
+    if (Math.abs(target - this.zoom) > 1e-6) {
+      this.settleGesture();
+      this.applyZoom(target, null);
+    }
   }
 
   /**
@@ -366,6 +434,7 @@ export class ViewerController {
       this.initialOffset = offset;
       return;
     }
+    this.settleGesture();
     const target = Math.min(Math.max(0, page), sizes.length - 1);
     this.currentPage = target;
     const fraction = Math.min(Math.max(0, offset), 1);
@@ -484,6 +553,7 @@ export class ViewerController {
   /** Scrolls the hit into view (about a third of the way down) unless it already is. */
   revealHit(hit: SearchHit): void {
     if (!this.sizes || !this.layout) return;
+    this.settleGesture();
     if (this.view.viewMode === "single" && this.currentPage !== hit.page) {
       this.goToPage(hit.page);
     }
@@ -840,12 +910,59 @@ export class ViewerController {
     const bounds = this.container.getBoundingClientRect();
     this.view = { ...this.view, zoomMode: "custom", zoom: next };
     this.beginZoomGesture();
-    this.applyZoom(next, { x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+    this.zoomBy(next, { x: event.clientX - bounds.left, y: event.clientY - bounds.top });
     this.callbacks.onZoom(next, "custom");
   };
 
+  /** One step of a zoom gesture: a CSS scale when it can, a real relayout when it must. */
+  private zoomBy(next: number, at: { x: number; y: number }): void {
+    const now = performance.now();
+    const gesture = this.gesture;
+    if (gesture) {
+      const ratio = next / gesture.layoutZoom;
+      if (
+        ratio > GESTURE_MIN_RATIO &&
+        ratio < GESTURE_MAX_RATIO &&
+        now - gesture.laidOutAt < GESTURE_RELAYOUT_MS
+      ) {
+        this.zoom = next;
+        gesture.at = at;
+        // Scale the existing raster rather than re-rasterizing at each step.
+        this.content.style.willChange = "transform";
+        this.content.style.transformOrigin = `${gesture.origin.x}px ${gesture.origin.y}px`;
+        this.content.style.transform = `scale(${ratio})`;
+        return;
+      }
+    }
+    this.clearTransform();
+    this.applyZoom(next, at);
+    this.gesture = {
+      layoutZoom: next,
+      origin: { x: this.container.scrollLeft + at.x, y: this.container.scrollTop + at.y },
+      at,
+      laidOutAt: now,
+    };
+  }
+
+  private clearTransform(): void {
+    if (!this.content.style.transform) return;
+    this.content.style.transform = "";
+    this.content.style.transformOrigin = "";
+    this.content.style.willChange = "";
+  }
+
+  /** Ends a zoom gesture: a scaled-but-not-laid-out view gets its real layout. */
+  private settleGesture(): void {
+    const gesture = this.gesture;
+    this.gesture = null;
+    if (!gesture || !this.content.style.transform) return;
+    this.clearTransform();
+    this.applyZoom(this.zoom, gesture.at);
+  }
+
   private onResize(): void {
     if (!this.sizes || this.destroyed) return;
+    this.settleGesture();
     if (this.view.zoomMode === "fit-width") {
       const fit = this.fitZoom();
       if (Math.abs(fit - this.zoom) > 1e-6) {
@@ -860,6 +977,7 @@ export class ViewerController {
   private readonly onDevicePixelRatioChange = () => {
     this.watchDevicePixelRatio();
     if (!this.sizes) return;
+    this.settleGesture();
     this.relayout(this.anchorAtViewportPoint(null));
     this.update();
   };
@@ -878,6 +996,7 @@ export class ViewerController {
     if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
     this.zoomSettleTimer = window.setTimeout(() => {
       this.zoomSettleTimer = null;
+      this.settleGesture();
       this.zooming = false;
       this.update();
     }, ZOOM_SETTLE_MS);
@@ -904,6 +1023,20 @@ export class ViewerController {
 
   /** Relayouts at the current zoom and restores `anchor` to where it was on screen. */
   private relayout(anchor: { anchor: Anchor; at: { x: number; y: number } } | null): void {
+    const profile = this.profile;
+    if (!profile) {
+      this.relayoutNow(anchor);
+      return;
+    }
+    const started = performance.now();
+    this.relayoutNow(anchor);
+    const ms = performance.now() - started;
+    profile.relayouts += 1;
+    profile.relayoutMs += ms;
+    profile.longestMs = Math.max(profile.longestMs, ms);
+  }
+
+  private relayoutNow(anchor: { anchor: Anchor; at: { x: number; y: number } } | null): void {
     const sizes = this.sizes;
     if (!sizes) return;
     if (this.view.zoomMode === "fit-width") {
@@ -979,6 +1112,20 @@ export class ViewerController {
   // ------------------------------------------------------------ the frame update
 
   private update(): void {
+    const profile = this.profile;
+    if (!profile) {
+      this.updateNow();
+      return;
+    }
+    const started = performance.now();
+    this.updateNow();
+    const ms = performance.now() - started;
+    profile.updates += 1;
+    profile.updateMs += ms;
+    profile.longestMs = Math.max(profile.longestMs, ms);
+  }
+
+  private updateNow(): void {
     const layout = this.layout;
     const sizes = this.sizes;
     if (!layout || !sizes || this.destroyed) return;
@@ -994,7 +1141,7 @@ export class ViewerController {
     }
     for (const [page, slot] of this.slots) {
       if (!mounted.has(page)) {
-        releaseSlot(slot);
+        this.unmountSlot(slot);
         this.slots.delete(page);
       }
     }
@@ -1099,6 +1246,7 @@ export class ViewerController {
   // ------------------------------------------------------------ DOM
 
   private mountSlot(page: number, box: PageBox): Slot {
+    if (this.profile) this.profile.mounts += 1;
     const element = document.createElement("div");
     element.className = this.classNames.page;
     element.dataset.page = String(page);
@@ -1127,9 +1275,12 @@ export class ViewerController {
     this.slots.set(page, slot);
     this.content.append(element);
     if (this.searchMarks.has(page) || this.selectionRects.has(page)) this.paintOverlay(slot);
-    // A preview kept from an earlier visit is drawn at once: no round trip.
+    // A preview kept from an earlier visit goes straight back: no round trip, no redraw.
     const cached = this.previews.get(page);
-    if (cached) this.drawPreview(slot, cached);
+    if (cached) {
+      this.previews.delete(page);
+      this.attachPreview(slot, cached);
+    }
     return slot;
   }
 
@@ -1157,20 +1308,44 @@ export class ViewerController {
     slot.renderMicros = 0;
   }
 
+  /** Owns `bitmap`: it is drawn once and released here whatever happens. */
   private onRendered(wanted: Wanted, bitmap: RenderedPage): void {
+    const profile = this.profile;
+    if (!profile) {
+      this.drawRendered(wanted, bitmap);
+      return;
+    }
+    const started = performance.now();
+    this.drawRendered(wanted, bitmap);
+    const ms = performance.now() - started;
+    profile.draws += 1;
+    profile.drawMs += ms;
+    profile.longestMs = Math.max(profile.longestMs, ms);
+  }
+
+  private drawRendered(wanted: Wanted, bitmap: RenderedPage): void {
     if (wanted.kind === "preview") {
-      this.rememberPreview(wanted.page, bitmap);
       const slot = this.slots.get(wanted.page);
-      if (slot && !slot.preview) this.drawPreview(slot, bitmap);
+      if (slot?.preview) {
+        releaseRendered(bitmap);
+        return;
+      }
+      const canvas = renderedCanvas(bitmap);
+      releaseRendered(bitmap);
+      canvas.className = this.classNames.preview;
+      if (slot) this.attachPreview(slot, canvas);
+      else this.cachePreview(wanted.page, canvas);
       return;
     }
     const slot = this.slots.get(wanted.page);
-    if (!slot || wanted.tile.scale !== this.scale || slot.tiles.has(wanted.id)) return;
-    const sizes = this.sizes;
-    const pageSize = sizes?.[wanted.page];
-    if (!pageSize) return;
+    const pageSize = this.sizes?.[wanted.page];
+    if (!slot || !pageSize || wanted.tile.scale !== this.scale || slot.tiles.has(wanted.id)) {
+      releaseRendered(bitmap);
+      return;
+    }
     const pixels = pagePixelSize(pageSize, this.scale);
-    const canvas = bitmapCanvas(bitmap);
+    const canvas = renderedCanvas(bitmap);
+    releaseRendered(bitmap);
     canvas.className = this.classNames.tile;
     const { x, y, width, height } = wanted.tile;
     const style = canvas.style;
@@ -1180,23 +1355,25 @@ export class ViewerController {
     style.blockSize = `${(100 * height) / pixels.height}%`;
     slot.tileLayer.append(canvas);
     slot.tiles.set(wanted.id, { canvas, scale: this.scale, tile: wanted.tile });
-    slot.renderMicros += bitmap.renderMicros;
+    slot.renderMicros += bitmap.renderMicros ?? 0;
     this.checkSharp(slot);
   }
 
-  private rememberPreview(page: number, bitmap: RenderedPage): void {
+  /** Keeps a detached preview canvas for when its page comes back. */
+  private cachePreview(page: number, canvas: HTMLCanvasElement): void {
+    const previous = this.previews.get(page);
+    if (previous && previous !== canvas) releaseCanvas(previous);
     this.previews.delete(page);
-    this.previews.set(page, bitmap);
+    this.previews.set(page, canvas);
     while (this.previews.size > PREVIEW_CACHE_PAGES) {
-      const oldest = this.previews.keys().next().value;
-      if (oldest === undefined) break;
+      const [oldest, stale] = this.previews.entries().next().value ?? [];
+      if (oldest === undefined || !stale) break;
       this.previews.delete(oldest);
+      releaseCanvas(stale);
     }
   }
 
-  private drawPreview(slot: Slot, bitmap: RenderedPage): void {
-    const canvas = bitmapCanvas(bitmap);
-    canvas.className = this.classNames.preview;
+  private attachPreview(slot: Slot, canvas: HTMLCanvasElement): void {
     slot.element.prepend(canvas);
     slot.preview = canvas;
     if (!this.previewShownAt.has(slot.page)) {
@@ -1204,6 +1381,17 @@ export class ViewerController {
     }
     const detail: PagePreviewDetail = { documentId: this.documentId, page: slot.page };
     window.dispatchEvent(new CustomEvent(PAGE_PREVIEW_EVENT, { detail }));
+  }
+
+  /** Takes a page off screen: its tiles are freed, its preview kept for its return. */
+  private unmountSlot(slot: Slot): void {
+    const preview = slot.preview;
+    slot.preview = null;
+    if (preview) {
+      preview.remove();
+      this.cachePreview(slot.page, preview);
+    }
+    releaseSlot(slot);
   }
 
   private isSharp(slot: Slot): boolean {
@@ -1294,14 +1482,4 @@ function releaseSlot(slot: Slot): void {
   if (slot.preview) releaseCanvas(slot.preview);
   slot.preview = null;
   slot.element.remove();
-}
-
-function bitmapCanvas(bitmap: RenderedPage): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  // Pages are opaque; an opaque backing store composites faster.
-  const context = canvas.getContext("2d", { alpha: false });
-  context?.putImageData(new ImageData(bitmap.rgba, bitmap.width, bitmap.height), 0, 0);
-  return canvas;
 }

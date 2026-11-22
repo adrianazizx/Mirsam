@@ -32,7 +32,11 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
         height: tile.height,
         renderMicros: 1,
         fromCache: false,
-        rgba: new Uint8ClampedArray(4),
+        image: {
+          width: tile.width,
+          height: tile.height,
+          data: new Uint8ClampedArray(4),
+        } as ImageData,
       };
       return bitmap;
     },
@@ -195,6 +199,37 @@ describe("viewer controller", () => {
     const [zoom, mode] = callbacks.onZoom.mock.lastCall ?? [];
     expect(mode).toBe("custom");
     expect(zoom).toBeCloseTo((959 / 400) * Math.exp(0.1));
+    viewer.destroy();
+  });
+
+  it("scales with a CSS transform during a zoom gesture and lays out when it ends", async () => {
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.querySelector<HTMLElement>("[data-viewer-content]");
+    const pinch = () =>
+      container.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -5,
+          ctrlKey: true,
+          clientX: 500,
+          clientY: 400,
+          cancelable: true,
+        }),
+      );
+    const height = () => content?.style.blockSize;
+    pinch(); // the first step lays out at the new zoom
+    const laidOut = height();
+    pinch(); // later small steps only scale
+    pinch();
+    expect(content?.style.transform).toMatch(/^scale\(1\.\d+\)$/);
+    expect(height()).toBe(laidOut);
+    const zoom = callbacks.onZoom.mock.lastCall?.[0];
+    expect(zoom).toBeCloseTo(0.75 * Math.exp(0.15));
+    // 140 ms without zoom events ends the gesture: a real layout, no transform.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(content?.style.transform).toBe("");
+    expect(height()).not.toBe(laidOut);
+    expect(viewer.snapshot().zoom).toBeCloseTo(zoom ?? 0);
     viewer.destroy();
   });
 
