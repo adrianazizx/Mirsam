@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 13, with session M5-a and the M4 runtime side track merged from `main`).
+Last updated: 2026-11-22 (session 14, with session M5-a and the M4 runtime side track merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -432,6 +432,13 @@ Plan, in order:
         - The edit carries marks, served by the page's own bold and italic fonts of the same
           family, or by bundled faces.
         - Not yet settable from the editor: underline, size, colour.
+      - Session 14 (ADR 0026): **the PDF's own embedded fonts.**
+        - An edited paragraph is set in its fonts' embedded TrueType or OpenType programs
+          when they have the glyphs, between reusing codes and bundled faces.
+        - Arabic from Chrome's subsets (no `GSUB`) works through presentation forms.
+        - `fsType` is respected.
+        - Still to do: Type 1 and bare CFF programs, and the tashkeel spacing in `blocks`'
+          reading of Chrome's Arabic.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -516,6 +523,32 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 14 — 2026-11-22 (Milestone 3: the PDF's own embedded fonts, ADR 0026)
+
+- **What producers embed:** the fixtures' subsets were inspected.
+  - Chrome: TrueType with a `cmap` of presentation forms and ligatures, but no `GSUB`/`GPOS`.
+  - CoreText: a Mac Roman `cmap` only.
+  - harfrust has no Arabic fallback, so it gave `.notdef`.
+- **`typeset::presentation_forms_in`:**
+  - joined forms from ICU's joining types;
+  - lam-alef;
+  - Unicode's optional ligatures when the font has them;
+  - letters kept where a subset maps the isolated form by the letter.
+  - `logical_text` folds forms back for `/ToUnicode` and `/ActualText`.
+- **A new font source between page codes and bundled faces:**
+  - a paragraph is laid out in its fonts' embedded programs and re-embedded under their names;
+  - this needs the glyphs, `GPOS` for marks, and an `fsType` that allows it;
+  - `EditedBlock::source` reports it, through the shell to the UI.
+- **Plumbing:**
+  - `FontFace::has_table` and `embedding_permissions`;
+  - `FontInfo` keeps the program's place;
+  - `NamedFont` names can be a PDF's own.
+- **Tests:**
+  - Rust: unit tests for forms, ligatures and permissions; integration tests for Chrome's
+    Arabic heading re-set and shortened in its own program, a missing form and tashkeel
+    falling back, and Latin still embedding nothing.
+  - UI tests unchanged.
 
 ### Session 13 — 2026-11-22 (Milestone 3: bold and italic commands in the paragraph editor, ADR 0025)
 

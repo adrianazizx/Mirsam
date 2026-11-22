@@ -29,6 +29,7 @@ mod itemize;
 mod library;
 mod lines;
 mod matching;
+mod presentation;
 mod shape;
 mod subset;
 
@@ -38,6 +39,7 @@ pub use font::{FontFace, LineMetrics};
 pub use library::{Coverage, FontEntry, FontLibrary, system_font_dirs};
 pub use lines::layout;
 pub use matching::{FontMatch, FontRequest, FontTraits, MatchKind, match_font};
+pub use presentation::{logical_text, presentation_forms, presentation_forms_in};
 pub use subset::{FontSubset, SubsetGlyph, subset_fonts};
 
 /// Why a layout could not be made.

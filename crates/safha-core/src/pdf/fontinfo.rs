@@ -39,6 +39,9 @@ pub(crate) struct FontInfo {
     unicode: HashMap<u32, String>,
     /// Text → code, for the codes that stand for exactly one character.
     reverse: HashMap<char, u32>,
+    /// Where the embedded font program is (`/FontFile2`, or `/FontFile3`),
+    /// when it has one (ADR 0026).
+    program: Option<Object>,
 }
 
 impl FontInfo {
@@ -71,6 +74,7 @@ impl FontInfo {
             default_width: 1000.0,
             unicode: HashMap::new(),
             reverse: HashMap::new(),
+            program: None,
         };
 
         let mut descriptor = resolve(b"FontDescriptor").and_then(|d| d.as_dict().cloned());
@@ -128,6 +132,9 @@ impl FontInfo {
             info.bold = flags & 0x4_0000 != 0;
             info.embedded =
                 [b"FontFile".as_slice(), b"FontFile2", b"FontFile3"].iter().any(|k| d.get(k).is_some());
+            // TrueType, or OpenType (CFF or not) in `/FontFile3`; a Type 1
+            // program or bare CFF does not load as a face and is not used.
+            info.program = d.get(b"FontFile2").or_else(|| d.get(b"FontFile3")).cloned();
         }
         let lower = info.name.to_lowercase();
         info.bold |= lower.contains("bold") || lower.contains("black") || lower.contains("heavy");
@@ -230,7 +237,15 @@ impl FontInfo {
             default_width: 0.0,
             unicode: codes.clone().map(|(code, (c, _))| (code, c.to_string())).collect(),
             reverse: codes.map(|(code, (c, _))| (c, code)).collect(),
+            program: None,
         }
+    }
+
+    /// The font's embedded program as a face to lay text out with, when it
+    /// has one the layout engine can read (TrueType or OpenType).
+    pub(crate) fn program_face(&self, file: &File<'_>) -> Option<crate::typeset::FontFace> {
+        let data = stream_data(file, self.program.as_ref()?)?;
+        crate::typeset::FontFace::from_bytes(data, 0).ok()
     }
 
     /// Whether text in this font can be read and written back.

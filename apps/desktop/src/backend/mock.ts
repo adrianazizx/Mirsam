@@ -927,6 +927,7 @@ export const mockBackend: Backend = {
             }
           : null,
       lines: Math.max(1, Math.ceil(edit.text.length / 50)),
+      source: arabic || edit.family ? "bundled" : "page",
     };
   },
   documentComments: async (documentId) => {

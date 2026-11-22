@@ -39,6 +39,7 @@ use crate::pdf::fontinfo::{FontInfo, stream_data};
 use crate::pdf::text::{NamedFont, Paint, draw_painted_text, write_font};
 use crate::pdf::write::Update;
 use crate::pdf::{Dict, File, Object};
+
 use crate::text_edit::{free_prefix, num, page_contents, placement};
 use crate::typeset::{
     Align, BaseDirection, FontFace, FontRequest, LineHeight, ParagraphStyle, Span, layout, match_font,
@@ -265,6 +266,23 @@ pub struct EditedBlock {
     pub substituted: Option<Substitution>,
     /// The paragraph's lines after the edit.
     pub lines: usize,
+    /// What the new text is set in.
+    pub source: FontSource,
+}
+
+/// Where an edited paragraph's fonts came from (ADRs 0023, 0026).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FontSource {
+    /// The page's own fonts, by their codes: nothing embedded.
+    Page,
+    /// The page's own fonts' embedded programs, laid out again and embedded
+    /// as new subsets: the same glyphs, any script.
+    Embedded,
+    /// Bundled faces, substituted.
+    Bundled,
+    /// Nothing was written (the paragraph was removed).
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -776,39 +794,57 @@ pub fn edit_block_update(
     let mut update = Update::new(bytes);
     let mut inserted: Option<Vec<u8>> = None;
     let mut substituted = None;
+    let mut source = FontSource::None;
     let mut lines_after = 0;
 
     if !text.trim().is_empty() {
         // Each run in its own font, when every one can set its text.
         let reuse = if edit.family.is_none() { own_fonts(&text, &looks, &read.fonts) } else { None };
-        let (local, matrix_top, lines) = if let Some(runs) = reuse {
-            let pitch = block.pitch.unwrap_or(block.size * 1.2);
-            let (content, lines) = reuse_content(&text, &runs, &read.fonts, width, pitch, align);
-            (content, first_baseline, lines)
-        } else {
-            let set_in = substitutes(&text, &looks, &read.fonts, block.font, edit.family)?;
-            let faces: Vec<FontFace> = set_in.fonts.iter().map(|f| f.face.clone()).collect();
-            let style = ParagraphStyle {
-                direction: if block.rtl { BaseDirection::Rtl } else { BaseDirection::Ltr },
-                align,
-                width: Some(width),
-                line_height: block.pitch.map_or(LineHeight::Normal, LineHeight::Points),
-            };
-            let laid = layout(&text, &set_in.spans, &faces, &style).map_err(|e| Error::Typeset(e.code()))?;
+        let style = ParagraphStyle {
+            direction: if block.rtl { BaseDirection::Rtl } else { BaseDirection::Ltr },
+            align,
+            width: Some(width),
+            line_height: block.pitch.map_or(LineHeight::Normal, LineHeight::Points),
+        };
+        // Lays `text` out in `fonts` and draws it; each font goes in as a new subset.
+        let mut set_text = |text: &str,
+                            fonts: &[NamedFont],
+                            spans: &[Span],
+                            paints: &[Paint]|
+         -> Result<(Vec<u8>, f32, usize)> {
+            let faces: Vec<FontFace> = fonts.iter().map(|f| f.face.clone()).collect();
+            let laid = layout(text, spans, &faces, &style).map_err(|e| Error::Typeset(e.code()))?;
             let prefix = free_prefix(&font_names);
-            let drawing =
-                draw_painted_text(&text, &laid, &set_in.fonts, (0.0, 0.0), &set_in.paints, &prefix)?;
+            let drawing = draw_painted_text(text, &laid, fonts, (0.0, 0.0), paints, &prefix)?;
             for font in &drawing.fonts {
                 let number = write_font(&mut update, None, &mut next_number, font)?;
                 set(&mut font_names, font.resource.as_bytes(), Object::Ref(number, 0));
             }
             let top = first_baseline - laid.lines.first().map_or(0.0, |l| l.baseline);
+            Ok((drawing.content, top, laid.lines.len()))
+        };
+        let own_programs = if reuse.is_none() && edit.family.is_none() {
+            embedded_programs(&file, &text, &looks, &read.fonts)
+        } else {
+            None
+        };
+        let (local, matrix_top, lines) = if let Some(runs) = reuse {
+            source = FontSource::Page;
+            let pitch = block.pitch.unwrap_or(block.size * 1.2);
+            let (content, lines) = reuse_content(&text, &runs, &read.fonts, width, pitch, align);
+            (content, first_baseline, lines)
+        } else if let Some(own) = own_programs {
+            source = FontSource::Embedded;
+            set_text(&own.text, &own.fonts, &own.spans, &own.paints)?
+        } else {
+            source = FontSource::Bundled;
+            let set_in = substitutes(&text, &looks, &read.fonts, block.font, edit.family)?;
             substituted = Some(Substitution {
                 from: font_info.as_ref().map(|f| f.name.clone()).unwrap_or_default(),
                 to: set_in.family,
-                font: set_in.font,
+                font: set_in.font.clone(),
             });
-            (drawing.content, top, laid.lines.len())
+            set_text(&text, &set_in.fonts, &set_in.spans, &set_in.paints)?
         };
         lines_after = lines;
         let [pa, pb, pc, pd, pe, pf] = placement(view, box_x0, matrix_top)?;
@@ -905,7 +941,7 @@ pub fn edit_block_update(
     update.object(leaf.number, leaf.generation, &Object::Dict(page));
     let _ = inserted;
     let bytes = update.finish(form, file.trailer.clone(), section, next_number);
-    Ok((bytes, EditedBlock { substituted, lines: lines_after }))
+    Ok((bytes, EditedBlock { substituted, lines: lines_after, source }))
 }
 
 /// A resource name this app wrote its own fonts under (`MT0`, `MT2x1`, …).
@@ -971,7 +1007,7 @@ fn closest_fonts(font: Option<&FontInfo>, text: &str) -> Result<(Vec<NamedFont>,
     let chosen = match_font(&request, text, &faces)
         .and_then(|found| candidates.get(found.index).cloned())
         .ok_or(Error::Typeset("no font to set the text in"))?;
-    let family = family_of(chosen.name);
+    let family = family_of(&chosen.name);
     let mut fonts = vec![chosen];
     for fallback in fallbacks()? {
         if fonts.iter().all(|f| f.name != fallback.name) {
@@ -1146,6 +1182,132 @@ fn reuse_content(
     (out.into_bytes(), lines.len())
 }
 
+/// A paragraph set in its own fonts' embedded programs (ADR 0026): one face
+/// per page font it uses, with bundled faces after them for the spaces a
+/// subset may lack, a span and a paint per run, and the text as laid out
+/// (Arabic in presentation forms when a face has no `GSUB` to form it).
+struct Embedded {
+    fonts: Vec<NamedFont>,
+    spans: Vec<Span>,
+    paints: Vec<Paint>,
+    text: String,
+}
+
+/// Whether a font's embedding permissions (`OS/2.fsType`) let an edited
+/// document embed a new subset of it: installable or editable embedding, and
+/// subsetting allowed. A subset with no `OS/2` says nothing; the producer
+/// embedded it, and the new subset holds only glyphs it already held.
+fn may_reembed(face: &FontFace) -> bool {
+    permits_reembedding(face.embedding_permissions())
+}
+
+fn permits_reembedding(fs_type: Option<u16>) -> bool {
+    match fs_type {
+        None => true,
+        Some(fs) => {
+            let restricted = fs & 0x0002 != 0;
+            let preview_only = fs & 0x0004 != 0 && fs & 0x0008 == 0;
+            let whole_only = fs & 0x0100 != 0;
+            let bitmap_only = fs & 0x0200 != 0;
+            !(restricted || preview_only || whole_only || bitmap_only)
+        }
+    }
+}
+
+/// `text` (in runs `looks`) laid out in the page's own fonts' programs, if
+/// every run can be: its own font, or the one of its family with the bold and
+/// italic it is to have, with an embedded TrueType or OpenType program that
+/// may be embedded again, has every character (in presentation forms, when
+/// it has no `GSUB`), and places marks (`GPOS`) when there are any.
+fn embedded_programs(
+    file: &File<'_>,
+    text: &str,
+    looks: &[(Range<usize>, Look)],
+    fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
+) -> Option<Embedded> {
+    let info = |key: usize| fonts.get(key).and_then(|(_, f)| f.as_deref());
+    let mut faces: HashMap<usize, Option<FontFace>> = HashMap::new();
+    let mut face_of = |key: usize| -> Option<FontFace> {
+        faces
+            .entry(key)
+            .or_insert_with(|| info(key).and_then(|f| f.program_face(file)).filter(may_reembed))
+            .clone()
+    };
+    // Each run's page font.
+    let mut keys = Vec::with_capacity(looks.len());
+    for (_, look) in looks {
+        let own = info(look.style.font)?;
+        let styled = |f: &FontInfo| f.bold == look.bold && f.italic == look.italic;
+        let key = if styled(own) && face_of(look.style.font).is_some() {
+            look.style.font
+        } else {
+            let family = family_key(&own.name);
+            (0..fonts.len()).find(|&k| {
+                info(k).is_some_and(|f| family_key(&f.name) == family && styled(f)) && face_of(k).is_some()
+            })?
+        };
+        keys.push(key);
+    }
+
+    // Arabic in presentation forms when any face cannot form it itself.
+    let arabic = text.chars().any(|c| matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}'));
+    let forms = arabic && keys.iter().any(|&k| face_of(k).is_some_and(|f| !f.has_table(b"GSUB")));
+    let chosen: Vec<FontFace> = keys.iter().filter_map(|&k| face_of(k)).collect();
+    let (laid_text, sources) = if forms {
+        crate::typeset::presentation_forms_in(text, &|c| chosen.iter().any(|f| f.covers(c)))
+    } else {
+        (text.to_string(), text.char_indices().map(|(at, c)| at..at + c.len_utf8()).collect())
+    };
+
+    // Faces in first-use order, then the bundled ones for spaces.
+    let mut list: Vec<NamedFont> = Vec::new();
+    let mut index_of_key: HashMap<usize, usize> = HashMap::new();
+    for &key in &keys {
+        if index_of_key.contains_key(&key) {
+            continue;
+        }
+        let face = face_of(key)?;
+        index_of_key.insert(key, list.len());
+        list.push(NamedFont { face, name: std::borrow::Cow::Owned(info(key)?.name.clone()) });
+    }
+    list.extend(fallbacks().ok()?);
+
+    // Spans and paints over the laid-out text; every character must be the run's face's.
+    let mut spans: Vec<Span> = Vec::new();
+    let mut paints: Vec<Paint> = Vec::new();
+    let mut run = 0;
+    let mut at = 0;
+    for (c, source) in laid_text.chars().zip(&sources) {
+        while run + 1 < looks.len() && looks[run].0.end <= source.start {
+            run += 1;
+        }
+        let (_, look) = looks.get(run)?;
+        let face_index = index_of_key[&keys[run]];
+        let face = &list[face_index].face;
+        let mark = unicode_normalization::char::is_combining_mark(c);
+        if !c.is_whitespace() && (!face.covers(c) || (mark && !face.has_table(b"GPOS"))) {
+            return None;
+        }
+        let end = at + c.len_utf8();
+        match (spans.last_mut(), paints.last_mut()) {
+            (Some(span), Some(paint))
+                if span.font == face_index
+                    && paint.color == look.style.color
+                    && span.size == look.style.size =>
+            {
+                span.range.end = end;
+                paint.range.end = end;
+            }
+            _ => {
+                spans.push(Span::new(at..end, face_index, look.style.size));
+                paints.push(Paint { range: at..end, color: look.style.color, slant: false });
+            }
+        }
+        at = end;
+    }
+    Some(Embedded { fonts: list, spans, paints, text: laid_text })
+}
+
 /// What a substituted paragraph is set in: the faces (each run's original
 /// font's closest bundled face, or the chosen family, at the run's weight,
 /// with the faces that fill its gaps), a span and a paint per run, and the
@@ -1248,7 +1410,7 @@ mod tests {
         assert_eq!(family, FontFamily::Naskh);
         let (fonts, family) =
             closest_fonts(Some(&widths_of("NotoSansArabic-Regular", false)), "نص Pro 15").expect("fonts");
-        assert_eq!((fonts[0].name, family), ("NotoSansArabic-Regular", FontFamily::Sans));
+        assert_eq!((fonts[0].name.as_ref(), family), ("NotoSansArabic-Regular", FontFamily::Sans));
         // Plex Sans Arabic's Latin is Plex Sans's: text with Arabic takes the face that has it.
         let (fonts, _) = closest_fonts(Some(&widths_of("IBMPlexSans", false)), "نص Pro").expect("fonts");
         assert_eq!(fonts[0].name, "IBMPlexSansArabic");
@@ -1315,6 +1477,18 @@ mod tests {
             pattern(&restyle(&arabic, "يدفع الإيجار كاملا شهريا")),
             format!("{}{}{}", dots(5), bold(7), dots(12))
         );
+    }
+
+    #[test]
+    fn a_fonts_embedding_permissions_decide_whether_it_is_embedded_again() {
+        // Installable, editable, and none stated: yes.
+        for fs in [None, Some(0), Some(0x0008)] {
+            assert!(permits_reembedding(fs), "{fs:?}");
+        }
+        // Restricted, preview and print only, no subsetting, bitmaps only: no.
+        for fs in [0x0002, 0x0004, 0x0104, 0x0108, 0x0208] {
+            assert!(!permits_reembedding(Some(fs)), "{fs:#06x}");
+        }
     }
 
     #[test]

@@ -211,6 +211,8 @@ pub struct BlockEditOutcome {
     outcome: EditOutcome,
     substituted: Option<safha_core::block_edit::Substitution>,
     lines: usize,
+    /// What the new text is set in: the page's fonts, their embedded programs, or bundled faces.
+    source: safha_core::block_edit::FontSource,
 }
 
 /// Edits a paragraph of a page's text in place (ADR 0023): one undo step.
@@ -249,6 +251,7 @@ pub async fn edit_text_block(
         outcome: EditOutcome::new(page_count, &history, Change::Content),
         substituted: done.substituted,
         lines: done.lines,
+        source: done.source,
     })
 }
 

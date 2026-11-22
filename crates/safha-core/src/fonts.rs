@@ -17,6 +17,7 @@
 //! Each family lists the text's own script's face first and falls back to
 //! the others for characters it lacks.
 
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
@@ -61,42 +62,57 @@ fn bundled() -> Result<&'static Bundled> {
             let noto_naskh = weight(&naskh_vf, 400.0, false)?;
             let noto_sans_arabic = weight(&sans_arabic_vf, 400.0, true)?;
             let bold = vec![
-                ("IBMPlexSans", NamedFont { face: weight(&plex_vf, 700.0, true)?, name: "IBMPlexSans-Bold" }),
+                (
+                    "IBMPlexSans",
+                    NamedFont {
+                        face: weight(&plex_vf, 700.0, true)?,
+                        name: Cow::Borrowed("IBMPlexSans-Bold"),
+                    },
+                ),
                 (
                     "IBMPlexSansArabic",
                     NamedFont {
                         face: face(include_bytes!("../../../assets/fonts/IBMPlexSansArabic-SemiBold.ttf"))?,
-                        name: "IBMPlexSansArabic-SemiBold",
+                        name: Cow::Borrowed("IBMPlexSansArabic-SemiBold"),
                     },
                 ),
                 (
                     "Amiri-Regular",
                     NamedFont {
                         face: face(include_bytes!("../../../assets/fonts/Amiri-Bold.ttf"))?,
-                        name: "Amiri-Bold",
+                        name: Cow::Borrowed("Amiri-Bold"),
                     },
                 ),
                 (
                     "NotoNaskhArabic-Regular",
-                    NamedFont { face: weight(&naskh_vf, 700.0, false)?, name: "NotoNaskhArabic-Bold" },
+                    NamedFont {
+                        face: weight(&naskh_vf, 700.0, false)?,
+                        name: Cow::Borrowed("NotoNaskhArabic-Bold"),
+                    },
                 ),
                 (
                     "NotoSansArabic-Regular",
-                    NamedFont { face: weight(&sans_arabic_vf, 700.0, true)?, name: "NotoSansArabic-Bold" },
+                    NamedFont {
+                        face: weight(&sans_arabic_vf, 700.0, true)?,
+                        name: Cow::Borrowed("NotoSansArabic-Bold"),
+                    },
                 ),
             ];
             Ok(Bundled {
                 bold,
-                noto_naskh: NamedFont { face: noto_naskh, name: "NotoNaskhArabic-Regular" },
-                noto_sans_arabic: NamedFont { face: noto_sans_arabic, name: "NotoSansArabic-Regular" },
-                plex: NamedFont { face: plex, name: "IBMPlexSans" },
+                noto_naskh: NamedFont { face: noto_naskh, name: Cow::Borrowed("NotoNaskhArabic-Regular") },
+                noto_sans_arabic: NamedFont {
+                    face: noto_sans_arabic,
+                    name: Cow::Borrowed("NotoSansArabic-Regular"),
+                },
+                plex: NamedFont { face: plex, name: Cow::Borrowed("IBMPlexSans") },
                 plex_arabic: NamedFont {
                     face: face(include_bytes!("../../../assets/fonts/IBMPlexSansArabic-Regular.ttf"))?,
-                    name: "IBMPlexSansArabic",
+                    name: Cow::Borrowed("IBMPlexSansArabic"),
                 },
                 amiri: NamedFont {
                     face: face(include_bytes!("../../../assets/fonts/Amiri-Regular.ttf"))?,
-                    name: "Amiri-Regular",
+                    name: Cow::Borrowed("Amiri-Regular"),
                 },
             })
         })
@@ -126,7 +142,7 @@ pub(crate) fn bold_of(font: &NamedFont) -> Result<NamedFont> {
     Ok(fonts
         .bold
         .iter()
-        .find(|(regular, _)| *regular == font.name)
+        .find(|(regular, _)| *regular == font.name.as_ref())
         .map_or_else(|| font.clone(), |(_, bold)| bold.clone()))
 }
 
@@ -134,18 +150,18 @@ pub(crate) fn bold_of(font: &NamedFont) -> Result<NamedFont> {
 /// face is bundled): the slant is in the drawing, the name tells a reader
 /// of the page that the run is italic, so the next edit slants it again.
 pub(crate) fn oblique_of(font: &NamedFont) -> NamedFont {
-    let name = match font.name {
-        "IBMPlexSans" => "IBMPlexSans-Oblique",
-        "IBMPlexSans-Bold" => "IBMPlexSans-BoldOblique",
-        "IBMPlexSansArabic" => "IBMPlexSansArabic-Oblique",
-        "IBMPlexSansArabic-SemiBold" => "IBMPlexSansArabic-SemiBoldOblique",
-        "Amiri-Regular" => "Amiri-Oblique",
-        "Amiri-Bold" => "Amiri-BoldOblique",
-        "NotoNaskhArabic-Regular" => "NotoNaskhArabic-Oblique",
-        "NotoNaskhArabic-Bold" => "NotoNaskhArabic-BoldOblique",
-        "NotoSansArabic-Regular" => "NotoSansArabic-Oblique",
-        "NotoSansArabic-Bold" => "NotoSansArabic-BoldOblique",
-        other => other,
+    let name: Cow<'static, str> = match font.name.as_ref() {
+        "IBMPlexSans" => Cow::Borrowed("IBMPlexSans-Oblique"),
+        "IBMPlexSans-Bold" => Cow::Borrowed("IBMPlexSans-BoldOblique"),
+        "IBMPlexSansArabic" => Cow::Borrowed("IBMPlexSansArabic-Oblique"),
+        "IBMPlexSansArabic-SemiBold" => Cow::Borrowed("IBMPlexSansArabic-SemiBoldOblique"),
+        "Amiri-Regular" => Cow::Borrowed("Amiri-Oblique"),
+        "Amiri-Bold" => Cow::Borrowed("Amiri-BoldOblique"),
+        "NotoNaskhArabic-Regular" => Cow::Borrowed("NotoNaskhArabic-Oblique"),
+        "NotoNaskhArabic-Bold" => Cow::Borrowed("NotoNaskhArabic-BoldOblique"),
+        "NotoSansArabic-Regular" => Cow::Borrowed("NotoSansArabic-Oblique"),
+        "NotoSansArabic-Bold" => Cow::Borrowed("NotoSansArabic-BoldOblique"),
+        other => Cow::Owned(format!("{other}-Oblique")),
     };
     NamedFont { face: font.face.clone(), name }
 }

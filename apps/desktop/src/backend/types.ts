@@ -126,6 +126,11 @@ export interface BlockEditOutcome extends EditOutcome {
    */
   substituted: { from: string; to: "sans" | "naskh"; font: string } | null;
   lines: number;
+  /**
+   * What the new text is set in: the page's own fonts by their codes, their
+   * embedded programs laid out again (ADR 0026), or bundled faces.
+   */
+  source: "page" | "embedded" | "bundled" | "none";
 }
 
 /** The four text-markup annotations (ADR 0017). */

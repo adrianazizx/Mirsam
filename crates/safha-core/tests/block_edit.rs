@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use common::manifest;
-use safha_core::block_edit::{BlockEdit, EditedBlock, Mark, Refusal, TextBlock};
+use safha_core::block_edit::{BlockEdit, EditedBlock, FontSource, Mark, Refusal, TextBlock};
 use safha_core::fonts::FontFamily;
 use safha_core::save::save;
 use safha_core::text_edit::NewText;
@@ -672,6 +672,80 @@ fn bold_italic_the_page_lacks_sets_the_paragraph_in_bundled_faces() {
     let (_, bold, italic, red) = run_with(&after, "first");
     assert!(!bold && !italic && red);
     assert!(run_with(&after, "without delay").2, "still italic");
+}
+
+// ----------------------------------------------------------- embedded fonts
+
+/// The `/BaseFont`s of fonts embedded by an update.
+fn embedded_names(update: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(update);
+    text.match_indices("/BaseFont /")
+        .map(|(at, m)| {
+            text[at + m.len()..]
+                .split(|c: char| c.is_whitespace() || c == '/' || c == '>')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn arabic_is_set_again_in_the_pdfs_own_embedded_font_when_it_has_the_forms() {
+    // Chrome embeds IBM Plex Sans Arabic as TrueType subsets: a cmap with the
+    // presentation forms it drew, no GSUB.
+    let (bytes, _) = fixture_everywhere("chrome/ar-sans");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let heading = block_with(&document, 0, "إشعار للموظفين");
+    let before = render(&document, 0);
+
+    // The same text again: its own program, its own glyphs.
+    let (same, outcome, update) = edit_to(&document, &heading, 0, &heading.text);
+    assert_eq!(outcome.source, FontSource::Embedded);
+    assert_eq!(outcome.substituted, None);
+    let names = embedded_names(&update);
+    assert!(names.iter().any(|n| n.ends_with("+IBMPlexSansArabic-SemiBold")), "{names:?}");
+    let after = block_with(&same, 0, "إشعار للموظفين");
+    assert_eq!(normalize(&after.text), normalize(&heading.text), "read back as letters, not forms");
+    assert!(page_text(&same, 0).contains("إشعار للموظفين"));
+    // Drawn as it was: the same ink, where it was.
+    let area =
+        (heading.x - 2.0, heading.y - 2.0, heading.x + heading.width + 2.0, heading.y + heading.height + 2.0);
+    let (outside, inside) = changes_outside_and_ink_inside(&before, &render(&same, 0), area);
+    let (_, ink_before) = changes_outside_and_ink_inside(&before, &before, area);
+    assert_eq!(outside, 0);
+    assert!(inside.abs_diff(ink_before) * 10 < ink_before, "{inside} vs {ink_before} dark pixels");
+
+    // A word taken away: the rest keeps its forms, in its own font.
+    let (shorter, outcome, _) = edit_to(&document, &heading, 0, "إشعار");
+    assert_eq!(outcome.source, FontSource::Embedded);
+    assert_eq!(normalize(&block_with(&shorter, 0, "إشعار").text), "إشعار");
+    qpdf_check(&same.bytes(), "embedded-arabic.pdf");
+}
+
+#[test]
+fn a_form_the_subset_lacks_or_marks_it_cannot_place_fall_back_to_bundled_faces() {
+    let (bytes, _) = fixture_everywhere("chrome/ar-sans");
+    let document = engine().open_bytes(bytes, None).expect("opens");
+    let heading = block_with(&document, 0, "إشعار للموظفين");
+    // Beh standing alone: a form the heading never drew.
+    let (edited, outcome, _) = edit_to(&document, &heading, 0, "إشعار للموظفين ب");
+    assert_eq!(outcome.source, FontSource::Bundled);
+    assert!(outcome.substituted.is_some());
+    assert_eq!(normalize(&block_with(&edited, 0, "إشعار").text), "إشعار للموظفين ب");
+    // A paragraph with tashkeel: the subset has no GPOS to place the marks.
+    let marked = block_with(&document, 0, "رجى من جميع");
+    let (_, outcome, _) = edit_to(&document, &marked, 0, &marked.text.replace("نهاية", "آخر"));
+    assert_eq!(outcome.source, FontSource::Bundled);
+}
+
+#[test]
+fn latin_in_a_pages_own_codes_still_embeds_nothing() {
+    let document = engine().open_bytes(styled_pdf(STYLED), None).expect("opens");
+    let block = block_with(&document, 0, "The rent is due");
+    let (_, outcome, update) = edit_to(&document, &block, 0, &block.text.replace("first", "second"));
+    assert_eq!(outcome.source, FontSource::Page);
+    assert!(embedded_names(&update).is_empty());
 }
 
 // ------------------------------------------------------------------ refusals

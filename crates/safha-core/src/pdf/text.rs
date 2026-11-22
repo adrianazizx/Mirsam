@@ -22,7 +22,8 @@ use crate::typeset::{FontFace, TextLayout, subset_fonts};
 #[derive(Debug, Clone)]
 pub(crate) struct NamedFont {
     pub(crate) face: FontFace,
-    pub(crate) name: &'static str,
+    /// Its PostScript name: a bundled face's, or a PDF font's own (ADR 0026).
+    pub(crate) name: std::borrow::Cow<'static, str>,
 }
 
 /// Text ready for a content stream.
@@ -128,8 +129,10 @@ pub(crate) fn draw_painted_text(
                 // in PDFium's text inside form XObjects.)
                 let several = cluster.glyphs.len() > 1;
                 if several && i == cluster.glyphs.start {
-                    let utf16: String =
-                        text[cluster.text.clone()].encode_utf16().map(|u| format!("{u:04X}")).collect();
+                    let utf16: String = crate::typeset::logical_text(&text[cluster.text.clone()])
+                        .encode_utf16()
+                        .map(|u| format!("{u:04X}"))
+                        .collect();
                     let _ = writeln!(content, "/Span << /ActualText <FEFF{utf16}> >> BDC");
                 }
                 let cid = subset.cid(glyph.id).unwrap_or(0);
