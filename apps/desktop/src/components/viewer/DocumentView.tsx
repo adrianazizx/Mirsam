@@ -76,6 +76,10 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
     (state) => state.documents.find((open) => open.id === id)?.search.active ?? -1,
   );
 
+  const redactMarks = useAppStore(
+    (state) => state.documents.find((open) => open.id === id)?.redaction.marks ?? null,
+  );
+
   const pageLabel = useRef<(page: number) => string>(() => "");
   pageLabel.current = (page) =>
     t("viewer.canvasLabel", { page: formatNumber(page + 1, locale), name });
@@ -105,6 +109,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         textBoxPending: styles.textBoxPending ?? "",
         noteEditor: styles.noteEditor ?? "",
         selectionToolbar: styles.selectionToolbar ?? "",
+        redactMark: styles.redactMark ?? "",
+        redactPreview: styles.redactPreview ?? "",
       },
       initial: {
         zoomMode: current.zoomMode,
@@ -120,6 +126,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       mode: (): ViewerMode => {
         const { activeTool, commentTool } = useAppStore.getState();
         if (activeTool === "select") return "select";
+        if (activeTool === "protect") return "redact";
+        if (activeTool === "edit") return "text";
         return activeTool === "comment" ? commentTool : "none";
       },
       callbacks: {
@@ -134,6 +142,10 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceNote: (page, x, y) => void runCommand("note.place", { page, x, y }),
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
+        onMarkArea: (page, rect) => void runCommand("redact.addArea", { page, rect }),
+        onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
+        onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
+        onBlockRefused: () => useAppStore.getState().setNotice({ key: "textNotEditable" }),
       },
     });
     viewerRef.current = viewer;
@@ -208,6 +220,11 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   useEffect(() => {
     viewerRef.current?.setSearchHits(hits ?? [], activeHit);
   }, [hits, activeHit]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows them again
+  useEffect(() => {
+    viewerRef.current?.setRedactionMarks(redactMarks ?? []);
+  }, [redactMarks, revision]);
 
   // Page labels follow the UI language.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the label inputs change

@@ -4,6 +4,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   type AppInfo,
   type Backend,
+  type BlockEditOutcome,
   type BookmarkPart,
   type DocumentComment,
   type EditOutcome,
@@ -13,10 +14,14 @@ import {
   type OutlineItem,
   type PageAnnotation,
   type PageSize,
+  type ParagraphBlock,
   type RecentFile,
+  type RedactHits,
+  type RedactOutcome,
   type RenderedPage,
   type RenderStats,
   type RestoreOutcome,
+  type SanitizeOutcome,
   type SaveOutcome,
   type SearchResults,
   type SelftestConfig,
@@ -148,6 +153,12 @@ export const tauriBackend: Backend = {
   editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
   undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
   redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
+  findRedactions: (documentId, pattern) =>
+    invoke<RedactHits>("find_redactions", { documentId, pattern }),
+  applyRedactions: (documentId, marks) =>
+    invoke<RedactOutcome>("apply_redactions", { documentId, marks }),
+  sanitizeDocument: (documentId, options) =>
+    invoke<SanitizeOutcome>("sanitize_document", { documentId, options }),
   addMarkup: (documentId, kind, pages) =>
     invoke<EditOutcome>("add_markup", { documentId, kind, pages }),
   addInk: (documentId, page, strokes) =>
@@ -190,6 +201,12 @@ export const tauriBackend: Backend = {
     invoke<void>("selftest_report", { report: { results, canvasPng } }),
   renderStats: async () => ((await hasDevtools()) ? invoke<RenderStats>("render_stats") : null),
   windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
+  addText: (documentId, page, x, y, width, text, style) =>
+    invoke<EditOutcome>("add_text", { documentId, text: { page, x, y, width, text, ...style } }),
+  pageTextBlocks: (documentId, page) =>
+    invoke<ParagraphBlock[]>("page_text_blocks", { documentId, page }),
+  editTextBlock: (documentId, edit) =>
+    invoke<BlockEditOutcome>("edit_text_block", { documentId, edit }),
   documentComments: (documentId) => invoke<DocumentComment[]>("document_comments", { documentId }),
   replyToComment: (documentId, page, index, contents) =>
     invoke<EditOutcome>("reply_to_comment", { documentId, page, index, contents }),

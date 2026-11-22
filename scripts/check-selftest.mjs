@@ -107,6 +107,17 @@ if (nav) {
     check(comments?.replyOnPage === 3, `replies and states counted as page annotations (${comments?.replyOnPage})`);
     check(notes.cleared, "undo did not take the note, the text box, and the stroke away");
   }
+  // New page text (ADR 0021): written into the page with the Edit tool.
+  const added = nav.addedText;
+  check(added !== undefined && added !== null, "no added-text results");
+  if (added) {
+    check(added.painted, `the added text was not painted (${added.pixels} px, ${added.enough} needed)`);
+    check(added.readBack, "the added Arabic text did not read back as page text");
+    check(added.undone, "undo did not take the added text away");
+    // In-place editing (ADR 0023): the paragraph is found, edited, and read back.
+    check(added.blockFound, "the added paragraph was not found as one right-to-left block in logical order");
+    check(added.blockEdited && added.blockReadBack, "the edited paragraph did not read back as page text");
+  }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
   check(editing !== undefined && editing !== null, "no editing results");
@@ -160,6 +171,13 @@ if (nav) {
         `text box ${n.boxPixels} px, text kept ${n.boxMatches}; stroke ${n.inkPixels} px, ` +
         `erased ${n.erased}, undone ${n.cleared}; comments ${JSON.stringify(n.comments?.kinds)}, ` +
         `reply ${n.comments?.replied}, resolved ${n.comments?.resolved}, ${n.comments?.panelItems} in the panel`,
+    );
+  }
+  if (nav.addedText) {
+    const a = nav.addedText;
+    console.log(
+      `  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}; ` +
+        `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}`,
     );
   }
   if (nav.editing) {

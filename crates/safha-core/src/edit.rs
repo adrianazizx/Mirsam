@@ -244,6 +244,9 @@ pub enum Change {
     /// Only what is drawn over the pages (annotations): the same pages at the
     /// same sizes, painted again.
     Annotations,
+    /// What the pages draw (text written into their content, ADR 0021): the
+    /// same pages at the same sizes, painted again, and their text read again.
+    Content,
 }
 
 impl Step {
@@ -283,6 +286,12 @@ impl EditHistory {
     /// Records an update that changed only annotations.
     pub fn push_annotations(&mut self, update: Vec<u8>) {
         self.record(Step::Update(update, Change::Annotations));
+    }
+
+    /// Records an update that changed what pages draw, not their number,
+    /// order, or sizes.
+    pub fn push_content(&mut self, update: Vec<u8>) {
+        self.record(Step::Update(update, Change::Content));
     }
 
     /// Records a revision written out in full (`bytes` is the whole file).
@@ -385,7 +394,7 @@ pub(crate) struct Leaf {
     under_root: bool,
     /// Inheritable attributes the page takes from an ancestor other than the
     /// root (it keeps those from the root wherever it moves).
-    inherited_below_root: Vec<(Vec<u8>, Object)>,
+    pub(crate) inherited_below_root: Vec<(Vec<u8>, Object)>,
 }
 
 impl Leaf {
@@ -411,11 +420,21 @@ impl Leaf {
 pub(crate) struct PageTree {
     root_number: u32,
     root_generation: u16,
-    root: Dict,
+    pub(crate) root: Dict,
     pub(crate) leaves: Vec<Leaf>,
 }
 
 impl PageTree {
+    /// An inheritable attribute in force for `leaf`: its own, else an
+    /// ancestor's (ISO 32000-1, 7.7.3.4).
+    pub(crate) fn attribute(&self, leaf: &Leaf, key: &[u8]) -> Option<Object> {
+        leaf.dict
+            .get(key)
+            .or_else(|| leaf.inherited_below_root.iter().find(|(k, _)| k == key).map(|(_, v)| v))
+            .or_else(|| self.root.get(key))
+            .cloned()
+    }
+
     pub(crate) fn read(file: &File<'_>) -> Result<Self> {
         let catalog =
             file.trailer.get(b"Root").and_then(|root| file.resolve(root)).ok_or_else(|| unreadable(file))?;
@@ -514,7 +533,7 @@ pub(crate) fn set(dict: &mut Dict, key: &[u8], value: Object) {
     }
 }
 
-fn contains_string(object: &Object) -> bool {
+pub(crate) fn contains_string(object: &Object) -> bool {
     match object {
         Object::Str(_) => true,
         Object::Array(items) => items.iter().any(contains_string),

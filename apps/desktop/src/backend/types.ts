@@ -28,6 +28,61 @@ export interface EditOutcome {
    * annotations did: the same pages just need painting again.
    */
   pagesChanged: boolean;
+  /**
+   * What the pages draw as text changed (their pages, or text written into
+   * their content, ADR 0021): page text and search results are stale.
+   */
+  textChanged?: boolean;
+}
+
+/** How new page text is set (ADR 0021). */
+export interface TextStyle {
+  /** The bundled families: IBM Plex Sans (with Plex Sans Arabic), or Amiri. */
+  family: "sans" | "naskh";
+  /** Points. */
+  size: number;
+  /** RGB, each 0 to 1. */
+  color: [number, number, number];
+  /** Start and end follow the text's direction. */
+  align: "start" | "center" | "end" | "justify";
+  /** Auto: the text's first strong character decides. */
+  direction: "auto" | "ltr" | "rtl";
+}
+
+/**
+ * A paragraph of a page's text, rebuilt from its glyphs (ADR 0023). Its box is
+ * on the displayed page: points from the top-left corner, y down.
+ */
+export interface ParagraphBlock {
+  index: number;
+  /** Changes when the page's text does: an edit names the block it read. */
+  fingerprint: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  rtl: boolean;
+  align: "left" | "right" | "center" | "justify";
+  size: number;
+  color: [number, number, number];
+  lines: number;
+  /** The font it is set in now. */
+  font: string;
+  /** The paragraph's own font can set new Latin text. */
+  fontReusable: boolean;
+  /** More than one font, size or colour was found; editing sets it in one. */
+  flattened: boolean;
+  editable: boolean;
+  /** Why it is not editable (English, for logs). */
+  reason: string | null;
+}
+
+/** A paragraph edited in place: the usual outcome, and what became of its font. */
+export interface BlockEditOutcome extends EditOutcome {
+  /** Set in a substitute family: the original font's name, and the family. */
+  substituted: { from: string; to: "sans" | "naskh" } | null;
+  lines: number;
 }
 
 /** The four text-markup annotations (ADR 0017). */
@@ -37,6 +92,77 @@ export type MarkupKind = "highlight" | "underline" | "strikeOut" | "squiggly";
 export interface MarkedPage {
   page: number;
   rects: ViewRect[];
+}
+
+/** A ready-made pattern for finding what to redact (ADR 0042). */
+export type RedactPreset = "email" | "phone" | "iban" | "idNumber" | "cardNumber";
+
+/** What to look for: text (a regular expression with `options.regex`), or a preset. */
+export type RedactPattern =
+  | { kind: "text"; query: string; options: SearchOptions }
+  | { kind: "preset"; preset: RedactPreset };
+
+/** One match, with the boxes to mark (displayed-page points). */
+export interface RedactHit {
+  page: number;
+  /** The matched text as the page has it. */
+  text: string;
+  before: string;
+  after: string;
+  rects: ViewRect[];
+}
+
+export interface RedactHits {
+  hits: RedactHit[];
+  truncated: boolean;
+}
+
+/** An area to redact: boxes on the displayed page, and the text under them when known. */
+export interface RedactMarkArg {
+  page: number;
+  rects: ViewRect[];
+  text: string | null;
+}
+
+/** What a redaction removed (ADR 0042). */
+export interface RedactReport {
+  pages: number;
+  counts: {
+    glyphs: number;
+    imagesBlanked: number;
+    imagesDropped: number;
+    paths: number;
+    hidden: number;
+  };
+  annotations: number;
+  strings: number;
+}
+
+export interface RedactOutcome {
+  edit: EditOutcome;
+  report: RedactReport;
+}
+
+/** What sanitizing may take out (ADR 0042). */
+export interface SanitizeOptions {
+  metadata: boolean;
+  scripts: boolean;
+  attachments: boolean;
+  comments: boolean;
+  hiddenContent: boolean;
+}
+
+export interface SanitizeReport {
+  metadata: number;
+  scripts: number;
+  attachments: number;
+  comments: number;
+  hidden: number;
+}
+
+export interface SanitizeOutcome {
+  edit: EditOutcome;
+  report: SanitizeReport;
 }
 
 /** The annotations the app writes and can change or remove (ADRs 0017, 0018). */
@@ -447,6 +573,19 @@ export interface Backend {
   editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
   undoEdit(documentId: number): Promise<EditOutcome>;
   redoEdit(documentId: number): Promise<EditOutcome>;
+  /**
+   * Finds what matches a pattern, with boxes to mark. Rejects with
+   * `invalid_query` for an empty query or a bad regular expression.
+   */
+  findRedactions(documentId: number, pattern: RedactPattern): Promise<RedactHits>;
+  /**
+   * Removes what is under the marks from the file and draws boxes over them,
+   * as one undo step. Rejects with `redaction_failed` if checking the result
+   * finds readable text under a mark; nothing changes then.
+   */
+  applyRedactions(documentId: number, marks: RedactMarkArg[]): Promise<RedactOutcome>;
+  /** Strips metadata, scripts, attachments, comments, and hidden content (one undo step). */
+  sanitizeDocument(documentId: number, options: SanitizeOptions): Promise<SanitizeOutcome>;
   /** Marks text: one annotation per page, all in one undo step (ADR 0017). */
   addMarkup(documentId: number, kind: MarkupKind, pages: MarkedPage[]): Promise<EditOutcome>;
   /** Adds freehand ink: strokes in displayed-page points (ADR 0018). */
@@ -488,6 +627,36 @@ export interface Backend {
   hasRecoveryFile(documentId: number): Promise<boolean | null>;
   /** Every comment in the document, page by page (ADR 0041). */
   documentComments(documentId: number): Promise<DocumentComment[]>;
+  /**
+   * Writes text into a page's content (ADR 0021), its box's top-left corner
+   * at displayed-page (`x`, `y`), wrapped to `width`.
+   */
+  addText(
+    documentId: number,
+    page: number,
+    x: number,
+    y: number,
+    width: number,
+    text: string,
+    style: TextStyle,
+  ): Promise<EditOutcome>;
+  /** The paragraphs of a page's text, in reading order (ADR 0023). */
+  pageTextBlocks(documentId: number, page: number): Promise<ParagraphBlock[]>;
+  /**
+   * Replaces a paragraph's text in place, reflowed inside its box (ADR 0023).
+   * `family` forces a bundled substitute; absent, the paragraph's own font is
+   * kept when it can set the text. An empty text removes the paragraph.
+   */
+  editTextBlock(
+    documentId: number,
+    edit: {
+      page: number;
+      index: number;
+      fingerprint: number;
+      text: string;
+      family?: "sans" | "naskh";
+    },
+  ): Promise<BlockEditOutcome>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
   replyToComment(
     documentId: number,

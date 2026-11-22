@@ -4,11 +4,14 @@ import type {
   EditOutcome,
   OutlineItem,
   PageSize,
+  ParagraphBlock,
   RecentFile,
   RecoveryInfo,
+  SanitizeOptions,
   SaveOutcome,
   SearchHit,
   SearchOptions,
+  TextStyle,
 } from "../backend";
 import type { Locale } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
@@ -19,6 +22,7 @@ import {
   DEFAULT_COMMENT_FILTER,
   MAX_AUTHOR,
 } from "./comments";
+import { DEFAULT_SANITIZE, IDLE_REDACTION, type RedactionState } from "./redaction";
 import { clampZoom } from "./zoom";
 
 export const TOOLS = [
@@ -79,6 +83,8 @@ export interface OpenDocument extends DocumentInfo {
   /** The outline, or null until loaded. */
   outline: OutlineItem[] | null;
   search: SearchState;
+  /** Areas marked for redaction, and the search for more (ADR 0042). */
+  redaction: RedactionState;
   /** Whether text is selected in this document's page view. */
   hasSelection: boolean;
   /** The annotation selected (clicked) in the page view: markup, ink, or a note. */
@@ -108,11 +114,15 @@ export type CommentTool = "note" | "textBox" | "pen" | "eraser";
  */
 export interface PendingNote {
   documentId: number;
-  kind: "note" | "textBox";
+  /** A sticky note, a text box, text written into the page (ADR 0021), or a paragraph of page text edited in place (ADR 0023). */
+  kind: "note" | "textBox" | "pageText" | "block";
   page: number;
   x: number;
   y: number;
   width: number;
+  /** A `block`'s box height, and the paragraph being edited. */
+  height?: number;
+  block?: ParagraphBlock;
 }
 
 /** A close that waits for the user: something holds unsaved changes (ADR 0015). */
@@ -132,6 +142,15 @@ export interface PendingUnlock {
   insert?: { documentId: number; at: number; pageCount: number };
 }
 
+/** New page text: the sans family, 12 points, black, aligned to its start. */
+export const DEFAULT_TEXT_STYLE: TextStyle = {
+  family: "sans",
+  size: 12,
+  color: [0, 0, 0],
+  align: "start",
+  direction: "auto",
+};
+
 export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
   caseSensitive: false,
   wholeWord: false,
@@ -147,6 +166,9 @@ export interface AppState {
   /** The open side panel at the inline start, or null when it is closed. */
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
+  /** How the Edit tool sets new page text (ADR 0021). */
+  textStyle: TextStyle;
+  setTextStyle(patch: Partial<TextStyle>): void;
   /** The name written on new comments (ADR 0041); none when empty. */
   commentAuthor: string;
   /** The comments panel's filters and order (not kept between sessions). */
@@ -200,6 +222,17 @@ export interface AppState {
   closePrompt: ClosePrompt | null;
   setClosePrompt(prompt: ClosePrompt | null): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
+  /** Changes a document's redaction state: a patch, or a function of the current state. */
+  updateRedaction(
+    id: number,
+    change: Partial<RedactionState> | ((current: RedactionState) => RedactionState),
+  ): void;
+  /** What sanitizing is set to take out (ADR 0042). */
+  sanitizeOptions: SanitizeOptions;
+  setSanitizeOptions(options: SanitizeOptions): void;
+  /** The apply-redactions confirmation is open. */
+  redactPrompt: boolean;
+  setRedactPrompt(open: boolean): void;
   pushUnlock(unlock: PendingUnlock): void;
   /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
   resolveUnlock(next: PendingUnlock | null): void;
@@ -358,6 +391,10 @@ export const useAppStore = create<AppState>((set, get) => {
     pendingNote: null,
     commentFilter: DEFAULT_COMMENT_FILTER,
     commentSort: "page",
+    textStyle: DEFAULT_TEXT_STYLE,
+    setTextStyle(patch) {
+      set((state) => ({ textStyle: { ...state.textStyle, ...patch } }));
+    },
     setCommentAuthor: (name) => update("commentAuthor", name.trim().slice(0, MAX_AUTHOR)),
     setCommentFilter(patch) {
       set((state) => ({ commentFilter: { ...state.commentFilter, ...patch } }));
@@ -419,6 +456,7 @@ export const useAppStore = create<AppState>((set, get) => {
         labels: null,
         outline: null,
         search: IDLE_SEARCH,
+        redaction: IDLE_REDACTION,
         hasSelection: false,
         selectedAnnotation: null,
         revision: 0,
@@ -482,6 +520,8 @@ export const useAppStore = create<AppState>((set, get) => {
                   ...open,
                   paint: open.paint + 1,
                   selectedAnnotation: null,
+                  // Text written into them: what search found, and selected, is stale.
+                  ...(outcome.textChanged ? { search: IDLE_SEARCH, hasSelection: false } : {}),
                   canUndo: outcome.canUndo,
                   canRedo: outcome.canRedo,
                   modified: outcome.modified,
@@ -494,6 +534,8 @@ export const useAppStore = create<AppState>((set, get) => {
                   labels: null,
                   outline: null,
                   search: IDLE_SEARCH,
+                  // Page numbers moved: marks on the old pages mean nothing now.
+                  redaction: IDLE_REDACTION,
                   hasSelection: false,
                   selectedAnnotation: null,
                   revision: open.revision + 1,
@@ -529,6 +571,29 @@ export const useAppStore = create<AppState>((set, get) => {
           open.id === id ? { ...open, name: outcome.name, modified: outcome.modified } : open,
         ),
       }));
+    },
+    updateRedaction(id, change) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id !== id
+            ? open
+            : {
+                ...open,
+                redaction:
+                  typeof change === "function"
+                    ? change(open.redaction)
+                    : { ...open.redaction, ...change },
+              },
+        ),
+      }));
+    },
+    sanitizeOptions: DEFAULT_SANITIZE,
+    setSanitizeOptions(sanitizeOptions) {
+      set({ sanitizeOptions });
+    },
+    redactPrompt: false,
+    setRedactPrompt(open) {
+      set({ redactPrompt: open });
     },
     updateSearch(id, patch) {
       set((state) => ({

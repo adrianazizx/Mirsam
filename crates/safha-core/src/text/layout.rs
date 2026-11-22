@@ -398,7 +398,10 @@ fn page_reverses_ligatures(glyphs: &[Glyph], groups: &[Vec<usize>]) -> bool {
             LetterOrder::NotLigature | LetterOrder::Unknown => {}
         }
     }
-    reversed > ordered
+    // With no evidence either way, reversed: PDFium turns a glyph's mapping,
+    // written in logical order, into visual order for right-to-left letters,
+    // as it does on Chrome's pages and on the pages this app writes (ADR 0021).
+    reversed >= ordered
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1226,6 +1229,16 @@ mod tests {
         let ra = g(0, 'ر', 100.0, 6.0, 700.0, 12.0);
         let sad = g(1, 'ص', 100.0, 6.0, 700.0, 12.0);
         assert_eq!(text(&[ra, sad]), "صر");
+    }
+
+    #[test]
+    fn a_ligature_whose_letters_cannot_tell_their_order_is_put_back_too() {
+        // Noon-yeh drawn as one glyph mapped to "ني" (both letters join both
+        // ways, so they carry no evidence); PDFium reports "ين". With nothing
+        // else on the page to vote, its letters are reversed (ADR 0021).
+        let yeh = g(0, 'ي', 100.0, 6.0, 700.0, 12.0);
+        let noon = g(1, 'ن', 100.0, 6.0, 700.0, 12.0);
+        assert_eq!(text(&[yeh, noon]), "ني");
     }
 
     #[test]

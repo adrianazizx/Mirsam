@@ -4,6 +4,7 @@ import {
   type MarkedPage,
   type PageAnnotation,
   type PageSize,
+  type ParagraphBlock,
   type RenderedPage,
   releaseRendered,
   renderedCanvas,
@@ -109,6 +110,14 @@ export interface ViewerCallbacks {
   onPlaceNote?(page: number, x: number, y: number): void;
   /** A press placed a new text box: its top-left corner and width (Comment tool). */
   onPlaceTextBox?(page: number, x: number, y: number, width: number): void;
+  /** A drag marked an area (Protect tool): the box on the displayed page. */
+  onMarkArea?(page: number, rect: ViewRect): void;
+  /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
+  onPlaceText?(page: number, x: number, y: number, width: number): void;
+  /** The Edit tool pressed a paragraph of the page's own text (ADR 0023). */
+  onEditBlock?(page: number, block: ParagraphBlock): void;
+  /** The Edit tool pressed text that cannot be edited (ADR 0023). */
+  onBlockRefused?(block: ParagraphBlock): void;
 }
 
 /** An annotation the reader selected by clicking it. */
@@ -125,9 +134,18 @@ export interface SelectedAnnotation {
 
 /**
  * What a press on a page does: select text and annotations; place a note,
- * draw, or erase (the Comment tool); or nothing (other tools).
+ * draw, or erase (the Comment tool); mark an area to redact (the Protect
+ * tool, ADR 0042); or nothing (other tools).
  */
-export type ViewerMode = "select" | "note" | "textBox" | "pen" | "eraser" | "none";
+export type ViewerMode =
+  | "select"
+  | "note"
+  | "textBox"
+  | "text"
+  | "pen"
+  | "eraser"
+  | "redact"
+  | "none";
 
 /** A note's icon, in points (the engine's `NOTE_SIZE`). */
 export const NOTE_SIZE = 20;
@@ -165,6 +183,9 @@ export interface ViewerClassNames {
   noteEditor: string;
   /** Anchor element the selection toolbar is rendered into. */
   selectionToolbar: string;
+  /** An area marked for redaction, and the one being dragged (ADR 0042). */
+  redactMark?: string;
+  redactPreview?: string;
 }
 
 export interface ViewerOptions {
@@ -363,6 +384,8 @@ export class ViewerController {
   private readonly mode: () => ViewerMode;
   private readonly layers = new Map<number, TextLayer>();
   private readonly layerRequests = new Set<number>();
+  /** Bumped when the pages' text may have changed: answers asked for before are dropped. */
+  private layerGeneration = 0;
   private selection: Selection | null = null;
   /** A press on a page whose text had not arrived yet; becomes the anchor when it does. */
   private pendingAnchor: PagePoint | null = null;
@@ -387,6 +410,11 @@ export class ViewerController {
   private drawing: { pointerId: number; page: number; points: StrokePoint[] } | null = null;
   /** Strokes drawn but not yet in the page's tiles: shown until the page repaints. */
   private readonly inkPreview = new Map<number, StrokePoint[][]>();
+  /** An area being dragged out for redaction, kept on the page it started on. */
+  private marking: { pointerId: number; page: number; from: PagePoint; to: PagePoint } | null =
+    null;
+  /** Areas marked for redaction, by page, shown until they are applied or removed. */
+  private readonly redactMarks = new Map<number, ViewRect[]>();
   /** The ink annotations the eraser has touched during this press. */
   private erasing: { pointerId: number; page: number; indices: Set<number> } | null = null;
   /** Where the note editor sits: a new note's icon, or the selected note. */
@@ -525,6 +553,12 @@ export class ViewerController {
     this.annotations.clear();
     this.annotationRequests.clear();
     this.setSelectedAnnotation(null);
+    // Text written into the pages (ADR 0021) changes what they say: their
+    // text is read again when next needed.
+    this.layerGeneration += 1;
+    this.layers.clear();
+    this.layerRequests.clear();
+    this.setSelection(null);
     this.update();
   }
 
@@ -678,6 +712,19 @@ export class ViewerController {
     }
   }
 
+  /** Shows the areas marked for redaction (ADR 0042). */
+  setRedactionMarks(marks: { page: number; rects: ViewRect[] }[]): void {
+    const previous = new Set(this.redactMarks.keys());
+    this.redactMarks.clear();
+    for (const mark of marks) {
+      this.redactMarks.set(mark.page, [...(this.redactMarks.get(mark.page) ?? []), ...mark.rects]);
+    }
+    for (const page of new Set([...previous, ...this.redactMarks.keys()])) {
+      const slot = this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+  }
+
   /** Scrolls the hit into view (about a third of the way down) unless it already is. */
   revealHit(hit: SearchHit): void {
     if (!this.sizes || !this.layout) return;
@@ -764,16 +811,24 @@ export class ViewerController {
    * away.
    */
   showPendingNote(
-    note: { page: number; x: number; y: number; kind: "note" | "textBox"; width: number } | null,
+    note: {
+      page: number;
+      x: number;
+      y: number;
+      kind: "note" | "textBox" | "pageText" | "block";
+      width: number;
+      height?: number;
+    } | null,
   ): void {
     const previous = this.noteAnchor;
     if (note) {
-      const height = note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE;
+      const height = note.height ?? (note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE);
       this.noteAnchor = {
         page: note.page,
         rect: { x: note.x, y: note.y, width: note.width, height },
         pending: true,
-        kind: note.kind,
+        // New page text shows where it goes as a text box does: a dashed outline.
+        kind: note.kind === "note" ? "note" : "textBox",
       };
     } else if (previous?.pending) {
       this.noteAnchor = null;
@@ -812,8 +867,10 @@ export class ViewerController {
     if (cached) return Promise.resolve(cached);
     if (this.layerRequests.has(page)) return Promise.resolve(null);
     this.layerRequests.add(page);
+    const generation = this.layerGeneration;
     return this.backend.pageText(this.documentId, page).then(
       (layer) => {
+        if (generation !== this.layerGeneration) return null;
         this.layerRequests.delete(page);
         if (this.destroyed) return null;
         this.layers.set(page, layer);
@@ -822,7 +879,7 @@ export class ViewerController {
         return layer;
       },
       (error: unknown) => {
-        this.layerRequests.delete(page);
+        if (generation === this.layerGeneration) this.layerRequests.delete(page);
         console.warn("page text unavailable", page, error);
         return null;
       },
@@ -1121,14 +1178,21 @@ export class ViewerController {
       this.startErasing(event, point);
       return;
     }
+    if (mode === "redact") {
+      this.setSelection(null);
+      this.setSelectedAnnotation(null);
+      this.marking = { pointerId: event.pointerId, page: point.page, from: point, to: point };
+      this.content.setPointerCapture?.(event.pointerId);
+      return;
+    }
     const clicks = this.countClick(event);
     // A plain click on an annotation selects it, unless the press turns into a text selection.
     this.presses += 1;
     this.pressedPoint = clicks === 1 && !event.shiftKey ? point : null;
     void this.loadAnnotations(point.page);
     this.setSelectedAnnotation(null);
-    if (mode === "note" || mode === "textBox") {
-      // A press places a note or text box (or opens one) when it ends; it selects no text.
+    if (mode === "note" || mode === "textBox" || mode === "text") {
+      // A press places a note, a text box, or new text (or opens one) when it ends; it selects no text.
       this.setSelection(null);
       this.dragging = {
         pointerId: event.pointerId,
@@ -1186,6 +1250,15 @@ export class ViewerController {
       if (point) this.eraseAt(point);
       return;
     }
+    if (this.marking && event.pointerId === this.marking.pointerId) {
+      const point = this.pointOnPage(this.marking.page, event.clientX, event.clientY);
+      if (point) {
+        this.marking.to = point;
+        const slot = this.slots.get(this.marking.page);
+        if (slot) this.paintOverlay(slot);
+      }
+      return;
+    }
     const dragging = this.dragging;
     if (!dragging) {
       if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
@@ -1219,6 +1292,22 @@ export class ViewerController {
       this.finishErasing(event);
       return;
     }
+    if (this.marking && event.pointerId === this.marking.pointerId) {
+      const { page, from, to } = this.marking;
+      this.marking = null;
+      this.content.releasePointerCapture?.(event.pointerId);
+      const slot = this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+      if (event.type !== "pointercancel") {
+        this.callbacks.onMarkArea?.(page, {
+          x: Math.min(from.x, to.x),
+          y: Math.min(from.y, to.y),
+          width: Math.abs(to.x - from.x),
+          height: Math.abs(to.y - from.y),
+        });
+      }
+      return;
+    }
     if (!this.dragging || event.pointerId !== this.dragging.pointerId) return;
     this.dragging = null;
     this.pendingAnchor = null;
@@ -1235,10 +1324,28 @@ export class ViewerController {
       if (this.destroyed || press !== this.presses || this.selection !== null) return;
       const hit = this.annotationAt(pressed);
       const size = this.sizes?.[pressed.page];
-      if (mode !== "note" && mode !== "textBox") {
+      if (mode !== "note" && mode !== "textBox" && mode !== "text") {
         if (hit) this.setSelectedAnnotation(hit);
       } else if (hit?.kind === mode) {
         this.setSelectedAnnotation(hit);
+      } else if (mode === "text") {
+        // A press on the page's own text edits that paragraph (ADR 0023); elsewhere it places new text.
+        void this.backend.pageTextBlocks(this.documentId, pressed.page).then(
+          (blocks) => {
+            if (this.destroyed || press !== this.presses) return;
+            const block = blocks.find(
+              (b) =>
+                pressed.x >= b.x - 2 &&
+                pressed.x <= b.x + b.width + 2 &&
+                pressed.y >= b.y - 2 &&
+                pressed.y <= b.y + b.height + 2,
+            );
+            if (block?.editable) this.callbacks.onEditBlock?.(pressed.page, block);
+            else if (block) this.callbacks.onBlockRefused?.(block);
+            else this.placeNewText(pressed.page, pressed.x, pressed.y);
+          },
+          () => this.placeNewText(pressed.page, pressed.x, pressed.y),
+        );
       } else if (mode === "textBox") {
         // Its top-left corner at the press, as wide as the page allows.
         if (!size) return;
@@ -1260,6 +1367,16 @@ export class ViewerController {
       }
     });
   };
+
+  /** New page text: its top-left corner at the press, as wide as the page allows. */
+  private placeNewText(page: number, pressedX: number, pressedY: number): void {
+    const size = this.sizes?.[page];
+    if (!size) return;
+    const x = Math.max(0, Math.min(pressedX, size.width - TEXT_BOX_MIN_WIDTH - 4));
+    const y = Math.max(0, Math.min(pressedY, size.height - TEXT_BOX_LINE));
+    const width = Math.min(TEXT_BOX_WIDTH, size.width - x - 4);
+    this.callbacks.onPlaceText?.(page, x, y, width);
+  }
 
   private extendSelection(): void {
     const dragging = this.dragging;
@@ -1412,6 +1529,24 @@ export class ViewerController {
           ? this.classNames.textBoxPending
           : this.classNames.notePending;
       place(element, this.noteAnchor.rect);
+      slot.overlay.append(element);
+    }
+    for (const rect of this.redactMarks.get(slot.page) ?? []) {
+      const element = document.createElement("div");
+      element.className = this.classNames.redactMark ?? "";
+      place(element, rect);
+      slot.overlay.append(element);
+    }
+    if (this.marking?.page === slot.page) {
+      const { from, to } = this.marking;
+      const element = document.createElement("div");
+      element.className = this.classNames.redactPreview ?? "";
+      place(element, {
+        x: Math.min(from.x, to.x),
+        y: Math.min(from.y, to.y),
+        width: Math.abs(to.x - from.x),
+        height: Math.abs(to.y - from.y),
+      });
       slot.overlay.append(element);
     }
     // Ink the eraser touches: its strokes, marked.

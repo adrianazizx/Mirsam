@@ -45,3 +45,33 @@
 .spacer {
   flex: 1;
 }
+
+.font {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fontNote {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.family {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.family select {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-bg-app);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+}

@@ -1,0 +1,100 @@
+/* A strip above the page area while the Edit tool is active. */
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1);
+  background: var(--color-bg-surface);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.word {
+  padding-inline: var(--space-2);
+}
+
+.glyph,
+.mirrored {
+  display: inline-flex;
+}
+
+.glyph svg,
+.mirrored svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+/* "Start" and "end" are the inline start and end: right and left in Arabic. */
+:global([dir="rtl"]) .mirrored {
+  transform: scaleX(-1);
+}
+
+.tool[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.tool[data-pressed] {
+  background: var(--color-bg-pressed);
+}
+
+.tool[data-selected] {
+  background: var(--color-bg-selected);
+  color: var(--color-text-on-selected);
+}
+
+.tool[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.size {
+  border: var(--border-width) solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+
+/* A colour swatch; `--swatch` is the document colour it stands for. */
+.swatch {
+  box-sizing: border-box;
+  inline-size: var(--size-swatch);
+  block-size: var(--size-swatch);
+  border: var(--border-width-thick) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--swatch);
+  cursor: default;
+}
+
+.swatch[data-selected] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 var(--border-width) var(--color-bg-surface) inset;
+}
+
+.swatch[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}

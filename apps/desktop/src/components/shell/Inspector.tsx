@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { formatNumber } from "../../i18n";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
+import { ProtectPanel } from "../protect/ProtectPanel";
 import styles from "./Inspector.module.css";
 
 const MM_PER_POINT = 25.4 / 72;
@@ -14,13 +15,18 @@ export function Inspector() {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
   const document = useAppStore(selectActiveDocument);
+  const tool = useAppStore((state) => state.activeTool);
   const mm = (points: number) =>
     formatNumber(points * MM_PER_POINT, locale, { maximumFractionDigits: 0 });
 
   return (
     <aside className={styles.inspector} aria-label={t("inspector.title")} data-testid="inspector">
-      <h2 className={styles.title}>{t("inspector.title")}</h2>
-      {document ? (
+      <h2 className={styles.title}>
+        {t(tool === "protect" && document ? "tools.protect" : "inspector.title")}
+      </h2>
+      {document && tool === "protect" ? (
+        <ProtectPanel key={document.id} document={document} />
+      ) : document ? (
         <dl className={styles.list}>
           <dt>{t("inspector.name")}</dt>
           <dd className={styles.selectable}>

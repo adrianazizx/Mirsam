@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 8; M4 runtime and word-box side track).
+Last updated: 2026-11-22 (M4 runtime and word-box side track, merged with `main` after session M5-a).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -63,6 +63,12 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     document under the font's own name is common practice and is not redistributing a modified
     font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
     and Noto Sans Arabic (OFL, no reserved name) can replace them.
+
+15. **A JPEG codec for redaction (M5, ADR 0042).** Redacting an area of a *scan* (a page that is one
+    JPEG) currently drops the whole image, because overwriting its pixels needs a JPEG decoder and
+    encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
+    `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
+    list). Which may we add? Until then the summary says how many images were removed whole.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -323,10 +329,32 @@ M2 closed in session 8 at the owner's go-ahead, with these items carried forward
 - **Autosave:** a single running copy is not enforced.
 - **From M1:** extreme pinch-out, and printing on screen (owner item 13).
 
-## M3 — Text engine — groundwork merged to `main` ahead of M2
+## M3 — Text engine — started in session 9 on branch `m3-text` (groundwork merged to `main` ahead of M2)
 
-The parts that do not depend on M2, built on branch `pomidor/m3-text-engine-3c22b6` in
-parallel with M2 and merged by pull request at the owner's request.
+The groundwork that did not depend on M2 was built on branch `pomidor/m3-text-engine-3c22b6`
+in parallel with M2 and merged by pull request at the owner's request. M3 proper started in
+session 9.
+
+Plan, in order:
+
+1. ~~**Writing text into page content**~~ **done (ADR 0021):** its own content stream under a
+   placing `cm`, the page's original content wrapped once in `q … Q`, resources made the page's
+   own; encrypted files; undo.
+2. ~~**Add-new-text tool**~~ **done (ADR 0021):** the Edit tool places text; a strip sets font
+   (Sans, Naskh), size, colour, alignment and direction.
+3. ~~**[SPIKE] Editor surface**~~ **done (ADR 0022, `spikes/editor-surface/`):** the webview's
+   own layout matches the engine's line breaks 5 of 5 and its character positions to 0.01 pt
+   (1.1 pt on mixed bidi). **Decision: a native text field, not our own caret.** Not measured:
+   real IMEs, WKWebView.
+4. ~~**Page analysis → edit model**~~ **done (ADR 0023):** own content-stream interpreter and
+   font reader (`pdf::content`, `pdf::fontinfo`), glyphs → lines → paragraphs in the page as
+   displayed (`blocks`), with logical order, direction, alignment, line pitch, size, colour.
+5. ~~**In-place editing with reflow**~~ **done (ADR 0023, `block_edit`):** removal by byte
+   range, new text at the old text's place (z-order, clip), own font reused for Latin text it
+   has codes for, otherwise the whole paragraph in a bundled family with a "Font substituted"
+   note and a Sans/Naskh choice; unused fonts of our own drop out. The Edit tool opens a
+   paragraph when pressed.
+6. **Exit test:** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
       `spikes/pdfium-regenerate/`).
@@ -361,12 +389,30 @@ parallel with M2 and merged by pull request at the owner's request.
         work).
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
-      M2's text boxes. Writing into page content is still to do. Must solve:
+      M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
+      block's existing text objects (for in-place editing) is still to do. Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
-- [ ] Add-new-text tool
-- [ ] In-place editing with reflow — **[SPIKE]** editor surface vs `contenteditable` overlay first
+- [x] Add-new-text tool (ADR 0021):
+      - the Edit tool: a press places the text, the shared editor takes it;
+      - Sans (IBM Plex Sans + Plex Sans Arabic) or Naskh (Amiri), 8–72 pt, four colours,
+        start/centre/end/justify, direction auto/RTL/LTR;
+      - written into the page's content: prints, extracts and searches as page text everywhere;
+      - turned pages, unbalanced page content, inherited resources, encrypted files; undo; save.
+      - Gap: not editable once added (in-place editing, step 5); each addition embeds its own
+        subsets (font reuse comes with step 5); installed fonts come with the font picker.
+- [x] In-place editing with reflow (ADR 0022, ADR 0023):
+      - the Edit tool: a press on the page's own text opens that paragraph in the shared editor;
+        a press elsewhere places new text; text that cannot be read exactly says so;
+      - removal by byte range, new text where the old was; the clip and the z-order keep;
+      - own font for Latin text it has codes for (nothing embedded), else a bundled family for
+        the whole paragraph, with the note and a Sans/Naskh choice;
+      - turned pages, `TJ`/`'`/`"` text, pages that leave their state changed, edit again
+        after save and reopen (no drift, no extra fonts); English and Arabic.
+      - Gaps (ADR 0023 "Honest limits"): bold/italic, indents and tabs, mixed styles flatten,
+        no kerning in reused fonts, forms/encrypted/Type 3, installed-font substitutes, the
+        editor field does not yet sit over the paragraph in its own width and size.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -422,8 +468,15 @@ parallel with M2 and merged by pull request at the owner's request.
 - [ ] Fill & Sign on flat forms
 - [ ] Drawn/typed/image signatures
 - [ ] Encryption and permissions
-- [ ] True redaction with pattern search
-- [ ] Sanitize
+- [~] True redaction with pattern search (session M5-a, ADR 0042): text, image pixels, paths,
+      annotations and metadata mentions removed from the file and checked by extraction and render;
+      e-mail/phone/IBAN/ID/card presets and regex, Arabic-Indic digits normalised; mark by drag,
+      selection, or search; review, undo before apply, apply. **Gaps:** JPEG and other compressed
+      images are dropped whole (owner item 15); encrypted files are refused; vertical writing and
+      custom CMaps are only covered by the extraction check; the signed-file path and the drag in the
+      native shell are untested.
+- [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
+      rewritten in full so unlinked objects are gone (ADR 0042)
 - [ ] Form creation; certificate signatures (PAdES) — **[SPIKE]** crypto library first
 
 ## M6 — Edit everything else + convert
@@ -482,6 +535,36 @@ parallel with M2 and merged by pull request at the owner's request.
 - **Tests:** no Rust or UI code changed. The scorer runs in this session used `safha-ocr-eval`
   as it was.
 
+### Session M5-a — 2026-11-22 (Milestone 5: true redaction, pattern search, sanitize; parallel to M3/M4)
+
+Branch `pomidor/m5-redaction-e527d5`, from `main` (M0–M2, M3 groundwork). Avoided `pdf::text`, `typeset`
+and OCR code, as asked; the redactor has its own content-stream tokenizer (`redact/content.rs`).
+
+- **ADR 0042** records the approach. In short: our own content-stream rewrite (PDFium never
+  regenerates content, ADR 0005's amendment); glyphs cut out by character code with exact `TJ` gap
+  compensation; image pixels overwritten in per-drawing copies; paths cut or dropped; annotations
+  removed; redacted text scrubbed out of all metadata strings and XMP; a black box drawn; the result
+  checked by extraction (`redaction_failed` if text is still readable under a mark); saving's full
+  rewrite drops the old objects.
+- **Engine (`safha_core::redact`):** `redaction_update`, `find_matches` + `Preset`,
+  `sanitize_update`; `Document::with_redactions` / `with_sanitized`. A new fixture,
+  `personal-data` (Arabic-Indic IDs and phones, e-mail, IBAN), was added to the corpus (26 files).
+- **Shell:** `find_redactions`, `apply_redactions`, `sanitize_document` (`redaction.rs`); the
+  `redaction_failed` error code.
+- **UI:** the Protect tool's panel in the inspector, the apply confirmation, a Redact button in the
+  selection toolbar, drag-to-mark and the marks' overlay in the viewer (`mode: "redact"`), 17 new
+  commands, English and Arabic strings, `--color-redact-*` tokens. Backend mock and types updated.
+- **Bugs the tests found:** inline images read by length did not advance the lexer; Chrome's
+  zero-advance Type 3 dots were missed until their `d1` boxes were read; the IBAN pattern swallowed
+  the next word; an image replaced in a copy stayed reachable through its old resource name; a
+  trailer without `/Info` does not hide it (readers merge trailers).
+- **Verified:** see ADR 0042. `cargo test -p safha-core` (18 redaction tests, including every text
+  block of every corpus fixture and sanitizing every corpus file), UI tests in both languages,
+  clippy and biome clean, the panel seen in the browser build in English and Arabic.
+- **Not done / not checked:** JPEG pixel editing (owner item 15), encrypted files, a signed file's
+  snapshot path, the native shell's drag on a real PDF, a native-speaker review of the new Arabic strings
+  (owner item 11), the autosave recovery file keeping pre-redaction bytes on disk until save.
+
 ### M4 side track — 2026-11-22 (OCR engine benchmark, branch `pomidor/m4-ocr-benchmark-f94419`)
 
 - **ADR 0030 (proposed): Nuqta-Arabic-OCR 4B as the recogniser, Nuqta 0.8B as its partner.**
@@ -517,6 +600,48 @@ parallel with M2 and merged by pull request at the owner's request.
   - An OK before downloading Nuqta's GGUF or MLX builds to re-measure through a shippable runtime.
 - **Tests:** `cargo test --workspace`: 130 passed, 26 of them in `safha-ocr-eval`, with 6 new.
   `clippy -D warnings` and `cargo fmt --check` are clean. The UI was not touched.
+
+### Session 10 — 2026-11-22 (Milestone 3: editor-surface spike, page analysis, in-place editing)
+
+- **Spike (ADR 0022):** the webview's own text layout matched the engine's line breaks in 5 of
+  5 paragraphs and its character positions to 0.01 pt (1.1 pt after a Latin run in mixed
+  text). Decision: a native text field, no custom caret. Unmeasured: real IMEs, WKWebView.
+- **Reading pages (ADR 0023):** `pdf::content` (tokenizer with byte ranges, interpreter),
+  `pdf::fontinfo` (ToUnicode, encodings, widths), `blocks` (glyphs → lines → paragraphs, logical
+  order, direction, alignment). `cargo run -p safha-core --example page_blocks -- f.pdf` lists
+  a page's paragraphs.
+- **Editing (ADR 0023):** `block_edit`; shell commands `page_text_blocks`, `edit_text_block`;
+  the Edit tool opens a pressed paragraph; the editor shows which font sets it.
+- **Findings on the fixtures:** CoreText's Arabic is not read (dots are separate shapes with no
+  text), Chrome's pages here use Type 3 fonts, so the editable fixtures are CoreText English,
+  our own written text, and the turned-pages file.
+- **Tests:** 127 lib + 11 new integration tests (`tests/block_edit.rs`); 158 UI tests; real
+  app self-test, English/light and Arabic/dark, edits an Arabic paragraph and reads it back.
+- **Next:** spec §7's exit test as a whole (four acceptance tests against Chrome/Acrobat
+  output), the field in the paragraph's own width and size, installed-font substitutes, and
+  the line-count self-check named in ADR 0022.
+
+### Session 9 — 2026-11-22 (Milestone 3 started: text in page content, the add-text tool)
+
+- **M2 merged into `main`** (PR #2) at the owner's go-ahead; M3 continues on `m3-text`.
+- **Text in page content (ADR 0021):**
+  - New text gets its own content stream under a placing `cm`, so it stands upright on turned
+    pages.
+  - The page's original content is wrapped once in `q … Q`, so a page that leaves its
+    graphics state changed cannot move the new text.
+  - The page gets its own `/Resources`, adding the fonts under unused names.
+  - Encrypted files are supported, and undo works (a new change kind: `Content`).
+- **Bundled families:** Sans (IBM Plex) and Naskh (Amiri), now one module shared with text
+  boxes.
+- **The Edit tool:** a press places new text; a strip sets font, size, colour, alignment and
+  direction. A content change repaints in place, re-reads page text, and clears stale search
+  results.
+- **Extraction fix:** a ligature whose letters cannot tell their order (Plex's noon-yeh "ني")
+  read back reversed on pages with no other evidence. It is now reversed by default, as PDFium
+  reports such letters. The corpus is unchanged at 86/118.
+- **Self-test:** Arabic text placed with the Edit tool is painted, reads back as page text,
+  and is undone, in English and Arabic.
+- **Tests:** 270 Rust and 155 UI tests pass on this Mac.
 
 ### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
 
@@ -632,6 +757,12 @@ the `safha:` URI scheme and CSP entry, the npm package `safha-desktop`. `m2-orga
 branch have committed and uncommitted work inside those crates, so renaming them now would make
 every one of their files conflict. Do it in one change once those branches have merged, and
 update CLAUDE.md, the spec header and the README note when it is done.
+
+CI on this PR hit a Windows runner measuring 1,133 ms for the first page (main measures about
+200 ms), so it carries `m2-organize`'s CI timing changes unchanged (the CI half of 353d2a6, and 65ba020):
+with `--ci`, the self-test's first-page budget and every scroll-benchmark timing check warn on
+hosted runners; behaviour checks and the shell's memory still fail the run. Identical hunks, so
+`m2-organize` still merges cleanly.
 
 ### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
 

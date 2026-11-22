@@ -31,3 +31,7 @@ subsetter lands.
 PDFs, under their own names with a subset tag. Both files are compiled into the
 engine. The Reserved Font Name question above is listed for the project owner
 in `PROGRESS.md`.
+
+**Embedded from Milestone 3 (ADR 0021).** Text added to pages embeds subsets of
+the same two Plex files (the Sans family) or of `Amiri-Regular.ttf` (the Naskh
+family), also compiled into the engine.

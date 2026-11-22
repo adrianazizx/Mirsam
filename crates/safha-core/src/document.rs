@@ -108,6 +108,23 @@ fn excerpt(text: &str, limit: usize) -> String {
     }
 }
 
+/// How a revision follows the one before it.
+#[derive(Debug, Clone)]
+pub enum RevisionStep {
+    /// An incremental update to append.
+    Update(Vec<u8>),
+    /// The whole new file.
+    Snapshot(Arc<[u8]>),
+}
+
+/// A redaction's result.
+#[derive(Debug)]
+pub struct Redacted {
+    pub document: Document,
+    pub step: RevisionStep,
+    pub report: crate::redact::Report,
+}
+
 impl Document {
     pub(crate) fn new(
         inner: PdfDocument<'static>,
@@ -177,6 +194,107 @@ impl Document {
         }
         let update = bytes[start..].to_vec();
         Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// This document with `marks` redacted (ADR 0042). The content under
+    /// each mark is removed from the file, not covered, and the result is
+    /// checked: the text PDFium reads from the new revision must hold nothing
+    /// inside a mark, or the redaction is refused and nothing changes.
+    ///
+    /// A signed file is rewritten in full at once, since an update would
+    /// leave the redacted content in the bytes the signature covers; the
+    /// signature no longer validates, which no redaction of a signed file can
+    /// avoid.
+    pub fn with_redactions(&self, marks: &[crate::redact::Mark]) -> Result<Redacted> {
+        let (update, report) = crate::redact::redaction_update(&self.bytes, marks)?;
+        let mut bytes = Vec::with_capacity(self.bytes.len() + update.len());
+        bytes.extend_from_slice(&self.bytes);
+        bytes.extend_from_slice(&update);
+        let mut revision = self.revision(Arc::from(bytes))?;
+        let mut step = RevisionStep::Update(update);
+        if self.is_signed() {
+            let rewritten: Arc<[u8]> = Arc::from(revision.to_pdf_bytes()?);
+            revision = self.revision(Arc::clone(&rewritten))?;
+            step = RevisionStep::Snapshot(rewritten);
+        }
+        revision.check_nothing_under(marks)?;
+        Ok(Redacted { document: revision, step, report })
+    }
+
+    /// Whether any text PDFium reads lies under a mark.
+    fn check_nothing_under(&self, marks: &[crate::redact::Mark]) -> Result<()> {
+        let mut pages: Vec<usize> = marks.iter().map(|m| m.page).collect();
+        pages.sort_unstable();
+        pages.dedup();
+        for page in pages {
+            let text = self.page_text(page)?;
+            for line in text.blocks.iter().flat_map(|block| &block.lines) {
+                for span in &line.spans {
+                    let Some(rect) = span.rect else { continue };
+                    let shown = line.text.get(span.start..span.end).unwrap_or("");
+                    if shown.trim().is_empty() {
+                        continue;
+                    }
+                    let (x, y) = ((rect.left + rect.right) / 2.0, (rect.bottom + rect.top) / 2.0);
+                    let under = marks.iter().any(|m| {
+                        m.page == page
+                            && m.rect.left <= x
+                            && x <= m.rect.right
+                            && m.rect.bottom <= y
+                            && y <= m.rect.top
+                    });
+                    if under {
+                        return Err(Error::Redaction("text is still readable under a marked area"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// This document sanitized (ADR 0042), rewritten in full so that what was
+    /// unlinked is gone from the bytes too. The step is always a snapshot.
+    pub fn with_sanitized(
+        &self,
+        options: crate::redact::SanitizeOptions,
+    ) -> Result<(Document, Arc<[u8]>, crate::redact::SanitizeReport)> {
+        let (update, report) = crate::redact::sanitize_update(&self.bytes, options)?;
+        let mut bytes = Vec::with_capacity(self.bytes.len() + update.len());
+        bytes.extend_from_slice(&self.bytes);
+        bytes.extend_from_slice(&update);
+        let rewritten: Arc<[u8]> = Arc::from(self.revision(Arc::from(bytes))?.to_pdf_bytes()?);
+        Ok((self.revision(Arc::clone(&rewritten))?, rewritten, report))
+    }
+
+    /// This document with `text` written into its page's content (ADR 0021),
+    /// the update that does it, and the text's height as displayed.
+    pub fn with_new_text(&self, text: &crate::text_edit::NewText) -> Result<(Document, Vec<u8>, f32)> {
+        let view = self.view_transform(text.page)?;
+        let update = crate::text_edit::add_text_update(&self.bytes, self.password.as_deref(), &view, text)?;
+        let height = text.height()?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, height))
+    }
+
+    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+    pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
+        let view = self.view_transform(page)?;
+        crate::block_edit::text_blocks(&self.bytes, &view, page)
+    }
+
+    /// This document with one paragraph of its page's text edited in place
+    /// (ADR 0023), the update that does it, and what the edit did.
+    pub fn with_block_edit(
+        &self,
+        edit: &crate::block_edit::BlockEdit,
+    ) -> Result<(Document, Vec<u8>, crate::block_edit::EditedBlock)> {
+        let view = self.view_transform(edit.page)?;
+        let width = self.page_size(edit.page)?.width;
+        let (update, outcome) = crate::block_edit::edit_block_update(&self.bytes, &view, width, edit)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, outcome))
     }
 
     /// The page's annotations of the kinds this app writes (markup, ink,

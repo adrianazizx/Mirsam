@@ -42,6 +42,11 @@ pub enum Error {
     #[error("invalid edit: {0}")]
     InvalidEdit(&'static str),
 
+    /// A redaction that was stopped because checking its result found what
+    /// it was meant to remove (nothing was applied).
+    #[error("redaction stopped: {0}")]
+    Redaction(&'static str),
+
     /// Text could not be laid out or its fonts embedded (a `typeset` error
     /// code: `font_unreadable`, `shaping_failed`, `font_subset_failed`, …).
     #[error("the text could not be set: {0}")]

@@ -13,6 +13,7 @@ mod navigation;
 #[cfg(target_os = "linux")]
 mod print_linux;
 mod recovery;
+mod redaction;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
@@ -35,10 +36,16 @@ macro_rules! product_commands {
             commands::move_to_new_window,
             commands::print_document,
             editing::edit_pages,
+            redaction::find_redactions,
+            redaction::apply_redactions,
+            redaction::sanitize_document,
             editing::add_markup,
             editing::add_ink,
             editing::add_note,
             editing::add_text_box,
+            editing::add_text,
+            editing::page_text_blocks,
+            editing::edit_text_block,
             editing::set_annotation_contents,
             editing::remove_annotations,
             editing::page_annotations,
