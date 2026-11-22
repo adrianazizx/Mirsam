@@ -493,14 +493,18 @@ pub(crate) mod tests {
 
     #[test]
     fn tar_gz_files_folders_and_links() {
-        let bytes = make_tar_gz(&[
+        let mut items = vec![
             TarItem::Dir("./"),
             TarItem::Dir("llama-b1/"),
             TarItem::File("llama-b1/llama-server", b"program", 0o755),
             TarItem::File("llama-b1/libllama.0.dylib", b"lib", 0o644),
-            TarItem::Link("llama-b1/libllama.dylib", "libllama.0.dylib"),
             TarItem::File("llama-b1/._llama-server", b"apple double", 0o644),
-        ]);
+        ];
+        // Tarballs are the macOS and Linux builds; symlinks are only unpacked there.
+        if cfg!(unix) {
+            items.push(TarItem::Link("llama-b1/libllama.dylib", "libllama.0.dylib"));
+        }
+        let bytes = make_tar_gz(&items);
         let (out, result) = unpack_bytes(Unpack::TarGz, &bytes, "tar");
         result.expect("unpacks");
         let dir = out.join("llama-b1");
@@ -527,12 +531,18 @@ pub(crate) mod tests {
             assert!(matches!(result, Err(ModelError::Archive(_))), "{name}: {result:?}");
             assert!(!out.parent().expect("parent").join("evil").exists());
         }
-        // A link that climbs but stays inside is fine.
+        // A link that climbs but stays inside is fine on Unix. Elsewhere
+        // (Windows, whose builds are zips) no link is unpacked at all.
         let bytes = make_tar_gz(&[
             TarItem::File("lib/real.so", b"so", 0o644),
             TarItem::Link("bin/real.so", "../lib/real.so"),
         ]);
-        unpack_bytes(Unpack::TarGz, &bytes, "tar-inside-link").1.expect("inside");
+        let inside = unpack_bytes(Unpack::TarGz, &bytes, "tar-inside-link").1;
+        if cfg!(unix) {
+            inside.expect("inside");
+        } else {
+            assert!(matches!(inside, Err(ModelError::Archive(_))), "{inside:?}");
+        }
         assert!(matches!(unpack_bytes(Unpack::TarGz, b"junk", "tar-junk").1, Err(ModelError::Archive(_))));
     }
 

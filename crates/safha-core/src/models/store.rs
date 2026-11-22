@@ -315,9 +315,13 @@ impl ModelStore {
                     .collect(),
                 program,
             };
-            let mut file = fs::File::create(staging.join(RECEIPT))?;
-            file.write_all(&serde_json::to_vec_pretty(&receipt).map_err(io::Error::other)?)?;
-            file.sync_all()?;
+            {
+                // Closed before the folder moves: Windows refuses to rename a
+                // folder that holds an open file.
+                let mut file = fs::File::create(staging.join(RECEIPT))?;
+                file.write_all(&serde_json::to_vec_pretty(&receipt).map_err(io::Error::other)?)?;
+                file.sync_all()?;
+            }
             self.swap_in(&package.id, &staging)
         })();
         match result {
