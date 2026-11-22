@@ -34,6 +34,15 @@ node ocr-eval/generate.mjs
 
 PaddleOCR downloads its PP-OCRv5 models into `$B/paddlex` on first use.
 
+For the llama.cpp re-measure and the word-box spike (ADR 0030 follow-up, ADR 0031):
+
+```bash
+brew install llama.cpp                                    # 1.0.0, MIT; llama-server
+for r in 4B 0.8B; do for f in Q8_0 Q4_K_M mmproj-f16; do
+  $B/venv/bin/hf download SalahALHaismawi/Nuqta-Arabic-OCR-$r-GGUF \
+    nuqta-ocr-$(echo $r | tr A-Z a-z)-$f.gguf; done; done # Apache-2.0, ~9.5 GiB in all
+```
+
 ## Run
 
 ```bash
@@ -44,6 +53,15 @@ python3 spikes/ocr-engines/agreement.py nuqta-4b nuqta-0.8b apple-vision
 python3 spikes/ocr-engines/confidence.py nuqta-4b+conf nuqta-0.8b apple-vision
 spikes/ocr-engines/run_all.sh nuqta-4b        # one engine
 $B/venv/bin/python spikes/ocr-engines/run_vlm.py nuqta-4b --only form   # a few pages
+
+# Nuqta through llama.cpp (engine name nuqta-<size>-<quant>-<metal|cpu>)
+$B/venv/bin/python spikes/ocr-engines/run_llamacpp.py nuqta-4b --quant Q8_0
+$B/venv/bin/python spikes/ocr-engines/run_llamacpp.py nuqta-0.8b --quant Q8_0 --cpu --stride 6
+
+# Word boxes (ADR 0031): truth from Chrome, detector lines, then alignment + scores
+node spikes/ocr-engines/word_boxes_truth.mjs
+$B/venv/bin/python spikes/ocr-engines/wb_detect.py
+$B/venv/bin/python spikes/ocr-engines/wb_align.py nuqta-4b-q8_0-metal --verbose
 ```
 
 Each runner writes `spikes/out/ocr-engines/hyp/<engine>/<sample>.txt` and a `run.json` with
@@ -64,6 +82,10 @@ the tables pasted into the ADR.
 | `adr_tables.py` | — | The compact tables in ADR 0030, from `ocr-eval/baselines/*.set-v2.json` |
 | `agreement.py` | — | Where a second engine disagrees with the primary: errors caught, false alarms, oracle CER |
 | `confidence.py` | — | Whether the model's own token probabilities (`run_vlm.py --confidence`) flag its errors, alone and with a partner |
+| `run_llamacpp.py` | Nuqta 0.8B / 4B GGUF (Q8_0, Q4_K_M) | `llama-server` loaded once, one request per page; Metal, or CPU only (`--cpu`: `-ngl 0 --no-mmproj-offload`); records the server's token timings and peak RSS |
+| `word_boxes_truth.mjs` | — | Ground-truth word boxes for the 26 geometry-preserving pages: Chrome's DOM word rectangles, scaled to the image |
+| `wb_detect.py` | PP-OCRv5 server detector (+ Arabic recogniser as a guide) | Line polygons and guide text per page, with detector and pipeline timings |
+| `wb_align.py` | — | VLM words → detected lines → word boxes (methods M0–M5, ADR 0031); scores line assignment and IoU against the truth |
 
 Notes from running them:
 

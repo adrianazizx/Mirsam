@@ -26,6 +26,7 @@ Exit status 1 means a gate failed or a category regressed against the baseline.
 | `scans/` | Real scans with human-verified truth. **Empty — this is the set's biggest gap.** |
 | `engines/apple-vision.swift` | Reference engine: the OCR built into macOS. Other engines' runners are in `spikes/ocr-engines/`. |
 | `baselines/` | Stored reports, one per engine and set version (`<engine>.set-v<N>.json`), for regression checks and the M4 comparison. |
+| `baselines/word-boxes/` | Word-box spike reports (ADR 0031): line assignment and box overlap per page and method. |
 | `out/` | Generated; not committed. |
 
 Categories in set v2 (47 samples): `clean-arabic-300dpi`, `clean-english-300dpi`,

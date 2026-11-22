@@ -1,0 +1,1297 @@
+{
+ "engine": "nuqta-4b-q8_0-metal",
+ "pages": 26,
+ "detector_word_centre_recall": 1.0,
+ "summary": {
+  "M0": {
+   "pairs": 1377,
+   "line_correct": 0.748,
+   "iou_x_mean": 0.1652,
+   "iou_x_ge_0.5": 0.1772,
+   "iou_x_ge_0.7": 0.1147,
+   "iou_mean": 0.1515,
+   "iou_ge_0.5": 0.1532
+  },
+  "M1": {
+   "pairs": 1377,
+   "line_correct": 0.9695,
+   "iou_x_mean": 0.6998,
+   "iou_x_ge_0.5": 0.801,
+   "iou_x_ge_0.7": 0.6144,
+   "iou_mean": 0.6839,
+   "iou_ge_0.5": 0.7734
+  },
+  "M2": {
+   "pairs": 1377,
+   "line_correct": 0.9695,
+   "iou_x_mean": 0.8954,
+   "iou_x_ge_0.5": 0.9034,
+   "iou_x_ge_0.7": 0.8824,
+   "iou_mean": 0.8908,
+   "iou_ge_0.5": 0.8998
+  },
+  "M3": {
+   "pairs": 1377,
+   "line_correct": 0.7044,
+   "iou_x_mean": 0.2216,
+   "iou_x_ge_0.5": 0.2273,
+   "iou_x_ge_0.7": 0.1932,
+   "iou_mean": 0.2152,
+   "iou_ge_0.5": 0.2106
+  },
+  "M4": {
+   "pairs": 1377,
+   "line_correct": 0.9826,
+   "iou_x_mean": 0.9147,
+   "iou_x_ge_0.5": 0.9237,
+   "iou_x_ge_0.7": 0.902,
+   "iou_mean": 0.9098,
+   "iou_ge_0.5": 0.9158
+  },
+  "M5": {
+   "pairs": 1377,
+   "line_correct": 0.9898,
+   "iou_x_mean": 0.9207,
+   "iou_x_ge_0.5": 0.9296,
+   "iou_x_ge_0.7": 0.9078,
+   "iou_mean": 0.916,
+   "iou_ge_0.5": 0.9252
+  }
+ },
+ "per_page": [
+  {
+   "id": "syn-ar-plain-naskh-clean-300",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.987,
+   "M0": {
+    "line": 0.902,
+    "iou_x": 0.265
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.708
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 1.0
+   },
+   "M3": {
+    "line": 0.852,
+    "iou_x": 0.195
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 1.0
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 1.0,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-plain-amiri-clean-300",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.668,
+   "M0": {
+    "line": 0.852,
+    "iou_x": 0.239
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.718
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.993
+   },
+   "M3": {
+    "line": 0.918,
+    "iou_x": 0.333
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.993
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.993,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-plain-sans-clean-300",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.984,
+   "M0": {
+    "line": 0.869,
+    "iou_x": 0.156
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.728
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.997
+   },
+   "M3": {
+    "line": 0.918,
+    "iou_x": 0.315
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.997
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.997,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-plain-kufi-clean-300",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.991,
+   "M0": {
+    "line": 0.902,
+    "iou_x": 0.249
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.709
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M3": {
+    "line": 0.852,
+    "iou_x": 0.172
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.999,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-plain-naskh-lowres-150",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.984,
+   "M0": {
+    "line": 0.918,
+    "iou_x": 0.265
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.708
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M3": {
+    "line": 0.852,
+    "iou_x": 0.195
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.999,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-plain-naskh-blur-200",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.991,
+   "M0": {
+    "line": 0.918,
+    "iou_x": 0.266
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.709
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M3": {
+    "line": 0.852,
+    "iou_x": 0.195
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.999,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-plain-naskh-fax-100",
+   "words": 61,
+   "paired": 61,
+   "order": "rows-rtl",
+   "guide_match": 0.975,
+   "M0": {
+    "line": 0.918,
+    "iou_x": 0.269
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.71
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.993
+   },
+   "M3": {
+    "line": 0.852,
+    "iou_x": 0.193
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.993
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.993,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-naskh-clean-300",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.877,
+   "M0": {
+    "line": 0.559,
+    "iou_x": 0.062
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.774
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.999
+   },
+   "M3": {
+    "line": 0.676,
+    "iou_x": 0.036
+   },
+   "M4": {
+    "line": 0.941,
+    "iou_x": 0.747
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.999,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-amiri-clean-300",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.681,
+   "M0": {
+    "line": 0.735,
+    "iou_x": 0.059
+   },
+   "M1": {
+    "line": 0.941,
+    "iou_x": 0.582
+   },
+   "M2": {
+    "line": 0.941,
+    "iou_x": 0.727
+   },
+   "M3": {
+    "line": 0.735,
+    "iou_x": 0.07
+   },
+   "M4": {
+    "line": 0.941,
+    "iou_x": 0.727
+   },
+   "M5": {
+    "line": 0.941,
+    "iou_x": 0.727,
+    "misses": [
+     [
+      "الآلات،",
+      0.0
+     ],
+     [
+      "الإصلاح،",
+      0.0
+     ],
+     [
+      "ثلاثة،",
+      0.0
+     ],
+     [
+      "علامات.",
+      0.0
+     ],
+     [
+      "لَا،",
+      0.0
+     ],
+     [
+      "لِأَنَّ",
+      0.0
+     ],
+     [
+      "الْأَوَّلَ",
+      0.0
+     ],
+     [
+      "يَدُلُّ",
+      0.18
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-sans-clean-300",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.828,
+   "M0": {
+    "line": 0.647,
+    "iou_x": 0.031
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.787
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.983
+   },
+   "M3": {
+    "line": 0.618,
+    "iou_x": 0.034
+   },
+   "M4": {
+    "line": 0.941,
+    "iou_x": 0.707
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.983,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-kufi-clean-300",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.865,
+   "M0": {
+    "line": 0.647,
+    "iou_x": 0.031
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.779
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.988
+   },
+   "M3": {
+    "line": 0.618,
+    "iou_x": 0.035
+   },
+   "M4": {
+    "line": 0.941,
+    "iou_x": 0.709
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.988,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-naskh-lowres-150",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.883,
+   "M0": {
+    "line": 0.794,
+    "iou_x": 0.075
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.777
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.968
+   },
+   "M3": {
+    "line": 0.765,
+    "iou_x": 0.106
+   },
+   "M4": {
+    "line": 0.971,
+    "iou_x": 0.944
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.968,
+    "misses": [
+     [
+      "يَدُلُّ",
+      0.36
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-naskh-blur-200",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.871,
+   "M0": {
+    "line": 0.647,
+    "iou_x": 0.032
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.781
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.969
+   },
+   "M3": {
+    "line": 0.765,
+    "iou_x": 0.105
+   },
+   "M4": {
+    "line": 0.941,
+    "iou_x": 0.746
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.969,
+    "misses": [
+     [
+      "يَدُلُّ",
+      0.38
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-ar-lam-alef-naskh-fax-100",
+   "words": 34,
+   "paired": 34,
+   "order": "rows-rtl",
+   "guide_match": 0.834,
+   "M0": {
+    "line": 0.676,
+    "iou_x": 0.035
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.789
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.965
+   },
+   "M3": {
+    "line": 0.765,
+    "iou_x": 0.103
+   },
+   "M4": {
+    "line": 0.941,
+    "iou_x": 0.742
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.965,
+    "misses": [
+     [
+      "يَدُلُّ",
+      0.38
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-ar-vocalized-amiri-clean-300",
+   "words": 29,
+   "paired": 29,
+   "order": "rows-rtl",
+   "guide_match": 0.21,
+   "M0": {
+    "line": 0.793,
+    "iou_x": 0.203
+   },
+   "M1": {
+    "line": 0.414,
+    "iou_x": 0.094
+   },
+   "M2": {
+    "line": 0.414,
+    "iou_x": 0.094
+   },
+   "M3": {
+    "line": 0.759,
+    "iou_x": 0.088
+   },
+   "M4": {
+    "line": 0.897,
+    "iou_x": 0.701
+   },
+   "M5": {
+    "line": 0.897,
+    "iou_x": 0.701,
+    "misses": [
+     [
+      "قَالَ",
+      0.0
+     ],
+     [
+      "الْعِلْمَ",
+      0.47
+     ],
+     [
+      "نُورٌ،",
+      0.0
+     ],
+     [
+      "وَإِنَّ",
+      0.0
+     ],
+     [
+      "الْقِرَاءَةَ",
+      0.16
+     ],
+     [
+      "مِفْتَاحُ",
+      0.0
+     ],
+     [
+      "الْمَعْرِفَةِ.",
+      0.0
+     ],
+     [
+      "اللُّغَةُ",
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-ar-vocalized-naskh-clean-300",
+   "words": 29,
+   "paired": 29,
+   "order": "rows-rtl",
+   "guide_match": 0.266,
+   "M0": {
+    "line": 0.828,
+    "iou_x": 0.172
+   },
+   "M1": {
+    "line": 0.793,
+    "iou_x": 0.418
+   },
+   "M2": {
+    "line": 0.793,
+    "iou_x": 0.461
+   },
+   "M3": {
+    "line": 0.828,
+    "iou_x": 0.214
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.986
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.986,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-ar-vocalized-amiri-blur-200",
+   "words": 29,
+   "paired": 29,
+   "order": "rows-rtl",
+   "guide_match": 0.189,
+   "M0": {
+    "line": 0.759,
+    "iou_x": 0.072
+   },
+   "M1": {
+    "line": 0.552,
+    "iou_x": 0.113
+   },
+   "M2": {
+    "line": 0.552,
+    "iou_x": 0.137
+   },
+   "M3": {
+    "line": 0.793,
+    "iou_x": 0.286
+   },
+   "M4": {
+    "line": 0.828,
+    "iou_x": 0.207
+   },
+   "M5": {
+    "line": 0.828,
+    "iou_x": 0.207,
+    "misses": [
+     [
+      "الْمَدْرَسَةِ",
+      0.45
+     ],
+     [
+      "صَبَاحًا،",
+      0.0
+     ],
+     [
+      "وَحَمَلَ",
+      0.0
+     ],
+     [
+      "مَعَهُ",
+      0.0
+     ],
+     [
+      "كِتَابًا",
+      0.0
+     ],
+     [
+      "جَدِيدًا",
+      0.0
+     ],
+     [
+      "وَقَلَمًا",
+      0.0
+     ],
+     [
+      "أَزْرَقَ.",
+      0.0
+     ],
+     [
+      "قَالَ",
+      0.0
+     ],
+     [
+      "الْمُعَلِّمُ:",
+      0.0
+     ],
+     [
+      "إِنَّ",
+      0.0
+     ],
+     [
+      "الْعِلْمَ",
+      0.0
+     ],
+     [
+      "نُورٌ،",
+      0.0
+     ],
+     [
+      "وَإِنَّ",
+      0.0
+     ],
+     [
+      "الْقِرَاءَةَ",
+      0.0
+     ],
+     [
+      "مِفْتَاحُ",
+      0.0
+     ],
+     [
+      "الْمَعْرِفَةِ.",
+      0.0
+     ],
+     [
+      "اللُّغَةُ",
+      0.0
+     ],
+     [
+      "الْعَرَبِيَّةُ",
+      0.0
+     ],
+     [
+      "غَنِيَّةٌ",
+      0.0
+     ],
+     [
+      "بِمُفْرَدَاتِهَا،",
+      0.0
+     ],
+     [
+      "دَقِيقَةٌ",
+      0.0
+     ],
+     [
+      "فِي",
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-en-paragraphs-latin-clean-300",
+   "words": 39,
+   "paired": 39,
+   "order": "rows-rtl",
+   "guide_match": 1.0,
+   "M0": {
+    "line": 0.897,
+    "iou_x": 0.451
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.771
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 1.0
+   },
+   "M3": {
+    "line": 0.949,
+    "iou_x": 0.635
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 1.0
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 1.0,
+    "misses": []
+   }
+  },
+  {
+   "id": "syn-mixed-inline-naskh-clean-300",
+   "words": 83,
+   "paired": 82,
+   "order": "rows-rtl",
+   "guide_match": 0.649,
+   "M0": {
+    "line": 0.866,
+    "iou_x": 0.189
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.612
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.831
+   },
+   "M3": {
+    "line": 0.89,
+    "iou_x": 0.147
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.965
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.831,
+    "misses": [
+     [
+      "Adobe",
+      0.0
+     ],
+     [
+      "Acrobat؟",
+      0.37
+     ],
+     [
+      "نعم،",
+      0.0
+     ],
+     [
+      "الإصدار",
+      0.0
+     ],
+     [
+      "2024",
+      0.0
+     ],
+     [
+      "The",
+      0.0
+     ],
+     [
+      "Arabic",
+      0.0
+     ],
+     [
+      "word",
+      0.0
+     ],
+     [
+      "for",
+      0.0
+     ],
+     [
+      "page",
+      0.0
+     ],
+     [
+      "is",
+      0.0
+     ],
+     [
+      "صفحة",
+      0.0
+     ],
+     [
+      "(safha),",
+      0.48
+     ],
+     [
+      "“عقد",
+      0.24
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-contract-two-column-naskh-clean-300",
+   "words": 110,
+   "paired": 110,
+   "order": "cols-rtl",
+   "guide_match": 0.921,
+   "M0": {
+    "line": 0.582,
+    "iou_x": 0.083
+   },
+   "M1": {
+    "line": 0.991,
+    "iou_x": 0.755
+   },
+   "M2": {
+    "line": 0.991,
+    "iou_x": 0.863
+   },
+   "M3": {
+    "line": 0.164,
+    "iou_x": 0.098
+   },
+   "M4": {
+    "line": 0.991,
+    "iou_x": 0.947
+   },
+   "M5": {
+    "line": 0.991,
+    "iou_x": 0.863,
+    "misses": [
+     [
+      "هذا",
+      0.0
+     ],
+     [
+      "بتاريخ",
+      0.36
+     ],
+     [
+      "12",
+      0.0
+     ],
+     [
+      "12",
+      0.0
+     ],
+     [
+      "شهرًا",
+      0.0
+     ],
+     [
+      "تبدأ",
+      0.0
+     ],
+     [
+      "في",
+      0.0
+     ],
+     [
+      "1",
+      0.0
+     ],
+     [
+      "أبريل",
+      0.0
+     ],
+     [
+      "2026.",
+      0.0
+     ],
+     [
+      "2.",
+      0.0
+     ],
+     [
+      "الأجرة.",
+      0.0
+     ],
+     [
+      "يدفع",
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-mixed-inline-sans-clean-300",
+   "words": 83,
+   "paired": 81,
+   "order": "rows-rtl",
+   "guide_match": 0.727,
+   "M0": {
+    "line": 0.877,
+    "iou_x": 0.214
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.748
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.964
+   },
+   "M3": {
+    "line": 0.889,
+    "iou_x": 0.391
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.964
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.964,
+    "misses": [
+     [
+      "Adobe",
+      0.0
+     ],
+     [
+      "Acrobat؟",
+      0.47
+     ],
+     [
+      "“عقد",
+      0.24
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-contract-two-column-sans-clean-300",
+   "words": 110,
+   "paired": 110,
+   "order": "cols-rtl",
+   "guide_match": 0.925,
+   "M0": {
+    "line": 0.618,
+    "iou_x": 0.135
+   },
+   "M1": {
+    "line": 0.991,
+    "iou_x": 0.805
+   },
+   "M2": {
+    "line": 0.991,
+    "iou_x": 0.939
+   },
+   "M3": {
+    "line": 0.0,
+    "iou_x": 0.002
+   },
+   "M4": {
+    "line": 0.982,
+    "iou_x": 0.921
+   },
+   "M5": {
+    "line": 0.991,
+    "iou_x": 0.939,
+    "misses": [
+     [
+      "هذا",
+      0.0
+     ],
+     [
+      "بتاريخ",
+      0.35
+     ],
+     [
+      "12",
+      0.0
+     ],
+     [
+      "2.",
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-mixed-inline-naskh-fax-100",
+   "words": 83,
+   "paired": 81,
+   "order": "rows-rtl",
+   "guide_match": 0.611,
+   "M0": {
+    "line": 0.864,
+    "iou_x": 0.188
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.609
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.827
+   },
+   "M3": {
+    "line": 0.901,
+    "iou_x": 0.314
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.962
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.827,
+    "misses": [
+     [
+      "Adobe",
+      0.0
+     ],
+     [
+      "Acrobat؟",
+      0.38
+     ],
+     [
+      "نعم،",
+      0.0
+     ],
+     [
+      "الإصدار",
+      0.0
+     ],
+     [
+      "2024",
+      0.0
+     ],
+     [
+      "The",
+      0.0
+     ],
+     [
+      "Arabic",
+      0.0
+     ],
+     [
+      "word",
+      0.0
+     ],
+     [
+      "for",
+      0.0
+     ],
+     [
+      "page",
+      0.0
+     ],
+     [
+      "is",
+      0.0
+     ],
+     [
+      "صفحة",
+      0.0
+     ],
+     [
+      "(safha),",
+      0.48
+     ],
+     [
+      "“عقد",
+      0.23
+     ],
+     [
+      "الإيجار”",
+      0.49
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-table-bilingual-naskh-clean-300",
+   "words": 28,
+   "paired": 28,
+   "order": "rows-rtl",
+   "guide_match": 0.864,
+   "M0": {
+    "line": 0.179,
+    "iou_x": 0.127
+   },
+   "M1": {
+    "line": 0.964,
+    "iou_x": 0.811
+   },
+   "M2": {
+    "line": 0.964,
+    "iou_x": 0.841
+   },
+   "M3": {
+    "line": 0.429,
+    "iou_x": 0.278
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.946
+   },
+   "M5": {
+    "line": 0.964,
+    "iou_x": 0.841,
+    "misses": [
+     [
+      "—",
+      0.0
+     ],
+     [
+      "A4",
+      0.0
+     ],
+     [
+      "A4",
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-table-bilingual-naskh-lowres-150",
+   "words": 28,
+   "paired": 28,
+   "order": "rows-rtl",
+   "guide_match": 0.864,
+   "M0": {
+    "line": 0.179,
+    "iou_x": 0.127
+   },
+   "M1": {
+    "line": 0.964,
+    "iou_x": 0.812
+   },
+   "M2": {
+    "line": 0.964,
+    "iou_x": 0.841
+   },
+   "M3": {
+    "line": 0.429,
+    "iou_x": 0.277
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.946
+   },
+   "M5": {
+    "line": 0.964,
+    "iou_x": 0.841,
+    "misses": [
+     [
+      "—",
+      0.0
+     ],
+     [
+      "A4",
+      0.0
+     ],
+     [
+      "A4",
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "syn-form-leave-request-naskh-clean-300",
+   "words": 66,
+   "paired": 66,
+   "order": "rows-rtl",
+   "guide_match": 0.957,
+   "M0": {
+    "line": 0.439,
+    "iou_x": 0.037
+   },
+   "M1": {
+    "line": 1.0,
+    "iou_x": 0.829
+   },
+   "M2": {
+    "line": 1.0,
+    "iou_x": 0.99
+   },
+   "M3": {
+    "line": 0.97,
+    "iou_x": 0.812
+   },
+   "M4": {
+    "line": 1.0,
+    "iou_x": 0.99
+   },
+   "M5": {
+    "line": 1.0,
+    "iou_x": 0.99,
+    "misses": []
+   }
+  }
+ ],
+ "note": "ADR 0031 word-box spike. Detector: PP-OCRv5_server_det (2048 px cap) via PaddleOCR 3.7, guide text from arabic_PP-OCRv5_mobile_rec; truth: Chrome DOM word boxes tightened to ink (spikes/ocr-engines/word_boxes_truth.mjs); scores from spikes/ocr-engines/wb_align.py. 'line' = share of paired words put on the line holding the true word; iou_x = horizontal IoU. M5 'misses' lists paired words with iou_x < 0.5."
+}
