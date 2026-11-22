@@ -411,8 +411,27 @@ Plan, in order:
 
 ## M4 — OCR (quality-first)
 
-- [ ] Engine benchmark and ADR (QARI-OCR, Baseer, PP-OCRv5 Arabic, Tesseract; must beat Tesseract
-      and commercial editors in every Arabic category)
+- [~] Engine benchmark and ADR 0030 (proposed; side track on branch `pomidor/m4-ocr-benchmark-f94419`):
+  - **Primary recogniser: Nuqta-Arabic-OCR 4B.** 0.89% CER over the set, no reading-order errors.
+  - **Ensemble partner: Nuqta 0.8B.** It re-reads low-confidence lines and every number, date
+    and ID, with the platform's OCR as a third reader for fields.
+  - **Weak-hardware default:** Nuqta 0.8B, if a native runtime makes it usable without a GPU.
+    Through Transformers on the CPU it takes 677 s per page.
+  - **Quick draft:** Apple Vision on macOS, Tesseract elsewhere.
+  - **Not chosen:** QARI-OCR (invents words), PaddleOCR-VL-1.6 (weak Arabic), PP-OCRv5 Arabic
+    (32% CER; drops Latin words in Arabic lines), Baseer (no weights released).
+  - **Beats:** plain Tesseract and Apple Vision in every Arabic category.
+  - **Gaps:** synthetic set only; Acrobat and ABBYY not measured; accuracy measured in Python on
+    Metal, not yet through the runtime the app would ship.
+  - **Gates the best engine still fails:** mixed Arabic/English (2.07% CER against 2%) and
+    numbers (93.6% against 99%; 97.0% without "64-bit").
+- [x] `ocr-eval` set v2 (47 samples):
+  - Severe scans (a new tracked category) and an Arabic form.
+  - Table-cell scoring.
+  - Either column first on bilingual side-by-side pages.
+  - Baselines for nine engine runs in `ocr-eval/baselines/*.set-v2.json`.
+- [ ] Re-measure Nuqta through a shippable runtime (GGUF/llama.cpp or MLX), and its speed on CPU
+- [ ] Word boxes for VLM text: detector + alignment (PP-OCRv5's detector is the first candidate)
 - [ ] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
       verification with no silent invention
 - [ ] Background jobs with draft-then-quality results; survives restart
@@ -449,6 +468,42 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 side track — 2026-11-22 (OCR engine benchmark, branch `pomidor/m4-ocr-benchmark-f94419`)
+
+- **ADR 0030 (proposed): Nuqta-Arabic-OCR 4B as the recogniser, Nuqta 0.8B as its partner.**
+  Nine engine runs over the eval set:
+  - **Apple Vision**, the reference.
+  - **Tesseract 5.5.4** with tessdata_best, in two configurations.
+  - **PP-OCRv5 Arabic.**
+  - **QARI-OCR 0.3 and 0.4.**
+  - **PaddleOCR-VL-1.6.**
+  - **Nuqta-Arabic-OCR 0.8B and 4B.**
+
+  Baseer was skipped: the document model was never released as weights, and Baseer-Nakba is
+  non-commercial. Every model, tool and Python environment lives under
+  `~/Library/Caches/safha-dev/ocr-bench` (about 27 GB). The owner approved each download.
+- **Eval set v2** (47 samples; v1's 30 unchanged):
+  - **Severe scans:** fax, second-generation photocopy, faded toner, curved phone photo.
+  - **An Arabic-only form.**
+  - **Table-cell scoring in the scorer.**
+  - **Either column first** on bilingual side-by-side pages. Before this, an engine that read the
+    Arabic column first lost 84% CER on a page it read perfectly.
+- **Findings that shape the pipeline:**
+  - **Self-confidence fails on digits.** Nuqta 4B is certain (p ≥ 0.9995) of the wrong digits it
+    writes on degraded pages, so numbers need a second reader whatever the confidence. Its own
+    confidence does flag the words it invents.
+  - **QARI 0.4 rewrites words.**
+  - **"(64-bit)" in an RTL sentence** comes out as "bit-64" from every engine.
+- **Harness:** `spikes/ocr-engines/`. It has runners, an agreement and confidence analysis, and
+  the tables for the ADR.
+- **Needs the owner (M4):**
+  - Real scans (item 9).
+  - If possible, Acrobat Pro or ABBYY run on `ocr-eval/out/images/` for the commercial
+    comparison.
+  - An OK before downloading Nuqta's GGUF or MLX builds to re-measure through a shippable runtime.
+- **Tests:** `cargo test --workspace`: 130 passed, 26 of them in `safha-ocr-eval`, with 6 new.
+  `clippy -D warnings` and `cargo fmt --check` are clean. The UI was not touched.
 
 ### Session 10 — 2026-11-22 (Milestone 3: editor-surface spike, page analysis, in-place editing)
 

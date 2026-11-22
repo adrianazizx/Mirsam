@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::score::{Counts, FieldScore, OrderScore, SampleScore};
+use crate::score::{CellScore, Counts, FieldScore, OrderScore, SampleScore};
 
 /// The evaluation set index (`ocr-eval/out/manifest.json`).
 #[derive(Debug, Clone, Deserialize)]
@@ -20,10 +20,18 @@ pub struct Sample {
     pub image: String,
     /// Path of the ground-truth text, relative to the manifest.
     pub truth: String,
+    /// Other reading orders that are equally correct (e.g. side-by-side columns in
+    /// two languages, either one first). The sample is scored against whichever
+    /// truth fits the output best.
+    #[serde(default)]
+    pub truth_alternatives: Vec<String>,
     pub categories: Vec<String>,
     /// Values that must be recognized exactly (numbers, dates, IDs).
     #[serde(default)]
     pub fields: Vec<String>,
+    /// Table cells, row by row, each row in reading order (set v2 and later).
+    #[serde(default)]
+    pub cells: Vec<Vec<String>>,
 }
 
 /// Quality gate for one category. Absent limits are not gated.
@@ -47,6 +55,19 @@ pub struct CategoryScore {
     pub field_accuracy: f64,
     pub fields_total: usize,
     pub order_errors: usize,
+    /// Share of table cells read exactly; 1.0 when the category has no tables.
+    #[serde(default = "one")]
+    pub cell_accuracy: f64,
+    #[serde(default)]
+    pub cells_total: usize,
+    /// Table cells read but placed out of reading order.
+    #[serde(default)]
+    pub cell_order_errors: usize,
+}
+
+/// Default for rates in reports written before a metric existed.
+fn one() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,6 +104,7 @@ struct Accumulator {
     cer_base: Counts,
     fields: FieldScore,
     order: OrderScore,
+    cells: CellScore,
 }
 
 /// Aggregates per-sample scores into per-category scores.
@@ -105,6 +127,9 @@ pub fn evaluate(engine: &str, manifest: &Manifest, scores: Vec<SampleScore>, mis
             acc.fields.total += score.fields.total;
             acc.order.displaced_runs += score.order.displaced_runs;
             acc.order.reversed_words += score.order.reversed_words;
+            acc.cells.matched += score.cells.matched;
+            acc.cells.total += score.cells.total;
+            acc.cells.misordered += score.cells.misordered;
         }
         samples.insert(sample.id.clone(), score);
     }
@@ -120,6 +145,9 @@ pub fn evaluate(engine: &str, manifest: &Manifest, scores: Vec<SampleScore>, mis
                 field_accuracy: acc.fields.rate(),
                 fields_total: acc.fields.total,
                 order_errors: acc.order.total(),
+                cell_accuracy: acc.cells.rate(),
+                cells_total: acc.cells.total,
+                cell_order_errors: acc.cells.misordered,
             };
             (name, score)
         })
@@ -191,6 +219,15 @@ impl Report {
             check("wer", before.wer, after.wer, false);
             check("field_accuracy", before.field_accuracy, after.field_accuracy, true);
             check("order_errors", before.order_errors as f64, after.order_errors as f64, false);
+            if before.cells_total > 0 {
+                check("cell_accuracy", before.cell_accuracy, after.cell_accuracy, true);
+                check(
+                    "cell_order_errors",
+                    before.cell_order_errors as f64,
+                    after.cell_order_errors as f64,
+                    false,
+                );
+            }
         }
         Ok(regressions)
     }
@@ -206,15 +243,19 @@ mod tests {
             id: id.into(),
             image: format!("images/{id}.png"),
             truth: format!("truth/{id}.txt"),
+            truth_alternatives: vec![],
             categories: categories.iter().map(|c| c.to_string()).collect(),
             fields: vec![],
+            cells: vec![],
         };
         Manifest { version: 1, samples: vec![sample("a", &["clean"]), sample("b", &["clean", "mixed"])] }
     }
 
     fn report(hyp_a: &str, hyp_b: &str) -> Report {
-        let scores =
-            vec![score_sample("abcdefghij", hyp_a, &[]), score_sample("klmnopqrstuvwxyzabcd", hyp_b, &[])];
+        let scores = vec![
+            score_sample("abcdefghij", hyp_a, &[], &[]),
+            score_sample("klmnopqrstuvwxyzabcd", hyp_b, &[], &[]),
+        ];
         evaluate("test", &manifest(), scores, vec![])
     }
 
@@ -251,6 +292,24 @@ mod tests {
         assert!(baseline.regressions(&baseline).expect("same set version").is_empty());
         // Improvements are not regressions.
         assert!(baseline.regressions(&worse).expect("same set version").is_empty());
+    }
+
+    #[test]
+    fn reports_from_before_cell_scoring_still_load() {
+        let mut json =
+            serde_json::to_value(report("abcdefghij", "klmnopqrstuvwxyzabcd")).expect("serializes");
+        for score in json["categories"].as_object_mut().expect("categories").values_mut() {
+            let score = score.as_object_mut().expect("category");
+            for key in ["cell_accuracy", "cells_total", "cell_order_errors"] {
+                score.remove(key);
+            }
+        }
+        for score in json["samples"].as_object_mut().expect("samples").values_mut() {
+            score.as_object_mut().expect("sample").remove("cells");
+        }
+        let old: Report = serde_json::from_value(json).expect("old report loads");
+        assert_eq!(old.categories["clean"].cell_accuracy, 1.0);
+        assert!(report("abcdefghij", "klmnopqrstuvwxyzabcd").regressions(&old).expect("same set").is_empty());
     }
 
     #[test]
