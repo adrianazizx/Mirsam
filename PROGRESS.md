@@ -205,9 +205,9 @@ M1 closed in session 6 at the owner's go-ahead, with these items carried forward
 - confirm printing on screen on macOS and Windows (owner item 13);
 - pinch-out frames (needs WebKit's own profiler).
 
-## M2 — Annotate and organize — done in session 8 on branch `m2-organize` (PR #2), with the open items below
+## M2 — Annotate and organize — done; merged from `m2-organize` (PR #2) with the open items below
 
-Merging into `main` waits for the owner's go-ahead. Demo script: `docs/demos/m2.md`.
+Merged into `main` in session 8 at the owner's go-ahead. Demo script: `docs/demos/m2.md`.
 
 Plan, in order: every later slice edits documents, so the editing model and saving come first.
 
@@ -312,7 +312,7 @@ M2 adds no budgets of its own; the check is that M1's did not regress.
 - **M2's own interactions** (not budgeted): an edit is painted in 20–40 ms; a markup is
   added in 15–20 ms.
 
-M2 closed in session 8, with these items carried forward:
+M2 closed in session 8 at the owner's go-ahead, with these items carried forward:
 
 - **Annotations:** callouts (P0), choosing fonts, sizes and colours, and moving annotations.
   These come with the inspector.
