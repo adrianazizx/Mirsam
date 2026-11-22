@@ -1,10 +1,14 @@
-//! Page edits, undo and redo (ADR 0014): thin commands over
-//! `safha_core::edit`. Each one leaves the document at a new revision, which
-//! replaces the old one everywhere (renders, search index); the UI reloads
-//! the page layout from the outcome.
+//! Page edits, undo and redo (ADR 0014), and saving (ADR 0015): thin
+//! commands over `safha_core::edit` and `safha_core::save`. An edit, undo, or
+//! redo leaves the document at a new revision, which replaces the old one
+//! everywhere (renders, search index); the UI reloads the page layout from
+//! the outcome.
+
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 use safha_core::edit::{EditHistory, PageEdit};
 
@@ -114,6 +118,69 @@ fn step(state: &AppState, document_id: u32, step: Step) -> CommandResult<EditOut
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
     Ok(EditOutcome::new(page_count, &history))
+}
+
+/// The document after a save.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveOutcome {
+    /// The file's display name (new after Save As).
+    name: String,
+    modified: bool,
+    /// Whether the edits were appended to keep signatures valid, rather than
+    /// the file rewritten in full.
+    incremental: bool,
+}
+
+/// Saves the document over its own file (ADR 0015).
+#[tauri::command]
+pub async fn save_document(state: State<'_, AppState>, document_id: u32) -> CommandResult<SaveOutcome> {
+    let path = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    save_to(&state, document_id, path)
+}
+
+/// Asks where to save a copy, saves it there, and from then on the document
+/// is that file. `None` when the user cancels.
+#[tauri::command]
+pub async fn save_document_as(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    document_id: u32,
+) -> CommandResult<Option<SaveOutcome>> {
+    let current = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut dialog = app.dialog().file().add_filter("PDF", &["pdf"]);
+    if let Some(name) = current.file_name() {
+        dialog = dialog.set_file_name(name.to_string_lossy());
+    }
+    if let Some(dir) = current.parent() {
+        dialog = dialog.set_directory(dir);
+    }
+    let Some(mut path) = dialog.blocking_save_file().and_then(|file| file.into_path().ok()) else {
+        return Ok(None);
+    };
+    if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
+        path.as_mut_os_string().push(".pdf");
+    }
+    save_to(&state, document_id, path).map(Some)
+}
+
+fn save_to(state: &AppState, document_id: u32, path: PathBuf) -> CommandResult<SaveOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mode = safha_core::save::save(&document, &path)?;
+    history.mark_saved();
+    let name = state.set_path(document_id, path.clone()).unwrap_or_default();
+    if let Some(store) = state.store()
+        && let Err(err) = store.record_open(&path)
+    {
+        eprintln!("safha: could not record a recent file: {err}");
+    }
+    Ok(SaveOutcome {
+        name,
+        modified: history.is_modified(),
+        incremental: mode == safha_core::save::SaveMode::Incremental,
+    })
 }
 
 #[cfg(test)]

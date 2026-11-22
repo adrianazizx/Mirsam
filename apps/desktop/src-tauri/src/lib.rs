@@ -36,6 +36,8 @@ macro_rules! product_commands {
             editing::edit_pages,
             editing::undo_edit,
             editing::redo_edit,
+            editing::save_document,
+            editing::save_document_as,
             commands::unlock_document,
             commands::cancel_unlock,
             commands::close_document,

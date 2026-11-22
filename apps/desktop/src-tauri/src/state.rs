@@ -176,6 +176,16 @@ impl AppState {
         lock(&self.documents).get(&id).map(|file| file.path.clone())
     }
 
+    /// After Save As: the document now is the file at `path`. Returns its
+    /// display name.
+    pub fn set_path(&self, id: u32, path: PathBuf) -> Option<String> {
+        let mut documents = lock(&self.documents);
+        let file = documents.get_mut(&id)?;
+        file.name = display_name(&path);
+        file.path = path;
+        Some(file.name.clone())
+    }
+
     /// The id of a document in `window` showing the same file as `path`, if
     /// any. Another window may have the same file open in its own tab.
     pub fn find_open(&self, path: &Path, window: &str) -> Option<u32> {

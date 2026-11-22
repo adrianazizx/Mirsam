@@ -15,7 +15,8 @@
   },
   "tabs": {
     "label": "Open documents",
-    "close": "Close {{name}}"
+    "close": "Close {{name}}",
+    "modified": "Unsaved changes"
   },
   "commands": {
     "file": {
@@ -26,7 +27,9 @@
       "clearRecents": "Clear recent files",
       "unlock": "Open with password",
       "cancelUnlock": "Cancel opening",
-      "print": "Print…"
+      "print": "Print…",
+      "save": "Save",
+      "saveAs": "Save as…"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -134,7 +137,9 @@
     "searchInvalid": "That search cannot be run. Check the regular expression.",
     "searchFailed": "The search could not be completed.",
     "edit_unsupported": "This file's structure can't be edited yet. Viewing still works.",
-    "invalid_edit": "That change can't be made to this document."
+    "invalid_edit": "That change can't be made to this document.",
+    "save_failed": "The document could not be saved. The file on disk was not changed.",
+    "io_error": "The file could not be read or written. Check that its folder exists and can be written to."
   },
   "gallery": {
     "title": "Design gallery",

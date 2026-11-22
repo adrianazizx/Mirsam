@@ -474,6 +474,20 @@ export const mockBackend: Backend = {
     if (history && history.at > 0) history.at -= 1;
     return outcome(documentId);
   },
+  saveDocument: async (documentId) => {
+    const history = edits.get(documentId);
+    if (history) history.saved = history.at;
+    return {
+      name: documentId === LOCKED.id ? LOCKED.name : SAMPLE.name,
+      modified: false,
+      incremental: false,
+    };
+  },
+  saveDocumentAs: async (documentId) => {
+    const history = edits.get(documentId);
+    if (history) history.saved = history.at;
+    return { name: "Copy.pdf", modified: false, incremental: false };
+  },
   redoEdit: async (documentId) => {
     const history = edits.get(documentId);
     if (history && history.at < history.states.length - 1) history.at += 1;

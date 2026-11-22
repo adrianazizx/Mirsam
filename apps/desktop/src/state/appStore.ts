@@ -5,6 +5,7 @@ import type {
   OutlineItem,
   PageSize,
   RecentFile,
+  SaveOutcome,
   SearchHit,
   SearchOptions,
 } from "../backend";
@@ -132,6 +133,8 @@ export interface AppState {
    * selection are dropped and reload; the current page stays where it can.
    */
   applyEdit(id: number, outcome: EditOutcome): void;
+  /** After Save or Save As: the name may change, and the document is no longer modified. */
+  applySave(id: number, outcome: SaveOutcome): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
   pushUnlock(unlock: PendingUnlock): void;
   /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
@@ -376,6 +379,13 @@ export const useAppStore = create<AppState>((set, get) => {
                 modified: outcome.modified,
               }
             : open,
+        ),
+      }));
+    },
+    applySave(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id ? { ...open, name: outcome.name, modified: outcome.modified } : open,
         ),
       }));
     },

@@ -25,6 +25,15 @@ export interface EditOutcome {
   modified: boolean;
 }
 
+/** The document after a save. */
+export interface SaveOutcome {
+  /** The file's display name (new after Save As). */
+  name: string;
+  modified: boolean;
+  /** Edits were appended to keep the file's signatures valid. */
+  incremental: boolean;
+}
+
 export interface DocumentInfo {
   id: number;
   /** File name only; the UI never sees filesystem paths. */
@@ -332,6 +341,10 @@ export interface Backend {
   editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
   undoEdit(documentId: number): Promise<EditOutcome>;
   redoEdit(documentId: number): Promise<EditOutcome>;
+  /** Saves over the document's file (ADR 0015). */
+  saveDocument(documentId: number): Promise<SaveOutcome>;
+  /** Asks where to save, saves there, and the document becomes that file; null if cancelled. */
+  saveDocumentAs(documentId: number): Promise<SaveOutcome | null>;
   /** Gives the document's tab to a new window; the caller drops its own tab. */
   moveToNewWindow(documentId: number): Promise<void>;
   /**

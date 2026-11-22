@@ -33,6 +33,11 @@ pub enum Error {
     #[error("this file cannot be edited: {0}")]
     EditUnsupported(&'static str),
 
+    /// A save that was stopped before anything was written, because the
+    /// result would not have been a sound file.
+    #[error("not saved: {0}")]
+    SaveRejected(&'static str),
+
     /// An edit that does not fit the document (no pages, a page out of range).
     #[error("invalid edit: {0}")]
     InvalidEdit(&'static str),

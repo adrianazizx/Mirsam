@@ -19,6 +19,7 @@ mod error;
 pub mod outline;
 mod pdf;
 pub mod render;
+pub mod save;
 pub mod search;
 pub mod store;
 pub mod text;

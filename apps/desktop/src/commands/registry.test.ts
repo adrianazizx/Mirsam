@@ -74,6 +74,27 @@ describe("command registry", () => {
     expect(shortcutLabel("edit.redo", true)).toBe("⇧⌘Z");
   });
 
+  it("saves only when there is something to save, and undo past a save is a change again", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
+    expect(isCommandEnabled("file.save")).toBe(false);
+    expect(isCommandEnabled("file.saveAs")).toBe(true);
+
+    await runCommand("pages.rotateClockwise");
+    expect(isCommandEnabled("file.save")).toBe(true);
+    await runCommand("file.save");
+    expect(selectActiveDocument(useAppStore.getState())?.modified).toBe(false);
+    expect(isCommandEnabled("file.save")).toBe(false);
+
+    await runCommand("edit.undo");
+    expect(selectActiveDocument(useAppStore.getState())?.modified).toBe(true);
+    await runCommand("file.saveAs");
+    expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+      name: "Copy.pdf",
+      modified: false,
+    });
+    expect(shortcutLabel("file.saveAs", true)).toBe("⇧⌘S");
+  });
+
   it("keeps the last page: deleting needs two", () => {
     useAppStore.getState().addDocument({ id: 7, name: "one.pdf", pageCount: 1 });
     expect(isCommandEnabled("pages.delete")).toBe(false);

@@ -11,6 +11,7 @@ import {
   type RecentFile,
   type RenderedPage,
   type RenderStats,
+  type SaveOutcome,
   type SearchResults,
   type SelftestConfig,
   type Startup,
@@ -141,6 +142,8 @@ export const tauriBackend: Backend = {
   editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
   undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
   redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
+  saveDocument: (documentId) => invoke<SaveOutcome>("save_document", { documentId }),
+  saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>
     listen<{ key: string; value: string }>("settings-changed", (event) =>

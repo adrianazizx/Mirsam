@@ -70,6 +70,8 @@ export type CommandId =
   | "file.open"
   | "file.close"
   | "file.print"
+  | "file.save"
+  | "file.saveAs"
   | "file.openRecent"
   | "file.forgetRecent"
   | "file.clearRecents"
@@ -192,6 +194,8 @@ const KNOWN_ERRORS = [
   "engine_unavailable",
   "file_missing",
   "print_failed",
+  "save_failed",
+  "io_error",
   "edit_unsupported",
   "invalid_edit",
 ];
@@ -344,6 +348,26 @@ const COMMANDS: Command[] = [
       if (id === undefined) return;
       store().removeDocument(id);
       await backend.closeDocument(id);
+    },
+  },
+  {
+    id: "file.save",
+    shortcut: { key: "s", mod: true },
+    isEnabled: (state) => selectActiveDocument(state)?.modified ?? false,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (active) store().applySave(active.id, await backend.saveDocument(active.id));
+    },
+  },
+  {
+    id: "file.saveAs",
+    shortcut: { key: "s", mod: true, shift: true },
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const outcome = await backend.saveDocumentAs(active.id);
+      if (outcome) store().applySave(active.id, outcome);
     },
   },
   {
