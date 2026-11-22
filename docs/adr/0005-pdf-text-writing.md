@@ -78,7 +78,7 @@ viewers. Measured:
   extractors.
 
 So "copies correctly in other viewers" is a property of the *reader*, and only partly ours to
-give. Inside Safha, correct copy and search come from our own reading-order reconstruction (M1,
+give. Inside Mirsam, correct copy and search come from our own reading-order reconstruction (M1,
 spec §6.1), not from trusting any extractor.
 
 ## Decision

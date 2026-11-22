@@ -1,6 +1,6 @@
 [package]
 name = "safha-desktop"
-description = "Safha desktop shell (Tauri)"
+description = "Mirsam desktop shell (Tauri)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

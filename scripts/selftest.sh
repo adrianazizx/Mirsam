@@ -8,7 +8,7 @@
 # Usage: scripts/selftest.sh <file.pdf> <out-dir> [en|ar] [light|dark]
 # Needs: cargo build -p safha-desktop --features devtools
 # Env:   SAFHA_SELFTEST_APP=<binary> runs another devtools build, e.g. the release
-#        bundle (target/release/bundle/macos/Safha.app/Contents/MacOS/safha-desktop);
+#        bundle (target/release/bundle/macos/Mirsam.app/Contents/MacOS/safha-desktop);
 #        SAFHA_SELFTEST_SPIKE=<name> runs a benchmark (scroll, tile-transport);
 #        SAFHA_SELFTEST_TIMEOUT=<seconds> (default 60).
 set -euo pipefail

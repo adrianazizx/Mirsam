@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Safha"
+    "name": "Mirsam"
   },
   "tools": {
     "label": "Tools",
@@ -165,7 +165,7 @@
     "dismiss": "Dismiss",
     "password_required": "This PDF is password-protected.",
     "invalid_pdf": "This file could not be read. It may be damaged, or it is not a PDF.",
-    "engine_unavailable": "The PDF engine could not start. Reinstalling Safha should fix this.",
+    "engine_unavailable": "The PDF engine could not start. Reinstalling Mirsam should fix this.",
     "generic": "Something went wrong. Please try again.",
     "file_missing": "That file has been moved or deleted.",
     "print_failed": "The document could not be printed. Check the printer and try again.",

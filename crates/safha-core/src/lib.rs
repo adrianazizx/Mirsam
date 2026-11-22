@@ -1,4 +1,4 @@
-//! Safha core engine.
+//! Mirsam core engine.
 //!
 //! UI-independent: nothing in this crate may depend on Tauri, a webview, or any
 //! windowing API. The desktop shell, the future CLI, and tests all drive the
