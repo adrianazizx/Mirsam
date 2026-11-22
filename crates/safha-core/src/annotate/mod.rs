@@ -147,6 +147,16 @@ pub enum AnnotationEdit {
         index: usize,
         rect: [f32; 4],
     },
+    /// Moves the Fill & Sign item at `index` of `page`'s `/Annots` to
+    /// `to_page`, at `rect` in that page's space (ADR 0045). It leaves one
+    /// page's `/Annots` for the other's, keeping its object; on a page turned
+    /// otherwise, its appearance is turned to stand upright there.
+    MoveToPage {
+        page: usize,
+        index: usize,
+        to_page: usize,
+        rect: [f32; 4],
+    },
     /// Recolours the Fill & Sign text or mark at `index` of the page's
     /// `/Annots` (ADR 0045): its appearance is drawn again in `color`, in
     /// the same box.
@@ -258,14 +268,8 @@ pub fn annotation_update(
         }
         AnnotationEdit::SetRect { page, index, rect } => {
             let leaf = leaf(*page)?;
-            let [left, bottom, right, top] = *rect;
-            if !in_range((left, bottom))
-                || !in_range((right, top))
-                || right - left < 1.0
-                || top - bottom < 1.0
-            {
-                return Err(Error::InvalidEdit("an item needs a place on the page"));
-            }
+            check_item_rect(*rect)?;
+            let [_, bottom, _, top] = *rect;
             let annots = Annots::read(&file, leaf)?;
             let target = annots.items.get(*index).ok_or(Error::InvalidEdit("no such annotation"))?;
             let &Object::Ref(number, generation) = target else {
@@ -290,6 +294,40 @@ pub fn annotation_update(
                 set(&mut dict, b"DA", da);
             }
             let real = |value: f32| Object::Real(f64::from(value));
+            set(&mut dict, b"Rect", Object::Array(rect.iter().map(|v| real(*v)).collect()));
+            let mut date = Object::Str(pdf_date(SystemTime::now()));
+            if let Some(crypt) = writer.crypt()? {
+                crypt.encrypt_strings(number, generation, &mut date);
+            }
+            set(&mut dict, b"M", date);
+            writer.update.object(number, generation, &Object::Dict(dict));
+        }
+        AnnotationEdit::MoveToPage { page, index, to_page, rect } => {
+            let (from, to) = (leaf(*page)?, leaf(*to_page)?);
+            check_item_rect(*rect)?;
+            let mut annots = Annots::read(&file, from)?;
+            let target = annots.items.get(*index).cloned().ok_or(Error::InvalidEdit("no such annotation"))?;
+            let Object::Ref(number, generation) = target else {
+                return Err(Error::EditUnsupported("this annotation is not an object of its own"));
+            };
+            let mut dict = resolve_dict(&file, &target)
+                .ok_or(Error::EditUnsupported("this annotation cannot be read"))?;
+            if !kind_of(&dict).is_some_and(AnnotationKind::is_fill) {
+                return Err(Error::InvalidEdit("only Fill & Sign items move to another page"));
+            }
+            if page != to_page {
+                annots.items.remove(*index);
+                annots.write(&mut writer.update, from);
+                let mut arrived = Annots::read(&file, to)?;
+                arrived.items.push(target);
+                arrived.write(&mut writer.update, to);
+                // Upright on the new page: its appearance turns with that page's `/Rotate`.
+                if from.rotate.rem_euclid(360) != to.rotate.rem_euclid(360) {
+                    turn_appearance(&file, &mut writer.update, &dict, to.rotate)?;
+                }
+            }
+            let real = |value: f32| Object::Real(f64::from(value));
+            set(&mut dict, b"P", Object::Ref(to.number, to.generation));
             set(&mut dict, b"Rect", Object::Array(rect.iter().map(|v| real(*v)).collect()));
             let mut date = Object::Str(pdf_date(SystemTime::now()));
             if let Some(crypt) = writer.crypt()? {
@@ -587,6 +625,36 @@ fn kind_of(dict: &Dict) -> Option<AnnotationKind> {
         return fill::kind_of_stamp(dict.get(b"Name").and_then(Object::as_name)?);
     }
     AnnotationKind::from_subtype(subtype)
+}
+
+/// A Fill & Sign item's new box: finite, and at least a point each way.
+fn check_item_rect([left, bottom, right, top]: [f32; 4]) -> Result<()> {
+    if !in_range((left, bottom)) || !in_range((right, top)) || right - left < 1.0 || top - bottom < 1.0 {
+        return Err(Error::InvalidEdit("an item needs a place on the page"));
+    }
+    Ok(())
+}
+
+/// Gives a Fill & Sign item's appearance (`/AP /N`) the `/Matrix` that
+/// stands it upright on a page turned by `rotate`: the stream object is
+/// written again under its own number with its data as it is (encrypted
+/// data stays valid), only its dictionary changed.
+fn turn_appearance(file: &File<'_>, update: &mut Update, annotation: &Dict, rotate: i64) -> Result<()> {
+    let unreadable = || Error::EditUnsupported("this item's appearance cannot be read");
+    let ap = annotation.get(b"AP").and_then(|ap| resolve_dict(file, ap)).ok_or_else(unreadable)?;
+    let Some(&Object::Ref(number, generation)) = ap.get(b"N") else { return Err(unreadable()) };
+    let Some(&crate::pdf::Entry::Offset(offset)) = file.entries.get(&number) else {
+        return Err(unreadable());
+    };
+    let (mut form, data) = file.indirect_at(offset).ok_or_else(unreadable)?;
+    let data = data.ok_or_else(unreadable)?;
+    form.0.retain(|(key, _)| key != b"Matrix");
+    if let Some(matrix) = fill::upright(rotate) {
+        let real = |value: f32| Object::Real(f64::from(value));
+        form.0.push((b"Matrix".to_vec(), Object::Array(matrix.iter().map(|v| real(*v)).collect())));
+    }
+    update.stream(number, generation, form, data);
+    Ok(())
 }
 
 /// An annotation's `/DA`, decrypted (empty when it has none).

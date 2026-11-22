@@ -251,6 +251,8 @@ export type CommandId =
   | "fill.place"
   | "fill.color"
   | "fill.move"
+  | "fill.toPreviousPage"
+  | "fill.toNextPage"
   | "fill.moveLeft"
   | "fill.moveRight"
   | "fill.moveUp"
@@ -524,6 +526,57 @@ async function placeFill(item: SelectedAnnotation, rect: ViewRect): Promise<void
   const outcome = await backend.setAnnotationRect(active.id, item.page, item.index, rect);
   getViewer(active.id)?.reselectAfterRefresh({ ...item, rect });
   store().applyEdit(active.id, outcome);
+}
+
+/**
+ * Moves a Fill & Sign item to `rect` on another page (ADR 0045) as one undo
+ * step. It goes last in that page's annotations, and stays selected there.
+ */
+async function moveFillToPage(
+  item: SelectedAnnotation,
+  page: number,
+  rect: ViewRect,
+): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active || !FILL_KINDS.includes(item.kind)) return;
+  const outcome = await backend.moveAnnotationToPage(active.id, item.page, item.index, page, rect);
+  const landed = (await backend.pageAnnotations(active.id, page))
+    .filter((candidate) => candidate.kind === item.kind)
+    .at(-1);
+  if (landed)
+    getViewer(active.id)?.reselectAfterRefresh({ ...item, page, index: landed.index, rect });
+  store().applyEdit(active.id, outcome);
+}
+
+/** The page before or after the selected Fill & Sign item's, if there is one. */
+function fillPageTarget(state: AppState, step: -1 | 1): number | null {
+  const active = selectActiveDocument(state);
+  const selected = active?.selectedAnnotation;
+  if (!active || !selected) return null;
+  const page = selected.page + step;
+  return page >= 0 && page < active.pageCount ? page : null;
+}
+
+/**
+ * Moves the selected Fill & Sign item to the page before or after its own,
+ * where it was on its page (kept on the new one), and shows that page.
+ */
+async function stepFillPage(step: -1 | 1): Promise<void> {
+  const active = selectActiveDocument(store());
+  const selected = active?.selectedAnnotation;
+  const page = fillPageTarget(store(), step);
+  if (!active || !selected || page === null) return;
+  const size = getViewer(active.id)?.pageSize(page) ?? null;
+  const { rect } = selected;
+  const clamp = (value: number, max: number | null) =>
+    Math.max(0, max === null ? value : Math.min(max, value));
+  const next = {
+    ...rect,
+    x: clamp(rect.x, size ? size.width - rect.width : null),
+    y: clamp(rect.y, size ? size.height - rect.height : null),
+  };
+  await moveFillToPage(selected, page, next);
+  navigateTo(active, page);
 }
 
 /**
@@ -1746,12 +1799,30 @@ const DECLARED: Command[] = [
     },
   },
   {
-    // A Fill & Sign item dragged on the page (ADR 0045).
+    // A Fill & Sign item dragged on its page, or onto another (`page`) (ADR 0045).
     id: "fill.move",
     paletteHidden: true,
     isEnabled: hasDocument,
     async run(arg) {
-      if (arg?.annotation && arg.rect) await placeFill(arg.annotation, arg.rect);
+      const item = arg?.annotation;
+      if (!item || !arg.rect) return;
+      if (arg.page !== undefined && arg.page !== item.page)
+        await moveFillToPage(item, arg.page, arg.rect);
+      else await placeFill(item, arg.rect);
+    },
+  },
+  {
+    id: "fill.toPreviousPage",
+    isEnabled: (state) => hasFillSelected(state) && fillPageTarget(state, -1) !== null,
+    async run() {
+      await stepFillPage(-1);
+    },
+  },
+  {
+    id: "fill.toNextPage",
+    isEnabled: (state) => hasFillSelected(state) && fillPageTarget(state, 1) !== null,
+    async run() {
+      await stepFillPage(1);
     },
   },
   ...(
@@ -2389,6 +2460,8 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "fill.place": "annotate",
   "fill.color": "annotate",
   "fill.move": "annotate",
+  "fill.toPreviousPage": "annotate",
+  "fill.toNextPage": "annotate",
   "fill.moveLeft": "annotate",
   "fill.moveRight": "annotate",
   "fill.moveUp": "annotate",

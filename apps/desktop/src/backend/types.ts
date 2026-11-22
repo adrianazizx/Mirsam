@@ -958,6 +958,17 @@ export interface Backend {
     size?: number,
     color?: [number, number, number],
   ): Promise<EditOutcome>;
+  /**
+   * Moves a Fill & Sign item to another page, to a box on that displayed page
+   * (ADR 0045): one undo step. It goes last in that page's annotations.
+   */
+  moveAnnotationToPage(
+    documentId: number,
+    page: number,
+    index: number,
+    toPage: number,
+    rect: ViewRect,
+  ): Promise<EditOutcome>;
   /** Recolours a Fill & Sign text or mark (ADR 0045): one undo step. */
   setAnnotationColor(
     documentId: number,

@@ -114,9 +114,10 @@ export interface ViewerCallbacks {
   onPlace?(page: number, x: number, y: number): void;
   /**
    * A Fill & Sign item was dragged to `rect`, or resized to it by a handle,
-   * on the displayed page (ADR 0045).
+   * on displayed page `page` (another page than its own when dragged there,
+   * ADR 0045).
    */
-  onMoveItem?(item: SelectedAnnotation, rect: ViewRect): void;
+  onMoveItem?(item: SelectedAnnotation, rect: ViewRect, page: number): void;
   /** A drag marked an area (Protect tool): the box on the displayed page. */
   onMarkArea?(page: number, rect: ViewRect): void;
   /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
@@ -520,9 +521,14 @@ export class ViewerController {
   private moving: {
     pointerId: number;
     item: SelectedAnnotation;
-    from: PagePoint;
+    /** Where in the item it was pressed, from its top-left corner. */
+    grab: { x: number; y: number };
+    /** Where it was pressed, and where the pointer is now (client px). */
     clientX: number;
     clientY: number;
+    pointer: { clientX: number; clientY: number };
+    /** The page it would land on, and where. */
+    page: number;
     rect: ViewRect;
     moved: boolean;
   } | null = null;
@@ -915,6 +921,11 @@ export class ViewerController {
    * Scrolls an annotation into view, a little below the top, and selects it
    * as a click on it would (the comments panel, ADR 0041).
    */
+  /** A page's size as displayed, in points, once the page sizes are known. */
+  pageSize(page: number): PageSize | null {
+    return this.sizes?.[page] ?? null;
+  }
+
   /** What `refresh` selects again (`reselectAfterRefresh`). */
   private keepAfterRefresh: SelectedAnnotation | null = null;
 
@@ -1348,9 +1359,11 @@ export class ViewerController {
         this.moving = {
           pointerId: event.pointerId,
           item,
-          from: point,
+          grab: { x: point.x - item.rect.x, y: point.y - item.rect.y },
           clientX: event.clientX,
           clientY: event.clientY,
+          pointer: { clientX: event.clientX, clientY: event.clientY },
+          page: item.page,
           rect: item.rect,
           moved: false,
         };
@@ -1474,13 +1487,16 @@ export class ViewerController {
       return;
     }
     if (this.moving && event.pointerId === this.moving.pointerId) {
-      const { item, rect, moved } = this.moving;
+      const { item, rect, moved, page } = this.moving;
       this.moving = null;
+      this.stopAutoScroll();
       this.content.releasePointerCapture?.(event.pointerId);
-      const slot = this.slots.get(item.page);
-      if (slot) this.paintOverlay(slot);
+      for (const shown of new Set([item.page, page])) {
+        const slot = this.slots.get(shown);
+        if (slot) this.paintOverlay(slot);
+      }
       if (event.type === "pointercancel") return;
-      if (moved) this.callbacks.onMoveItem?.(item, rect);
+      if (moved) this.callbacks.onMoveItem?.(item, rect, page);
       else this.setSelectedAnnotation(item);
       return;
     }
@@ -1490,7 +1506,8 @@ export class ViewerController {
       this.content.releasePointerCapture?.(event.pointerId);
       const slot = this.slots.get(item.page);
       if (slot) this.paintOverlay(slot);
-      if (event.type !== "pointercancel" && moved) this.callbacks.onMoveItem?.(item, rect);
+      if (event.type !== "pointercancel" && moved)
+        this.callbacks.onMoveItem?.(item, rect, item.page);
       return;
     }
     if (this.marking && event.pointerId === this.marking.pointerId) {
@@ -1593,7 +1610,8 @@ export class ViewerController {
   private startAutoScroll(): void {
     if (this.autoScrollFrame !== null) return;
     const step = () => {
-      const dragging = this.dragging;
+      // Selecting text, or dragging a Fill & Sign item (ADR 0045).
+      const dragging = this.dragging ?? (this.moving?.moved ? this.moving.pointer : null);
       if (!dragging || this.destroyed) {
         this.autoScrollFrame = null;
         return;
@@ -1607,7 +1625,8 @@ export class ViewerController {
         return;
       }
       this.container.scrollTop += Math.max(-40, Math.min(40, delta / 2));
-      this.extendSelection();
+      if (this.dragging) this.extendSelection();
+      else this.dragItemTo(dragging.clientX, dragging.clientY);
       this.autoScrollFrame = requestAnimationFrame(step);
     };
     this.autoScrollFrame = requestAnimationFrame(step);
@@ -1624,25 +1643,50 @@ export class ViewerController {
    */
   private dragItem(event: PointerEvent): void {
     const moving = this.moving;
-    const size = moving ? this.sizes?.[moving.item.page] : undefined;
-    if (!moving || !size) return;
+    if (!moving) return;
+    moving.pointer = { clientX: event.clientX, clientY: event.clientY };
     if (!moving.moved) {
       const travelled = Math.hypot(event.clientX - moving.clientX, event.clientY - moving.clientY);
       if (travelled < MOVE_SLOP) return;
       moving.moved = true;
     }
-    const point = this.pointOnPage(moving.item.page, event.clientX, event.clientY);
-    if (!point) return;
-    const { rect } = moving.item;
+    this.dragItemTo(event.clientX, event.clientY);
+    // Near the top or bottom, the view scrolls on, to pages out of sight.
+    const bounds = this.container.getBoundingClientRect();
+    const outside =
+      event.clientY < bounds.top + AUTOSCROLL_EDGE ||
+      event.clientY > bounds.bottom - AUTOSCROLL_EDGE;
+    if (outside) this.startAutoScroll();
+    else this.stopAutoScroll();
+  }
+
+  /**
+   * The dragged item under the pointer at (`clientX`, `clientY`): on the
+   * page there (between pages, the page it was last over), held where it
+   * was grabbed, kept on that page.
+   */
+  private dragItemTo(clientX: number, clientY: number): void {
+    const moving = this.moving;
+    if (!moving) return;
+    const over = this.pointAt(clientX, clientY);
+    const page = over?.page ?? moving.page;
+    const point = over ?? this.pointOnPage(page, clientX, clientY);
+    const size = this.sizes?.[page];
+    if (!point || !size) return;
+    const { width, height } = moving.item.rect;
     const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
+    const previous = moving.page;
+    moving.page = page;
     moving.rect = {
-      x: clamp(rect.x + point.x - moving.from.x, size.width - rect.width),
-      y: clamp(rect.y + point.y - moving.from.y, size.height - rect.height),
-      width: rect.width,
-      height: rect.height,
+      x: clamp(point.x - moving.grab.x, size.width - width),
+      y: clamp(point.y - moving.grab.y, size.height - height),
+      width,
+      height,
     };
-    const slot = this.slots.get(moving.item.page);
-    if (slot) this.paintOverlay(slot);
+    for (const shown of new Set([previous, page])) {
+      const slot = this.slots.get(shown);
+      if (slot) this.paintOverlay(slot);
+    }
   }
 
   /** Follows a dragged corner handle: the item's box grows or shrinks about the opposite corner. */
@@ -1854,9 +1898,10 @@ export class ViewerController {
       place(element, rect);
       slot.overlay.append(element);
     }
-    const reshaped = [this.moving, this.resizing].find(
-      (change) => change?.moved && change.item.page === slot.page,
-    );
+    const reshaped = [
+      this.moving && { ...this.moving, page: this.moving.page },
+      this.resizing && { ...this.resizing, page: this.resizing.item.page },
+    ].find((change) => change?.moved && change.page === slot.page);
     if (reshaped) {
       const element = document.createElement("div");
       element.className = this.classNames.fillMoving ?? this.classNames.markupSelected;

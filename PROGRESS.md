@@ -592,7 +592,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     25% steps; text keeps its size for later changes.
   - Text, dates and marks in black, blue, red or green, chosen in the Sign panel; choosing one also
     recolours the selected text or mark.
-  - **Gaps:** no moving to another page; fixed starting sizes.
+  - Moved to another page by dragging it there (the view scrolls on near the edge) or with
+    "previous page" and "next page"; upright on pages turned otherwise.
+  - **Gaps:** fixed starting sizes.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -1003,6 +1005,24 @@ encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11b
     text, a signature refused). A UI test covers new items in the chosen colour, recolouring the
     selection, signatures left alone, and the swatches in English and Arabic. 446 Rust and 207 UI
     tests pass.
+- **Fill & Sign items move to another page** (added on request; its own PR, after the colour one):
+  - **Dragging:** an item follows the pointer onto the page it is over, held where it was grabbed
+    and kept inside that page. The view auto-scrolls near the top or bottom edge, as it does for
+    text selection.
+  - **Commands:** the panel's "previous page" and "next page" (`fill.toPreviousPage`,
+    `fill.toNextPage`) move the selected item to the same place on the neighbouring page, and show
+    that page.
+  - **Engine:** `AnnotationEdit::MoveToPage` (shell: `move_annotation_to_page`) moves the
+    annotation object from one page's `/Annots` to the end of the other's, sets `/P` and `/Rect`,
+    and, between pages turned differently, rewrites its appearance's `/Matrix` with the stream data
+    untouched.
+  - **Also fixed:** merging `main` into #23 broke the watermark dialog's colour list (read-only
+    tuples), so the shared palette types its colours as plain `[number, number, number]`. That fix
+    was pushed to #23 too.
+  - **Tests:** a Rust test moves fill text from the unturned page to the 90° page, then to the 180°
+    one. It lands in its box only, upright, nothing is left behind, it survives a save, and a note is
+    refused. A viewer test drags across a page boundary; a command test covers moving by drag and by
+    previous/next page. 471 Rust and 220 UI tests pass.
 
 ### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
 

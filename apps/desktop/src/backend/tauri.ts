@@ -201,6 +201,8 @@ export const tauriBackend: Backend = {
       size: size ?? null,
       color: color ?? null,
     }),
+  moveAnnotationToPage: (documentId, page, index, toPage, rect) =>
+    invoke<EditOutcome>("move_annotation_to_page", { documentId, page, index, toPage, rect }),
   setAnnotationColor: (documentId, page, index, color) =>
     invoke<EditOutcome>("set_annotation_color", { documentId, page, index, color }),
   placeSignature: (documentId, page, x, y, width, signature) =>

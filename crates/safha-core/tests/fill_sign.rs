@@ -395,3 +395,73 @@ fn text_and_marks_change_colour_in_place_and_keep_it() {
     let refused = signed.with_annotation_edit(&AnnotationEdit::SetColor { page: 0, index, color: RED });
     assert!(matches!(refused, Err(safha_core::Error::InvalidEdit(_))));
 }
+
+/// The page-space box displayed at `area` on a page.
+fn page_rect(view: &safha_core::view::ViewTransform, area: ViewRect) -> [f32; 4] {
+    let [(x0, y0), (x1, y1)] =
+        [(area.x, area.y), (area.x + area.width, area.y + area.height)].map(|(x, y)| view.page_point(x, y));
+    [x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)]
+}
+
+#[test]
+fn items_move_to_another_page_and_stand_upright_there() {
+    // Pages turned 0, 90, 180 and 270 degrees.
+    let (bytes, _) = fixture("qpdf/rotated");
+    let mut document = engine().open_bytes(bytes, None).expect("opens");
+    let view = document.view_transform(0).expect("view");
+    let text = FillText::at(30.0, 40.0, "منقول — Moved", 14.0, FillText::DEFAULT_COLOR, &view).expect("fits");
+    let before = [render(&document, 0), render(&document, 1), render(&document, 2)];
+    document = apply(&document, AnnotationEdit::AddFillText { page: 0, text });
+    let (index, _, placed) = last_box(&document, 0);
+
+    // To the page turned a quarter, at the same place as displayed.
+    let to = document.view_transform(1).expect("view");
+    let moved = apply(
+        &document,
+        AnnotationEdit::MoveToPage { page: 0, index, to_page: 1, rect: page_rect(&to, placed) },
+    );
+    assert!(moved.page_annotations(0).expect("listed").0.is_empty(), "it left page 1");
+    let (_, kind, shown) = last_box(&moved, 1);
+    assert_eq!(kind, AnnotationKind::FillText);
+    assert!((shown.x - placed.x).abs() < 0.01 && (shown.width - placed.width).abs() < 0.01, "{shown:?}");
+    assert!(shown.width > shown.height, "upright, wider than tall: {shown:?}");
+    // Drawn in its new box only; its old page is as it was.
+    let (inside, outside) = changes(&before[1], &render(&moved, 1), shown);
+    assert!(inside > 50 && outside == 0, "{inside} inside, {outside} outside");
+    let (_, left_behind) = changes(&before[0], &render(&moved, 0), shown);
+    assert_eq!(left_behind, 0, "nothing stays on the first page");
+
+    // Once more, to the upside-down page: still upright, and still readable.
+    let (index, _, _) = last_box(&moved, 1);
+    let to = moved.view_transform(2).expect("view");
+    let again = apply(
+        &moved,
+        AnnotationEdit::MoveToPage { page: 1, index, to_page: 2, rect: page_rect(&to, placed) },
+    );
+    let (_, _, shown) = last_box(&again, 2);
+    let (inside, outside) = changes(&before[2], &render(&again, 2), shown);
+    assert!(inside > 50 && outside == 0, "{inside} inside, {outside} outside");
+    let path = scratch("moved.pdf");
+    save(&again, &path).expect("saves");
+    let reopened = engine().open_file(&path, None).expect("reopens");
+    assert_eq!(reopened.page_annotations(2).expect("listed").0.len(), 1);
+    assert!(reopened.page_annotations(1).expect("listed").0.is_empty());
+
+    // Only Fill & Sign items move between pages.
+    let (bytes, _) = fixture("chrome/en-paragraphs");
+    let plain = engine().open_bytes(bytes, None).expect("opens");
+    let view = plain.view_transform(0).expect("view");
+    let note = safha_core::annotate::Note {
+        rect: safha_core::annotate::Note::rect_at(10.0, 10.0, &view),
+        contents: "x".into(),
+        color: safha_core::annotate::Note::DEFAULT_COLOR,
+    };
+    let noted = apply(&plain, AnnotationEdit::AddNote { page: 0, note });
+    let refused = noted.with_annotation_edit(&AnnotationEdit::MoveToPage {
+        page: 0,
+        index: 0,
+        to_page: 0,
+        rect: [10.0, 10.0, 30.0, 30.0],
+    });
+    assert!(matches!(refused, Err(safha_core::Error::InvalidEdit(_))));
+}
