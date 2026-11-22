@@ -6,8 +6,11 @@
 # pdfium-render crate (see docs/adr/0002-pdf-engine-pdfium.md). Bump both together.
 #
 # Usage: scripts/fetch-pdfium.sh [platform]
-#   platform: mac-arm64 | mac-x64 | linux-x64 | linux-arm64 | win-x64 | win-arm64 | wasm
-#   (defaults to the host platform)
+#   platform: mac-arm64 | mac-x64 | mac-universal | linux-x64 | linux-arm64 | win-x64 |
+#             win-arm64 | wasm (defaults to the host platform)
+#   mac-universal is not a download: it fetches mac-arm64 and mac-x64 (each
+#   checksum-verified) and joins their libraries with lipo, for universal app
+#   bundles (docs/adr/0060-bundling-pdfium.md).
 set -euo pipefail
 
 PDFIUM_BUILD="8125"
@@ -48,7 +51,6 @@ sha256_of() {
 }
 
 PLATFORM="${1:-$(host_platform)}"
-EXPECTED="$(checksum_for "$PLATFORM")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/third_party/pdfium/$PLATFORM"
 STAMP="$DEST/.build-$PDFIUM_BUILD"
@@ -57,6 +59,24 @@ if [[ -f "$STAMP" ]]; then
   echo "PDFium $PDFIUM_BUILD ($PLATFORM) already present at $DEST"
   exit 0
 fi
+
+if [[ "$PLATFORM" == "mac-universal" ]]; then
+  command -v lipo >/dev/null || { echo "mac-universal needs lipo (Xcode command-line tools)" >&2; exit 2; }
+  "$0" mac-arm64
+  "$0" mac-x64
+  ARM="$ROOT/third_party/pdfium/mac-arm64"
+  rm -rf "$DEST"
+  mkdir -p "$DEST/lib"
+  lipo -create "$ARM/lib/libpdfium.dylib" "$ROOT/third_party/pdfium/mac-x64/lib/libpdfium.dylib" \
+    -output "$DEST/lib/libpdfium.dylib"
+  # Both packages come from the same build: one copy of the notices serves.
+  cp -R "$ARM/LICENSE" "$ARM/VERSION" "$ARM/licenses" "$DEST/"
+  touch "$STAMP"
+  echo "PDFium $PDFIUM_BUILD ($PLATFORM: $(lipo -archs "$DEST/lib/libpdfium.dylib")) installed at $DEST"
+  exit 0
+fi
+
+EXPECTED="$(checksum_for "$PLATFORM")"
 
 URL="https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F$PDFIUM_BUILD/pdfium-$PLATFORM.tgz"
 TMP="$(mktemp -d)"

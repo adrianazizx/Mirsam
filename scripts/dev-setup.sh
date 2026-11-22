@@ -5,7 +5,8 @@
 # 2. If the checkout lives in a cloud-synced folder (OneDrive, iCloud Drive,
 #    Dropbox, Google Drive), moves the heavy build outputs out of it so the sync
 #    client does not try to upload gigabytes of object files:
-#      - Cargo's target/ becomes a symlink into the user cache directory.
+#      - Cargo's target/ and the fuzzing outputs (fuzz/target, corpus, artifacts)
+#        become symlinks into the user cache directory.
 #      - pnpm's virtual store (the bulk of node_modules) goes to the same cache
 #        via a generated, git-ignored apps/desktop/.npmrc.
 #    Normal checkouts and CI are left untouched.
@@ -25,15 +26,22 @@ case "$ROOT" in
     # Keyed by checkout path so two checkouts never share build outputs.
     KEY="$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)"
     CACHE="$CACHE_HOME/safha-dev/$KEY"
-    mkdir -p "$CACHE/target" "$CACHE/pnpm-virtual-store"
+    mkdir -p "$CACHE/target" "$CACHE/pnpm-virtual-store" "$CACHE/fuzz/target" "$CACHE/fuzz/corpus" \
+      "$CACHE/fuzz/artifacts"
 
-    if [[ -L target ]]; then
-      :
-    elif [[ -e target ]]; then
-      echo "note: target/ already exists as a real directory; leaving it in place" >&2
-    else
-      ln -s "$CACHE/target" target
-    fi
+    # The fuzz crate is its own workspace with its own target/, and fuzzing
+    # writes thousands of small files (fuzz/README.md).
+    for pair in "target:$CACHE/target" "fuzz/target:$CACHE/fuzz/target" "fuzz/corpus:$CACHE/fuzz/corpus" \
+      "fuzz/artifacts:$CACHE/fuzz/artifacts"; do
+      link="${pair%%:*}"
+      if [[ -L "$link" ]]; then
+        :
+      elif [[ -e "$link" ]]; then
+        echo "note: $link/ already exists as a real directory; leaving it in place" >&2
+      else
+        ln -s "${pair#*:}" "$link"
+      fi
+    done
 
     printf 'virtual-store-dir=%s\n' "$CACHE/pnpm-virtual-store" > apps/desktop/.npmrc
     echo "Cloud-synced checkout detected: build outputs redirected to $CACHE"

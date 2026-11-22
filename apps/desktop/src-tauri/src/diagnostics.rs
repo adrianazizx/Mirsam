@@ -197,8 +197,17 @@ pub fn selftest_report(
             .map_err(|err| CommandError::new("invalid_report", err.to_string()))?;
         std::fs::write(out_dir.join("canvas.png"), bytes).map_err(io)?;
     }
+    // Which PDFium this process runs on: bundle checks assert that an installed
+    // app loads the copy inside its own bundle (scripts/bundle-selftest.sh).
+    let pdfium = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)
+        .ok()
+        .map(|engine| engine.library_path().display().to_string());
     let report = serde_json::json!({
         "reportedAfterMs": state.started.elapsed().as_millis(),
+        "pdfiumLibrary": pdfium,
+        // The architecture this process runs as (a universal app's Intel
+        // slice under Rosetta reports x86_64).
+        "arch": std::env::consts::ARCH,
         "results": report.results,
     });
     std::fs::write(out_dir.join("report.json"), format!("{report:#}\n")).map_err(io)?;

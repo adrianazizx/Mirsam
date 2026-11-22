@@ -533,7 +533,8 @@ fn build_lines(units: &[Unit], p: Params) -> Vec<Line> {
 /// same ink centre (one cluster split by a vertical offset) keep stream order:
 /// logical, so for right-to-left letters the later one is further left.
 fn visual_order(units: &[Unit], members: &mut [usize]) {
-    members.sort_by(|&a, &b| {
+    // Comparing with a tolerance is not transitive: see `sort_tolerant`.
+    sort_tolerant(members, |&a, &b| {
         let (ua, ub) = (&units[a], &units[b]);
         let near = 0.05 * ua.size.max(ub.size);
         if (ua.origin_x - ub.origin_x).abs() >= near.max(0.01) {
@@ -545,6 +546,47 @@ fn visual_order(units: &[Unit], members: &mut [usize]) {
             if is_rtl_char(ua.key) && is_rtl_char(ub.key) { ib.cmp(&ia) } else { ia.cmp(&ib) }
         }
     });
+}
+
+/// A stable merge sort for comparisons with a tolerance, which are not
+/// transitive: `a ≈ b` and `b ≈ c` (decided one way) do not make `a ≈ c` (decided
+/// another), so a page can make them circular. The standard sort may panic on
+/// such a comparison; this one never does. Where the comparison is a proper
+/// order it gives exactly what any stable sort gives.
+fn sort_tolerant<T: Copy>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering) {
+    fn merge_sort<T: Copy>(
+        items: &mut [T],
+        scratch: &mut [T],
+        compare: &mut impl FnMut(&T, &T) -> std::cmp::Ordering,
+    ) {
+        let len = items.len();
+        if len < 2 {
+            return;
+        }
+        let mid = len / 2;
+        merge_sort(&mut items[..mid], &mut scratch[..mid], compare);
+        merge_sort(&mut items[mid..], &mut scratch[mid..], compare);
+        scratch.copy_from_slice(items);
+        let (left, right) = scratch.split_at(mid);
+        let (mut i, mut j) = (0, 0);
+        for slot in items.iter_mut() {
+            // Ties take the left (earlier) item: stable.
+            let take_left = match (left.get(i), right.get(j)) {
+                (Some(l), Some(r)) => compare(l, r) != std::cmp::Ordering::Greater,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if take_left {
+                *slot = left[i];
+                i += 1;
+            } else {
+                *slot = right[j];
+                j += 1;
+            }
+        }
+    }
+    let mut scratch = items.to_vec();
+    merge_sort(items, &mut scratch, &mut compare);
 }
 
 /// Splits a line at gaps wide enough to separate columns or table cells.
@@ -1342,5 +1384,35 @@ mod tests {
         let page = analyze(&glyphs, &[]);
         assert_eq!(page.blocks[0].direction, Direction::Rtl);
         assert_eq!(page.blocks[0].lines[0].text, "عنوان — Title");
+    }
+
+    /// Fuzzing (fuzz/README.md, target `open`): glyphs whose origins are each
+    /// within the tolerance of the next but not of the one after, and whose
+    /// centres run the other way, make the left-to-right comparison circular
+    /// (c < b < a < c). The standard sort panics when it notices; a damaged
+    /// or hostile page must still read.
+    #[test]
+    fn glyphs_that_compare_in_a_circle_still_read() {
+        let widths = [10.0, 6.0, 1.0];
+        // Distinct letters (Latin Extended-A and B), so none is dropped as a
+        // fake-bold duplicate of another.
+        let letter = |i: usize| char::from_u32(0x100 + i as u32).filter(|c| c.is_alphabetic()).unwrap_or('x');
+        let glyphs: Vec<Glyph> =
+            (0..240).map(|i| g(i, letter(i), i as f32 * 0.3, widths[i % 3], 700.0, 10.0)).collect();
+        let page = analyze(&glyphs, &[]);
+        let read: usize = page.text().chars().filter(|c| !c.is_whitespace()).count();
+        assert_eq!(read, glyphs.len(), "every glyph is read once");
+    }
+
+    /// The tolerant sort is a stable sort: where the comparison is a proper
+    /// order it gives exactly what the standard one gives.
+    #[test]
+    fn the_tolerant_sort_matches_a_stable_sort_on_proper_orders() {
+        let keys: Vec<(u8, usize)> = (0..500).map(|i| (((i * 7919) % 13) as u8, i)).collect();
+        let mut expected = keys.clone();
+        expected.sort_by_key(|k| k.0);
+        let mut sorted = keys;
+        sort_tolerant(&mut sorted, |a, b| a.0.cmp(&b.0));
+        assert_eq!(sorted, expected);
     }
 }

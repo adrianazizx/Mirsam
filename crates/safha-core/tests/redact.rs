@@ -119,8 +119,12 @@ fn literal(text: &str) -> Pattern {
 /// The document's decompressed objects, by qpdf, for scanning the bytes a
 /// saved file holds.
 fn decompressed(bytes: &[u8]) -> Vec<u8> {
-    let input = scratch(&format!("in-{}.pdf", bytes.len()));
-    let output = scratch(&format!("out-{}.pdf", bytes.len()));
+    // Tests run in parallel and two documents can have the same length: one
+    // name per call, or one test reads another's file.
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let input = scratch(&format!("in-{call}.pdf"));
+    let output = scratch(&format!("out-{call}.pdf"));
     std::fs::write(&input, bytes).expect("write");
     let status = Command::new("qpdf")
         .args(["--qdf", "--object-streams=disable", "--stream-data=uncompress"])

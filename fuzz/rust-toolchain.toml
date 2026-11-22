@@ -1,0 +1,5 @@
+# cargo-fuzz needs nightly (libFuzzer, -Zsanitizer). Pinned so a run is
+# reproducible; bump freely.
+[toolchain]
+channel = "nightly-2026-11-21"
+profile = "minimal"

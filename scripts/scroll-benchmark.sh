@@ -8,7 +8,7 @@
 #   --ci: frame and webview-memory budgets warn instead of failing (hosted
 #         runners have no real GPU; see scripts/check-scroll-benchmark.mjs)
 #   debug:   needs cargo build -p safha-desktop --features devtools
-#   release: needs (cd apps/desktop && pnpm tauri build --features devtools --bundles app)
+#   release: needs node scripts/bundle.mjs --features devtools --bundles app
 #
 # The window must stay visible and the screen unlocked for the whole run: an
 # occluded WKWebView gets no animation frames, and the checker then rejects the

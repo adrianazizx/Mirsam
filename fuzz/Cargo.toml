@@ -1,0 +1,63 @@
+[package]
+name = "safha-fuzz"
+description = "Fuzz targets for Mirsam's open and parse path (cargo-fuzz; see fuzz/README.md)"
+version = "0.0.0"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace: it builds on nightly with sanitizers (fuzz/rust-toolchain.toml)
+# and never ships, so the repository's workspace, lock file and licence report
+# do not include it.
+[workspace]
+members = ["."]
+
+[dependencies]
+# libFuzzer's Rust wrapper: (MIT OR Apache-2.0) AND NCSA (LLVM's BSD-style
+# licence). A development tool only; nothing here is in the app.
+libfuzzer-sys = "0.4.13"
+safha-core = { path = "../crates/safha-core" }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "open"
+path = "fuzz_targets/open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "file"
+path = "fuzz_targets/file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "objects"
+path = "fuzz_targets/objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content"
+path = "fuzz_targets/content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cmap"
+path = "fuzz_targets/cmap.rs"
+test = false
+doc = false
+bench = false
