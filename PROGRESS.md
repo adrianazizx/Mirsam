@@ -195,7 +195,7 @@ To re-measure (screen unlocked; the release bundle sometimes opens hidden, and s
 rejected as invalid, so run it again):
 
 - debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
-- release: `(cd apps/desktop && pnpm tauri build --features devtools --bundles app) && scripts/scroll-benchmark.sh <out> release`
+- release: `node scripts/bundle.mjs --features devtools --bundles app && scripts/scroll-benchmark.sh <out> release`
 
 Test status at the end of session 6:
 

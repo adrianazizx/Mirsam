@@ -42,7 +42,7 @@ const BUNDLED = [
     version: "chromium/8125 (bblanchon/pdfium-binaries)",
     license: "BSD-3-Clause AND Apache-2.0",
     source: "https://pdfium.googlesource.com/pdfium/",
-    note: "Its own third-party notices ship in third_party/pdfium/<platform>/licenses/.",
+    note: "Its licence and its own third-party notices (third_party/pdfium/<platform>/LICENSE and licenses/) ship inside every installer, in licenses/pdfium/ beside the app's resources (scripts/bundle.mjs).",
   },
   {
     name: "SQLite",

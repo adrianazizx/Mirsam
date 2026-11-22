@@ -1,0 +1,160 @@
+name: Bundles
+
+# Builds the installers for every shipped target with the pinned PDFium inside
+# (scripts/bundle.mjs, ADR 0060), then installs or unpacks each one and runs the
+# end-to-end self-test on the app it delivers, in English and Arabic, checking
+# that the app loaded the PDFium from its own bundle (scripts/bundle-selftest.sh).
+#
+# Release builds take several minutes more than the test jobs in ci.yml, so pull
+# requests run this only when packaging changes; every push to main and "Run
+# workflow" run it in full. Installers here are built with the self-test harness
+# (--features devtools) and unsigned: they are checks, not releases.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**.md"
+  pull_request:
+    paths:
+      - ".github/workflows/bundle.yml"
+      - "apps/desktop/src-tauri/tauri*.json"
+      - "apps/desktop/src-tauri/Cargo.toml"
+      - "apps/desktop/src-tauri/build.rs"
+      - "apps/desktop/src-tauri/icons/**"
+      - "apps/desktop/package.json"
+      - "crates/safha-core/src/engine.rs"
+      - "scripts/bundle.mjs"
+      - "scripts/bundle-selftest.sh"
+      - "scripts/selftest.sh"
+      - "scripts/fetch-pdfium.sh"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+concurrency:
+  group: bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CI: "true"
+
+jobs:
+  bundle:
+    name: Bundle (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # run-as: the architectures each macOS app is launched as. Intel code
+          # runs under Rosetta on the Apple-silicon runner; a universal app is
+          # run both ways, so both halves of its PDFium are loaded.
+          - { os: macos-latest, target: aarch64-apple-darwin, run-as: arm64 }
+          - { os: macos-latest, target: x86_64-apple-darwin, run-as: x86_64 }
+          - { os: macos-latest, target: universal-apple-darwin, run-as: arm64 x86_64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          # The oldest supported Ubuntu: a deb or AppImage built here runs on
+          # newer distributions, not the other way round.
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+    defaults:
+      run:
+        shell: bash
+    env:
+      # WebKitGTK in a virtual machine: no GPU, no DMA-BUF.
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      # linuxdeploy (AppImage bundling) is itself an AppImage; runners have no FUSE.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev build-essential file patchelf \
+            qpdf xvfb rpm2cpio cpio
+      - name: Virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1600x1200x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      - name: System packages (macOS)
+        if: runner.os == 'macOS'
+        run: brew install qpdf
+      - name: Rosetta (Intel code on Apple silicon)
+        if: runner.os == 'macOS' && contains(matrix.run-as, 'x86_64')
+        run: arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+      - name: System packages (Windows)
+        if: runner.os == 'Windows'
+        run: choco install qpdf --no-progress -y
+
+      # rust-toolchain.toml pins the version; add the cross targets.
+      - name: Rust targets
+        run: |
+          rustup show
+          case "${{ matrix.target }}" in
+            universal-apple-darwin) rustup target add aarch64-apple-darwin x86_64-apple-darwin ;;
+            *) rustup target add "${{ matrix.target }}" ;;
+          esac
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bundle-${{ matrix.target }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - name: Generate the fixture corpus
+        run: node fixtures/generate.mjs
+
+      - name: Build and check the installers
+        run: node scripts/bundle.mjs --target "${{ matrix.target }}" --features devtools
+
+      - name: Self-test each installer
+        env:
+          TARGET: ${{ matrix.target }}
+          RUN_AS: ${{ matrix.run-as }}
+        run: |
+          bundle="target/$TARGET/release/bundle"
+          shopt -s nullglob
+          installers=("$bundle"/dmg/*.dmg "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm \
+            "$bundle"/appimage/*.AppImage "$bundle"/nsis/*-setup.exe "$bundle"/msi/*.msi)
+          [[ ${#installers[@]} -gt 0 ]] || { echo "no installers in $bundle" >&2; exit 1; }
+          for installer in "${installers[@]}"; do
+            for arch in ${RUN_AS:-native}; do
+              name="$(basename "$installer")-$arch"
+              echo "::group::$name"
+              [[ "$arch" == native ]] && arch=""
+              SAFHA_SELFTEST_ARCH="$arch" scripts/bundle-selftest.sh "$installer" "selftest-out/$name"
+              echo "::endgroup::"
+            done
+          done
+      - name: Installer sizes
+        if: always()
+        run: |
+          report="target/${{ matrix.target }}/release/bundle/bundle-report.json"
+          [[ -f "$report" ]] || exit 0
+          node -e '
+            const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            const rows = r.artifacts.map((a) => `| ${a.kind} | ${a.file.split("/").pop()} | ${a.mib} MiB | ${a.withinBudget === undefined ? "–" : a.withinBudget ? "yes" : "**no**"} | ${a.pdfium ?? "–"} |`);
+            console.log([`### ${r.target}`, "", "| Kind | File | Size | Within 60 MB | PDFium |", "|---|---|---|---|---|", ...rows].join("\n"));
+          ' "$report" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bundle-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/bundle/bundle-report.json
+            selftest-out
+          if-no-files-found: ignore

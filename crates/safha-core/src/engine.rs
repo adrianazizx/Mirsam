@@ -114,6 +114,11 @@ impl std::fmt::Debug for Engine {
     }
 }
 
+/// Tauri's resource directory on Linux is `/usr/lib/<productName>`; this must
+/// match `productName` in apps/desktop/src-tauri/tauri.conf.json (the bundle
+/// self-test in CI fails otherwise).
+const LINUX_RESOURCE_DIR: &str = "Mirsam";
+
 fn candidate_dirs(source: &PdfiumSource) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     match source {
@@ -125,11 +130,14 @@ fn candidate_dirs(source: &PdfiumSource) -> Vec<PathBuf> {
             if let Some(exe_dir) =
                 std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf))
             {
-                // Windows/Linux installs keep the library beside the executable;
-                // a macOS .app keeps it in Contents/Frameworks or Contents/Resources.
+                // Windows installs keep the library beside the executable; a
+                // macOS .app keeps it in Contents/Frameworks; Linux packages
+                // (deb, rpm, AppImage) in Tauri's resource directory,
+                // /usr/lib/<productName> (ADR 0060, scripts/bundle.mjs).
                 dirs.push(exe_dir.clone());
                 dirs.push(exe_dir.join("../Frameworks"));
                 dirs.push(exe_dir.join("../Resources"));
+                dirs.push(exe_dir.join("../lib").join(LINUX_RESOURCE_DIR));
                 dirs.push(exe_dir.join("../lib"));
             }
             #[cfg(debug_assertions)]

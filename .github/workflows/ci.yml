@@ -132,8 +132,7 @@ jobs:
     name: Desktop shell self-test (macOS)
     runs-on: macos-latest
     # Launches the real app and checks that PDFium output reaches the canvas in
-    # both directions. Not yet proven on hosted runners: see PROGRESS.md.
-    continue-on-error: true
+    # both directions. A required check, green on every recent run.
     steps:
       - uses: actions/checkout@v4
       - run: brew install qpdf
@@ -179,9 +178,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     # The same end-to-end check on WebKitGTK (Linux, under a virtual X server)
     # and WebView2 (Windows): tiles over the custom scheme, selection, search,
-    # thumbnails, a second window, in both UI directions. First runs on these
-    # platforms (ADR 0011 left them untested), so not yet required.
-    continue-on-error: true
+    # thumbnails, a second window, in both UI directions. Required, like the
+    # macOS one. Installers are checked the same way in bundle.yml.
     strategy:
       fail-fast: false
       matrix:
