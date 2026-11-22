@@ -240,6 +240,38 @@ describe("Fill & Sign (ADR 0045)", () => {
     expect(recolour).not.toHaveBeenCalled();
   });
 
+  it("moves an item to another page, by a drag or to the next and previous page", async () => {
+    await runCommand("fill.check");
+    await runCommand("fill.place", { page: 0, x: 107, y: 107 });
+    const [placed] = await annotations();
+    const rect = placed?.rects[0];
+    if (!placed || !rect) throw new Error("no mark");
+    const item = { page: 0, index: placed.index, kind: placed.kind, contents: null, rect };
+
+    // Dragged onto page 2: it leaves page 1 for page 2, one undo step.
+    await runCommand("fill.move", { annotation: item, rect: { ...rect, y: 40 }, page: 1 });
+    expect(await annotations()).toEqual([]);
+    const [moved] = await backend.pageAnnotations(1, 1);
+    expect(moved?.kind).toBe("mark");
+    expect(moved?.rects[0]).toEqual({ ...rect, y: 40 });
+    expect(active()?.canUndo).toBe(true);
+
+    // Selected there, it goes back a page, where it was on its page.
+    useAppStore.getState().updateDocument(1, {
+      selectedAnnotation: { ...item, page: 1, index: moved?.index ?? 0, rect: { ...rect, y: 40 } },
+    });
+    expect(isCommandEnabled("fill.toPreviousPage")).toBe(true);
+    await runCommand("fill.toPreviousPage");
+    expect(await backend.pageAnnotations(1, 1)).toEqual([]);
+    expect((await annotations())[0]?.rects[0]).toEqual({ ...rect, y: 40 });
+    expect(active()?.page).toBe(0);
+
+    // There is no page before the first.
+    useAppStore.getState().updateDocument(1, { selectedAnnotation: { ...item, page: 0 } });
+    expect(isCommandEnabled("fill.toPreviousPage")).toBe(false);
+    expect(isCommandEnabled("fill.toNextPage")).toBe(true);
+  });
+
   it("keeps a drawn signature as initials", async () => {
     await runCommand("signature.newInitials");
     await runCommand("signature.saveDrawn", {

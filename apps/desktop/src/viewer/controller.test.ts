@@ -494,6 +494,7 @@ describe("viewer controller", () => {
       expect(callbacks.onMoveItem).toHaveBeenCalledWith(
         expect.objectContaining({ index: 6, kind: "signature" }),
         { x: 190, y: 240, width: 60, height: 20 },
+        0,
       );
       expect(container.querySelectorAll(".fill-moving")).toHaveLength(0);
 
@@ -501,12 +502,11 @@ describe("viewer controller", () => {
       at("pointerdown", 160, 350);
       at("pointermove", 400, 395);
       at("pointerup", 400, 395);
-      expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(expect.anything(), {
-        x: 240,
-        y: 380,
-        width: 60,
-        height: 20,
-      });
+      expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+        expect.anything(),
+        { x: 240, y: 380, width: 60, height: 20 },
+        0,
+      );
 
       // A press that does not travel selects it, and places nothing.
       at("pointerdown", 160, 350);
@@ -520,6 +520,37 @@ describe("viewer controller", () => {
       viewer.destroy();
     },
   );
+
+  it("drags a Fill & Sign item onto the next page", async () => {
+    mode = "select";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    // (x, y) on page 0; page 1 starts 410 px further down.
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    at("pointerdown", 5, 390);
+    at("pointerup", 5, 390);
+    await settle();
+
+    // Grabbed 10 pt into it, and let go at (160, 50) on page 1.
+    at("pointerdown", 160, 350);
+    at("pointermove", 160, 400);
+    at("pointermove", 160, 410 + 50);
+    const previews = [...container.querySelectorAll(".fill-moving")];
+    expect(previews).toHaveLength(1);
+    expect(previews[0]?.closest(".page")).toBe(container.querySelectorAll(".page")[1]);
+    at("pointerup", 160, 410 + 50);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 6, page: 0 }),
+      { x: 150, y: 40, width: 60, height: 20 },
+      1,
+    );
+    expect(container.querySelectorAll(".fill-moving")).toHaveLength(0);
+    viewer.destroy();
+  });
 
   it("resizes a selected Fill & Sign item by its corner handles, in proportion", async () => {
     mode = "place";
@@ -550,18 +581,18 @@ describe("viewer controller", () => {
     expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
       expect.objectContaining({ index: 6, kind: "signature" }),
       { x: 150, y: 340, width: 90, height: 30 },
+      0,
     );
 
     // The middle of the item still drags it.
     at("pointerdown", 180, 350);
     at("pointermove", 190, 350);
     at("pointerup", 190, 350);
-    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(expect.anything(), {
-      x: 160,
-      y: 340,
-      width: 60,
-      height: 20,
-    });
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { x: 160, y: 340, width: 60, height: 20 },
+      0,
+    );
     viewer.destroy();
   });
 
