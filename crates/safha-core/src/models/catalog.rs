@@ -415,6 +415,18 @@ mod tests {
         assert!(catalog.get("nope").is_none());
     }
 
+    /// The owner approved the runtime's licences only with its web UI off
+    /// (ADR 0034): every server the OCR pipeline starts must say so.
+    #[test]
+    fn the_runtime_always_runs_without_its_web_ui() {
+        for device in [crate::ocr::Device::Gpu, crate::ocr::Device::Cpu] {
+            let mut config = crate::ocr::ServerConfig::new("llama-server", "m.gguf", "mmproj.gguf");
+            config.device = device;
+            let arguments = config.arguments(8080, "key");
+            assert!(arguments.iter().any(|arg| arg == "--no-webui"), "{device:?}: {arguments:?}");
+        }
+    }
+
     #[test]
     fn runtime_builds_cover_the_desktop_platforms() {
         for platform in all_platforms() {

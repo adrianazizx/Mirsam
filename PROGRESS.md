@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`).
+Last updated: 2026-11-22 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`, merged with `main` after M5-c).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -445,9 +445,9 @@ Plan, in order:
     - Synthetic set only.
     - Acrobat and ABBYY not measured.
     - CPU speed measured on an M3 Max only, not on a typical Windows laptop.
-  - **Gates the best engine still fails, unchanged through llama.cpp:** mixed Arabic/English
-    (2.07% CER against 2%) and numbers (93.6% against 99%; 97.0% without "64-bit"). They need the
-    pipeline's logical-order and digit-check steps.
+  - **Gates:** the 4B alone fails two, mixed Arabic/English (2.07% CER against 2%) and numbers
+    (93.6% against 99%). Through the reconcile pipeline (ADR 0033) **all five pass**: mixed
+    1.52%, numbers 99.4%. Numbers pass by one field.
 - [x] `ocr-eval` set v2 (47 samples):
   - Severe scans (a new tracked category) and an Arabic form.
   - Table-cell scoring.
@@ -464,10 +464,33 @@ Plan, in order:
     - Vocalized Amiri is weak (IoU-x 0.21–0.70).
     - No truth yet for skewed or warped pages.
     - The detector costs 4–10 s per page on PaddlePaddle's CPU backend (ONNX Runtime not tried).
-- [ ] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
-      verification with no silent invention
+- [~] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
+      verification with no silent invention. In slices:
+  - [x] **1. Recognition from Rust** (ADR 0032): `safha_core::ocr`.
+    - The `OcrEngine` trait, and `NuqtaEngine` over `llama-server` run as a child process.
+    - A Pillow-exact resize, and word confidence from token probabilities.
+    - Examples `ocr_eval` and `ocr_page`.
+    - **Result:** over the eval set, byte-identical text to the benchmark on all 47 pages (0.89%
+      CER), at 8.3 s per page on Metal and 141 s on the CPU.
+  - [ ] **2. Word boxes in Rust:** the PP-OCRv5 detector through ONNX Runtime, and ADR 0031's
+        alignment.
+  - [x] **3. Reconcile and verify** (ADR 0033): `QualityReader`.
+    - **Assessment:** skew and specks.
+    - **Deskewed line strips,** found without a detector.
+    - **Order fix:** number–unit compounds ("bit-64" → "64-bit") in Arabic lines.
+    - **Re-reads:** every number and every word under 0.95 is re-read: by the 0.8B (page and
+      strips), by the 4B (the strips holding targets), and optionally by the platform OCR for
+      numbers.
+    - **Reconcile:** a word is corrected only when the re-reads agree; otherwise it is flagged.
+    - **Results:** 7 corrections, none wrong. CER 0.60%. All five gates pass.
+    - **Cost:** 24.9 s per page on Metal.
+    - **Still open:** omitted lines ("Lease Agreement") wait for slice 2's detector. CPU-only
+      cost is not measured.
+  - [ ] **4. Assembly into the text layer** in logical order (spec §6.3).
 - [ ] Background jobs with draft-then-quality results; survives restart
-- [ ] Word-level confidence, pages-needing-review list
+- [~] Word-level confidence, pages-needing-review list. The engine side is done (ADR 0033):
+      each word has a probability and a status, and `review_list` gives the pages needing
+      review. The UI is not built yet.
 - [ ] Searchable-PDF output in logical order
 - [~] Model download manager; hardware acceleration (ADR 0034, branch `pomidor/m4-model-downloads-ef1050`):
   - **Engine:** `safha_core::models`. A pinned catalog (Nuqta 4B and 0.8B GGUF by revision, size
@@ -490,10 +513,29 @@ Plan, in order:
 
 ## M5 — Forms, sign, protect
 
-- [ ] Form filling with shaped appearance streams
-- [ ] Fill & Sign on flat forms
-- [ ] Drawn/typed/image signatures
-- [ ] Encryption and permissions
+- [~] Form filling with shaped appearance streams (session M5-c, ADR 0045):
+  - **Done:** text (single-line, multi-line, comb, password), check boxes, radio buttons, drop-downs,
+    and lists. Each widget gets our own appearance, with Arabic shaped and starting at the right.
+    `/V` is written, and `NeedAppearances` is turned off after every valued field is drawn.
+  - **Tested** in PDFium renders, after a save through PDFium, flattened by qpdf, and in an
+    encrypted file.
+  - **Gaps:**
+    - JavaScript format, calculate, and validate actions are not run; a date field is text.
+    - Fields are filled in the inspector, not on the page.
+    - Fields in encrypted object streams are not listed.
+- [~] Fill & Sign on flat forms (ADR 0045): text, today's date, tick, cross, and dot, placed by a
+  click, as our own `/Stamp`s, so they are not comments. Upright on turned pages.
+  - Resized in 25% steps, with text keeping its size for later changes.
+  - **Gaps:** no drag to move or drag handles to resize; fixed colours and sizes.
+- [~] Drawn/typed/image signatures and initials (ADR 0045):
+  - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
+    kept as a soft mask) or JPEG, picked through the native dialog.
+  - **Kept** in the state store (schema 4), on this device only. **Placed** in proportion and
+    resizable.
+  - **Gap:** the image import and the image preview URL are untested in the real shell.
+- [x] Encryption and permissions (session M5-b, ADR 0043): set, change or remove passwords on save
+      (AES-256 revision 6 by default, AES-128 for old readers), owner and user passwords, permission
+      flags honoured by the command registry; Arabic passwords tested; `qpdf --check` and reopen pass.
 - [~] True redaction with pattern search (session M5-a, ADR 0042): text, image pixels, paths,
       annotations and metadata mentions removed from the file and checked by extraction and render;
       e-mail/phone/IBAN/ID/card presets and regex, Arabic-Indic digits normalised; mark by drag,
@@ -503,7 +545,10 @@ Plan, in order:
       native shell are untested.
 - [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
       rewritten in full so unlinked objects are gone (ADR 0042)
-- [ ] Form creation; certificate signatures (PAdES) — **[SPIKE]** crypto library first
+- [ ] Form creation
+- [~] Certificate signatures (PAdES) — **[SPIKE] done (ADR 0044, `spikes/pades`)**: RustCrypto stack
+      recommended; a prototype signs an incremental update that Poppler/NSS and OpenSSL verify. The
+      feature itself (`safha_core::sign`, key import, signing UI, revocation) is not built.
 
 ## M6 — Edit everything else + convert
 
@@ -576,6 +621,139 @@ Plan, in order:
   - A real multi-GB download end to end in the app.
   - Windows and Linux runs.
   - A native-speaker review of the new Arabic strings (owner item 11).
+- **Merged with `main` after M5-c and the M4 pipeline** (PRs #12, #15, #16):
+  - **Conflicts were additions on both sides:** dependencies (ureq gains `rustls-no-provider`
+    for HTTPS), the `lib.rs` modules, registry arguments and error codes, locale keys, the
+    inspector's panels, and the ADR index.
+
+### Session M5-c — 2026-11-22 (Milestone 5: form filling, Fill & Sign, signatures; parallel to M5 crypto and M6)
+
+Branch `pomidor/m5-forms-0522c7`, from `main` after PR #11. Left the OCR code and the
+encryption/certificate-signature work (ADRs 0043/0044 on `pomidor/m5-crypto-e11ba5`) alone; only used
+`pdf::crypt`'s existing API.
+
+- **ADR 0045** records the approach:
+  - Our parser reads and writes the form.
+  - Every widget's appearance is ours, shaped by `typeset` and written by `pdf::text`.
+  - `/Q 0` starts where the text's own direction starts.
+  - `NeedAppearances` is turned off once every valued field is drawn.
+  - Fill & Sign items are `/Stamp`s named `Mirsam*`, moved and resized through `/Rect` alone.
+  - Signatures are kept in the state store.
+- **Engine:**
+  - **`safha_core::forms`:** `read`, `form_update`, and `forms/appearance.rs`;
+    `Document::form` and `Document::with_form_edits`.
+  - **`annotate::fill`:** `FillText`, `Mark`, `SignatureStamp`, and `Signature` (drawn, typed,
+    image). `AnnotationEdit` gains `AddFillText`, `AddMark`, `AddSignature` and `SetRect`;
+    `SetContents` also takes fill text. `AnnotationKind` gains `FillText`, `Mark` and `Signature`.
+  - **`pdf::image`:** PNG decoding and JPEG pass-through as image XObjects with soft masks; the
+    annotation writer writes images.
+  - **`store`:** a `signatures` table (schema version 4).
+  - **Dependencies:** `png` (MIT OR Apache-2.0) moves from dev-dependencies to dependencies, and
+    `serde_json` joins them. Both were in the tree already, and `THIRD_PARTY_LICENSES.md` is
+    unchanged.
+- **Shell (`forms.rs`):**
+  - Commands: `form_fields`, `set_form_field`, `add_fill_text`, `add_fill_mark`,
+    `place_signature`, `set_annotation_rect`, `signatures`, `save_drawn_signature`,
+    `save_typed_signature`, `import_signature_image` (native dialog), and `delete_signature`.
+  - `safha://localhost/signature?id=N` serves kept images.
+  - A new error code, `store_unavailable`.
+- **UI:**
+  - The Forms tool's panel and the Sign tool's panel, in the inspector.
+  - The new-signature dialog (Draw, Type, Image).
+  - The viewer's `place` mode.
+  - Smaller and Larger in the selection toolbar.
+  - Fill text edited in the note editor.
+  - 21 commands, English and Arabic strings, and signature tokens (with an ink-on-paper contrast
+    pair).
+  - The mock backend has a sample form on the sample document's first page, and keeps signatures.
+- **Tests:**
+  - **Rust:** `tests/forms.rs` (9) runs on a hand-written AcroForm. It covers every kind of field,
+    Arabic and English, comb, `NeedAppearances`, encryption made with qpdf, and a save through
+    PDFium.
+  - `tests/fill_sign.rs` (4) uses the fixtures: render-in-place, `SetRect`, `SetContents`, turned
+    pages, encrypted files, flatten read-back, and save.
+  - Unit tests cover `fill`, `pdf::image`, `forms`, `forms/appearance`, and the store.
+  - **UI:** `commands/forms.test.tsx` (11, in English and Arabic, including the permission gates).
+  - `cargo test --workspace` (378 after the merge), clippy (with and without `devtools`), fmt,
+    `pnpm test` (190), `tsc`, Biome, `cargo deny`, and the licence report are all clean.
+- **Checked by eye:**
+  - Renders of a filled form and of Fill & Sign items (PDFium).
+  - The Forms and Sign panels and the signature dialog in the browser preview, against the mock,
+    in Arabic (RTL) and English (LTR).
+  - Not run in the native shell. The end-to-end self-test does not cover forms.
+- **Merged with `main` after M5-b** (encryption, PR #13):
+  - **Conflicts** were additions on both sides: registry error codes, store imports, locale keys,
+    `pdf` modules, and the ADR index.
+  - **Permissions:** the new commands follow M5-b's gates. `form.setValue` needs `fillForms`, and
+    the `fill.*` commands need `annotate`. The panels show why when they are off.
+  - **Schema:** this branch takes state-store schema version 4; M5-b did not change the schema.
+- **Merged with `main` again after the M4 pipeline** (PRs #12 and #15): `ocr` and `forms` both
+  added to `lib.rs`, both branches made `png` and `serde_json` normal dependencies, and the session
+  logs met at the top of this list.
+
+### M4 pipeline slice 3 — 2026-11-22 (reconcile and verify; branch `pomidor/m4-reconcile`)
+
+- **The failures, broken down:** the 4B misses 11 of 171 fields.
+  - **6 are order:** "64-bit" is drawn "bit-64" in an Arabic line, and the image can't tell
+    which.
+  - **5 are misread digits** on degraded pages.
+  - **Voting doesn't fix them:** a plain vote (0.8B + Apple Vision) reaches only 94.2%.
+- **Spike** (`spikes/ocr-engines/reconcile_lines.py`, `reconcile_sim.py`):
+  - Line strips read at full resolution by both models fix most digit misreads.
+  - The fax and form digits don't settle under enlargement or binarisation.
+- **`safha_core::ocr`** (ADR 0033):
+  - `layout`: assessment, deskew, line strips.
+  - `order`: the unit-word fix.
+  - `reconcile`: words with statuses; corrections only when re-reads agree.
+  - `pipeline`: `QualityReader`, `PageResult`, `review_list`.
+  - `command`: an external program as the third reader. `apple-vision.swift` gets an `--image`
+    mode.
+  - The `ocr_eval` example gets `--pipeline [--vision] [--reread-all-strips]`.
+- **Measured through Rust on set v2** (Metal):
+  - **All five gates pass:** mixed 1.52% (0 order errors), numbers 99.4% (170 of 171), CER
+    0.60% (was 0.89%), table cells 100%, no regressions.
+  - **Corrections:** 7, all fixes.
+  - **The one field still wrong** (the 100 dpi fax's ١٢٣٤) is flagged.
+  - **Flags:** 36 words uncertain, 31 of them right (1.2% false alarms). 12 of 47 pages need a
+    decision.
+  - **Speed:** 24.9 s per page, 10 requests per page on average. CPU-only speed not measured.
+- **The numbers margin is one field.** The photocopied form's employee number was corrected in
+  Rust but only flagged in the spike. ADR 0033 lists what would widen the margin: re-reading the
+  number's own crop (needs word boxes), a digit-strong third reader, and real scans.
+- **Tests:**
+  - `cargo test --workspace` passes: 373 tests, plus 1 ignored (the real-model test). That
+    includes 17 new OCR unit tests (35 in all) for layout, order, reconcile, pipeline and
+    command.
+  - `clippy -D warnings` (with and without `devtools`), `fmt --check` and biome are clean.
+
+### M4 pipeline slice 1 — 2026-11-22 (recognition from Rust; branch `pomidor/m4-pipeline`)
+
+- **`safha_core::ocr`** (ADR 0032, accepted):
+  - **`OcrEngine` and `NuqtaEngine`.** `llama-server` runs as a child process: loopback only,
+    a per-run API key, stopped on drop, typed error codes.
+  - **`OcrImage`.** PNG in and out, and a Lanczos resize that matches Pillow bit for bit, so
+    the model sees the benchmark's pixels.
+  - **Text and confidence.** Markup removal as in the benchmark, and word confidence from
+    llama-server's token probabilities, across UTF-8 characters split between tokens.
+- **Measured through Rust** (`examples/ocr_eval.rs`):
+  - Nuqta 4B Q8_0 wrote byte-identical text to the benchmark's llama.cpp run on all 47 pages:
+    0.89% CER, no regression.
+  - 8.3 s per page on Metal, and 141 s on the CPU over 4 pages (same text).
+  - `examples/ocr_page.rs` reads rendered PDF pages: English, Arabic, and a rotated page.
+- **Finding for slice 3:** letting Nuqta 0.8B and Apple Vision outvote the 4B on digit words only
+  lifts fields from 93.6% to 94.2%, and on a fax page it swapped one wrong number for another. So
+  reconcile must re-read and flag, not vote.
+- **Dependencies:** `ureq` 3.5.2 without TLS, plus `ureq-proto` and `utf8-zero` (all MIT OR
+  Apache-2.0). `base64` 0.23 and `png` 0.18 were already in the tree. `cargo deny` and the licence
+  report pass.
+- **Tests:**
+  - `cargo test --workspace` passes: 350 tests, plus 1 ignored (the real-model test,
+    `tests/ocr.rs`, which passes with `--ignored` locally).
+  - 18 new unit tests.
+  - `clippy -D warnings` and `fmt --check` are clean.
+  - No UI changes; no command reaches the UI yet.
+- **Setup note:** this worktree's `target/` had been created as a real directory inside OneDrive.
+  `scripts/dev-setup.sh` now redirects it to the cache.
 
 ### M4 side track — 2026-11-22 (Nuqta through llama.cpp; word boxes; branch `pomidor/m4-runtime-8c1840`)
 
@@ -617,6 +795,44 @@ Plan, in order:
   - **Real scans (item 9).** Box truth for skewed and warped pages too.
 - **Tests:** no Rust or UI code changed. The scorer runs in this session used `safha-ocr-eval`
   as it was.
+
+### Session M5-b — 2026-11-22 (Milestone 5: encryption and permissions; PAdES spike)
+
+Branch `pomidor/m5-crypto-e11ba5`, from `main`. Stayed out of OCR, forms/Fill & Sign and exports.
+
+- **Encryption and permissions** (ADR 0043). `pdf::protect::rewrite` takes PDFium's full rewrite,
+  decrypts every object with the document's password, unpacks object streams, and writes it again
+  encrypted for the new settings (or plain): AES-256 revision 6 (random file key wrapped by user and
+  owner passwords, `/Perms`) and AES-128 revision 4. `safha_core::security` has `Permissions` (the `/P`
+  flags), `Protection`, `SecurityChange` (keep, remove, set) and `SecurityInfo` (cipher, revision,
+  flags, owner or user); `Document::security()` and `save::save_secured`.
+- **Unicode passwords:** R6 stores SASLprep-style normalised UTF-8 (NFKC, spaces, mapped-to-nothing),
+  read as typed then normalised, and `Engine::open_shared` retries PDFium with the normalised form.
+  AES-128 takes ASCII only (`password_not_encodable`). Tested with Arabic passwords (presentation forms
+  vs letters) and a decomposed accent.
+- **Rules:** changing protection needs the owner password when `/P` restricts anything (`not_permitted`);
+  a signed file is refused; undo starts over after the save (new bytes).
+- **UI:** commands `security.open|apply|cancel` (palette: "Password and permissions…"), a dialog with
+  mode, cipher, passwords, seven permission switches, Save and Save as…; the form lives only in the
+  dialog. `PERMISSION_GATES` in the registry disables Print, Copy, page edits, text edits, redaction and
+  markup for a file opened with its user password. English and Arabic strings.
+- **Tests:** seven integration tests (`tests/security.rs`: qpdf `--check` and `--show-encryption` for
+  both ciphers, user and owner passwords, owner-only files, Arabic, unlocking an encrypted fixture,
+  object streams, identical render), unit tests for the keys and normalisation, 7 UI tests.
+  Protection adds 4–5 % to a file; 21 ms for 1,000 pages (release).
+- **PAdES spike** (ADR 0044, `spikes/pades`, `make-test-pki.sh`): RustCrypto `cms` 0.3.0-rc.2 +
+  `x509-cert` + `x509-tsp` + `rsa` 0.10 + `p256` sign an incremental update (P-256, RSA-2048, an Arabic
+  subject, an RFC 3161 time-stamp). **Poppler `pdfsig`: valid and trusted; OpenSSL `cms -verify -cades` and
+  `ts -verify`: OK**; a flipped byte is caught; our engine opens it as signed and a later edit keeps it
+  valid. CMS 1.3–2.9 KB, signing 0.2–9 ms. Recommendation: build on this stack; B-B, then B-T, then B-LT.
+- **Not done / not checked:** Adobe Acrobat (not installed; ask someone to open the spike's PDFs), the
+  signing feature and UI, revocation, key import (`.p12`, keychain, smart cards); public-key security
+  handlers, RC4 writing, `/Perms` verification; the dialog was exercised with component tests, not
+  clicked through in the running app.
+- **For the owner:** two used crates are release candidates (`cms`, `x509-tsp`), pinned with `=`;
+  OK to build the signing feature on them until their stable releases?
+- Setup note: a fresh worktree has no PDFium or fixture corpus; symlink `third_party/pdfium` and
+  `fixtures/out` from the main checkout (both are git-ignored).
 
 ### Session M5-a — 2026-11-22 (Milestone 5: true redaction, pattern search, sanitize; parallel to M3/M4)
 

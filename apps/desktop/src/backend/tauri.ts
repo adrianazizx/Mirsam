@@ -8,6 +8,7 @@ import {
   type BookmarkPart,
   type DocumentComment,
   type EditOutcome,
+  type FormInfo,
   type InsertOutcome,
   isBackendError,
   type OcrModelEvent,
@@ -26,7 +27,9 @@ import {
   type SanitizeOutcome,
   type SaveOutcome,
   type SearchResults,
+  type SecureOutcome,
   type SelftestConfig,
+  type SignatureInfo,
   type Startup,
   type TextLayer,
 } from "./types";
@@ -175,6 +178,26 @@ export const tauriBackend: Backend = {
     invoke<EditOutcome>("remove_annotations", { documentId, page, indices }),
   pageAnnotations: (documentId, page) =>
     invoke<PageAnnotation[]>("page_annotations", { documentId, page }),
+  formFields: (documentId) => invoke<FormInfo>("form_fields", { documentId }),
+  setFormField: (documentId, field, values) =>
+    invoke<EditOutcome>("set_form_field", { documentId, field, values }),
+  addFillText: (documentId, page, x, y, contents, size) =>
+    invoke<EditOutcome>("add_fill_text", { documentId, page, x, y, contents, size: size ?? null }),
+  addFillMark: (documentId, page, x, y, kind, size) =>
+    invoke<EditOutcome>("add_fill_mark", { documentId, page, x, y, kind, size: size ?? null }),
+  placeSignature: (documentId, page, x, y, width, signature) =>
+    invoke<EditOutcome>("place_signature", { documentId, page, x, y, width, signature }),
+  setAnnotationRect: (documentId, page, index, rect) =>
+    invoke<EditOutcome>("set_annotation_rect", { documentId, page, index, rect }),
+  signatures: () => invoke<SignatureInfo[]>("signatures"),
+  saveDrawnSignature: (initials, strokes, width) =>
+    invoke<SignatureInfo>("save_drawn_signature", { initials, strokes, width }),
+  saveTypedSignature: (initials, text, family) =>
+    invoke<SignatureInfo>("save_typed_signature", { initials, text, family }),
+  importSignatureImage: (initials) =>
+    invoke<SignatureInfo | null>("import_signature_image", { initials }),
+  deleteSignature: (id) => invoke<void>("delete_signature", { id }),
+  signatureImageUrl: (id) => `${convertFileSrc("signature", "safha")}?id=${id}`,
   // Addressed to one window: listen on this window only.
   onCloseRequested: (listener) =>
     getCurrentWebviewWindow().listen("close-requested", () => listener()),
@@ -191,6 +214,8 @@ export const tauriBackend: Backend = {
   splitDocument: (documentId, by) => invoke<number | null>("split_document", { documentId, by }),
   bookmarkParts: (documentId) => invoke<BookmarkPart[]>("bookmark_parts", { documentId }),
   saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
+  secureDocument: (documentId, change, saveAs) =>
+    invoke<SecureOutcome | null>("secure_document", { documentId, change, saveAs }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>
     listen<{ key: string; value: string }>("settings-changed", (event) =>

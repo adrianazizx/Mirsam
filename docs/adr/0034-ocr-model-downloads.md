@@ -99,7 +99,8 @@ all of this lives in Rust.
 included. The approval holds on two conditions:
 
 - **The web UI stays off.** The app starts `llama-server` with `--no-webui`, as
-  `ocr::ServerConfig` does (ADR 0032), so the unaudited web UI is never served.
+  `ocr::ServerConfig` does (ADR 0032), so the unaudited web UI is never served. A unit test
+  (`the_runtime_always_runs_without_its_web_ui`) fails if a server configuration drops it.
 - **No CUDA builds.** They need NVIDIA's CUDA runtime under NVIDIA's own licence. NVIDIA GPUs are
   used through the Vulkan builds.
 

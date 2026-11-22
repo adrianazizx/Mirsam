@@ -98,3 +98,4 @@ pub fn comparable(text: &str) -> String {
 pub fn without_spaces(text: &str) -> String {
     text.chars().filter(|c| !c.is_whitespace()).collect()
 }
+pub mod form_pdf;

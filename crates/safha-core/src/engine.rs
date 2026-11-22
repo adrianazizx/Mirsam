@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-use pdfium_render::prelude::Pdfium;
+use pdfium_render::prelude::{Pdfium, PdfiumError, PdfiumInternalError};
 
 use crate::document::Document;
 use crate::error::{Error, Result};
@@ -92,8 +92,34 @@ impl Engine {
         // an `unsafe` call.
         let hints = crate::catalog::catalog_hints(&bytes);
         let _guard = self.open_lock.lock().unwrap_or_else(PoisonError::into_inner);
-        let inner = self.pdfium.load_pdf_from_reader(std::io::Cursor::new(Arc::clone(&bytes)), password)?;
-        Ok(Document::new(inner, hints, bytes, password.map(str::to_owned), self))
+        let load = |password: Option<&str>| {
+            self.pdfium.load_pdf_from_reader(std::io::Cursor::new(Arc::clone(&bytes)), password)
+        };
+        // A password typed in another Unicode form than the file's (Arabic
+        // with presentation forms, a decomposed accent) opens it once
+        // normalised, as AES-256 files are asked to store it (ADR 0043).
+        let mut used = password.map(str::to_owned);
+        let inner = match load(password) {
+            Err(err) => {
+                let wrong_password = matches!(
+                    &err,
+                    PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError)
+                );
+                let normalised = password
+                    .map(crate::pdf::crypt::normalise_password)
+                    .filter(|normalised| Some(normalised.as_str()) != password);
+                match normalised {
+                    Some(normalised) if wrong_password => {
+                        let inner = load(Some(&normalised))?;
+                        used = Some(normalised);
+                        inner
+                    }
+                    _ => return Err(err.into()),
+                }
+            }
+            Ok(inner) => inner,
+        };
+        Ok(Document::new(inner, hints, bytes, used, self))
     }
 
     /// An empty PDF to copy pages into (extracting, splitting).

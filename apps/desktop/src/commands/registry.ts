@@ -1,23 +1,28 @@
 import {
   backend,
   type EditOutcome,
+  FILL_KINDS,
   isBackendError,
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
   type ParagraphBlock,
+  type Permissions,
   type RedactPattern,
   type RedactPreset,
   type RestoreOutcome,
   type SanitizeOptions,
+  type SecurityChange,
   type SplitBy,
   type StrokePoint,
   type TextStyle,
   type ViewRect,
 } from "../backend";
+import { formatTag } from "../i18n";
 import {
   type AppState,
   type CommentTool,
+  type FillTool,
   type LeftPanel,
   type OpenDocument,
   type ReadingTheme,
@@ -123,6 +128,9 @@ export interface CommandArg {
   preset?: RedactPreset;
   /** `redact.removeMark`. */
   markId?: number;
+  /** `security.apply`: what the save does to the protection, and where it saves. */
+  securityChange?: SecurityChange;
+  saveAs?: boolean;
   /** `sanitize.setOption`. */
   option?: keyof SanitizeOptions;
   value?: boolean;
@@ -132,9 +140,26 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /** `form.setValue`: the field (its id) and its new value (as `FormField.values`). */
+  field?: number;
+  values?: string[];
+  /** `fill.signature`, `signature.delete`: a kept signature's id. */
+  signature?: number;
+  /** `signature.saveTyped`: the family it is set in. */
+  family?: "sans" | "naskh";
   /** `ocrModels.download`, `.cancel`, `.delete`: the OCR package (ADR 0034). */
   modelId?: string;
 }
+
+/** A new mark's side, in points (the engine's `Mark::DEFAULT_SIZE`). */
+export const FILL_MARK_SIZE = 14;
+/** A new signature's width, and new initials', in points. */
+export const SIGNATURE_WIDTH = 150;
+export const INITIALS_WIDTH = 60;
+/** How much one step of "larger" or "smaller" scales a Fill & Sign item. */
+const FILL_STEP = 1.25;
+/** The pen width drawn signatures are kept with, in pad pixels. */
+export const SIGNATURE_PEN = 3;
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
 export const PAGE_NUMBER_INPUT_ID = "page-number-input";
@@ -186,9 +211,33 @@ export type CommandId =
   | "redact.cancel"
   | "sanitize.setOption"
   | "sanitize.run"
+  | "security.open"
+  | "security.apply"
+  | "security.cancel"
   | "recovery.restore"
   | "recovery.discard"
   | "recovery.later"
+  | "forms.openTool"
+  | "form.setValue"
+  | "sign.openTool"
+  | "fill.select"
+  | "fill.text"
+  | "fill.date"
+  | "fill.check"
+  | "fill.cross"
+  | "fill.dot"
+  | "fill.signature"
+  | "fill.place"
+  | "fill.larger"
+  | "fill.smaller"
+  | "signatures.load"
+  | "signature.new"
+  | "signature.newInitials"
+  | "signature.cancel"
+  | "signature.saveDrawn"
+  | "signature.saveTyped"
+  | "signature.importImage"
+  | "signature.delete"
   | "comment.note"
   | "comment.textBox"
   | "textBox.place"
@@ -277,7 +326,14 @@ const hasAnnotationSelected = (state: AppState) =>
 /** A note is being written: a new one, or the selected one. */
 const isWritingNote = (state: AppState) =>
   (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
-  ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
+  ["note", "textBox", "fillText"].includes(
+    selectActiveDocument(state)?.selectedAnnotation?.kind ?? "",
+  );
+/** A Fill & Sign item is selected (ADR 0045). */
+const hasFillSelected = (state: AppState) => {
+  const kind = selectActiveDocument(state)?.selectedAnnotation?.kind;
+  return kind !== undefined && FILL_KINDS.includes(kind);
+};
 /** While marking areas to redact, undo and redo step through the marks first (ADR 0042). */
 const stepsMarks = (state: AppState, direction: "undo" | "redo") => {
   const redaction = selectActiveDocument(state)?.redaction;
@@ -360,6 +416,42 @@ async function markSelection(kind: MarkupKind): Promise<void> {
   store().applyEdit(active.id, outcome);
 }
 
+/** Switches to the Sign tool, placing `tool` (null: selecting) (ADR 0045). */
+function chooseFill(tool: FillTool | null, signature?: number | null) {
+  if (store().activeTool !== "sign") store().setActiveTool("sign");
+  store().setFill(tool, signature);
+}
+
+/** Today's date as the UI language writes it, for Fill & Sign. */
+export function fillDate(locale: AppState["locale"], date = new Date()): string {
+  return new Intl.DateTimeFormat(formatTag(locale), { dateStyle: "long" }).format(date);
+}
+
+/** Loads the kept signatures (ADR 0045). */
+async function loadSignatures(): Promise<void> {
+  store().setSignatures(await backend.signatures());
+}
+
+/** Scales the selected Fill & Sign item, its top-left corner kept, and keeps it selected. */
+async function resizeFill(factor: number): Promise<void> {
+  const active = selectActiveDocument(store());
+  const selected = active?.selectedAnnotation;
+  if (!active || !selected || !FILL_KINDS.includes(selected.kind)) return;
+  const { rect } = selected;
+  const next = { x: rect.x, y: rect.y, width: rect.width * factor, height: rect.height * factor };
+  if (next.width < 4 || next.height < 4 || next.width > 2000 || next.height > 2000) return;
+  const outcome = await backend.setAnnotationRect(active.id, selected.page, selected.index, next);
+  getViewer(active.id)?.reselectAfterRefresh({ ...selected, rect: next });
+  store().applyEdit(active.id, outcome);
+}
+
+/** Keeps a new signature, places it next, and closes the dialog. */
+function keepSignature(kept: { id: number }) {
+  void loadSignatures();
+  store().setSignatureDialog(null);
+  chooseFill("signature", kept.id);
+}
+
 /** Switches to the Comment tool in one of its modes (ADR 0018). */
 function chooseCommentTool(tool: CommentTool) {
   store().setActiveTool("comment");
@@ -427,6 +519,9 @@ const KNOWN_ERRORS = [
   "text_failed",
   "no_bookmarks",
   "redaction_failed",
+  "store_unavailable",
+  "password_not_encodable",
+  "not_permitted",
   "model_unknown",
   "model_busy",
   "model_unavailable",
@@ -693,7 +788,7 @@ async function downloadOcrModel(id: string): Promise<void> {
   }
 }
 
-const COMMANDS: Command[] = [
+const DECLARED: Command[] = [
   {
     id: "file.open",
     shortcut: { key: "o", mod: true },
@@ -1328,6 +1423,34 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "security.open",
+    isEnabled: hasDocument,
+    run: () => store().setSecurityPrompt(true),
+  },
+  {
+    id: "security.apply",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.securityChange) return;
+      const outcome = await backend.secureDocument(
+        active.id,
+        arg.securityChange,
+        arg.saveAs ?? false,
+      );
+      // Cancelled in the file picker: the dialog stays for another try.
+      if (!outcome) return;
+      store().applySecured(active.id, outcome);
+      store().setSecurityPrompt(false);
+    },
+  },
+  {
+    id: "security.cancel",
+    paletteHidden: true,
+    run: () => store().setSecurityPrompt(false),
+  },
+  {
     id: "recovery.restore",
     paletteHidden: true,
     isEnabled: (state) => state.recoveries.length > 0,
@@ -1354,6 +1477,153 @@ const COMMANDS: Command[] = [
     paletteHidden: true,
     isEnabled: (state) => state.recoveries.length > 0,
     run: () => store().setRecoveries([]),
+  },
+  {
+    id: "forms.openTool",
+    isEnabled: hasDocument,
+    run: () => store().setActiveTool("forms"),
+  },
+  {
+    // A field's new value (ADR 0045): one undo step.
+    id: "form.setValue",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.field === undefined || !arg.values) return;
+      const outcome = await backend.setFormField(active.id, arg.field, arg.values);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  { id: "sign.openTool", isEnabled: hasDocument, run: () => chooseFill(null) },
+  { id: "fill.select", isEnabled: hasDocument, run: () => chooseFill(null) },
+  { id: "fill.text", isEnabled: hasDocument, run: () => chooseFill("text") },
+  { id: "fill.date", isEnabled: hasDocument, run: () => chooseFill("date") },
+  { id: "fill.check", isEnabled: hasDocument, run: () => chooseFill("check") },
+  { id: "fill.cross", isEnabled: hasDocument, run: () => chooseFill("cross") },
+  { id: "fill.dot", isEnabled: hasDocument, run: () => chooseFill("dot") },
+  {
+    id: "fill.signature",
+    paletteHidden: true,
+    isEnabled: (state) => hasDocument(state) && (state.signatures?.length ?? 0) > 0,
+    run(arg) {
+      const id = arg?.signature ?? store().signatures?.[0]?.id;
+      if (id !== undefined) chooseFill("signature", id);
+    },
+  },
+  {
+    // A press with the Sign tool places what it places (ADR 0045).
+    id: "fill.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      const { page, x, y } = arg;
+      const { fillTool, fillSignature, signatures, locale } = store();
+      getViewer(active.id)?.clearSelection();
+      switch (fillTool) {
+        case "text":
+          store().setPendingNote({
+            documentId: active.id,
+            kind: "fillText",
+            page,
+            x,
+            y,
+            width: TEXT_BOX_WIDTH,
+          });
+          return;
+        case "date": {
+          store().applyEdit(
+            active.id,
+            await backend.addFillText(active.id, page, x, y, fillDate(locale)),
+          );
+          store().setFill(null);
+          return;
+        }
+        case "check":
+        case "cross":
+        case "dot": {
+          // Centred on the press; the tool stays, to tick several boxes.
+          const half = FILL_MARK_SIZE / 2;
+          const outcome = await backend.addFillMark(active.id, page, x - half, y - half, fillTool);
+          store().applyEdit(active.id, outcome);
+          return;
+        }
+        case "signature": {
+          const kept = signatures?.find((signature) => signature.id === fillSignature);
+          if (!kept) return;
+          const width = kept.initials ? INITIALS_WIDTH : SIGNATURE_WIDTH;
+          const height = width / kept.aspect;
+          const outcome = await backend.placeSignature(
+            active.id,
+            page,
+            x - width / 2,
+            y - height / 2,
+            width,
+            kept.id,
+          );
+          store().applyEdit(active.id, outcome);
+          store().setFill(null);
+          return;
+        }
+        default:
+      }
+    },
+  },
+  { id: "fill.larger", isEnabled: hasFillSelected, run: () => resizeFill(FILL_STEP) },
+  { id: "fill.smaller", isEnabled: hasFillSelected, run: () => resizeFill(1 / FILL_STEP) },
+  { id: "signatures.load", paletteHidden: true, run: loadSignatures },
+  { id: "signature.new", run: () => store().setSignatureDialog({ initials: false }) },
+  { id: "signature.newInitials", run: () => store().setSignatureDialog({ initials: true }) },
+  {
+    id: "signature.cancel",
+    paletteHidden: true,
+    isEnabled: (state) => state.signatureDialog !== null,
+    run: () => store().setSignatureDialog(null),
+  },
+  {
+    id: "signature.saveDrawn",
+    paletteHidden: true,
+    isEnabled: (state) => state.signatureDialog !== null,
+    async run(arg) {
+      const dialog = store().signatureDialog;
+      if (!dialog || !arg?.strokes?.length) return;
+      keepSignature(await backend.saveDrawnSignature(dialog.initials, arg.strokes, SIGNATURE_PEN));
+    },
+  },
+  {
+    id: "signature.saveTyped",
+    paletteHidden: true,
+    isEnabled: (state) => state.signatureDialog !== null,
+    async run(arg) {
+      const dialog = store().signatureDialog;
+      const text = arg?.text?.trim() ?? "";
+      if (!dialog || text === "") return;
+      keepSignature(
+        await backend.saveTypedSignature(dialog.initials, text, arg?.family ?? "naskh"),
+      );
+    },
+  },
+  {
+    id: "signature.importImage",
+    paletteHidden: true,
+    isEnabled: (state) => state.signatureDialog !== null,
+    async run() {
+      const dialog = store().signatureDialog;
+      if (!dialog) return;
+      const kept = await backend.importSignatureImage(dialog.initials);
+      if (kept) keepSignature(kept);
+    },
+  },
+  {
+    id: "signature.delete",
+    paletteHidden: true,
+    async run(arg) {
+      if (arg?.signature === undefined) return;
+      await backend.deleteSignature(arg.signature);
+      await loadSignatures();
+    },
   },
   { id: "comment.note", isEnabled: hasDocument, run: () => chooseCommentTool("note") },
   { id: "comment.textBox", isEnabled: hasDocument, run: () => chooseCommentTool("textBox") },
@@ -1482,19 +1752,21 @@ const COMMANDS: Command[] = [
         const outcome =
           pending.kind === "pageText"
             ? await backend.addText(active.id, page, x, y, width, text, store().textStyle)
-            : pending.kind === "textBox"
-              ? await backend.addTextBox(active.id, page, x, y, width, text)
-              : await backend.addNote(active.id, page, x, y, text);
+            : pending.kind === "fillText"
+              ? await backend.addFillText(active.id, page, x, y, text)
+              : pending.kind === "textBox"
+                ? await backend.addTextBox(active.id, page, x, y, width, text)
+                : await backend.addNote(active.id, page, x, y, text);
         store().applyEdit(active.id, outcome);
         return;
       }
       const note = active.selectedAnnotation;
-      if (note?.kind !== "note" && note?.kind !== "textBox") return;
+      if (note?.kind !== "note" && note?.kind !== "textBox" && note?.kind !== "fillText") return;
       getViewer(active.id)?.clearSelection();
       if ((note.contents ?? "") === text) return;
-      // A text box emptied of its text goes.
+      // A text box (or Fill & Sign text) emptied of its text goes.
       const outcome =
-        note.kind === "textBox" && text.trim() === ""
+        note.kind !== "note" && text.trim() === ""
           ? await backend.removeAnnotations(active.id, note.page, [note.index])
           : await backend.setAnnotationContents(active.id, note.page, note.index, text);
       store().applyEdit(active.id, outcome);
@@ -1887,6 +2159,61 @@ const COMMANDS: Command[] = [
     },
   },
 ];
+
+/**
+ * What a file's permissions switch off (ADR 0043): a viewer honours the flags
+ * of a file opened with its user password. The owner password lifts them.
+ */
+const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
+  "file.print": "print",
+  "edit.copy": "copy",
+  "pages.rotateClockwise": "assemble",
+  "pages.rotateCounterclockwise": "assemble",
+  "pages.delete": "assemble",
+  "pages.duplicate": "assemble",
+  "pages.insertBlank": "assemble",
+  "pages.moveEarlier": "assemble",
+  "pages.moveLater": "assemble",
+  "pages.move": "assemble",
+  "pages.insertFromFile": "assemble",
+  "pages.extract": "assemble",
+  "text.place": "modify",
+  "text.editBlock": "modify",
+  "redact.apply": "modify",
+  "sanitize.run": "modify",
+  "markup.highlight": "annotate",
+  "markup.underline": "annotate",
+  "markup.strikeOut": "annotate",
+  "markup.squiggly": "annotate",
+  "comment.note": "annotate",
+  "comment.textBox": "annotate",
+  "comment.pen": "annotate",
+  "annotation.delete": "annotate",
+  // Form filling and Fill & Sign (ADR 0045).
+  "form.setValue": "fillForms",
+  "fill.text": "annotate",
+  "fill.date": "annotate",
+  "fill.check": "annotate",
+  "fill.cross": "annotate",
+  "fill.dot": "annotate",
+  "fill.signature": "annotate",
+  "fill.place": "annotate",
+  "fill.larger": "annotate",
+  "fill.smaller": "annotate",
+};
+
+/** Whether the active document's protection lets its reader do what `flag` names. */
+export function permits(state: AppState, flag: keyof Permissions): boolean {
+  const security = selectActiveDocument(state)?.security;
+  return !security || security.owner || security.permissions[flag];
+}
+
+const COMMANDS: Command[] = DECLARED.map((command) => {
+  const flag = PERMISSION_GATES[command.id];
+  if (!flag) return command;
+  const own = command.isEnabled;
+  return { ...command, isEnabled: (state) => permits(state, flag) && (own?.(state) ?? true) };
+});
 
 const BY_ID = new Map(COMMANDS.map((command) => [command.id, command]));
 

@@ -10,9 +10,11 @@ import {
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
+import { SignatureDialog } from "./components/forms/SignatureDialog";
 import { OcrModelPrompt } from "./components/ocr/OcrModelPrompt";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
+import { SecurityDialog } from "./components/protect/SecurityDialog";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { AppShell } from "./components/shell/AppShell";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
@@ -214,7 +216,9 @@ export function App() {
       <UnsavedChangesDialog />
       <RecoveryDialog />
       <SplitDialog />
+      <SignatureDialog />
       <RedactDialog />
+      <SecurityDialog />
       <SettingsDialog />
       <OcrModelPrompt />
     </I18nProvider>

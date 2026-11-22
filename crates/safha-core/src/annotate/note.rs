@@ -80,6 +80,7 @@ impl Note {
             resources: Dict::default(),
             content: out.0,
             fonts: Vec::new(),
+            images: Vec::new(),
         })
     }
 }
