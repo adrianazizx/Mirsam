@@ -59,12 +59,13 @@ export function PageGrid({ documentId: id }: { documentId: number }) {
   const { t } = useTranslation();
   const { direction } = useLocale();
   const locale = useAppStore((state) => state.locale);
-  const { name, revision, selected, labels } = useAppStore(
+  const { name, revision, paint, selected, labels } = useAppStore(
     useShallow((state) => {
       const open = state.documents.find((candidate) => candidate.id === id);
       return {
         name: open?.name ?? "",
         revision: open?.revision ?? 0,
+        paint: open?.paint ?? 0,
         selected: open?.selectedPages ?? [],
         labels: open?.labels ?? null,
       };
@@ -94,6 +95,14 @@ export function PageGrid({ documentId: id }: { documentId: number }) {
       if (imagesRef.current === images) imagesRef.current = null;
     };
   }, [id, revision]);
+
+  // Only annotations changed: the same pages, drawn again.
+  const paintShown = useRef(paint);
+  useEffect(() => {
+    if (paint === paintShown.current) return;
+    paintShown.current = paint;
+    imagesRef.current?.refresh();
+  }, [paint]);
 
   const items = useMemo(() => (sizes ?? []).map((size, page) => ({ id: page, size })), [sizes]);
   const pageName = (page: number) => {

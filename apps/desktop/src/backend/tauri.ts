@@ -8,6 +8,7 @@ import {
   isBackendError,
   type OpenOutcome,
   type OutlineItem,
+  type PageMarkup,
   type PageSize,
   type RecentFile,
   type RenderedPage,
@@ -143,6 +144,11 @@ export const tauriBackend: Backend = {
   editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
   undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
   redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
+  addMarkup: (documentId, kind, pages) =>
+    invoke<EditOutcome>("add_markup", { documentId, kind, pages }),
+  removeAnnotation: (documentId, page, index) =>
+    invoke<EditOutcome>("remove_annotation", { documentId, page, index }),
+  pageMarkup: (documentId, page) => invoke<PageMarkup[]>("page_markup", { documentId, page }),
   // Addressed to one window: listen on this window only.
   onCloseRequested: (listener) =>
     getCurrentWebviewWindow().listen("close-requested", () => listener()),

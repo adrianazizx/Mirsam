@@ -1,4 +1,10 @@
-import { backend, isBackendError, type OpenOutcome, type PageEdit } from "../backend";
+import {
+  backend,
+  isBackendError,
+  type MarkupKind,
+  type OpenOutcome,
+  type PageEdit,
+} from "../backend";
 import {
   type AppState,
   type LeftPanel,
@@ -22,6 +28,8 @@ import { isMac } from "./platform";
 export interface Shortcut {
   /** `KeyboardEvent.key`, lower-cased for letters. */
   key: string;
+  /** Another key that does the same (Backspace for Delete: a Mac's delete key). */
+  alternate?: string;
   /** Cmd on macOS, Ctrl elsewhere. */
   mod?: boolean;
   /** The Control key itself on every platform (Ctrl+Tab). */
@@ -97,6 +105,11 @@ export type CommandId =
   | "tabs.moveToNewWindow"
   | "window.new"
   | "edit.copy"
+  | "markup.highlight"
+  | "markup.underline"
+  | "markup.strikeOut"
+  | "markup.squiggly"
+  | "markup.delete"
   | "edit.undo"
   | "edit.redo"
   | "pages.rotateClockwise"
@@ -152,6 +165,7 @@ const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
+const hasMarkupSelected = (state: AppState) => Boolean(selectActiveDocument(state)?.selectedMarkup);
 const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
 const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
 
@@ -210,6 +224,18 @@ export function dropTarget(pages: number[], target: number, after: boolean): num
   let to = 0;
   for (let page = 0; page < point; page += 1) if (!moving.has(page)) to += 1;
   return to;
+}
+
+/** Marks the selected text (ADR 0017): one annotation per page, in one undo step. */
+async function markSelection(kind: MarkupKind): Promise<void> {
+  const active = selectActiveDocument(store());
+  const viewer = active ? getViewer(active.id) : undefined;
+  if (!active || !viewer) return;
+  const pages = viewer.selectionMarks();
+  if (pages.length === 0) return;
+  const outcome = await backend.addMarkup(active.id, kind, pages);
+  viewer.clearSelection();
+  store().applyEdit(active.id, outcome);
 }
 
 async function stepActive(step: "undo" | "redo"): Promise<void> {
@@ -777,6 +803,38 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "markup.highlight",
+    isEnabled: hasSelection,
+    run: () => markSelection("highlight"),
+  },
+  {
+    id: "markup.underline",
+    isEnabled: hasSelection,
+    run: () => markSelection("underline"),
+  },
+  {
+    id: "markup.strikeOut",
+    isEnabled: hasSelection,
+    run: () => markSelection("strikeOut"),
+  },
+  {
+    id: "markup.squiggly",
+    isEnabled: hasSelection,
+    run: () => markSelection("squiggly"),
+  },
+  {
+    id: "markup.delete",
+    shortcut: { key: "Delete", alternate: "Backspace", notInFields: true },
+    isEnabled: hasMarkupSelected,
+    async run() {
+      const active = selectActiveDocument(store());
+      const selected = active?.selectedMarkup;
+      if (!active || !selected) return;
+      const outcome = await backend.removeAnnotation(active.id, selected.page, selected.index);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
     id: "edit.selectAll",
     shortcut: { key: "a", mod: true, notInFields: true },
     isEnabled: (state) => hasDocument(state) && state.activeTool === "select",
@@ -788,7 +846,7 @@ const COMMANDS: Command[] = [
   {
     id: "edit.deselect",
     shortcut: { key: "Escape", notInFields: true },
-    isEnabled: hasSelection,
+    isEnabled: (state) => hasSelection(state) || hasMarkupSelected(state),
     run() {
       const active = selectActiveDocument(store());
       if (active) getViewer(active.id)?.clearSelection();
@@ -1009,7 +1067,8 @@ export async function runCommand(id: CommandId, arg?: CommandArg): Promise<void>
 export function matchesShortcut(shortcut: Shortcut, event: KeyboardEvent, mac = isMac): boolean {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   // "+" is Shift+"=" on most layouts; accept either for zoom in.
-  const keyMatches = key === shortcut.key || (shortcut.key === "=" && key === "+");
+  const keyMatches =
+    key === shortcut.key || key === shortcut.alternate || (shortcut.key === "=" && key === "+");
   const shiftMatches = shortcut.key === "=" || event.shiftKey === Boolean(shortcut.shift);
   if (shortcut.ctrl) {
     return keyMatches && event.ctrlKey && !event.metaKey && !event.altKey && shiftMatches;
@@ -1050,6 +1109,8 @@ export function shortcutLabel(id: CommandId, mac = isMac): string | null {
     PageDown: "PgDn",
     PageUp: "PgUp",
     Escape: "Esc",
+    // A Mac's delete key sends Backspace.
+    Delete: mac ? "⌫" : "Del",
     Tab: mac ? "⇥" : "Tab",
   };
   const key = names[shortcut.key] ?? shortcut.key.toUpperCase();

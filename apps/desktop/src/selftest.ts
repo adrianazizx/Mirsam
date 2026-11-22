@@ -134,6 +134,10 @@ async function navigationChecks(documentId: number) {
   );
   const thumbnails = document.querySelectorAll('[data-testid="thumbnails"] button').length;
 
+  // Markup (ADR 0017): highlight the page's text from the selection, see it
+  // painted by the same view (no rebuild), find it listed, then undo it.
+  const markup = layer.blocks.length === 0 ? null : await markupChecks(documentId);
+
   // Editing (ADR 0014): duplicate the page, see the new revision painted,
   // then undo back to the file as opened.
   const editing = await (async () => {
@@ -225,9 +229,48 @@ async function navigationChecks(documentId: number) {
     labels: labels?.slice(0, 5) ?? null,
     thumbnailDrawn,
     thumbnails,
+    markup,
     editing,
     windows,
   };
+}
+
+async function markupChecks(documentId: number) {
+  const viewer = getViewer(documentId);
+  await runCommand("edit.selectAll");
+  await waitFor(() => viewer?.hasSelection() ?? false, 3_000);
+  const runs = viewer?.selectionMarks().reduce((sum, page) => sum + page.rects.length, 0) ?? 0;
+  const repaint = waitForPagePainted(0, 15_000, () => getViewer(documentId) === viewer);
+  const started = performance.now();
+  await runCommand("markup.highlight");
+  const markMs = Math.round(performance.now() - started);
+  const painted = await repaint;
+  // Highlighter yellow (multiplied over white) in what is on screen now.
+  let yellowPixels = 0;
+  for (const { canvas, tile } of viewer?.pageCanvases(0).tiles ?? []) {
+    const data = canvas.getContext("2d")?.getImageData(0, 0, tile.width, tile.height).data;
+    for (let i = 0; data && i < data.length; i += 4) {
+      const [r, g, b] = [data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0];
+      if (r > 200 && g > 150 && b < 120) yellowPixels += 1;
+    }
+  }
+  const listed = await backend.pageMarkup(documentId, 0);
+  const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
+  const result = {
+    runs,
+    markMs,
+    painted: painted !== null,
+    sameViewer: getViewer(documentId) === viewer,
+    yellowPixels,
+    kinds: listed.map((item) => item.kind),
+    quads: listed[0]?.rects.length ?? 0,
+    paint: open?.paint ?? null,
+    modified: open?.modified ?? null,
+    removedByUndo: false,
+  };
+  await runCommand("edit.undo");
+  result.removedByUndo = (await backend.pageMarkup(documentId, 0)).length === 0;
+  return result;
 }
 
 /**

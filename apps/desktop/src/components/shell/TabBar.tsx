@@ -69,7 +69,14 @@ export function TabBar() {
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
     >
-      <TabList aria-label={t("tabs.label")} items={documents} className={styles.tabs}>
+      <TabList
+        aria-label={t("tabs.label")}
+        items={documents}
+        // React Aria keeps rendered items while `items` is unchanged: re-render them on a
+        // language switch, or the close buttons keep their old labels.
+        dependencies={[t]}
+        className={styles.tabs}
+      >
         {(document: { id: number; name: string; modified: boolean }) => (
           <Tab
             id={document.id}

@@ -7,9 +7,11 @@
 //! Surface so far: bind PDFium, open documents, report page geometry, render
 //! through a prioritized queue ([`render`]), extract text in logical order
 //! ([`text`]), search it ([`search`]), read the outline and page labels, map
-//! page space to the displayed page ([`view`]), and keep local app state
-//! ([`store`]).
+//! page space to the displayed page ([`view`]), edit pages ([`edit`]) and
+//! annotations ([`annotate`]) as incremental updates, save ([`save`]), and
+//! keep local app state ([`store`]).
 
+pub mod annotate;
 mod bitmap;
 pub mod catalog;
 mod document;

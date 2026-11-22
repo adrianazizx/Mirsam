@@ -123,6 +123,19 @@ impl Update {
         self.bytes.extend_from_slice(b"\nendobj\n");
     }
 
+    /// Writes a stream object: `dict` (whose `/Length` is set here), then
+    /// `data` as given (already filtered and, in an encrypted file, encrypted).
+    pub(crate) fn stream(&mut self, number: u32, generation: u16, mut dict: Dict, data: &[u8]) {
+        dict.0.retain(|(key, _)| key != b"Length");
+        dict.0.push((b"Length".to_vec(), Object::Int(offset_int(data.len()))));
+        self.entries.push((number, generation, self.base + self.bytes.len()));
+        let _ = writeln!(self.bytes, "{number} {generation} obj");
+        self::dict(&mut self.bytes, &dict);
+        self.bytes.extend_from_slice(b"\nstream\n");
+        self.bytes.extend_from_slice(data);
+        self.bytes.extend_from_slice(b"\nendstream\nendobj\n");
+    }
+
     /// Ends the update with its cross-reference section and trailer, and
     /// returns the bytes to append. `trailer` carries the previous trailer's
     /// keys to keep (`/Root`, `/Info`, `/ID`, `/Encrypt`); `/Size` and `/Prev`

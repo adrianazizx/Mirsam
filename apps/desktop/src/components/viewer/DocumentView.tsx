@@ -43,7 +43,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const viewerRef = useRef<ViewerController | null>(null);
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
   // The view settings only: page changes (reported by the viewer itself) do not re-render this.
-  const { name, zoomMode, zoom, viewMode, pageOrder, hasSelection } = useAppStore(
+  const { name, zoomMode, zoom, viewMode, pageOrder, hasSelection, markupSelected } = useAppStore(
     useShallow((state) => {
       const open = state.documents.find((candidate) => candidate.id === id);
       return {
@@ -53,6 +53,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         viewMode: open?.viewMode ?? "continuous",
         pageOrder: open?.pageOrder ?? "ltr",
         hasSelection: open?.hasSelection ?? false,
+        markupSelected: Boolean(open?.selectedMarkup),
       };
     }),
   );
@@ -60,6 +61,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const revision = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.revision ?? 0,
   );
+  // Only annotations changed (ADR 0017): the same view paints its pages again.
+  const paint = useAppStore((state) => state.documents.find((open) => open.id === id)?.paint ?? 0);
   const hits = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.search.hits ?? null,
   );
@@ -89,6 +92,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         searchHit: styles.searchHit ?? "",
         searchHitActive: styles.searchHitActive ?? "",
         selection: styles.selection ?? "",
+        markupSelected: styles.markupSelected ?? "",
         selectionToolbar: styles.selectionToolbar ?? "",
       },
       initial: {
@@ -109,6 +113,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onFatal: (error) =>
           useAppStore.getState().setError(isBackendError(error) ? error.code : "generic"),
         onSelectionChange: (has) => update(id, { hasSelection: has }),
+        onMarkupSelect: (selected) => update(id, { selectedMarkup: selected }),
       },
     });
     viewerRef.current = viewer;
@@ -162,6 +167,13 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
     };
   }, [id, revision]);
 
+  const paintShown = useRef(paint);
+  useEffect(() => {
+    if (paint === paintShown.current) return;
+    paintShown.current = paint;
+    viewerRef.current?.refresh();
+  }, [paint]);
+
   useEffect(() => {
     viewerRef.current?.setView({ zoomMode, zoom, viewMode, pageOrder });
   }, [zoomMode, zoom, viewMode, pageOrder]);
@@ -185,7 +197,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       aria-label={t("viewer.pagesLabel", { name })}
       data-testid="viewer"
     >
-      {toolbarHost && hasSelection ? createPortal(<SelectionToolbar />, toolbarHost) : null}
+      {toolbarHost && (hasSelection || markupSelected)
+        ? createPortal(<SelectionToolbar documentId={id} />, toolbarHost)
+        : null}
     </section>
   );
 }

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use pdfium_render::prelude::{
-    PdfBitmap, PdfBitmapFormat, PdfColor, PdfDocument, PdfPage, PdfPageIndex, PdfRenderConfig,
+    PdfBitmap, PdfBitmapFormat, PdfColor, PdfDocument, PdfPage, PdfPageAnnotationCommon,
+    PdfPageAnnotationType, PdfPageIndex, PdfRenderConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -77,6 +78,85 @@ impl Document {
         bytes.extend_from_slice(&self.bytes);
         bytes.extend_from_slice(&update);
         Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// This document with an annotation added or removed, and the update that
+    /// does it (ADR 0017).
+    pub fn with_annotation_edit(
+        &self,
+        edit: &crate::annotate::AnnotationEdit,
+    ) -> Result<(Document, Vec<u8>)> {
+        self.with_annotation_edits(std::slice::from_ref(edit))
+    }
+
+    /// This document with `edits` applied in order (marking a selection that
+    /// spans pages adds one annotation per page), and the one update that
+    /// does them all, so a single undo takes them back.
+    pub fn with_annotation_edits(
+        &self,
+        edits: &[crate::annotate::AnnotationEdit],
+    ) -> Result<(Document, Vec<u8>)> {
+        if edits.is_empty() {
+            return Err(Error::InvalidEdit("no annotation edits given"));
+        }
+        let mut bytes = self.bytes.to_vec();
+        let start = bytes.len();
+        for edit in edits {
+            // Each update builds on the last: appended together they are one.
+            let update = crate::annotate::annotation_update(&bytes, self.password.as_deref(), edit)?;
+            bytes.extend_from_slice(&update);
+        }
+        let update = bytes[start..].to_vec();
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// The page's markup annotations (highlight, underline, strikethrough,
+    /// squiggly), and the map from page space to the page as displayed.
+    pub fn page_markup(&self, index: usize) -> Result<(Vec<crate::annotate::MarkupInfo>, ViewTransform)> {
+        use crate::annotate::{MarkupInfo, MarkupKind};
+        let page = self.page(index)?;
+        let annotations = page.annotations();
+        let mut out = Vec::new();
+        // By index, not by iterator: the iterator stops at the first entry
+        // PDFium cannot read, and the index is the annotation's position in
+        // `/Annots`, which removing it needs.
+        for position in 0..annotations.len() {
+            let Ok(annotation) = annotations.get(position) else { continue };
+            let kind = match annotation.annotation_type() {
+                PdfPageAnnotationType::Highlight => MarkupKind::Highlight,
+                PdfPageAnnotationType::Underline => MarkupKind::Underline,
+                PdfPageAnnotationType::Strikeout => MarkupKind::StrikeOut,
+                PdfPageAnnotationType::Squiggly => MarkupKind::Squiggly,
+                _ => continue,
+            };
+            let rect =
+                |left: f32, bottom: f32, right: f32, top: f32| crate::text::Rect { left, bottom, right, top };
+            let points = annotation.attachment_points();
+            let mut rects: Vec<_> = (0..points.len())
+                .filter_map(|q| points.get(q).ok())
+                .map(|quad| {
+                    rect(quad.left().value, quad.bottom().value, quad.right().value, quad.top().value)
+                })
+                .filter(|r| r.width() > 0.0 && r.height() > 0.0)
+                .collect();
+            if rects.is_empty()
+                && let Ok(bounds) = annotation.bounds()
+            {
+                rects.push(rect(
+                    bounds.left().value,
+                    bounds.bottom().value,
+                    bounds.right().value,
+                    bounds.top().value,
+                ));
+            }
+            out.push(MarkupInfo { index: position, kind, rects });
+        }
+        Ok((out, ViewTransform::of_page(&page)?))
+    }
+
+    /// The map from page space to the page as displayed.
+    pub fn view_transform(&self, index: usize) -> Result<ViewTransform> {
+        ViewTransform::of_page(&self.page(index)?)
     }
 
     /// `pages` (in that order) as a PDF of their own, copied by PDFium with

@@ -21,6 +21,8 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
   const revision = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.revision ?? 0,
   );
+  // Only annotations changed: the same strip draws its thumbnails again.
+  const paint = useAppStore((state) => state.documents.find((open) => open.id === id)?.paint ?? 0);
   const labels = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.labels ?? null,
   );
@@ -73,6 +75,13 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
   useEffect(() => {
     stripRef.current?.setCurrent(page);
   }, [page]);
+
+  const paintShown = useRef(paint);
+  useEffect(() => {
+    if (paint === paintShown.current) return;
+    paintShown.current = paint;
+    stripRef.current?.refresh();
+  }, [paint]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the label inputs change
   useEffect(() => {

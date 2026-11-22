@@ -1,5 +1,8 @@
 import {
   type Backend,
+  type MarkedPage,
+  type MarkupKind,
+  type PageMarkup,
   type PageSize,
   type RenderedPage,
   releaseRendered,
@@ -94,6 +97,16 @@ export interface ViewerCallbacks {
   onFatal(error: unknown): void;
   /** Text became selected, or the selection was cleared. */
   onSelectionChange?(hasSelection: boolean): void;
+  /** A markup annotation was selected (clicked), or the selection was cleared. */
+  onMarkupSelect?(selected: SelectedMarkup | null): void;
+}
+
+/** A markup annotation the reader selected by clicking it. */
+export interface SelectedMarkup {
+  page: number;
+  /** Its position in the page's annotations (what removing it takes). */
+  index: number;
+  kind: MarkupKind;
 }
 
 /** Class names for the DOM the viewer creates (from the wrapper's CSS module). */
@@ -107,6 +120,8 @@ export interface ViewerClassNames {
   searchHit: string;
   searchHitActive: string;
   selection: string;
+  /** Outline of a selected markup annotation. */
+  markupSelected: string;
   /** Anchor element the selection toolbar is rendered into. */
   selectionToolbar: string;
 }
@@ -196,6 +211,8 @@ interface Slot {
   tileLayer: HTMLDivElement;
   overlay: HTMLDivElement;
   preview: HTMLCanvasElement | null;
+  /** The preview from before a refresh, shown until the new one arrives. */
+  stalePreview: HTMLCanvasElement | null;
   tiles: Map<string, TileCanvas>;
   box: PageBox | null;
   /** Ids of the full-resolution tiles on screen at the current scale, from the last update. */
@@ -262,7 +279,7 @@ export class ViewerController {
   private readonly spacing: ViewerSpacing;
   private readonly isMac: boolean;
   private readonly classNames: ViewerClassNames;
-  private readonly client: TileClient;
+  private client: TileClient;
   private readonly openedAt = performance.now();
 
   private sizes: PageSize[] | null = null;
@@ -313,6 +330,16 @@ export class ViewerController {
   private selectionReported = false;
   private readonly searchMarks = new Map<number, HitMark[]>();
   private readonly selectionRects = new Map<number, ViewRect[]>();
+  /** Markup annotations of recently visited pages, for clicking them. */
+  private readonly markup = new Map<number, PageMarkup[]>();
+  private readonly markupRequests = new Map<number, Promise<void>>();
+  /** Answers about markup from before the last refresh are dropped. */
+  private markupGeneration = 0;
+  private selectedMarkup: SelectedMarkup | null = null;
+  /** Where the last plain click pressed: markup there is selected if no text was. */
+  private pressedPoint: PagePoint | null = null;
+  /** Counts presses, so a late answer about markup applies only to its own click. */
+  private presses = 0;
   /** Where the selection toolbar is drawn: above the selection's first line. */
   readonly selectionToolbarHost: HTMLDivElement;
 
@@ -340,15 +367,7 @@ export class ViewerController {
     this.selectionToolbarHost.hidden = true;
     this.content.append(this.selectionToolbarHost);
 
-    this.client = new TileClient(
-      this.backend,
-      this.documentId,
-      (wanted, bitmap) => this.onRendered(wanted as Wanted, bitmap),
-      (wanted, error) => {
-        this.failed.add(wanted.id);
-        console.warn("tile render failed", wanted, error);
-      },
-    );
+    this.client = this.newClient();
 
     this.container.addEventListener("scroll", this.onScroll, { passive: true });
     this.container.addEventListener("wheel", this.onWheel, { passive: false });
@@ -378,6 +397,18 @@ export class ViewerController {
     );
   }
 
+  private newClient(): TileClient {
+    return new TileClient(
+      this.backend,
+      this.documentId,
+      (wanted, bitmap) => this.onRendered(wanted as Wanted, bitmap),
+      (wanted, error) => {
+        this.failed.add(wanted.id);
+        console.warn("tile render failed", wanted, error);
+      },
+    );
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.client.close();
@@ -399,6 +430,41 @@ export class ViewerController {
   }
 
   // ------------------------------------------------------------ public API
+
+  /**
+   * The document's annotations changed but not its pages (markup added or
+   * removed, or that undone): every page is rendered again. What is on
+   * screen stays until the new renders cover it, so nothing flashes.
+   */
+  refresh(): void {
+    if (this.destroyed) return;
+    // Answers still on their way show the old revision: a new client ignores them.
+    this.client.close();
+    this.client = this.newClient();
+    this.failed.clear();
+    for (const canvas of this.previews.values()) releaseCanvas(canvas);
+    this.previews.clear();
+    for (const slot of this.slots.values()) {
+      // Stale tiles keep their place under new ids, at no scale: `checkSharp`
+      // drops them once the page's new tiles cover it.
+      const stale = new Map<string, TileCanvas>();
+      for (const [id, tile] of slot.tiles) stale.set(`stale:${id}`, { ...tile, scale: Number.NaN });
+      slot.tiles = stale;
+      if (slot.preview) {
+        if (slot.stalePreview) releaseCanvas(slot.stalePreview);
+        slot.stalePreview = slot.preview;
+        slot.preview = null;
+      }
+      slot.sharpAt = null;
+      slot.firstTileRequestAt = null;
+      slot.renderMicros = 0;
+    }
+    this.markupGeneration += 1;
+    this.markup.clear();
+    this.markupRequests.clear();
+    this.setSelectedMarkup(null);
+    this.update();
+  }
 
   /** Applies zoom and view-mode changes from the store. */
   setView(next: ViewState): void {
@@ -602,6 +668,20 @@ export class ViewerController {
   clearSelection(): void {
     this.pendingAnchor = null;
     this.setSelection(null);
+    this.setSelectedMarkup(null);
+  }
+
+  /** The selected text's runs, page by page: what marking it covers (ADR 0017). */
+  selectionMarks(): MarkedPage[] {
+    return [...this.selectionRects]
+      .filter(([, rects]) => rects.length > 0)
+      .sort(([a], [b]) => a - b)
+      .map(([page, rects]) => ({ page, rects: rects.map((rect) => ({ ...rect })) }));
+  }
+
+  /** The markup annotation selected by clicking it, if any. */
+  selectedMarkupAnnotation(): SelectedMarkup | null {
+    return this.selectedMarkup;
   }
 
   /** Selects all text on the current page. */
@@ -671,6 +751,67 @@ export class ViewerController {
     }
   }
 
+  /** The page's markup, from the cache or asked for once; settles when it is known. */
+  private loadMarkup(page: number): Promise<void> {
+    const pending = this.markupRequests.get(page);
+    if (this.markup.has(page)) return Promise.resolve();
+    if (pending) return pending;
+    const generation = this.markupGeneration;
+    const request = this.backend.pageMarkup(this.documentId, page).then(
+      (list) => {
+        if (this.destroyed || generation !== this.markupGeneration) return;
+        this.markupRequests.delete(page);
+        this.markup.set(page, list);
+        if (this.markup.size > TEXT_LAYER_PAGES) {
+          const oldest = this.markup.keys().next().value;
+          if (oldest !== undefined && oldest !== this.selectedMarkup?.page)
+            this.markup.delete(oldest);
+        }
+      },
+      (error: unknown) => {
+        if (generation === this.markupGeneration) this.markupRequests.delete(page);
+        console.warn("page markup unavailable", page, error);
+      },
+    );
+    this.markupRequests.set(page, request);
+    return request;
+  }
+
+  /** The markup annotation under a point, the one drawn last first. */
+  private markupAt(point: PagePoint): SelectedMarkup | null {
+    const list = this.markup.get(point.page) ?? [];
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const markup = list[i];
+      const hit = markup?.rects.some(
+        (rect) =>
+          point.x >= rect.x &&
+          point.x <= rect.x + rect.width &&
+          point.y >= rect.y &&
+          point.y <= rect.y + rect.height,
+      );
+      if (markup && hit) return { page: point.page, index: markup.index, kind: markup.kind };
+    }
+    return null;
+  }
+
+  private setSelectedMarkup(selected: SelectedMarkup | null): void {
+    const previous = this.selectedMarkup;
+    if (previous?.page === selected?.page && previous?.index === selected?.index) return;
+    this.selectedMarkup = selected;
+    for (const page of new Set([previous?.page, selected?.page])) {
+      const slot = page === undefined ? undefined : this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+    this.placeSelectionToolbar();
+    this.callbacks.onMarkupSelect?.(selected);
+  }
+
+  private selectedMarkupRects(): ViewRect[] {
+    const selected = this.selectedMarkup;
+    if (!selected) return [];
+    return this.markup.get(selected.page)?.find((m) => m.index === selected.index)?.rects ?? [];
+  }
+
   /** The page point under a client position: the nearest page, clamped to it. */
   private pointAt(clientX: number, clientY: number): PagePoint | null {
     if (!this.layout || !this.sizes) return null;
@@ -704,6 +845,11 @@ export class ViewerController {
     if (!point) return;
     event.preventDefault();
     const clicks = this.countClick(event);
+    // A plain click on markup selects it, unless the press turns into a text selection.
+    this.presses += 1;
+    this.pressedPoint = clicks === 1 && !event.shiftKey ? point : null;
+    void this.loadMarkup(point.page);
+    this.setSelectedMarkup(null);
     const layer = this.layers.get(point.page);
     this.dragging = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
     this.content.setPointerCapture?.(event.pointerId);
@@ -768,6 +914,16 @@ export class ViewerController {
     this.stopAutoScroll();
     this.content.releasePointerCapture?.(event.pointerId);
     if (this.selection && isCollapsed(this.selection, this.layerLookup)) this.setSelection(null);
+    const pressed = this.pressedPoint;
+    this.pressedPoint = null;
+    if (!pressed || this.selection !== null) return;
+    // The page's markup may still be on its way (a click right after an edit).
+    const press = this.presses;
+    void this.loadMarkup(pressed.page).then(() => {
+      if (this.destroyed || press !== this.presses || this.selection !== null) return;
+      const hit = this.markupAt(pressed);
+      if (hit) this.setSelectedMarkup(hit);
+    });
   };
 
   private extendSelection(): void {
@@ -814,12 +970,15 @@ export class ViewerController {
     const point = this.pointAt(event.clientX, event.clientY);
     const layer = point ? this.layers.get(point.page) : undefined;
     if (point && !layer) void this.loadLayer(point.page);
+    if (point) void this.loadMarkup(point.page);
     const over = point !== null && layer !== undefined && isOverText(layer, point.x, point.y);
     if (over) this.content.dataset.overText = "";
     else delete this.content.dataset.overText;
   }
 
   private setSelection(selection: Selection | null): void {
+    // Selecting text and selecting markup exclude each other.
+    if (selection) this.setSelectedMarkup(null);
     this.selection = selection;
     const previous = new Set(this.selectionRects.keys());
     this.selectionRects.clear();
@@ -840,11 +999,18 @@ export class ViewerController {
     }
   }
 
-  /** Puts the toolbar host above the top of the selection's first highlighted line. */
+  /**
+   * Puts the toolbar host above the top of the selection's first highlighted
+   * line, or above a selected markup annotation.
+   */
   private placeSelectionToolbar(): void {
     const host = this.selectionToolbarHost;
-    const first = [...this.selectionRects.keys()].sort((a, b) => a - b)[0];
-    const rects = first === undefined ? undefined : this.selectionRects.get(first);
+    let first = [...this.selectionRects.keys()].sort((a, b) => a - b)[0];
+    let rects = first === undefined ? undefined : this.selectionRects.get(first);
+    if (!rects?.length && this.selectedMarkup) {
+      first = this.selectedMarkup.page;
+      rects = this.selectedMarkupRects();
+    }
     const box = first === undefined ? undefined : this.layout?.boxes[first];
     const size = first === undefined ? undefined : this.sizes?.[first];
     if (!rects || rects.length === 0 || !box || !size) {
@@ -886,6 +1052,14 @@ export class ViewerController {
       element.className = this.classNames.selection;
       place(element, rect);
       slot.overlay.append(element);
+    }
+    if (this.selectedMarkup?.page === slot.page) {
+      for (const rect of this.selectedMarkupRects()) {
+        const element = document.createElement("div");
+        element.className = this.classNames.markupSelected;
+        place(element, rect);
+        slot.overlay.append(element);
+      }
     }
   }
 
@@ -1264,6 +1438,7 @@ export class ViewerController {
       tileLayer,
       overlay,
       preview: null,
+      stalePreview: null,
       tiles: new Map(),
       box: null,
       visibleTileIds: [],
@@ -1274,7 +1449,13 @@ export class ViewerController {
     this.placeSlot(slot, box);
     this.slots.set(page, slot);
     this.content.append(element);
-    if (this.searchMarks.has(page) || this.selectionRects.has(page)) this.paintOverlay(slot);
+    if (
+      this.searchMarks.has(page) ||
+      this.selectionRects.has(page) ||
+      this.selectedMarkup?.page === page
+    ) {
+      this.paintOverlay(slot);
+    }
     // A preview kept from an earlier visit goes straight back: no round trip, no redraw.
     const cached = this.previews.get(page);
     if (cached) {
@@ -1374,6 +1555,10 @@ export class ViewerController {
   }
 
   private attachPreview(slot: Slot, canvas: HTMLCanvasElement): void {
+    if (slot.stalePreview) {
+      releaseCanvas(slot.stalePreview);
+      slot.stalePreview = null;
+    }
     slot.element.prepend(canvas);
     slot.preview = canvas;
     if (!this.previewShownAt.has(slot.page)) {
@@ -1385,6 +1570,8 @@ export class ViewerController {
 
   /** Takes a page off screen: its tiles are freed, its preview kept for its return. */
   private unmountSlot(slot: Slot): void {
+    if (slot.stalePreview) releaseCanvas(slot.stalePreview);
+    slot.stalePreview = null;
     const preview = slot.preview;
     slot.preview = null;
     if (preview) {
@@ -1481,5 +1668,7 @@ function releaseSlot(slot: Slot): void {
   slot.tiles.clear();
   if (slot.preview) releaseCanvas(slot.preview);
   slot.preview = null;
+  if (slot.stalePreview) releaseCanvas(slot.stalePreview);
+  slot.stalePreview = null;
   slot.element.remove();
 }

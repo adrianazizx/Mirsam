@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 6).
+Last updated: 2026-11-22 (session 7).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -13,15 +13,11 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
-   and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
-3. **CI on pull request #1:**
-   - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
-     including printing through GTK on Linux.
-   - **The Linux tests** failed because Chrome on Linux draws some word spaces differently. The
-     extractor now handles both ways (ADR 0008); the fix is pushed and passes locally on the
-     Linux-made corpus. A green CI run is still to be seen.
-   - **The Windows tests** have not yet finished a run.
+2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`:
+   - `main` holds Milestones 0 and 1 (PR #1, merged);
+   - `m2-organize` holds Milestone 2 so far, open as draft PR #2 with Auto-fix on.
+3. **CI on PR #2** was green on every check (tests and shell self-test on macOS, Linux and
+   Windows, and licences) before this session's markup work was pushed.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
@@ -217,13 +213,18 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 4. ~~**Merge, insert from another PDF, extract, split**~~ **done (ADR 0016):** PDFium's page
    import; snapshot steps in the history; refuses signed targets and sources with passwords.
    Splitting by size or by bookmarks comes later.
-5. **Markup** (highlight, underline, strikethrough, squiggly) from the text selection, as
-   standard annotations with appearance streams.
+5. ~~**Markup**~~ **done (ADR 0017):** highlight, underline, strikethrough and squiggly from the
+   text selection, as standard annotations with appearance streams. Click a markup to select
+   it; Delete removes it. New objects in encrypted files are encrypted (RC4, AES-128, AES-256).
+   The view paints again instead of rebuilding. Colour choice comes with the inspector.
 6. **Notes, text boxes, ink** (RTL-aware text entry).
 7. **Autosave and recovery.**
 8. **Comments panel** (P1, if time allows in M2).
 
-- [ ] Markup, notes, text boxes, ink
+- [~] Markup, notes, text boxes, ink:
+      - Markup is done (ADR 0017): highlight, underline, strikethrough, squiggly; select and
+        delete; undo; English and Arabic; encrypted files.
+      - Not yet: notes, text boxes, ink, and choosing colours.
 - [ ] Comments panel
 - [~] Page organizer (reorder/rotate/delete/merge/split/extract):
       - The Pages tool shows a virtualized grid (React Aria `GridList` + `GridLayout`).
@@ -234,8 +235,8 @@ Plan, in order: every later slice edits documents, so the editing model and savi
         N pages (ADR 0016).
       - Pointer dragging is untested: browser automation cannot start a native drag. The drop
         arithmetic is unit-tested, and the move commands are the keyboard path.
-- [x] Undo journal: undo and redo for page edits (`EditHistory`, ADR 0014); annotations will
-      use it too
+- [x] Undo journal: undo and redo for page edits and annotations (`EditHistory`, ADRs 0014
+      and 0017); each step knows whether it changed pages or only annotations
 - [x] Safe save pipeline (ADR 0015):
       - temp file → reopen to validate → atomic rename;
       - a full PDFium rewrite drops deleted pages' content;
@@ -296,6 +297,32 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 7 — 2026-11-22 (Milestone 2: markup)
+
+- **CI on PR #2:** a slow macOS runner failed the scroll benchmark's timing. On CI every
+  benchmark timing check now warns; only the app's own memory fails the run (ADR 0011). After
+  that, every check was green.
+- **Markup annotations (ADR 0017):**
+  - Highlight, underline, strikethrough and squiggly from the selection toolbar or the command
+    palette.
+  - Each is a standard annotation with its own appearance stream, written as an incremental
+    update, so undo covers it.
+  - A selection across pages is one undo step.
+  - Click a markup to select it; Delete (⌫ on a Mac) removes it, with its pop-up and replies.
+- **Encrypted files:**
+  - Objects an edit adds are now encrypted, with RC4 (40–128 bits), AES-128 and AES-256.
+  - The key is checked with the user or the owner password.
+  - Tested on seven encrypted variants made with qpdf.
+- **No flash after markup:**
+  - an annotation change paints the pages again instead of rebuilding the view;
+  - tiles, previews, thumbnails, and organizer images stay until their new renders arrive.
+- **Fix:** a tab's close button kept its English label after switching to Arabic (React Aria
+  cached the tab items).
+- **Self-test:** highlights the first page's text and checks the yellow on screen in the same
+  view, and undo; in English and Arabic.
+- **Tests:** 167 Rust and 132 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark).
 
 ### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
 

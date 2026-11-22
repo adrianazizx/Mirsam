@@ -76,6 +76,13 @@
       "undo": "تراجع",
       "redo": "إعادة"
     },
+    "markup": {
+      "highlight": "تمييز",
+      "underline": "تسطير",
+      "strikeOut": "شطب",
+      "squiggly": "تسطير متموّج",
+      "delete": "حذف العلامة"
+    },
     "search": {
       "focus": "البحث في المستند…",
       "run": "بحث",
@@ -167,7 +174,8 @@
     "spacing": "المسافات"
   },
   "selection": {
-    "toolbar": "النص المحدد"
+    "toolbar": "النص المحدد",
+    "markupToolbar": "العلامة المحددة"
   },
   "panel": {
     "label": "اللوحة الجانبية",

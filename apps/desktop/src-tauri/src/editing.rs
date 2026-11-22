@@ -1,8 +1,9 @@
-//! Page edits, undo and redo (ADR 0014), and saving (ADR 0015): thin
-//! commands over `safha_core::edit` and `safha_core::save`. An edit, undo, or
-//! redo leaves the document at a new revision, which replaces the old one
-//! everywhere (renders, search index); the UI reloads the page layout from
-//! the outcome.
+//! Page edits, undo and redo (ADR 0014), markup (ADR 0017), and saving
+//! (ADR 0015): thin commands over `safha_core::edit`, `safha_core::annotate`
+//! and `safha_core::save`. An edit, undo, or redo leaves the document at a
+//! new revision, which replaces the old one everywhere (renders, search
+//! index). The outcome says whether pages changed, so the UI reloads the page
+//! layout, or only paints the pages again.
 
 use std::path::PathBuf;
 
@@ -10,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::edit::{EditHistory, PageEdit};
+use safha_core::annotate::{AnnotationEdit, Markup, MarkupKind, Quad};
+use safha_core::edit::{Change, EditHistory, PageEdit};
+use safha_core::view::ViewRect;
 
 use crate::error::{CommandError, CommandResult};
 use crate::state::{AppState, lock};
@@ -47,15 +50,19 @@ pub struct EditOutcome {
     can_redo: bool,
     /// Differs from the file as last opened or saved.
     modified: bool,
+    /// The pages changed (count, order, sizes, content); otherwise only their
+    /// annotations did, and the same pages only need painting again.
+    pages_changed: bool,
 }
 
 impl EditOutcome {
-    fn new(page_count: usize, history: &EditHistory) -> Self {
+    fn new(page_count: usize, history: &EditHistory, change: Change) -> Self {
         Self {
             page_count,
             can_undo: history.can_undo(),
             can_redo: history.can_redo(),
             modified: history.is_modified(),
+            pages_changed: change == Change::Pages,
         }
     }
 }
@@ -73,7 +80,95 @@ pub async fn edit_pages(
     history.push(update);
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
-    Ok(EditOutcome::new(page_count, &history))
+    Ok(EditOutcome::new(page_count, &history, Change::Pages))
+}
+
+/// Marked text on one page: the displayed-page rectangles of its runs.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MarkedPage {
+    page: usize,
+    rects: Vec<ViewRect>,
+}
+
+/// Marks text with highlight, underline, strikethrough, or squiggly: one
+/// annotation per page, all in one undo step.
+#[tauri::command]
+pub async fn add_markup(
+    state: State<'_, AppState>,
+    document_id: u32,
+    kind: MarkupKind,
+    pages: Vec<MarkedPage>,
+) -> CommandResult<EditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let edits = pages
+        .into_iter()
+        .map(|marked| {
+            let view = document.view_transform(marked.page)?;
+            let quads = marked.rects.iter().map(|rect| Quad::from_view(*rect, &view)).collect();
+            Ok(AnnotationEdit::AddMarkup {
+                page: marked.page,
+                markup: Markup { kind, quads, color: kind.default_color() },
+            })
+        })
+        .collect::<safha_core::Result<Vec<_>>>()?;
+    let (revision, update) = document.with_annotation_edits(&edits)?;
+    history.push_annotations(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(EditOutcome::new(page_count, &history, Change::Annotations))
+}
+
+/// Removes a markup annotation (with its pop-up and replies).
+#[tauri::command]
+pub async fn remove_annotation(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    index: usize,
+) -> CommandResult<EditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let (revision, update) = document.with_annotation_edit(&AnnotationEdit::Remove { page, index })?;
+    history.push_annotations(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(EditOutcome::new(page_count, &history, Change::Annotations))
+}
+
+/// A markup annotation as the UI hit-tests it.
+#[derive(Debug, Serialize)]
+pub struct MarkupWire {
+    /// What `remove_annotation` takes.
+    index: usize,
+    kind: MarkupKind,
+    /// Displayed-page rectangles, one per run of marked text.
+    rects: Vec<ViewRect>,
+}
+
+/// The page's markup annotations, in displayed-page coordinates.
+#[tauri::command]
+pub async fn page_markup(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+) -> CommandResult<Vec<MarkupWire>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (markup, view) = document.page_markup(page)?;
+        Ok(markup
+            .into_iter()
+            .map(|info| MarkupWire {
+                index: info.index,
+                kind: info.kind,
+                rects: info.rects.into_iter().map(|rect| view.rect(rect)).collect(),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|err| CommandError::new("engine_error", err.to_string()))?
 }
 
 #[tauri::command]
@@ -96,13 +191,17 @@ fn step(state: &AppState, document_id: u32, step: Step) -> CommandResult<EditOut
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let change = match step {
+        Step::Undo => history.undo_change(),
+        Step::Redo => history.redo_change(),
+    };
     let bytes = match step {
         Step::Undo => history.undo(),
         Step::Redo => history.redo(),
     };
-    let Some(bytes) = bytes else {
+    let (Some(bytes), Some(change)) = (bytes, change) else {
         // Nothing to undo or redo: the document stays as it is.
-        return Ok(EditOutcome::new(document.page_count(), &history));
+        return Ok(EditOutcome::new(document.page_count(), &history, Change::Annotations));
     };
     let revision = match document.revision(bytes) {
         Ok(revision) => revision,
@@ -117,7 +216,7 @@ fn step(state: &AppState, document_id: u32, step: Step) -> CommandResult<EditOut
     };
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
-    Ok(EditOutcome::new(page_count, &history))
+    Ok(EditOutcome::new(page_count, &history, change))
 }
 
 /// The document after a save.
@@ -211,7 +310,7 @@ pub async fn insert_pages_from_files(
     history.push_snapshot(bytes);
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
-    Ok(Some(EditOutcome::new(page_count, &history)))
+    Ok(Some(EditOutcome::new(page_count, &history, Change::Pages)))
 }
 
 /// Writes `pages` as a new PDF where the user chooses. Returns the new

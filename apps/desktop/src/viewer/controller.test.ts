@@ -40,6 +40,12 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       };
       return bitmap;
     },
+    pageText: async () => ({ blocks: [], direction: "ltr", quality: "noText" }),
+    // Page 0 has a highlight over (10, 10)-(110, 30) in page points.
+    pageMarkup: async (_doc: number, page: number) =>
+      page === 0
+        ? [{ index: 3, kind: "highlight", rects: [{ x: 10, y: 10, width: 100, height: 20 }] }]
+        : [],
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
       updates.push(keep);
     },
@@ -49,7 +55,12 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
   Object.defineProperty(container, "clientWidth", { value: 1000 });
   Object.defineProperty(container, "clientHeight", { value: 800 });
   document.body.append(container);
-  const callbacks = { onCurrentPage: vi.fn(), onZoom: vi.fn(), onFatal: vi.fn() };
+  const callbacks = {
+    onCurrentPage: vi.fn(),
+    onZoom: vi.fn(),
+    onFatal: vi.fn(),
+    onMarkupSelect: vi.fn(),
+  };
   const viewer = new ViewerController({
     backend,
     documentId: 1,
@@ -63,6 +74,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       searchHit: "hit",
       searchHitActive: "hit-active",
       selection: "selection",
+      markupSelected: "markup-selected",
       selectionToolbar: "selection-toolbar",
     },
     initial: {
@@ -230,6 +242,60 @@ describe("viewer controller", () => {
     expect(content?.style.transform).toBe("");
     expect(height()).not.toBe(laidOut);
     expect(viewer.snapshot().zoom).toBeCloseTo(zoom ?? 0);
+    viewer.destroy();
+  });
+
+  it("paints pages again after an annotation edit, keeping the old tiles until new ones arrive", async () => {
+    const { viewer, container, calls } = setup();
+    await settle();
+    const canvases = () => container.querySelectorAll("[data-page='0'] canvas").length;
+    const before = canvases();
+    const requested = calls.length;
+    viewer.refresh();
+    // Nothing went blank: the old canvases stay while the page is drawn again.
+    expect(canvases()).toBe(before);
+    expect(viewer.snapshot().visible[0]?.sharp).toBe(false);
+    const again = calls.slice(requested).filter((call) => call.page === 0);
+    expect(again.map((call) => call.tile.scale).sort()).toEqual([Math.fround(0.25), 1]);
+    await settle();
+    // The new ones replaced them.
+    expect(canvases()).toBe(before);
+    expect(viewer.snapshot().visible[0]).toEqual({ page: 0, preview: true, sharp: true });
+    viewer.destroy();
+  });
+
+  it("selects markup with a click, and forgets it on Escape or an annotation edit", async () => {
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    // Page 0 sits at (350, 20) at zoom 0.75: page point (60, 20) is at (395, 35).
+    const press = (type: string, clientX = 395) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX, clientY: 35, button: 0 }),
+      );
+    // The first click works even before the page's markup has arrived.
+    press("pointerdown");
+    press("pointerup");
+    await settle();
+    expect(callbacks.onMarkupSelect).toHaveBeenLastCalledWith({
+      page: 0,
+      index: 3,
+      kind: "highlight",
+    });
+    expect(viewer.selectedMarkupAnnotation()?.index).toBe(3);
+    expect(container.querySelectorAll(".markup-selected")).toHaveLength(1);
+
+    // Escape's command clears it; an annotation edit forgets it too.
+    viewer.clearSelection();
+    expect(callbacks.onMarkupSelect).toHaveBeenLastCalledWith(null);
+    expect(container.querySelectorAll(".markup-selected")).toHaveLength(0);
+    // Further along the highlight, so it is not taken for a double click.
+    press("pointerdown", 420);
+    press("pointerup", 420);
+    await settle();
+    expect(viewer.selectedMarkupAnnotation()?.index).toBe(3);
+    viewer.refresh();
+    expect(viewer.selectedMarkupAnnotation()).toBeNull();
     viewer.destroy();
   });
 

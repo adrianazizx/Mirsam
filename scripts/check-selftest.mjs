@@ -68,6 +68,19 @@ if (nav) {
   }
   check(nav.thumbnailDrawn, "no thumbnail was drawn");
   check((nav.windows?.length ?? 0) >= 2, `a new window did not open (windows: ${JSON.stringify(nav.windows)})`);
+  // Markup (ADR 0017): highlighting the selection paints yellow in the same view; undo removes it.
+  const markup = nav.markup;
+  if (nav.textBlocks > 0) {
+    check(markup !== undefined && markup !== null, "no markup results");
+    if (markup) {
+      check(markup.kinds.length === 1 && markup.kinds[0] === "highlight", `markup listed: ${JSON.stringify(markup.kinds)}`);
+      check(markup.quads === markup.runs, `the highlight has ${markup.quads} quads for ${markup.runs} selected runs`);
+      check(markup.painted && markup.sameViewer, "the highlight was not painted by the same view");
+      check(markup.yellowPixels > 500, `only ${markup.yellowPixels} highlighted pixels on screen`);
+      check(markup.modified === true, "a highlighted document does not count as modified");
+      check(markup.removedByUndo, "undo did not remove the highlight");
+    }
+  }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
   check(editing !== undefined && editing !== null, "no editing results");
@@ -104,6 +117,13 @@ if (nav) {
       `"${nav.query}": ${nav.searchHits} hits in ${nav.searchMs.toFixed(0)} ms; ` +
       `outline ${nav.outlineItems} items; ${nav.thumbnails} thumbnails mounted; windows ${JSON.stringify(nav.windows)}`,
   );
+  if (nav.markup) {
+    const m = nav.markup;
+    console.log(
+      `  markup: highlight of ${m.runs} runs in ${m.markMs} ms, ${m.yellowPixels} px painted, ` +
+        `same view ${m.sameViewer}, undo removed it ${m.removedByUndo}`,
+    );
+  }
   if (nav.editing) {
     const e = nav.editing;
     console.log(

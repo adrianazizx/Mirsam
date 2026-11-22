@@ -23,6 +23,29 @@ export interface EditOutcome {
   canRedo: boolean;
   /** Differs from the file as opened or last saved. */
   modified: boolean;
+  /**
+   * The pages changed (count, order, sizes, content). Otherwise only their
+   * annotations did: the same pages just need painting again.
+   */
+  pagesChanged: boolean;
+}
+
+/** The four text-markup annotations (ADR 0017). */
+export type MarkupKind = "highlight" | "underline" | "strikeOut" | "squiggly";
+
+/** Marked text on one page: the displayed-page rectangles of its runs. */
+export interface MarkedPage {
+  page: number;
+  rects: ViewRect[];
+}
+
+/** A markup annotation on a page, for hit-testing and removing it. */
+export interface PageMarkup {
+  /** Its position in the page's annotations; what `removeAnnotation` takes. */
+  index: number;
+  kind: MarkupKind;
+  /** Displayed-page rectangles, one per run of marked text. */
+  rects: ViewRect[];
 }
 
 /** The document after a save. */
@@ -341,6 +364,12 @@ export interface Backend {
   editPages(documentId: number, edit: PageEdit): Promise<EditOutcome>;
   undoEdit(documentId: number): Promise<EditOutcome>;
   redoEdit(documentId: number): Promise<EditOutcome>;
+  /** Marks text: one annotation per page, all in one undo step (ADR 0017). */
+  addMarkup(documentId: number, kind: MarkupKind, pages: MarkedPage[]): Promise<EditOutcome>;
+  /** Removes a markup annotation, with its pop-up and replies. */
+  removeAnnotation(documentId: number, page: number, index: number): Promise<EditOutcome>;
+  /** The page's markup annotations. */
+  pageMarkup(documentId: number, page: number): Promise<PageMarkup[]>;
   /**
    * Asks for PDFs and inserts their pages before page `at`, in order (ADR 0016);
    * null if cancelled.

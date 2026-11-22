@@ -76,6 +76,13 @@
       "undo": "Undo",
       "redo": "Redo"
     },
+    "markup": {
+      "highlight": "Highlight",
+      "underline": "Underline",
+      "strikeOut": "Strikethrough",
+      "squiggly": "Squiggly underline",
+      "delete": "Delete markup"
+    },
     "search": {
       "focus": "Find in document…",
       "run": "Search",
@@ -167,7 +174,8 @@
     "spacing": "Spacing"
   },
   "selection": {
-    "toolbar": "Selected text"
+    "toolbar": "Selected text",
+    "markupToolbar": "Selected markup"
   },
   "panel": {
     "label": "Side panel",

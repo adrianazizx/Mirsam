@@ -4,6 +4,7 @@ import type {
   EditOutcome,
   KeptRequest,
   Lane,
+  MarkupKind,
   OpenOutcome,
   OutlineItem,
   PageEdit,
@@ -16,6 +17,7 @@ import type {
   TextLayer,
   TextLine,
   TileRequest,
+  ViewRect,
 } from "./types";
 
 /**
@@ -163,8 +165,58 @@ function fold(text: string, options: SearchOptions): string {
   return folded;
 }
 
-/** Pages of each edited mock document, as original page numbers (-1: blank), with undo and redo. */
-const edits = new Map<number, { states: number[][]; at: number; saved: number }>();
+/** A markup annotation the mock keeps: displayed-page rectangles of its page. */
+interface MockMarkup {
+  kind: MarkupKind;
+  rects: ViewRect[];
+}
+
+/**
+ * One revision of a mock document: its pages as original page numbers (-1:
+ * blank), the markup on each original page, and what the step to it changed.
+ */
+interface MockState {
+  pages: number[];
+  markup: Map<number, MockMarkup[]>;
+  change: "pages" | "annotations";
+}
+
+/** Each edited mock document's revisions, with undo and redo. */
+const edits = new Map<number, { states: MockState[]; at: number; saved: number }>();
+
+function stateOf(documentId: number): MockState {
+  const history = edits.get(documentId);
+  return (
+    history?.states[history.at] ?? {
+      pages: Array.from({ length: basePageCount(documentId) }, (_, i) => i),
+      markup: new Map(),
+      change: "pages",
+    }
+  );
+}
+
+/** Records the next revision; undone revisions are forgotten. */
+function pushState(documentId: number, next: MockState): EditOutcome {
+  const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
+  history.states = [...history.states.slice(0, history.at + 1), next];
+  history.at += 1;
+  edits.set(documentId, history);
+  return outcome(documentId, next.change);
+}
+
+/** Markup on a page (by its original page number), copied before changing. */
+function withMarkup(
+  documentId: number,
+  page: number,
+  change: (list: MockMarkup[]) => MockMarkup[],
+): MockState {
+  const state = stateOf(documentId);
+  const original = state.pages[page];
+  if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+  const markup = new Map(state.markup);
+  markup.set(original, change([...(markup.get(original) ?? [])]));
+  return { pages: state.pages, markup, change: "annotations" };
+}
 
 function basePageCount(documentId: number): number {
   return documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount;
@@ -172,10 +224,7 @@ function basePageCount(documentId: number): number {
 
 /** The document's current pages as original page numbers. */
 function pagesOf(documentId: number): number[] {
-  const history = edits.get(documentId);
-  return (
-    history?.states[history.at] ?? Array.from({ length: basePageCount(documentId) }, (_, i) => i)
-  );
+  return stateOf(documentId).pages;
 }
 
 function applyEdit(pages: number[], edit: PageEdit): number[] {
@@ -204,13 +253,14 @@ function applyEdit(pages: number[], edit: PageEdit): number[] {
   }
 }
 
-function outcome(documentId: number): EditOutcome {
+function outcome(documentId: number, change: MockState["change"]): EditOutcome {
   const history = edits.get(documentId);
   return {
     pageCount: pagesOf(documentId).length,
     canUndo: (history?.at ?? 0) > 0,
     canRedo: history ? history.at < history.states.length - 1 : false,
     modified: history ? history.at !== history.saved : false,
+    pagesChanged: change === "pages",
   };
 }
 
@@ -297,7 +347,44 @@ function blank(width: number, height: number): RenderedPage {
   return { width, height, renderMicros: 0, fromCache: false, image: blankImage(width, height) };
 }
 
-function drawTile(page: number, tile: TileRequest): RenderedPage {
+/** Markup over a page, drawn like the engine's appearance streams. */
+function drawMarkup(ctx: CanvasRenderingContext2D, markup: MockMarkup[]) {
+  const colours: Record<MarkupKind, string> = {
+    highlight: "rgb(255 219 0)",
+    underline: "rgb(0 107 230)",
+    squiggly: "rgb(0 107 230)",
+    strikeOut: "rgb(219 33 33)",
+  };
+  for (const { kind, rects } of markup) {
+    ctx.fillStyle = colours[kind];
+    ctx.strokeStyle = colours[kind];
+    ctx.globalCompositeOperation = kind === "highlight" ? "multiply" : "source-over";
+    for (const rect of rects) {
+      const width = Math.max(0.5, rect.height * 0.07);
+      const bottom = rect.y + rect.height - width;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      if (kind === "highlight") {
+        ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+        continue;
+      }
+      if (kind === "squiggly") {
+        const step = Math.max(1, rect.height / 8);
+        for (let x = 0, i = 0; x <= rect.width; x += step, i += 1) {
+          ctx.lineTo(rect.x + x, bottom + (i % 2 === 0 ? step / 2 : -step / 2));
+        }
+      } else {
+        const y = kind === "underline" ? bottom : rect.y + rect.height / 2;
+        ctx.moveTo(rect.x, y);
+        ctx.lineTo(rect.x + rect.width, y);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function drawTile(page: number, tile: TileRequest, markup: MockMarkup[] = []): RenderedPage {
   const { width, height, scale } = tile;
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -341,6 +428,7 @@ function drawTile(page: number, tile: TileRequest): RenderedPage {
   ctx.direction = "ltr";
   ctx.font = `400 11px ${FONT}`;
   ctx.fillText(`— ${page + 1} —`, size.width / 2, size.height - MARGIN / 2);
+  drawMarkup(ctx, markup);
 
   return {
     width,
@@ -357,6 +445,8 @@ interface Job {
   page: number;
   /** The page's original content after edits (-1: a blank page). */
   original: number;
+  /** The markup on it when the render was asked for. */
+  markup: MockMarkup[];
   tile: TileRequest;
   priority: Priority;
   seq: number;
@@ -388,7 +478,9 @@ function pump() {
   setTimeout(() => {
     busy = false;
     job.resolve(
-      job.original < 0 ? blank(job.tile.width, job.tile.height) : drawTile(job.original, job.tile),
+      job.original < 0
+        ? blank(job.tile.width, job.tile.height)
+        : drawTile(job.original, job.tile, job.markup),
     );
     pump();
   }, 1);
@@ -466,27 +558,51 @@ export const mockBackend: Backend = {
       original < 0 ? { width: 595, height: 842 } : sizeOf(original),
     ),
   editPages: async (documentId, edit) => {
-    const history = edits.get(documentId) ?? { states: [pagesOf(documentId)], at: 0, saved: 0 };
-    const next = applyEdit(pagesOf(documentId), edit);
-    history.states = [...history.states.slice(0, history.at + 1), next];
-    history.at += 1;
-    edits.set(documentId, history);
-    return outcome(documentId);
+    const state = stateOf(documentId);
+    return pushState(documentId, {
+      pages: applyEdit(state.pages, edit),
+      markup: state.markup,
+      change: "pages",
+    });
   },
   undoEdit: async (documentId) => {
     const history = edits.get(documentId);
-    if (history && history.at > 0) history.at -= 1;
-    return outcome(documentId);
+    if (!history || history.at === 0) return outcome(documentId, "annotations");
+    const undone = history.states[history.at]?.change ?? "pages";
+    history.at -= 1;
+    return outcome(documentId, undone);
+  },
+  addMarkup: async (documentId, kind, pages) => {
+    if (pages.length === 0) throw { code: "invalid_edit", detail: "nothing marked" };
+    let state = stateOf(documentId);
+    for (const { page, rects } of pages) {
+      const original = state.pages[page];
+      if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+      const markup = new Map(state.markup);
+      markup.set(original, [...(markup.get(original) ?? []), { kind, rects }]);
+      state = { pages: state.pages, markup, change: "annotations" };
+    }
+    return pushState(documentId, state);
+  },
+  removeAnnotation: async (documentId, page, index) => {
+    const next = withMarkup(documentId, page, (list) => {
+      if (!list[index]) throw { code: "invalid_edit", detail: "no such annotation" };
+      return list.filter((_, i) => i !== index);
+    });
+    return pushState(documentId, next);
+  },
+  pageMarkup: async (documentId, page) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    return (original === undefined ? [] : (state.markup.get(original) ?? [])).map(
+      (markup, index) => ({ index, ...markup }),
+    );
   },
   // The mock "picks" a file whose pages are the sample's first three.
   insertPagesFromFiles: async (documentId, at) => {
-    const history = edits.get(documentId) ?? { states: [pagesOf(documentId)], at: 0, saved: 0 };
-    const pages = pagesOf(documentId);
-    const next = [...pages.slice(0, at), 0, 1, 2, ...pages.slice(at)];
-    history.states = [...history.states.slice(0, history.at + 1), next];
-    history.at += 1;
-    edits.set(documentId, history);
-    return outcome(documentId);
+    const state = stateOf(documentId);
+    const pages = [...state.pages.slice(0, at), 0, 1, 2, ...state.pages.slice(at)];
+    return pushState(documentId, { pages, markup: state.markup, change: "pages" });
   },
   extractPages: async () => "Extract.pdf",
   splitDocument: async (documentId, size) => Math.ceil(pagesOf(documentId).length / size),
@@ -506,8 +622,11 @@ export const mockBackend: Backend = {
   },
   redoEdit: async (documentId) => {
     const history = edits.get(documentId);
-    if (history && history.at < history.states.length - 1) history.at += 1;
-    return outcome(documentId);
+    if (!history || history.at >= history.states.length - 1) {
+      return outcome(documentId, "annotations");
+    }
+    history.at += 1;
+    return outcome(documentId, history.states[history.at]?.change ?? "pages");
   },
   documentOutline: async (documentId) => (documentId === SAMPLE.id ? OUTLINE : []),
   pageLabels: async () => null,
@@ -530,6 +649,7 @@ export const mockBackend: Backend = {
         generation: requestGeneration,
         page,
         original: pagesOf(documentId)[page] ?? page,
+        markup: stateOf(documentId).markup.get(pagesOf(documentId)[page] ?? page) ?? [],
         tile,
         priority,
         seq: ++seq,

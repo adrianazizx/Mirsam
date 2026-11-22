@@ -10,6 +10,7 @@ import type {
   SearchOptions,
 } from "../backend";
 import type { Locale } from "../i18n";
+import type { SelectedMarkup } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { clampZoom } from "./zoom";
 
@@ -73,8 +74,15 @@ export interface OpenDocument extends DocumentInfo {
   search: SearchState;
   /** Whether text is selected in this document's page view. */
   hasSelection: boolean;
-  /** Bumped by every edit, undo, and redo: views showing pages start over. */
+  /** The markup annotation selected (clicked) in the page view. */
+  selectedMarkup: SelectedMarkup | null;
+  /** Bumped by every edit, undo, and redo that changes pages: views showing pages start over. */
   revision: number;
+  /**
+   * Bumped when only annotations changed (ADR 0017): views keep their layout
+   * and paint the pages again.
+   */
+  paint: number;
   canUndo: boolean;
   canRedo: boolean;
   /** Differs from the file as opened or last saved. */
@@ -337,7 +345,9 @@ export const useAppStore = create<AppState>((set, get) => {
         outline: null,
         search: IDLE_SEARCH,
         hasSelection: false,
+        selectedMarkup: null,
         revision: 0,
+        paint: 0,
         canUndo: false,
         canRedo: false,
         modified: false,
@@ -389,24 +399,35 @@ export const useAppStore = create<AppState>((set, get) => {
     applyEdit(id, outcome) {
       set((state) => ({
         documents: state.documents.map((open) =>
-          open.id === id
-            ? {
-                ...open,
-                pageCount: outcome.pageCount,
-                page: Math.min(open.page, Math.max(0, outcome.pageCount - 1)),
-                pageSize: null,
-                labels: null,
-                outline: null,
-                search: IDLE_SEARCH,
-                hasSelection: false,
-                revision: open.revision + 1,
-                // Page numbers moved; the command that edited says what is selected next.
-                selectedPages: [],
-                canUndo: outcome.canUndo,
-                canRedo: outcome.canRedo,
-                modified: outcome.modified,
-              }
-            : open,
+          open.id !== id
+            ? open
+            : !outcome.pagesChanged
+              ? {
+                  // The same pages: everything on them stays, they are painted again.
+                  ...open,
+                  paint: open.paint + 1,
+                  selectedMarkup: null,
+                  canUndo: outcome.canUndo,
+                  canRedo: outcome.canRedo,
+                  modified: outcome.modified,
+                }
+              : {
+                  ...open,
+                  pageCount: outcome.pageCount,
+                  page: Math.min(open.page, Math.max(0, outcome.pageCount - 1)),
+                  pageSize: null,
+                  labels: null,
+                  outline: null,
+                  search: IDLE_SEARCH,
+                  hasSelection: false,
+                  selectedMarkup: null,
+                  revision: open.revision + 1,
+                  // Page numbers moved; the command that edited says what is selected next.
+                  selectedPages: [],
+                  canUndo: outcome.canUndo,
+                  canRedo: outcome.canRedo,
+                  modified: outcome.modified,
+                },
         ),
       }));
     },

@@ -1,7 +1,7 @@
 # 0014 — Edits as incremental updates, undo as a stack of them
 
-Status: Accepted for page edits (Milestone 2). Annotations and saving will build on it. Date:
-2026-11-22.
+Status: Accepted for page edits (Milestone 2); saving (ADR 0015) and markup annotations
+(ADR 0017) build on it. Date: 2026-11-22.
 
 ## Context
 

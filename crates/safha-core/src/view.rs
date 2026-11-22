@@ -8,13 +8,13 @@
 //! and on pages whose crop box does not start at the origin.
 
 use pdfium_render::prelude::{PdfPage, PdfPoints, PdfRenderConfig};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::text::Rect;
 
 /// A rectangle on the displayed page: points from its top-left corner, y down.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ViewRect {
     pub x: f32,
     pub y: f32,
@@ -88,6 +88,16 @@ impl ViewTransform {
         (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
     }
 
+    /// The page-space point displayed at (`x`, `y`): the inverse map.
+    pub fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
+        // The linear part is a signed permutation (determinant ±1), so this
+        // is exact; a degenerate map yields non-finite points, which callers
+        // reject.
+        let det = self.a * self.d - self.b * self.c;
+        let (dx, dy) = (x - self.e, y - self.f);
+        ((self.d * dx - self.c * dy) / det, (self.a * dy - self.b * dx) / det)
+    }
+
     /// The displayed bounding box of a page-space rectangle.
     pub fn rect(&self, rect: Rect) -> ViewRect {
         let corners = [
@@ -117,6 +127,15 @@ mod tests {
         let transform = ViewTransform::unrotated(800.0);
         let rect = transform.rect(Rect { left: 10.0, bottom: 700.0, right: 30.0, top: 712.0 });
         assert_eq!(rect, ViewRect { x: 10.0, y: 88.0, width: 20.0, height: 12.0 });
+    }
+
+    #[test]
+    fn page_points_invert_the_map() {
+        let turned = ViewTransform { a: 0.0, b: 1.0, c: -1.0, d: 0.0, e: 800.0, f: -40.0 };
+        for transform in [ViewTransform::unrotated(800.0), turned] {
+            let (vx, vy) = transform.point(123.0, 456.0);
+            assert_eq!(transform.page_point(vx, vy), (123.0, 456.0));
+        }
     }
 
     #[test]

@@ -49,7 +49,7 @@ const MAX_PAGE_SIDE: f32 = 14_400.0;
 
 /// The bytes to append to `bytes` to apply `edit`: an incremental update.
 pub fn page_edit_update(bytes: &[u8], edit: &PageEdit) -> Result<Vec<u8>> {
-    let file = File::new(bytes).ok_or(Error::EditUnsupported("its cross-reference table cannot be read"))?;
+    let Start { file, section, form, mut next_number } = Start::read(bytes)?;
     let tree = PageTree::read(&file)?;
     let count = tree.leaves.len();
     let check = |pages: &[usize]| -> Result<Vec<usize>> {
@@ -67,15 +67,6 @@ pub fn page_edit_update(bytes: &[u8], edit: &PageEdit) -> Result<Vec<u8>> {
         Ok(pages)
     };
 
-    let section =
-        startxref(bytes).ok_or(Error::EditUnsupported("its cross-reference table cannot be read"))?;
-    let form = if Parser::new(bytes, section).word() == b"xref" { XrefForm::Table } else { XrefForm::Stream };
-    let mut next_number = file
-        .trailer
-        .get(b"Size")
-        .and_then(Object::as_int)
-        .and_then(|size| u32::try_from(size).ok())
-        .ok_or(Error::EditUnsupported("its trailer has no /Size"))?;
     let encrypted = file.trailer.get(b"Encrypt").is_some();
     let mut update = Update::new(bytes);
 
@@ -194,6 +185,33 @@ pub fn page_edit_update(bytes: &[u8], edit: &PageEdit) -> Result<Vec<u8>> {
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
 }
 
+/// What every update starts from: the file's newest revision as read, where
+/// its newest cross-reference section is and its form, and the first unused
+/// object number.
+pub(crate) struct Start<'a> {
+    pub(crate) file: File<'a>,
+    pub(crate) section: usize,
+    pub(crate) form: XrefForm,
+    pub(crate) next_number: u32,
+}
+
+impl<'a> Start<'a> {
+    pub(crate) fn read(bytes: &'a [u8]) -> Result<Self> {
+        let unreadable = || Error::EditUnsupported("its cross-reference table cannot be read");
+        let file = File::new(bytes).ok_or_else(unreadable)?;
+        let section = startxref(bytes).ok_or_else(unreadable)?;
+        let form =
+            if Parser::new(bytes, section).word() == b"xref" { XrefForm::Table } else { XrefForm::Stream };
+        let next_number = file
+            .trailer
+            .get(b"Size")
+            .and_then(Object::as_int)
+            .and_then(|size| u32::try_from(size).ok())
+            .ok_or(Error::EditUnsupported("its trailer has no /Size"))?;
+        Ok(Self { file, section, form, next_number })
+    }
+}
+
 /// A document's edits as a stack (ADR 0014, ADR 0016).
 ///
 /// Most steps are incremental updates: revision *n* is the file as opened
@@ -214,8 +232,27 @@ pub struct EditHistory {
 
 #[derive(Debug, Clone)]
 enum Step {
-    Update(Vec<u8>),
+    Update(Vec<u8>, Change),
     Snapshot(Arc<[u8]>),
+}
+
+/// What a step changes, which decides how much a viewer has to redo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    /// The pages themselves: their number, order, sizes, or content.
+    Pages,
+    /// Only what is drawn over the pages (annotations): the same pages at the
+    /// same sizes, painted again.
+    Annotations,
+}
+
+impl Step {
+    fn change(&self) -> Change {
+        match self {
+            Step::Update(_, change) => *change,
+            Step::Snapshot(_) => Change::Pages,
+        }
+    }
 }
 
 impl EditHistory {
@@ -223,9 +260,14 @@ impl EditHistory {
         Self { base, steps: Vec::new(), applied: 0, saved: Some(0) }
     }
 
-    /// Records an update appended to the current revision.
+    /// Records an update appended to the current revision that changed pages.
     pub fn push(&mut self, update: Vec<u8>) {
-        self.record(Step::Update(update));
+        self.record(Step::Update(update, Change::Pages));
+    }
+
+    /// Records an update that changed only annotations.
+    pub fn push_annotations(&mut self, update: Vec<u8>) {
+        self.record(Step::Update(update, Change::Annotations));
     }
 
     /// Records a revision written out in full (`bytes` is the whole file).
@@ -258,6 +300,16 @@ impl EditHistory {
         Some(self.current())
     }
 
+    /// What [`undo`](Self::undo) would change, if there is anything to undo.
+    pub fn undo_change(&self) -> Option<Change> {
+        self.steps[..self.applied].last().map(Step::change)
+    }
+
+    /// What [`redo`](Self::redo) would change, if there is anything to redo.
+    pub fn redo_change(&self) -> Option<Change> {
+        self.steps.get(self.applied).map(Step::change)
+    }
+
     pub fn can_undo(&self) -> bool {
         self.applied > 0
     }
@@ -287,7 +339,7 @@ impl EditHistory {
         let updates: Vec<&Vec<u8>> = applied[from.map_or(0, |i| i + 1)..]
             .iter()
             .filter_map(|step| match step {
-                Step::Update(update) => Some(update),
+                Step::Update(update, _) => Some(update),
                 Step::Snapshot(_) => None,
             })
             .collect();
@@ -308,10 +360,10 @@ enum Slot {
     New(Dict),
 }
 
-struct Leaf {
-    number: u32,
-    generation: u16,
-    dict: Dict,
+pub(crate) struct Leaf {
+    pub(crate) number: u32,
+    pub(crate) generation: u16,
+    pub(crate) dict: Dict,
     /// Effective rotation in degrees, own or inherited.
     rotate: i64,
     /// Whether the root `/Pages` node is the page's parent.
@@ -341,15 +393,15 @@ impl Leaf {
     }
 }
 
-struct PageTree {
+pub(crate) struct PageTree {
     root_number: u32,
     root_generation: u16,
     root: Dict,
-    leaves: Vec<Leaf>,
+    pub(crate) leaves: Vec<Leaf>,
 }
 
 impl PageTree {
-    fn read(file: &File<'_>) -> Result<Self> {
+    pub(crate) fn read(file: &File<'_>) -> Result<Self> {
         let catalog =
             file.trailer.get(b"Root").and_then(|root| file.resolve(root)).ok_or_else(|| unreadable(file))?;
         let Some(&Object::Ref(root_number, root_generation)) =
@@ -440,7 +492,7 @@ fn inheritable(dict: &Dict) -> impl Iterator<Item = (Vec<u8>, Object)> + '_ {
         .map(|(k, v)| (k.clone(), v.clone()))
 }
 
-fn set(dict: &mut Dict, key: &[u8], value: Object) {
+pub(crate) fn set(dict: &mut Dict, key: &[u8], value: Object) {
     match dict.0.iter_mut().find(|(k, _)| k == key) {
         Some((_, slot)) => *slot = value,
         None => dict.0.push((key.to_vec(), value)),
@@ -494,6 +546,22 @@ mod tests {
         assert!(history.is_modified() && !history.can_redo());
         assert_eq!(history.undo().as_deref(), Some(&b"base"[..]));
         assert_eq!(history.undo(), None);
+    }
+
+    #[test]
+    fn history_knows_whether_a_step_changes_pages() {
+        let mut history = EditHistory::new(Arc::from(&b"base"[..]));
+        assert_eq!((history.undo_change(), history.redo_change()), (None, None));
+        history.push(b"+pages".to_vec());
+        history.push_annotations(b"+markup".to_vec());
+        assert_eq!(history.undo_change(), Some(Change::Annotations));
+        history.undo();
+        assert_eq!(
+            (history.undo_change(), history.redo_change()),
+            (Some(Change::Pages), Some(Change::Annotations))
+        );
+        history.push_snapshot(Arc::from(&b"whole"[..]));
+        assert_eq!((history.undo_change(), history.redo_change()), (Some(Change::Pages), None));
     }
 
     #[test]
