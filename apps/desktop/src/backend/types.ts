@@ -71,18 +71,66 @@ export interface ParagraphBlock {
   font: string;
   /** The paragraph's own font can set new Latin text. */
   fontReusable: boolean;
-  /** More than one font, size or colour was found; editing sets it in one. */
-  flattened: boolean;
+  /**
+   * It holds more than one style (font, size, colour): editing keeps them,
+   * and typed text takes the style of the text before it (ADR 0024).
+   */
+  styled: boolean;
+  /** Its styled runs, covering `text` in logical order. */
+  runs: StyledRun[];
   editable: boolean;
-  /** Why it is not editable (English, for logs). */
-  reason: string | null;
+  /** Why it is not editable: what a press on it says. */
+  reason: BlockRefusal | null;
+}
+
+/**
+ * Why text cannot be edited in place (ADR 0023): shared with other text,
+ * unreadable (needs OCR), a font that cannot be read (Type 3), rotated, in an
+ * encrypted file, or drawn in a way the editor does not follow yet. Text that
+ * is not a paragraph is listed after the paragraphs, as refused areas.
+ */
+export type BlockRefusal =
+  | "shared"
+  | "unreadable"
+  | "font"
+  | "rotated"
+  | "encrypted"
+  | "unsupported";
+
+/** Bold and italic set on a stretch of a paragraph's new text: UTF-16 offsets. */
+export interface BlockMark {
+  start: number;
+  end: number;
+  bold: boolean;
+  italic: boolean;
+}
+
+/** A stretch of a paragraph's text in one style. */
+export interface StyledRun {
+  /** UTF-16 offsets into the paragraph's text. */
+  start: number;
+  end: number;
+  /** The PDF's font name. */
+  font: string;
+  bold: boolean;
+  italic: boolean;
+  size: number;
+  color: [number, number, number];
 }
 
 /** A paragraph edited in place: the usual outcome, and what became of its font. */
 export interface BlockEditOutcome extends EditOutcome {
-  /** Set in a substitute family: the original font's name, and the family. */
-  substituted: { from: string; to: "sans" | "naskh" } | null;
+  /**
+   * Set in a substitute: the original font's name (empty when it has none),
+   * the family, and the bundled face chosen (a PostScript name).
+   */
+  substituted: { from: string; to: "sans" | "naskh"; font: string } | null;
   lines: number;
+  /**
+   * What the new text is set in: the page's own fonts by their codes, their
+   * embedded programs laid out again (ADR 0026), or bundled faces.
+   */
+  source: "page" | "embedded" | "bundled" | "none";
 }
 
 /** The four text-markup annotations (ADR 0017). */
@@ -789,6 +837,8 @@ export interface Backend {
       fingerprint: number;
       text: string;
       family?: "sans" | "naskh";
+      /** Bold and italic as the editor set them (ADR 0025); absent keeps each character's own. */
+      marks?: BlockMark[];
     },
   ): Promise<BlockEditOutcome>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
