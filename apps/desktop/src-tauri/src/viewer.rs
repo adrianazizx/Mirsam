@@ -13,7 +13,7 @@ use tauri::ipc::Response;
 
 use crate::commands::encode_bitmap_with_flags;
 use crate::error::{CommandError, CommandResult};
-use crate::state::AppState;
+use crate::state::{AppState, Lane};
 
 /// Header flag: the tile came from the cache rather than a fresh render.
 pub const FLAG_FROM_CACHE: u32 = 1;
@@ -48,6 +48,7 @@ pub async fn page_sizes(state: State<'_, AppState>, document_id: u32) -> Command
 
 /// Renders one rectangle of a page through the render queue. Rejects with
 /// code `cancelled` when the viewport moved on before the render started.
+/// `lane` keeps the thumbnail panel's requests apart from the page view's.
 #[tauri::command]
 pub async fn render_tile(
     state: State<'_, AppState>,
@@ -56,9 +57,11 @@ pub async fn render_tile(
     page: usize,
     tile: TileRequest,
     priority: Priority,
+    lane: Option<Lane>,
 ) -> CommandResult<Response> {
     let (tx, mut rx) = tauri::async_runtime::channel(1);
-    let request = RenderRequest { document: document_id.into(), generation, page, tile, priority };
+    let document = lane.unwrap_or_default().render_id(document_id);
+    let request = RenderRequest { document, generation, page, tile, priority };
     state.render.submit(request, move |outcome| {
         // Capacity 1 and exactly one send: this cannot fail for lack of room.
         let _ = tx.try_send(outcome);
@@ -68,16 +71,17 @@ pub async fn render_tile(
     Ok(Response::new(encode_rendered(&rendered)))
 }
 
-/// Moves the document's viewport to `generation`: queued tiles not in `keep`
-/// are cancelled, kept ones take their new priorities.
+/// Moves the lane's viewport to `generation`: queued tiles not in `keep` are
+/// cancelled, kept ones take their new priorities.
 #[tauri::command]
 pub async fn update_viewport(
     state: State<'_, AppState>,
     document_id: u32,
     generation: u64,
     keep: Vec<KeptRequest>,
+    lane: Option<Lane>,
 ) -> CommandResult<()> {
-    state.render.update_viewport(document_id.into(), generation, &keep);
+    state.render.update_viewport(lane.unwrap_or_default().render_id(document_id), generation, &keep);
     Ok(())
 }
 

@@ -44,3 +44,54 @@
   position: absolute;
   display: block;
 }
+
+/* Search hits and the text selection, above the tiles. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--layer-page-overlay);
+  pointer-events: none;
+}
+
+.searchHit,
+.selection {
+  position: absolute;
+  /* Multiplied over the page image, so the glyphs underneath stay legible. */
+  mix-blend-mode: multiply;
+  border-radius: var(--radius-sm);
+}
+
+.searchHit {
+  background: var(--color-search-hit);
+}
+
+.searchHitActive {
+  background: var(--color-search-hit-active);
+  outline: var(--focus-ring-width) solid var(--color-search-hit-active);
+}
+
+.selection {
+  background: var(--color-text-selection);
+}
+
+[data-viewer-content][data-over-text] {
+  cursor: text;
+}
+
+/* Anchor of the floating selection toolbar (positioned by the viewer). */
+.selectionToolbar {
+  position: absolute;
+  z-index: var(--layer-selection-toolbar);
+  inline-size: 0;
+  block-size: 0;
+}
+
+/* Reading themes tint the page images and their marks, not the window. */
+:global(:root[data-reading-theme="sepia"]) .page {
+  filter: var(--filter-reading-sepia);
+}
+
+:global(:root[data-reading-theme="night"]) .page {
+  filter: var(--filter-reading-night);
+  box-shadow: none;
+}

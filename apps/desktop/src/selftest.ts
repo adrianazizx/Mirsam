@@ -1,4 +1,5 @@
 import { backend } from "./backend";
+import { runCommand } from "./commands/registry";
 import { useAppStore } from "./state/appStore";
 import { PAGE_PAINTED_EVENT, type PagePaintedDetail } from "./viewer/events";
 import { getViewer } from "./viewer/registry";
@@ -69,6 +70,81 @@ function compositePage(documentId: number, painted: PagePaintedDetail) {
     pixels += data.length / 4;
   }
   return { canvas, tiles: tiles.length, inkRatio: pixels > 0 ? ink / pixels : null };
+}
+
+/** Polls `ready` once per frame until it holds or `timeoutMs` passes. */
+async function waitFor(ready: () => boolean, timeoutMs: number): Promise<boolean> {
+  const until = performance.now() + timeoutMs;
+  while (!ready()) {
+    if (performance.now() > until) return false;
+    await nextFrame();
+  }
+  return true;
+}
+
+/**
+ * Milestone 1 navigation on the real engine: the text layer, selecting and
+ * copying the first page's text, a search for one of its words with hits
+ * drawn on the page, the outline, and thumbnails.
+ */
+async function navigationChecks(documentId: number) {
+  const viewer = getViewer(documentId);
+  const layer = await backend.pageText(documentId, 0);
+  const layerText = layer.blocks
+    .map((block) => block.lines.map((line) => line.text).join("\n"))
+    .join("\n\n");
+
+  // Select all of page 1 through the command, as a user would.
+  await runCommand("edit.selectAll");
+  await waitFor(() => viewer?.hasSelection() ?? false, 3_000);
+  const selection = viewer?.selectedText() ?? "";
+  const overlay = document.querySelector('[data-page="0"] [class*="overlay"]');
+  const selectionRects = overlay?.childElementCount ?? 0;
+  const toolbar = document.querySelector('[data-testid="selection-toolbar"]') !== null;
+  await runCommand("edit.deselect");
+
+  // Search for the longest word on the page's first line.
+  const words = (layer.blocks[0]?.lines[0]?.text ?? "")
+    .split(/\s+/u)
+    .filter((w) => /\p{L}{3,}/u.test(w));
+  const query =
+    words.sort((a, b) => b.length - a.length)[0]?.replace(/[^\p{L}\p{M}\p{N}]/gu, "") ?? "";
+  const started = performance.now();
+  await runCommand("search.run", { query });
+  const search = useAppStore.getState().documents.find((open) => open.id === documentId)?.search;
+  const searchMs = performance.now() - started;
+  await nextFrame();
+  const hitMarks = document.querySelectorAll('[data-page="0"] [class*="searchHit"]').length;
+
+  const outline = await backend.documentOutline(documentId);
+  const labels = await backend.pageLabels(documentId);
+
+  // Thumbnails: the panel's first one gets its image.
+  await runCommand("view.showThumbnails");
+  const thumbnailDrawn = await waitFor(
+    () => document.querySelector('[data-testid="thumbnails"] canvas') !== null,
+    5_000,
+  );
+  const thumbnails = document.querySelectorAll('[data-testid="thumbnails"] button').length;
+
+  return {
+    textQuality: layer.quality,
+    textBlocks: layer.blocks.length,
+    selection,
+    selectionMatchesLayer: selection === layerText,
+    selectionRects,
+    selectionToolbar: toolbar,
+    query,
+    searchStatus: search?.status ?? null,
+    searchHits: search?.hits.length ?? 0,
+    searchHitsOnPage1: search?.hits.filter((hit) => hit.page === 0).length ?? 0,
+    searchHitMarks: hitMarks,
+    searchMs,
+    outlineItems: outline.length,
+    labels: labels?.slice(0, 5) ?? null,
+    thumbnailDrawn,
+    thumbnails,
+  };
 }
 
 /**
@@ -146,5 +222,7 @@ export async function runSelftestIfRequested(): Promise<void> {
       .map((f) => f.family),
   };
 
-  await backend.selftestReport(results, composite ? composite.canvas.toDataURL("image/png") : null);
+  const canvasPng = composite ? composite.canvas.toDataURL("image/png") : null;
+  const navigation = painted ? await navigationChecks(painted.documentId) : null;
+  await backend.selftestReport({ ...results, navigation }, canvasPng);
 }

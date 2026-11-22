@@ -14,12 +14,18 @@
     "ocr": "OCR & Convert"
   },
   "tabs": {
-    "label": "Open documents"
+    "label": "Open documents",
+    "close": "Close {{name}}"
   },
   "commands": {
     "file": {
       "open": "Open PDF…",
-      "close": "Close document"
+      "close": "Close document",
+      "openRecent": "Open recent file",
+      "forgetRecent": "Remove from recent files",
+      "clearRecents": "Clear recent files",
+      "unlock": "Open with password",
+      "cancelUnlock": "Cancel opening"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -34,12 +40,40 @@
       "modeSpread": "Two pages",
       "modeBook": "Book (cover alone)",
       "pagesLeftToRight": "Pages left to right",
-      "pagesRightToLeft": "Pages right to left"
+      "pagesRightToLeft": "Pages right to left",
+      "toggleLeftPanel": "Show or hide the side panel",
+      "showThumbnails": "Show page thumbnails",
+      "showOutline": "Show the outline",
+      "readingNormal": "Pages: normal",
+      "readingSepia": "Pages: sepia",
+      "readingNight": "Pages: night"
     },
     "app": {
       "toggleTheme": "Switch theme",
       "toggleLanguage": "العربية",
-      "toggleGallery": "Design gallery"
+      "toggleGallery": "Design gallery",
+      "commandPalette": "All commands…"
+    },
+    "tabs": {
+      "next": "Next tab",
+      "previous": "Previous tab"
+    },
+    "edit": {
+      "copy": "Copy",
+      "selectAll": "Select all text on the page",
+      "deselect": "Clear selection"
+    },
+    "search": {
+      "focus": "Find in document…",
+      "run": "Search",
+      "next": "Next result",
+      "previous": "Previous result",
+      "goTo": "Go to result",
+      "toggleCase": "Match case",
+      "toggleWholeWord": "Whole words only",
+      "toggleRegex": "Regular expression",
+      "toggleArabic": "Ignore Arabic marks and letter variants",
+      "toggleTaMarbuta": "Treat ة and ه as the same"
     }
   },
   "viewer": {
@@ -55,7 +89,9 @@
     "viewMode": "Page layout",
     "pageOrder": "Page order",
     "orderLtr": "Left to right",
-    "orderRtl": "Right to left"
+    "orderRtl": "Right to left",
+    "labelledCount": "({{page}} of {{count}})",
+    "readingTheme": "Page colours"
   },
   "inspector": {
     "title": "Document",
@@ -72,10 +108,13 @@
   },
   "errors": {
     "dismiss": "Dismiss",
-    "password_required": "This PDF is password-protected. Opening protected files is not available yet.",
+    "password_required": "This PDF is password-protected.",
     "invalid_pdf": "This file could not be read. It may be damaged, or it is not a PDF.",
     "engine_unavailable": "The PDF engine could not start. Reinstalling Safha should fix this.",
-    "generic": "Something went wrong. Please try again."
+    "generic": "Something went wrong. Please try again.",
+    "file_missing": "That file has been moved or deleted.",
+    "searchInvalid": "That search cannot be run. Check the regular expression.",
+    "searchFailed": "The search could not be completed."
   },
   "gallery": {
     "title": "Design gallery",
@@ -89,5 +128,55 @@
     "disabled": "Disabled",
     "iconButtons": "Icon buttons",
     "spacing": "Spacing"
+  },
+  "selection": {
+    "toolbar": "Selected text"
+  },
+  "panel": {
+    "label": "Side panel",
+    "views": "Panel view",
+    "thumbnails": "Thumbnails",
+    "outline": "Outline",
+    "search": "Search",
+    "close": "Hide the side panel",
+    "noDocument": "Open a document to see its pages here."
+  },
+  "thumbnails": {
+    "name": "Page {{page}}",
+    "labelledName": "Page {{label}} ({{page}})"
+  },
+  "outline": {
+    "toggle": "Show or hide sub-entries",
+    "loading": "Reading the outline…",
+    "empty": "This document has no outline."
+  },
+  "search": {
+    "label": "Find in document",
+    "placeholder": "Find in document",
+    "options": "Search options",
+    "searching": "Searching…",
+    "none": "No results",
+    "count": "Results: {{formatted}}",
+    "countTruncated": "Results: the first {{formatted}} are listed",
+    "results": "Search results",
+    "page": "Page {{page}}"
+  },
+  "palette": {
+    "label": "Commands",
+    "placeholder": "Type a command…",
+    "none": "No matching command"
+  },
+  "unlock": {
+    "title": "Password required",
+    "body": "Enter the password to open",
+    "password": "Password",
+    "wrong": "That password is not correct. Try again.",
+    "open": "Open",
+    "cancel": "Cancel"
+  },
+  "recents": {
+    "title": "Recent files",
+    "missing": "Moved or deleted",
+    "forget": "Remove {{name}} from recent files"
   }
 }

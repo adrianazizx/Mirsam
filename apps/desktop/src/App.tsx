@@ -1,14 +1,49 @@
 import { useEffect } from "react";
 import { I18nProvider } from "react-aria-components";
 import { backend, isBackendError } from "./backend";
-import { commandForEvent, resolvedTheme, runCommand } from "./commands/registry";
+import {
+  acceptOutcome,
+  commandForEvent,
+  isCommandEnabled,
+  isEditableTarget,
+  resolvedTheme,
+  runCommand,
+} from "./commands/registry";
 import { AppShell } from "./components/shell/AppShell";
 import { applyLocale, formatTag } from "./i18n";
-import { useAppStore } from "./state/appStore";
+import {
+  type AppState,
+  selectActiveDocument,
+  setSettingsWriter,
+  useAppStore,
+} from "./state/appStore";
+import { getViewer } from "./viewer/registry";
+
+/**
+ * Writes the open tabs (the session restored at the next launch) now and
+ * whenever they change. Not debounced: tab changes are rare, a save is one
+ * small transaction, and a delay would lose the last change if the app quit
+ * right after it.
+ */
+function saveSessionOnChange(): () => void {
+  let last = "";
+  const save = (state: AppState) => {
+    const ids = state.documents.map((open) => open.id);
+    const key = `${ids.join(",")}|${state.activeDocumentId}`;
+    if (key === last) return;
+    last = key;
+    backend
+      .saveSession(ids, state.activeDocumentId)
+      .catch((error: unknown) => console.warn("could not save the session", error));
+  };
+  save(useAppStore.getState());
+  return useAppStore.subscribe(save);
+}
 
 export function App() {
   const locale = useAppStore((state) => state.locale);
   const theme = useAppStore((state) => state.theme);
+  const readingTheme = useAppStore((state) => state.readingTheme);
 
   // Language and direction live on the root element so every component, portal
   // (tooltips), and CSS logical property follows them.
@@ -28,11 +63,17 @@ export function App() {
     return () => media.removeEventListener("change", apply);
   }, [theme]);
 
-  // Global keyboard shortcuts run registry commands.
+  // Reading themes tint pages and thumbnails (CSS keys off the root).
+  useEffect(() => {
+    document.documentElement.dataset.readingTheme = readingTheme;
+  }, [readingTheme]);
+
+  // Global keyboard shortcuts run registry commands. A disabled command leaves
+  // the key alone, so Cmd+C still copies in a text field.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const command = commandForEvent(event);
-      if (!command) return;
+      if (!command || !isCommandEnabled(command.id)) return;
       event.preventDefault();
       void runCommand(command.id);
     };
@@ -40,16 +81,56 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Open the document the app was launched with ("Open with", file association).
+  // Copy from the Edit menu (or any copy not started by our shortcut) takes
+  // the page view's selection, in logical order.
   useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => {
+      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+      const active = selectActiveDocument(useAppStore.getState());
+      const text = active?.hasSelection ? getViewer(active.id)?.selectedText() : "";
+      if (!text) return;
+      event.clipboardData?.setData("text/plain", text);
+      event.preventDefault();
+    };
+    document.addEventListener("copy", onCopy);
+    return () => document.removeEventListener("copy", onCopy);
+  }, []);
+
+  // Startup: stored settings, then the previous session's tabs and the
+  // document the app was launched with ("Open with", file association). Only
+  // then are tab changes written back as the session: an empty window must not
+  // overwrite the session it is about to restore.
+  useEffect(() => {
+    setSettingsWriter((key, value) => {
+      backend
+        .setSetting(key, value)
+        .catch((error: unknown) => console.warn("could not save a setting", key, error));
+    });
+    backend.settings().then(
+      (settings) => useAppStore.getState().hydrate(settings),
+      (error: unknown) => console.warn("settings unavailable", error),
+    );
+    let unsubscribe = () => {};
+    let cancelled = false;
     backend
-      .takeStartupDocument()
-      .then((info) => {
-        if (info) useAppStore.getState().addDocument(info);
+      .startup()
+      .then(({ documents, active }) => {
+        for (const outcome of documents) acceptOutcome(outcome, { activate: false });
+        const store = useAppStore.getState();
+        const first = store.documents[0];
+        const target = active ?? (store.activeDocumentId === null ? first?.id : undefined);
+        if (target !== undefined && target !== null) store.activateDocument(target);
       })
       .catch((error: unknown) => {
         useAppStore.getState().setError(isBackendError(error) ? error.code : "generic");
+      })
+      .finally(() => {
+        if (!cancelled) unsubscribe = saveSessionOnChange();
       });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   return (

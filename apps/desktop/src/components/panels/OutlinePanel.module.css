@@ -1,0 +1,82 @@
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1) 0;
+  outline: none;
+}
+
+.item {
+  --indent: calc((var(--tree-item-level, 1) - 1) * var(--space-4));
+  padding-inline-start: calc(var(--space-2) + var(--indent));
+  padding-inline-end: var(--space-2);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  outline: none;
+}
+
+.item[data-hovered] {
+  background: var(--color-bg-hover);
+}
+
+.item[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--size-hit);
+}
+
+.chevron,
+.spacer {
+  flex: none;
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: rotate var(--motion-fast) var(--motion-ease);
+}
+
+.chevron svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+:global([dir="rtl"]) .chevron {
+  scale: -1 1;
+}
+
+.item[data-expanded] .chevron {
+  rotate: 90deg;
+}
+
+:global([dir="rtl"]) .item[data-expanded] .chevron {
+  rotate: -90deg;
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--line-height-tight);
+}
+
+.status {
+  margin: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+}

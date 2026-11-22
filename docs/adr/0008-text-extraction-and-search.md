@@ -68,11 +68,12 @@ text). `DocumentIndex` extracts every page once, cancellably.
 
 | | Before (PDFium text) | After |
 |---|---|---|
-| Expected blocks reproduced verbatim, whole corpus | 46 / 118 | **82 / 118** |
-| … on pages with a trustworthy mapping | 46 / 70 | **66 / 70** |
+| Expected blocks reproduced verbatim, whole corpus | 46 / 118 | **83 / 118** |
+| … on pages with a trustworthy mapping | 46 / 70 | **67 / 70** |
 | Broken-mapping pages flagged for OCR | — | **6 / 6** (CoreText Naskh and Amiri) |
 | Index 500 pages (release) | — | 0.54 s (≈1.1 ms/page) |
 | Search 500 indexed pages (release) | — | **10 ms** (budget 1 s) |
+| Index / search 1,000 pages (release, `examples/search_bench.rs`) | — | 1.09 s / 18 ms; index ≈ 34 MB resident |
 
 All Chrome Naskh and Plex fixtures, the two-column contract, and CoreText's Plex page come out
 exact. Remaining misses on trustworthy pages, recorded as floors in `crates/safha-core/tests/text.rs`:
@@ -83,7 +84,24 @@ exact. Remaining misses on trustworthy pages, recorded as floors in `crates/safh
 - One vocalized Amiri cluster (`وَإِنَّ`) splits across two units at the same origin and comes out
   `إِوَنَّ`.
 - The bilingual table's heading is read left to right (its alignment signal is lost against the
-  table below), and one cell keeps a doubled letter.
+  table below).
+
+### Amendment (session 3): duplicates by position, and rotated pages
+
+Duplicate units were first found within 8 characters of each other in PDFium's stream. On a
+rotated page PDFium orders characters by their *displayed* position, so a letter and its dot
+glyph can be far apart in the stream and both survived (`بتتاريخ` on a page turned 180°).
+Duplicates are now found by position alone (a sweep over units sorted by their left edge; same
+text, same line, overlapping by half the narrower), keeping the one PDFium listed first; the kept
+unit's display box grows to cover the dropped one. That also fixed the table cell's doubled
+letter (83/118). Text from a page rotated by 0°, 90°, 180°, or 270° is now identical
+(`tests/view.rs`). One difference remains on rotated pages: where PDFium itself drops one of a
+letter's two glyphs, which one depends on the rotation, so ~6% of letter boxes cover the dots
+rather than the body.
+
+Geometry for the UI goes through `safha_core::view::ViewTransform`, read from PDFium's own
+page-to-device mapping (three sampled points), so selection and highlights follow `/Rotate`
+and crop boxes that do not start at the origin.
 
 Regression tests: `tests/text.rs` (floors per fixture, OCR flagging, directions, span integrity,
 damaged files, 1,000-page speed) and `tests/search.rs`; `examples/fixture_report.rs --verbose`
@@ -91,7 +109,7 @@ shows every miss.
 
 ## Consequences
 
-- Selection (M1) maps through `TextLine::spans`; copy uses `TextLine::text`.
+- Selection (M1) maps through `TextLine::spans`; copy uses `TextLine::text` (done: ADR 0010).
 - Suspect pages need a UI affordance ("This page's text can't be read reliably — run OCR?") — M4
   supplies the OCR.
 - Only top-level page objects are scanned for space glyphs; text inside form XObjects falls back

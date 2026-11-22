@@ -1,4 +1,13 @@
-import type { Backend, PageSize, RenderedPage, TileRequest, Urgency } from "../backend";
+import type {
+  Backend,
+  PageSize,
+  RenderedPage,
+  SearchHit,
+  TextLayer,
+  TileRequest,
+  Urgency,
+  ViewRect,
+} from "../backend";
 import { clampZoom } from "../state/zoom";
 import {
   PAGE_PAINTED_EVENT,
@@ -27,6 +36,19 @@ import {
   rowsInBand,
   type ViewMode,
 } from "./layout";
+import {
+  type Caret,
+  caretAt,
+  highlights,
+  isCollapsed,
+  isOverText,
+  lineSelection,
+  pageSelection,
+  type Selection,
+  selectedText,
+  selectionPages,
+  wordAt,
+} from "./selection";
 import { TileClient, type WantedTile } from "./tileClient";
 
 /**
@@ -68,6 +90,8 @@ export interface ViewerCallbacks {
   onZoom(zoom: number, mode: ViewState["zoomMode"]): void;
   /** Page sizes could not be read; the document cannot be shown. */
   onFatal(error: unknown): void;
+  /** Text became selected, or the selection was cleared. */
+  onSelectionChange?(hasSelection: boolean): void;
 }
 
 /** Class names for the DOM the viewer creates (from the wrapper's CSS module). */
@@ -76,6 +100,13 @@ export interface ViewerClassNames {
   tiles: string;
   tile: string;
   preview: string;
+  /** Layer above the tiles for search hits and the selection. */
+  overlay: string;
+  searchHit: string;
+  searchHitActive: string;
+  selection: string;
+  /** Anchor element the selection toolbar is rendered into. */
+  selectionToolbar: string;
 }
 
 export interface ViewerOptions {
@@ -83,12 +114,15 @@ export interface ViewerOptions {
   classNames: ViewerClassNames;
   documentId: number;
   container: HTMLElement;
-  initial: ViewState & { page: number };
+  /** `offset`: how far down `page` the view starts (0–1). */
+  initial: ViewState & { page: number; offset?: number };
   spacing: ViewerSpacing;
   callbacks: ViewerCallbacks;
   /** Accessible name of a page, e.g. "Page 3 of contract.pdf". */
   pageLabel(page: number): string;
   isMac: boolean;
+  /** Whether dragging selects text (the Select tool is active). */
+  canSelect?(): boolean;
 }
 
 /** What the benchmark and self-test read each frame. */
@@ -124,6 +158,13 @@ const TILE_MARGIN = 0.25;
 const ZOOM_SETTLE_MS = 140;
 /** Previews kept in memory for pages that left the mount range, for instant return. */
 const PREVIEW_CACHE_PAGES = 48;
+/** Text layers kept for selection; pages inside the selection are never dropped. */
+const TEXT_LAYER_PAGES = 64;
+/** While selecting, the view scrolls when the pointer is this close to an edge (CSS px). */
+const AUTOSCROLL_EDGE = 24;
+/** Presses closer than this in time and place count as a double or triple click. */
+const MULTI_CLICK_MS = 500;
+const MULTI_CLICK_DISTANCE = 6;
 
 interface TileCanvas {
   canvas: HTMLCanvasElement;
@@ -135,6 +176,7 @@ interface Slot {
   page: number;
   element: HTMLDivElement;
   tileLayer: HTMLDivElement;
+  overlay: HTMLDivElement;
   preview: HTMLCanvasElement | null;
   tiles: Map<string, TileCanvas>;
   box: PageBox | null;
@@ -146,6 +188,18 @@ interface Slot {
 }
 
 type Wanted = WantedTile & { kind: "preview" | "tile" };
+
+/** A point on a page in displayed-page points. */
+interface PagePoint {
+  page: number;
+  x: number;
+  y: number;
+}
+
+interface HitMark {
+  rects: ViewRect[];
+  active: boolean;
+}
 
 export class ViewerController {
   private readonly backend: Backend;
@@ -161,6 +215,8 @@ export class ViewerController {
   private readonly openedAt = performance.now();
 
   private sizes: PageSize[] | null = null;
+  /** Position within the first page to restore once page sizes arrive. */
+  private initialOffset = 0;
   private layout: Layout | null = null;
   private view: ViewState;
   private zoom: number;
@@ -181,6 +237,22 @@ export class ViewerController {
   private dprQuery: MediaQueryList | null = null;
   private destroyed = false;
 
+  private readonly canSelect: () => boolean;
+  private readonly layers = new Map<number, TextLayer>();
+  private readonly layerRequests = new Set<number>();
+  private selection: Selection | null = null;
+  /** A press on a page whose text had not arrived yet; becomes the anchor when it does. */
+  private pendingAnchor: PagePoint | null = null;
+  private dragging: { pointerId: number; clientX: number; clientY: number } | null = null;
+  private autoScrollFrame: number | null = null;
+  /** For counting double and triple clicks (`PointerEvent.detail` is always 0 in Chromium). */
+  private lastPress: { time: number; x: number; y: number; count: number } | null = null;
+  private selectionReported = false;
+  private readonly searchMarks = new Map<number, HitMark[]>();
+  private readonly selectionRects = new Map<number, ViewRect[]>();
+  /** Where the selection toolbar is drawn: above the selection's first line. */
+  readonly selectionToolbarHost: HTMLDivElement;
+
   constructor(options: ViewerOptions) {
     this.backend = options.backend;
     this.documentId = options.documentId;
@@ -193,11 +265,17 @@ export class ViewerController {
     this.view = { ...options.initial };
     this.zoom = options.initial.zoom;
     this.currentPage = options.initial.page;
+    this.initialOffset = options.initial.offset ?? 0;
 
+    this.canSelect = options.canSelect ?? (() => true);
     this.content = document.createElement("div");
     this.content.dataset.viewerContent = "";
     this.content.style.position = "relative";
     this.container.append(this.content);
+    this.selectionToolbarHost = document.createElement("div");
+    this.selectionToolbarHost.className = this.classNames.selectionToolbar;
+    this.selectionToolbarHost.hidden = true;
+    this.content.append(this.selectionToolbarHost);
 
     this.client = new TileClient(
       this.backend,
@@ -211,6 +289,10 @@ export class ViewerController {
 
     this.container.addEventListener("scroll", this.onScroll, { passive: true });
     this.container.addEventListener("wheel", this.onWheel, { passive: false });
+    this.content.addEventListener("pointerdown", this.onPointerDown);
+    this.content.addEventListener("pointermove", this.onPointerMove);
+    this.content.addEventListener("pointerup", this.onPointerUp);
+    this.content.addEventListener("pointercancel", this.onPointerUp);
     this.resizeObserver = new ResizeObserver(() => this.onResize());
     this.resizeObserver.observe(this.container);
     this.watchDevicePixelRatio();
@@ -223,8 +305,9 @@ export class ViewerController {
         // Content wider than the view (an occasional wide page) starts centred,
         // so typical pages sit in the middle of the window.
         this.container.scrollLeft = ((this.layout?.width ?? 0) - this.container.clientWidth) / 2;
-        if (this.currentPage > 0) this.goToPage(this.currentPage);
-        else this.update();
+        if (this.currentPage > 0 || this.initialOffset > 0) {
+          this.goToPage(this.currentPage, this.initialOffset);
+        } else this.update();
       },
       (error: unknown) => {
         if (!this.destroyed) this.callbacks.onFatal(error);
@@ -237,6 +320,11 @@ export class ViewerController {
     this.client.close();
     this.container.removeEventListener("scroll", this.onScroll);
     this.container.removeEventListener("wheel", this.onWheel);
+    this.content.removeEventListener("pointerdown", this.onPointerDown);
+    this.content.removeEventListener("pointermove", this.onPointerMove);
+    this.content.removeEventListener("pointerup", this.onPointerUp);
+    this.content.removeEventListener("pointercancel", this.onPointerUp);
+    this.stopAutoScroll();
     this.resizeObserver.disconnect();
     this.dprQuery?.removeEventListener("change", this.onDevicePixelRatioChange);
     if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
@@ -267,21 +355,30 @@ export class ViewerController {
     if (Math.abs(target - this.zoom) > 1e-6) this.applyZoom(target, null);
   }
 
-  /** Scrolls so that `page` is at the top of the viewport (or shown alone in single mode). */
-  goToPage(page: number): void {
+  /**
+   * Scrolls so that `page` is at the top of the viewport (or shown alone in
+   * single mode). `offset` (0–1) starts the view that far down the page.
+   */
+  goToPage(page: number, offset = 0): void {
     const sizes = this.sizes;
     if (!sizes || sizes.length === 0) {
       this.currentPage = page;
+      this.initialOffset = offset;
       return;
     }
     const target = Math.min(Math.max(0, page), sizes.length - 1);
     this.currentPage = target;
+    const fraction = Math.min(Math.max(0, offset), 1);
     if (this.view.viewMode === "single") {
       this.relayout(null);
-      this.container.scrollTop = 0;
+      const box = this.layout?.boxes[target];
+      this.container.scrollTop = box ? fraction * box.height : 0;
     } else {
       const row = this.layout?.rows[this.layout.rowOf[target] ?? -1];
-      if (row) this.container.scrollTop = row.top - this.spacing.padding;
+      const box = this.layout?.boxes[target];
+      if (row) {
+        this.container.scrollTop = row.top - this.spacing.padding + fraction * (box?.height ?? 0);
+      }
     }
     this.pinned = { page: target, scrollTop: this.container.scrollTop };
     this.reportCurrentPage(target);
@@ -357,6 +454,369 @@ export class ViewerController {
       preview: slot?.preview ?? null,
       tiles: tiles.map(({ canvas, tile }) => ({ canvas, tile })),
     };
+  }
+
+  /** How far down the current page the view's top edge is, 0–1 (for remembering the position). */
+  currentOffset(): number {
+    const box = this.layout?.boxes[this.currentPage];
+    if (!box || box.height <= 0) return 0;
+    const top = this.view.viewMode === "single" ? 0 : this.spacing.padding;
+    return Math.min(1, Math.max(0, (this.container.scrollTop + top - box.y) / box.height));
+  }
+
+  // ------------------------------------------------------------ search hits
+
+  /** Marks every hit on its page; `active` (an index into `hits`) stands out. */
+  setSearchHits(hits: SearchHit[], active: number): void {
+    const previous = new Set(this.searchMarks.keys());
+    this.searchMarks.clear();
+    hits.forEach((hit, index) => {
+      const marks = this.searchMarks.get(hit.page) ?? [];
+      marks.push({ rects: hit.rects, active: index === active });
+      this.searchMarks.set(hit.page, marks);
+    });
+    for (const page of new Set([...previous, ...this.searchMarks.keys()])) {
+      const slot = this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+  }
+
+  /** Scrolls the hit into view (about a third of the way down) unless it already is. */
+  revealHit(hit: SearchHit): void {
+    if (!this.sizes || !this.layout) return;
+    if (this.view.viewMode === "single" && this.currentPage !== hit.page) {
+      this.goToPage(hit.page);
+    }
+    const box = this.layout.boxes[hit.page];
+    const size = this.sizes[hit.page];
+    if (!box || !size || hit.rects.length === 0) {
+      this.goToPage(hit.page);
+      return;
+    }
+    const sx = box.width / size.width;
+    const sy = box.height / size.height;
+    const x0 = Math.min(...hit.rects.map((rect) => rect.x));
+    const y0 = Math.min(...hit.rects.map((rect) => rect.y));
+    const x1 = Math.max(...hit.rects.map((rect) => rect.x + rect.width));
+    const y1 = Math.max(...hit.rects.map((rect) => rect.y + rect.height));
+    const target = {
+      x0: box.x + x0 * sx,
+      y0: box.y + y0 * sy,
+      x1: box.x + x1 * sx,
+      y1: box.y + y1 * sy,
+    };
+    const view = this.viewRect();
+    const margin = 16;
+    if (target.y0 < view.y0 + margin || target.y1 > view.y1 - margin) {
+      this.container.scrollTop = target.y0 - this.container.clientHeight / 3;
+    }
+    if (target.x0 < view.x0 || target.x1 > view.x1) {
+      this.container.scrollLeft = (target.x0 + target.x1) / 2 - this.container.clientWidth / 2;
+    }
+    this.pinned = { page: hit.page, scrollTop: this.container.scrollTop };
+    this.reportCurrentPage(hit.page);
+    this.update();
+  }
+
+  // ------------------------------------------------------------ selection
+
+  hasSelection(): boolean {
+    return this.selection !== null;
+  }
+
+  /** The selected text in logical order (spec section 6.1). */
+  selectedText(): string {
+    return this.selection ? selectedText(this.selection, this.layerLookup) : "";
+  }
+
+  clearSelection(): void {
+    this.pendingAnchor = null;
+    this.setSelection(null);
+  }
+
+  /** Selects all text on the current page. */
+  selectAllOnPage(): void {
+    const page = this.currentPage;
+    const layer = this.layers.get(page);
+    if (!layer) {
+      void this.loadLayer(page).then((loaded) => {
+        if (loaded && this.currentPage === page) this.setSelection(pageSelection(loaded, page));
+      });
+      return;
+    }
+    this.setSelection(pageSelection(layer, page));
+  }
+
+  private readonly layerLookup = (page: number) => this.layers.get(page);
+
+  private loadLayer(page: number): Promise<TextLayer | null> {
+    const cached = this.layers.get(page);
+    if (cached) return Promise.resolve(cached);
+    if (this.layerRequests.has(page)) return Promise.resolve(null);
+    this.layerRequests.add(page);
+    return this.backend.pageText(this.documentId, page).then(
+      (layer) => {
+        this.layerRequests.delete(page);
+        if (this.destroyed) return null;
+        this.layers.set(page, layer);
+        this.trimLayers();
+        this.onLayerLoaded(page, layer);
+        return layer;
+      },
+      (error: unknown) => {
+        this.layerRequests.delete(page);
+        console.warn("page text unavailable", page, error);
+        return null;
+      },
+    );
+  }
+
+  private trimLayers(): void {
+    if (this.layers.size <= TEXT_LAYER_PAGES) return;
+    const [first, last] = this.selection ? selectionPages(this.selection) : [-1, -1];
+    for (const page of this.layers.keys()) {
+      if (this.layers.size <= TEXT_LAYER_PAGES) break;
+      if (page >= first && page <= last) continue;
+      this.layers.delete(page);
+    }
+  }
+
+  private onLayerLoaded(page: number, layer: TextLayer): void {
+    const pending = this.pendingAnchor;
+    if (pending && pending.page === page) {
+      this.pendingAnchor = null;
+      const caret = caretAt(layer, page, pending.x, pending.y);
+      if (caret) {
+        const focus = this.dragging
+          ? this.caretAtClient(this.dragging.clientX, this.dragging.clientY)
+          : null;
+        this.setSelection({ anchor: caret, focus: focus ?? caret });
+      }
+      return;
+    }
+    // A selection reaching into this page can now paint (and copy) it.
+    if (this.selection) {
+      const [first, last] = selectionPages(this.selection);
+      if (page >= first && page <= last) this.setSelection(this.selection);
+    }
+  }
+
+  /** The page point under a client position: the nearest page, clamped to it. */
+  private pointAt(clientX: number, clientY: number): PagePoint | null {
+    if (!this.layout || !this.sizes) return null;
+    const bounds = this.container.getBoundingClientRect();
+    const x = clientX - bounds.left + this.container.scrollLeft;
+    const y = clientY - bounds.top + this.container.scrollTop;
+    const anchor = anchorAt(this.layout, x, y);
+    const size = anchor && this.sizes[anchor.page];
+    if (!anchor || !size) return null;
+    return { page: anchor.page, x: anchor.fx * size.width, y: anchor.fy * size.height };
+  }
+
+  private caretAtClient(clientX: number, clientY: number): Caret | null {
+    const point = this.pointAt(clientX, clientY);
+    if (!point) return null;
+    const layer = this.layers.get(point.page);
+    if (!layer) {
+      void this.loadLayer(point.page);
+      return null;
+    }
+    return caretAt(layer, point.page, point.x, point.y);
+  }
+
+  private readonly onPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0 || !this.canSelect() || !this.layout) return;
+    // The selection toolbar's own buttons.
+    if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
+    // Clicks on the scrollbars land on the container, not the content.
+    this.container.focus({ preventScroll: true });
+    const point = this.pointAt(event.clientX, event.clientY);
+    if (!point) return;
+    event.preventDefault();
+    const clicks = this.countClick(event);
+    const layer = this.layers.get(point.page);
+    this.dragging = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
+    this.content.setPointerCapture?.(event.pointerId);
+    if (!layer) {
+      this.setSelection(null);
+      this.pendingAnchor = point;
+      void this.loadLayer(point.page);
+      return;
+    }
+    const caret = caretAt(layer, point.page, point.x, point.y);
+    if (!caret) {
+      this.setSelection(null);
+      return;
+    }
+    if (clicks >= 3) {
+      this.setSelection(lineSelection(caret));
+    } else if (clicks === 2) {
+      this.setSelection(wordAt(layer, point.page, point.x, point.y));
+    } else if (event.shiftKey && this.selection) {
+      this.setSelection({ anchor: this.selection.anchor, focus: caret });
+    } else {
+      this.setSelection({ anchor: caret, focus: caret });
+    }
+  };
+
+  /** 1, 2, or 3 for a single, double, or triple click (presses close in time and place). */
+  private countClick(event: PointerEvent): number {
+    const now = event.timeStamp;
+    const last = this.lastPress;
+    const repeat =
+      last !== null &&
+      now - last.time < MULTI_CLICK_MS &&
+      Math.hypot(event.clientX - last.x, event.clientY - last.y) < MULTI_CLICK_DISTANCE;
+    const count = repeat && last ? (last.count % 3) + 1 : 1;
+    this.lastPress = { time: now, x: event.clientX, y: event.clientY, count };
+    return count;
+  }
+
+  private readonly onPointerMove = (event: PointerEvent) => {
+    const dragging = this.dragging;
+    if (!dragging) {
+      if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
+      this.updateCursor(event);
+      return;
+    }
+    if (event.pointerId !== dragging.pointerId) return;
+    dragging.clientX = event.clientX;
+    dragging.clientY = event.clientY;
+    this.extendSelection();
+    const bounds = this.container.getBoundingClientRect();
+    const outside =
+      event.clientY < bounds.top + AUTOSCROLL_EDGE ||
+      event.clientY > bounds.bottom - AUTOSCROLL_EDGE;
+    if (outside) this.startAutoScroll();
+    else this.stopAutoScroll();
+  };
+
+  private readonly onPointerUp = (event: PointerEvent) => {
+    if (!this.dragging || event.pointerId !== this.dragging.pointerId) return;
+    this.dragging = null;
+    this.pendingAnchor = null;
+    this.stopAutoScroll();
+    this.content.releasePointerCapture?.(event.pointerId);
+    if (this.selection && isCollapsed(this.selection, this.layerLookup)) this.setSelection(null);
+  };
+
+  private extendSelection(): void {
+    const dragging = this.dragging;
+    if (!dragging || !this.selection) return;
+    const focus = this.caretAtClient(dragging.clientX, dragging.clientY);
+    if (focus) this.setSelection({ anchor: this.selection.anchor, focus });
+  }
+
+  private startAutoScroll(): void {
+    if (this.autoScrollFrame !== null) return;
+    const step = () => {
+      const dragging = this.dragging;
+      if (!dragging || this.destroyed) {
+        this.autoScrollFrame = null;
+        return;
+      }
+      const bounds = this.container.getBoundingClientRect();
+      const above = bounds.top + AUTOSCROLL_EDGE - dragging.clientY;
+      const below = dragging.clientY - (bounds.bottom - AUTOSCROLL_EDGE);
+      const delta = above > 0 ? -above : Math.max(below, 0);
+      if (delta === 0) {
+        this.autoScrollFrame = null;
+        return;
+      }
+      this.container.scrollTop += Math.max(-40, Math.min(40, delta / 2));
+      this.extendSelection();
+      this.autoScrollFrame = requestAnimationFrame(step);
+    };
+    this.autoScrollFrame = requestAnimationFrame(step);
+  }
+
+  private stopAutoScroll(): void {
+    if (this.autoScrollFrame !== null) cancelAnimationFrame(this.autoScrollFrame);
+    this.autoScrollFrame = null;
+  }
+
+  /** The text cursor over text; text arrives on first hover over a page. */
+  private updateCursor(event: PointerEvent): void {
+    if (!this.canSelect()) {
+      delete this.content.dataset.overText;
+      return;
+    }
+    const point = this.pointAt(event.clientX, event.clientY);
+    const layer = point ? this.layers.get(point.page) : undefined;
+    if (point && !layer) void this.loadLayer(point.page);
+    const over = point !== null && layer !== undefined && isOverText(layer, point.x, point.y);
+    if (over) this.content.dataset.overText = "";
+    else delete this.content.dataset.overText;
+  }
+
+  private setSelection(selection: Selection | null): void {
+    this.selection = selection;
+    const previous = new Set(this.selectionRects.keys());
+    this.selectionRects.clear();
+    if (selection) {
+      for (const { page, rects } of highlights(selection, this.layerLookup)) {
+        this.selectionRects.set(page, rects);
+      }
+    }
+    for (const page of new Set([...previous, ...this.selectionRects.keys()])) {
+      const slot = this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+    this.placeSelectionToolbar();
+    const has = selection !== null && this.selectionRects.size > 0;
+    if (has !== this.selectionReported) {
+      this.selectionReported = has;
+      this.callbacks.onSelectionChange?.(has);
+    }
+  }
+
+  /** Puts the toolbar host above the top of the selection's first highlighted line. */
+  private placeSelectionToolbar(): void {
+    const host = this.selectionToolbarHost;
+    const first = [...this.selectionRects.keys()].sort((a, b) => a - b)[0];
+    const rects = first === undefined ? undefined : this.selectionRects.get(first);
+    const box = first === undefined ? undefined : this.layout?.boxes[first];
+    const size = first === undefined ? undefined : this.sizes?.[first];
+    if (!rects || rects.length === 0 || !box || !size) {
+      host.hidden = true;
+      return;
+    }
+    const top = Math.min(...rects.map((rect) => rect.y));
+    const line = rects.filter((rect) => rect.y <= top + 0.5);
+    const x0 = Math.min(...line.map((rect) => rect.x));
+    const x1 = Math.max(...line.map((rect) => rect.x + rect.width));
+    host.hidden = false;
+    host.style.insetInlineStart = `${box.x + ((x0 + x1) / 2) * (box.width / size.width)}px`;
+    host.style.insetBlockStart = `${box.y + top * (box.height / size.height)}px`;
+  }
+
+  private paintOverlay(slot: Slot): void {
+    const size = this.sizes?.[slot.page];
+    slot.overlay.replaceChildren();
+    if (!size) return;
+    const place = (element: HTMLElement, rect: ViewRect) => {
+      const style = element.style;
+      style.insetInlineStart = `${(100 * rect.x) / size.width}%`;
+      style.insetBlockStart = `${(100 * rect.y) / size.height}%`;
+      style.inlineSize = `${(100 * rect.width) / size.width}%`;
+      style.blockSize = `${(100 * rect.height) / size.height}%`;
+    };
+    for (const mark of this.searchMarks.get(slot.page) ?? []) {
+      for (const rect of mark.rects) {
+        const element = document.createElement("div");
+        element.className = mark.active
+          ? `${this.classNames.searchHit} ${this.classNames.searchHitActive}`
+          : this.classNames.searchHit;
+        place(element, rect);
+        slot.overlay.append(element);
+      }
+    }
+    for (const rect of this.selectionRects.get(slot.page) ?? []) {
+      const element = document.createElement("div");
+      element.className = this.classNames.selection;
+      place(element, rect);
+      slot.overlay.append(element);
+    }
   }
 
   // ------------------------------------------------------------ events
@@ -481,6 +941,7 @@ export class ViewerController {
       }
     }
     if (this.pinned) this.pinned.scrollTop = this.container.scrollTop;
+    this.placeSelectionToolbar();
   }
 
   /** `at` is relative to the viewport's top-left; null means its centre. */
@@ -646,11 +1107,14 @@ export class ViewerController {
     element.setAttribute("aria-label", this.pageLabel(page));
     const tileLayer = document.createElement("div");
     tileLayer.className = this.classNames.tiles;
-    element.append(tileLayer);
+    const overlay = document.createElement("div");
+    overlay.className = this.classNames.overlay;
+    element.append(tileLayer, overlay);
     const slot: Slot = {
       page,
       element,
       tileLayer,
+      overlay,
       preview: null,
       tiles: new Map(),
       box: null,
@@ -662,6 +1126,7 @@ export class ViewerController {
     this.placeSlot(slot, box);
     this.slots.set(page, slot);
     this.content.append(element);
+    if (this.searchMarks.has(page) || this.selectionRects.has(page)) this.paintOverlay(slot);
     // A preview kept from an earlier visit is drawn at once: no round trip.
     const cached = this.previews.get(page);
     if (cached) this.drawPreview(slot, cached);

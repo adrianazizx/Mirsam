@@ -239,6 +239,28 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
     description: "Three pages labelled i, 1, 2 (qpdf --set-page-labels).",
   });
 
+  // The same page four times with /Rotate 0, 90, 180, 270: text geometry must
+  // follow the rotation onto the displayed page (selection, search highlights).
+  const quarter = src("mixed-inline");
+  execFileSync(qpdf, [
+    "--empty",
+    "--pages",
+    quarter,
+    quarter,
+    quarter,
+    quarter,
+    "--",
+    "--rotate=+90:2",
+    "--rotate=+180:3",
+    "--rotate=+270:4",
+    derived("rotated.pdf"),
+  ]);
+  add("rotated.pdf", {
+    pages: 4,
+    rotations: [0, 90, 180, 270],
+    description: "chrome/mixed-inline four times, rotated 0, 90, 180 and 270 degrees.",
+  });
+
   // A file cut off mid-stream: opening it must fail cleanly or recover, never crash.
   const whole = readFileSync(src("mixed-inline"));
   writeFileSync(derived("truncated.pdf"), whole.subarray(0, Math.floor(whole.length * 0.6)));

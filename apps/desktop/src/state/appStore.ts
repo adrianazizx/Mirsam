@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import type { DocumentInfo, PageSize } from "../backend";
+import type {
+  DocumentInfo,
+  OutlineItem,
+  PageSize,
+  RecentFile,
+  SearchHit,
+  SearchOptions,
+} from "../backend";
 import type { Locale } from "../i18n";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { clampZoom } from "./zoom";
@@ -17,10 +24,38 @@ export const TOOLS = [
 export type ToolId = (typeof TOOLS)[number];
 
 export type ThemePreference = "system" | "light" | "dark";
+/** How pages themselves are tinted, independent of the UI theme (spec section 4). */
+export type ReadingTheme = "normal" | "sepia" | "night";
+export type LeftPanel = "thumbnails" | "outline" | "search";
+
+export interface SearchState {
+  query: string;
+  status: "idle" | "searching" | "done" | "error";
+  hits: SearchHit[];
+  truncated: boolean;
+  /** The hit shown in the page view, or -1. */
+  active: number;
+  /** Key under `errors.` when `status` is "error". */
+  error: string | null;
+  /** Increases with every search; a result for an older one is dropped. */
+  serial: number;
+}
+
+export const IDLE_SEARCH: SearchState = {
+  query: "",
+  status: "idle",
+  hits: [],
+  truncated: false,
+  active: -1,
+  error: null,
+  serial: 0,
+};
 
 export interface OpenDocument extends DocumentInfo {
   /** Zero-based index of the current page (the viewer reports it as the user scrolls). */
   page: number;
+  /** How far down the current page the view starts (0–1); restores a remembered position. */
+  pageOffset: number;
   zoomMode: "fit-width" | "custom";
   /** Effective zoom factor (1 = 100%). In fit-width mode the viewer keeps this current. */
   zoom: number;
@@ -29,134 +64,303 @@ export interface OpenDocument extends DocumentInfo {
   viewMode: ViewMode;
   /** Which side the earlier page of a two-page spread sits on. Independent of the UI language. */
   pageOrder: PageOrder;
+  /** Page labels ("iv", "A-3"), or null when the document has none (or they are not loaded). */
+  labels: (string | null)[] | null;
+  /** The outline, or null until loaded. */
+  outline: OutlineItem[] | null;
+  search: SearchState;
+  /** Whether text is selected in this document's page view. */
+  hasSelection: boolean;
 }
+
+export interface PendingUnlock {
+  token: number;
+  name: string;
+  /** The last password was wrong. */
+  retry: boolean;
+}
+
+export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
+  caseSensitive: false,
+  wholeWord: false,
+  regex: false,
+  arabicNormalize: true,
+  taMarbutaAsHa: false,
+};
 
 export interface AppState {
   locale: Locale;
   theme: ThemePreference;
+  readingTheme: ReadingTheme;
+  /** The open side panel at the inline start, or null when it is closed. */
+  leftPanel: LeftPanel | null;
+  searchOptions: SearchOptions;
   activeTool: ToolId;
   documents: OpenDocument[];
   activeDocumentId: number | null;
+  /** Encrypted files waiting for a password; the first one is being asked for. */
+  unlocks: PendingUnlock[];
+  /** Recent files for the start screen; null until loaded. */
+  recents: RecentFile[] | null;
   /** Code of the most recent user-facing error (a key under `errors.`), or null. */
   errorCode: string | null;
   galleryOpen: boolean;
+  paletteOpen: boolean;
 
   setLocale(locale: Locale): void;
   setTheme(theme: ThemePreference): void;
+  setReadingTheme(theme: ReadingTheme): void;
+  setLeftPanel(panel: LeftPanel | null): void;
+  setSearchOptions(options: SearchOptions): void;
   setActiveTool(tool: ToolId): void;
-  addDocument(info: DocumentInfo): void;
+  addDocument(info: DocumentInfo, options?: { activate?: boolean }): void;
   removeDocument(id: number): void;
   activateDocument(id: number): void;
   updateDocument(id: number, patch: Partial<Omit<OpenDocument, keyof DocumentInfo>>): void;
+  updateSearch(id: number, patch: Partial<SearchState>): void;
+  pushUnlock(unlock: PendingUnlock): void;
+  /** Replaces the first pending unlock (e.g. after a wrong password) or drops it (null). */
+  resolveUnlock(next: PendingUnlock | null): void;
+  setRecents(recents: RecentFile[] | null): void;
   setError(code: string | null): void;
   setGalleryOpen(open: boolean): void;
+  setPaletteOpen(open: boolean): void;
+  /** Applies settings read from the shell's store at startup. */
+  hydrate(settings: Record<string, string>): void;
 }
 
-const PREFERENCES_KEY = "safha.preferences";
+/**
+ * Settings persist in the shell's SQLite store (spec section 9, "Storage").
+ * `localStorage` keeps a copy so the first frame already has the right
+ * language and theme, before the store answers.
+ */
+const CACHE_KEY = "safha.preferences";
 
-interface Preferences {
-  locale: Locale;
-  theme: ThemePreference;
+type Persisted = Pick<
+  AppState,
+  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions"
+>;
+
+const DEFAULTS: Persisted = {
+  locale: "en",
+  theme: "system",
+  readingTheme: "normal",
+  leftPanel: null,
+  searchOptions: DEFAULT_SEARCH_OPTIONS,
+};
+
+/** Parses stored strings, ignoring anything unknown or malformed. */
+export function parseSettings(raw: Record<string, string | undefined>): Partial<Persisted> {
+  const out: Partial<Persisted> = {};
+  if (raw.locale === "en" || raw.locale === "ar") out.locale = raw.locale;
+  if (raw.theme === "system" || raw.theme === "light" || raw.theme === "dark") {
+    out.theme = raw.theme;
+  }
+  if (
+    raw.readingTheme === "normal" ||
+    raw.readingTheme === "sepia" ||
+    raw.readingTheme === "night"
+  ) {
+    out.readingTheme = raw.readingTheme;
+  }
+  if (raw.leftPanel === "thumbnails" || raw.leftPanel === "outline" || raw.leftPanel === "search") {
+    out.leftPanel = raw.leftPanel;
+  } else if (raw.leftPanel === "none") {
+    out.leftPanel = null;
+  }
+  if (raw["search.options"]) {
+    try {
+      const parsed = JSON.parse(raw["search.options"]) as Partial<SearchOptions>;
+      const options = { ...DEFAULT_SEARCH_OPTIONS };
+      for (const key of Object.keys(DEFAULT_SEARCH_OPTIONS) as (keyof SearchOptions)[]) {
+        if (typeof parsed[key] === "boolean") options[key] = parsed[key];
+      }
+      out.searchOptions = options;
+    } catch {
+      // A malformed value keeps the defaults.
+    }
+  }
+  return out;
 }
 
-// Interim storage: preferences move to the core's SQLite store in Milestone 1.
-function loadPreferences(): Preferences {
-  const fallback: Preferences = { locale: "en", theme: "system" };
-  try {
-    const raw = localStorage.getItem(PREFERENCES_KEY);
-    if (!raw) return fallback;
-    const saved = JSON.parse(raw) as Partial<Preferences>;
-    return {
-      locale: saved.locale === "ar" ? "ar" : "en",
-      theme: saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system",
-    };
-  } catch {
-    return fallback;
+function serialize(key: keyof Persisted, state: Persisted): [string, string] {
+  switch (key) {
+    case "leftPanel":
+      return ["leftPanel", state.leftPanel ?? "none"];
+    case "searchOptions":
+      return ["search.options", JSON.stringify(state.searchOptions)];
+    default:
+      return [key, String(state[key])];
   }
 }
 
-function savePreferences(preferences: Preferences) {
+function loadCached(): Persisted {
   try {
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return DEFAULTS;
+    return { ...DEFAULTS, ...parseSettings(JSON.parse(raw) as Record<string, string>) };
   } catch {
-    // Storage can be unavailable (private mode, quota); preferences then last one session.
+    return DEFAULTS;
   }
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  ...loadPreferences(),
-  activeTool: "select",
-  documents: [],
-  activeDocumentId: null,
-  errorCode: null,
-  galleryOpen: false,
+/** Where settings are written; the backend's store in the app (set by `App`). */
+let persistSetting: (key: string, value: string) => void = () => {};
+export function setSettingsWriter(writer: (key: string, value: string) => void) {
+  persistSetting = writer;
+}
 
-  setLocale(locale) {
-    set({ locale });
-    savePreferences({ locale, theme: get().theme });
-  },
-  setTheme(theme) {
-    set({ theme });
-    savePreferences({ locale: get().locale, theme });
-  },
-  setActiveTool(activeTool) {
-    set({ activeTool });
-  },
-  addDocument(info) {
-    const document: OpenDocument = {
-      ...info,
-      page: 0,
-      zoomMode: "fit-width",
-      zoom: 1,
-      pageSize: null,
-      viewMode: "continuous",
-      // TODO(M1): default to the document's /ViewerPreferences /Direction (R2L
-      // for many Arabic books). pdfium-render 0.9.6 binds FPDF_VIEWERREF_GetName
-      // only as an `unsafe fn` with no safe wrapper, and `unsafe` is denied in
-      // this workspace; reading it needs an upstream safe API or our own
-      // catalog parse in safha-core. Until then: left to right.
-      pageOrder: "ltr",
-    };
-    set((state) => ({
-      documents: [...state.documents.filter((open) => open.id !== info.id), document],
-      activeDocumentId: info.id,
-      errorCode: null,
-    }));
-  },
-  removeDocument(id) {
-    set((state) => {
-      const index = state.documents.findIndex((open) => open.id === id);
-      const documents = state.documents.filter((open) => open.id !== id);
-      const neighbour = documents[Math.min(index, documents.length - 1)];
-      return {
-        documents,
-        activeDocumentId:
-          state.activeDocumentId === id ? (neighbour?.id ?? null) : state.activeDocumentId,
+function writeCache(state: Persisted) {
+  try {
+    const cached: Record<string, string> = {};
+    for (const key of Object.keys(DEFAULTS) as (keyof Persisted)[]) {
+      const [name, value] = serialize(key, state);
+      cached[name] = value;
+    }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    // Storage can be unavailable (private mode, quota); the store still has it.
+  }
+}
+
+function persist(key: keyof Persisted, state: Persisted) {
+  const [name, value] = serialize(key, state);
+  persistSetting(name, value);
+  writeCache(state);
+}
+
+function initialZoom(info: DocumentInfo): Pick<OpenDocument, "zoomMode" | "zoom"> {
+  const saved = info.viewState;
+  if (saved?.zoomMode === "custom" && Number.isFinite(saved.zoom)) {
+    return { zoomMode: "custom", zoom: clampZoom(saved.zoom) };
+  }
+  return { zoomMode: "fit-width", zoom: 1 };
+}
+
+export const useAppStore = create<AppState>((set, get) => {
+  const update = <K extends keyof Persisted>(key: K, value: Persisted[K]) => {
+    set({ [key]: value } as Partial<AppState>);
+    persist(key, get());
+  };
+
+  return {
+    ...loadCached(),
+    activeTool: "select",
+    documents: [],
+    activeDocumentId: null,
+    unlocks: [],
+    recents: null,
+    errorCode: null,
+    galleryOpen: false,
+    paletteOpen: false,
+
+    setLocale: (locale) => update("locale", locale),
+    setTheme: (theme) => update("theme", theme),
+    setReadingTheme: (readingTheme) => update("readingTheme", readingTheme),
+    setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),
+    setSearchOptions: (searchOptions) => update("searchOptions", searchOptions),
+    setActiveTool(activeTool) {
+      set({ activeTool });
+    },
+    addDocument(info, options) {
+      if (get().documents.some((open) => open.id === info.id)) {
+        if (options?.activate !== false) set({ activeDocumentId: info.id, errorCode: null });
+        return;
+      }
+      const lastPage = Math.max(0, info.pageCount - 1);
+      const saved = info.viewState;
+      const document: OpenDocument = {
+        ...info,
+        page: saved ? Math.min(Math.max(0, Math.trunc(saved.page)), lastPage) : 0,
+        pageOffset: saved ? Math.min(Math.max(0, saved.pageOffset), 1) : 0,
+        ...initialZoom(info),
+        pageSize: null,
+        viewMode: "continuous",
+        // TODO(M1): default to the document's /ViewerPreferences /Direction (R2L
+        // for many Arabic books). pdfium-render 0.9.6 binds FPDF_VIEWERREF_GetName
+        // only as an `unsafe fn` with no safe wrapper, and `unsafe` is denied in
+        // this workspace; reading it needs an upstream safe API or our own
+        // catalog parse in safha-core. Until then: left to right.
+        pageOrder: "ltr",
+        labels: null,
+        outline: null,
+        search: IDLE_SEARCH,
+        hasSelection: false,
       };
-    });
-  },
-  activateDocument(id) {
-    if (get().documents.some((open) => open.id === id)) set({ activeDocumentId: id });
-  },
-  updateDocument(id, patch) {
-    set((state) => ({
-      documents: state.documents.map((open) => {
-        if (open.id !== id) return open;
-        const next = { ...open, ...patch };
-        next.page = Math.min(Math.max(0, next.page), Math.max(0, open.pageCount - 1));
-        next.zoom = clampZoom(next.zoom);
-        return next;
-      }),
-    }));
-  },
-  setError(errorCode) {
-    set({ errorCode });
-  },
-  setGalleryOpen(galleryOpen) {
-    set({ galleryOpen });
-  },
-}));
+      set((state) => ({
+        documents: [...state.documents, document],
+        activeDocumentId: options?.activate === false ? state.activeDocumentId : info.id,
+        errorCode: null,
+      }));
+    },
+    removeDocument(id) {
+      set((state) => {
+        const index = state.documents.findIndex((open) => open.id === id);
+        const documents = state.documents.filter((open) => open.id !== id);
+        const neighbour = documents[Math.min(index, documents.length - 1)];
+        return {
+          documents,
+          activeDocumentId:
+            state.activeDocumentId === id ? (neighbour?.id ?? null) : state.activeDocumentId,
+        };
+      });
+    },
+    activateDocument(id) {
+      if (get().documents.some((open) => open.id === id)) set({ activeDocumentId: id });
+    },
+    updateDocument(id, patch) {
+      set((state) => ({
+        documents: state.documents.map((open) => {
+          if (open.id !== id) return open;
+          const next = { ...open, ...patch };
+          next.page = Math.min(Math.max(0, next.page), Math.max(0, open.pageCount - 1));
+          next.zoom = clampZoom(next.zoom);
+          return next;
+        }),
+      }));
+    },
+    updateSearch(id, patch) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id ? { ...open, search: { ...open.search, ...patch } } : open,
+        ),
+      }));
+    },
+    pushUnlock(unlock) {
+      set((state) => ({
+        unlocks: [...state.unlocks.filter((pending) => pending.token !== unlock.token), unlock],
+      }));
+    },
+    resolveUnlock(next) {
+      set((state) => ({
+        unlocks: next ? [next, ...state.unlocks.slice(1)] : state.unlocks.slice(1),
+      }));
+    },
+    setRecents(recents) {
+      set({ recents });
+    },
+    setError(errorCode) {
+      set({ errorCode });
+    },
+    setGalleryOpen(galleryOpen) {
+      set({ galleryOpen });
+    },
+    setPaletteOpen(paletteOpen) {
+      set({ paletteOpen });
+    },
+    hydrate(settings) {
+      set(parseSettings(settings));
+      // Refresh the first-paint copy from the source of truth.
+      writeCache(get());
+    },
+  };
+});
 
 export function selectActiveDocument(state: AppState): OpenDocument | null {
   return state.documents.find((open) => open.id === state.activeDocumentId) ?? null;
+}
+
+/** "iv" for a labelled page, otherwise its number; `page` is zero-based. */
+export function pageLabelOf(document: Pick<OpenDocument, "labels">, page: number): string | null {
+  return document.labels?.[page] ?? null;
 }

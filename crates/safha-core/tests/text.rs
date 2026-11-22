@@ -41,8 +41,8 @@ const FLOORS: &[(&str, usize)] = &[
     ("chrome/en-paragraphs", 4),
     // "(64-bit)" inside an Arabic line: visual order alone cannot tell it from "(bit-64)".
     ("chrome/mixed-inline", 7),
-    // A heading read left to right, and one cell with a doubled letter.
-    ("chrome/table-bilingual", 15),
+    // A heading read left to right.
+    ("chrome/table-bilingual", 16),
     ("coretext/ar-sans", 3),
     ("coretext/en-paragraphs", 4),
     ("qpdf/linearized", 4),

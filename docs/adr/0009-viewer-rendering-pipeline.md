@@ -16,8 +16,8 @@ blank for more than 100 ms, < 500 MB on the 1,000-page file, first page ≤ 300 
 1. **One render thread** (`safha-render`) owns every render, fed by one queue. No pool of threads
    (no parallelism is available over one PDFium) and no pool of processes yet: with parsed pages
    kept open, a fit-width A4 page costs about 4 ms of rendering (24 tiles of 512 px at 0.15–0.17 ms).
-2. **Priority**: placeholder previews, then visible tiles, then prefetch; within a class, nearest to
-   the viewport centre; then arrival order. Identical requests merge into one render, queued or
+2. **Priority**: placeholder previews, then visible tiles, then on-screen thumbnails, then
+   prefetch; within a class, nearest to the viewport centre; then arrival order. Identical requests merge into one render, queued or
    running. The queue is bounded (4,096); overflow is cancelled, not queued.
 3. **Cancellation by viewport generation.** The UI calls `update_viewport(document, generation,
    keep)` as the viewport moves: kept requests are re-prioritized, every other queued request from an
@@ -37,7 +37,9 @@ blank for more than 100 ms, < 500 MB on the 1,000-page file, first page ≤ 300 
 ### Shell
 
 6. `render_tile` keeps ADR 0004's raw response; the header's spare word becomes flags (bit 0: served
-   from cache). Cancellation is the error code `cancelled`. Page sizes are sent as f64 so the UI's
+   from cache). Requests carry a **lane** (`main` or `thumbnails`), registered with the service as
+   two documents sharing one `Arc<Document>`, so each has its own viewport generation: scrolling
+   the thumbnail strip never cancels the page view's tiles, nor the reverse (ADR 0010). Cancellation is the error code `cancelled`. Page sizes are sent as f64 so the UI's
    f32 pixel arithmetic matches the engine's exactly. The old `render_page`/`page_size` commands,
    which bypassed the queue, are gone.
 

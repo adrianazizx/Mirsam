@@ -41,6 +41,24 @@ const preview = results.painted?.previewSinceOpenMs;
 check(preview === null || preview < 300, `first page preview took ${preview} ms`);
 check(results.painted?.sinceOpenMs < 300, `first page took ${results.painted?.sinceOpenMs} ms to be sharp`);
 
+// Milestone 1 navigation (selftest.ts, navigationChecks): selecting page 1
+// copies exactly its text layer, a search finds a word of it and marks it on
+// the page, and the thumbnail strip draws.
+const nav = results.navigation;
+check(nav !== null && nav !== undefined, "no navigation results");
+if (nav) {
+  if (nav.textBlocks > 0) {
+    check(nav.selection.length > 0, "select all on page 1 selected nothing");
+    check(nav.selectionMatchesLayer, "the selected text differs from the page's text layer");
+    check(nav.selectionRects > 0, "the selection was not drawn");
+    check(nav.selectionToolbar, "no selection toolbar");
+    check(nav.searchStatus === "done", `search ended as ${nav.searchStatus}`);
+    check(nav.searchHitsOnPage1 > 0, `searching "${nav.query}" found nothing on page 1`);
+    check(nav.searchHitMarks > 0, "search hits were not drawn on page 1");
+  }
+  check(nav.thumbnailDrawn, "no thumbnail was drawn");
+}
+
 if (failures.length > 0) {
   console.error(`self-test (${direction}) FAILED:\n  ${failures.join("\n  ")}`);
   process.exit(1);
@@ -51,3 +69,10 @@ console.log(
     `render ${(painted.renderMicros / 1000).toFixed(1)} ms, preview after ${painted.previewSinceOpenMs?.toFixed(0)} ms, ` +
     `sharp after ${painted.sinceOpenMs.toFixed(0)} ms, reported after ${report.reportedAfterMs} ms`,
 );
+if (nav) {
+  console.log(
+    `  navigation: selected ${nav.selection.length} chars in ${nav.selectionRects} runs; ` +
+      `"${nav.query}": ${nav.searchHits} hits in ${nav.searchMs.toFixed(0)} ms; ` +
+      `outline ${nav.outlineItems} items; ${nav.thumbnails} thumbnails mounted`,
+  );
+}

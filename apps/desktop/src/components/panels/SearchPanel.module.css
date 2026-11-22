@@ -1,0 +1,152 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.field {
+  display: flex;
+}
+
+.input {
+  flex: 1;
+  min-inline-size: 0;
+  block-size: var(--size-hit);
+  padding-inline: var(--space-2);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-md);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input[data-focused] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--border-width));
+}
+
+/* WebKit's own clear button and search decoration: React Aria handles Escape. */
+.input::-webkit-search-cancel-button,
+.input::-webkit-search-decoration {
+  appearance: none;
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  padding: 0 var(--space-1);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.option[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.option[data-selected] {
+  background: var(--color-bg-selected);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-selected);
+}
+
+.option[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}
+
+.glyph {
+  display: inline-flex;
+}
+
+.glyph svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+.status {
+  margin: 0;
+  min-block-size: calc(var(--font-size-sm) * var(--line-height-normal));
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.results {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  outline: none;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  block-size: var(--size-search-result);
+  padding-inline: var(--space-3);
+  border-block-end: var(--border-width) solid var(--color-border);
+  cursor: pointer;
+  outline: none;
+}
+
+.result[data-hovered] {
+  background: var(--color-bg-hover);
+}
+
+.result[data-selected] {
+  background: var(--color-bg-selected);
+}
+
+.result[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.page {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  text-align: start;
+}
+
+.mark {
+  background: var(--color-search-mark-bg);
+  color: var(--color-search-mark-text);
+  border-radius: var(--radius-sm);
+}

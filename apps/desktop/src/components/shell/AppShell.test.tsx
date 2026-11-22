@@ -4,6 +4,8 @@ import { App } from "../../App";
 import { useAppStore } from "../../state/appStore";
 
 beforeEach(() => {
+  // Settings persist (the mock backend keeps them in localStorage); start clean.
+  localStorage.clear();
   useAppStore.setState({
     locale: "en",
     theme: "light",

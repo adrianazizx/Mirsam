@@ -4,9 +4,11 @@
 //! windowing API. The desktop shell, the future CLI, and tests all drive the
 //! same types.
 //!
-//! Milestone 0 surface: bind PDFium, open a document, report page geometry,
-//! render a page (or a tile of it) to an RGBA bitmap, and read PDFium's raw
-//! text. Everything else in `docs/SPEC.md` section 9 lands in later milestones.
+//! Surface so far: bind PDFium, open documents, report page geometry, render
+//! through a prioritized queue ([`render`]), extract text in logical order
+//! ([`text`]), search it ([`search`]), read the outline and page labels, map
+//! page space to the displayed page ([`view`]), and keep local app state
+//! ([`store`]).
 
 mod bitmap;
 mod document;
@@ -17,6 +19,7 @@ pub mod render;
 pub mod search;
 pub mod store;
 pub mod text;
+pub mod view;
 
 pub use bitmap::Bitmap;
 pub use document::LoadedPage;

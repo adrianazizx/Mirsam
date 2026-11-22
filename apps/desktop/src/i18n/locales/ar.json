@@ -14,12 +14,18 @@
     "ocr": "التعرّف الضوئي والتحويل"
   },
   "tabs": {
-    "label": "المستندات المفتوحة"
+    "label": "المستندات المفتوحة",
+    "close": "إغلاق {{name}}"
   },
   "commands": {
     "file": {
       "open": "فتح ملف PDF…",
-      "close": "إغلاق المستند"
+      "close": "إغلاق المستند",
+      "openRecent": "فتح ملف حديث",
+      "forgetRecent": "إزالة من الملفات الحديثة",
+      "clearRecents": "مسح الملفات الحديثة",
+      "unlock": "فتح بكلمة المرور",
+      "cancelUnlock": "إلغاء الفتح"
     },
     "view": {
       "zoomIn": "تكبير",
@@ -34,12 +40,40 @@
       "modeSpread": "صفحتان متقابلتان",
       "modeBook": "كتاب (الغلاف منفردًا)",
       "pagesLeftToRight": "الصفحات من اليسار إلى اليمين",
-      "pagesRightToLeft": "الصفحات من اليمين إلى اليسار"
+      "pagesRightToLeft": "الصفحات من اليمين إلى اليسار",
+      "toggleLeftPanel": "إظهار اللوحة الجانبية أو إخفاؤها",
+      "showThumbnails": "عرض الصور المصغّرة للصفحات",
+      "showOutline": "عرض الفهرس",
+      "readingNormal": "الصفحات: عادي",
+      "readingSepia": "الصفحات: بني دافئ",
+      "readingNight": "الصفحات: ليلي"
     },
     "app": {
       "toggleTheme": "تبديل المظهر",
       "toggleLanguage": "English",
-      "toggleGallery": "معرض التصميم"
+      "toggleGallery": "معرض التصميم",
+      "commandPalette": "كل الأوامر…"
+    },
+    "tabs": {
+      "next": "التبويب التالي",
+      "previous": "التبويب السابق"
+    },
+    "edit": {
+      "copy": "نسخ",
+      "selectAll": "تحديد كل نص الصفحة",
+      "deselect": "إلغاء التحديد"
+    },
+    "search": {
+      "focus": "البحث في المستند…",
+      "run": "بحث",
+      "next": "النتيجة التالية",
+      "previous": "النتيجة السابقة",
+      "goTo": "الانتقال إلى النتيجة",
+      "toggleCase": "مطابقة حالة الأحرف",
+      "toggleWholeWord": "كلمات كاملة فقط",
+      "toggleRegex": "تعبير نمطي",
+      "toggleArabic": "تجاهل التشكيل وصور الحروف",
+      "toggleTaMarbuta": "اعتبار ة و ه حرفًا واحدًا"
     }
   },
   "viewer": {
@@ -55,7 +89,9 @@
     "viewMode": "تخطيط الصفحات",
     "pageOrder": "ترتيب الصفحات",
     "orderLtr": "من اليسار",
-    "orderRtl": "من اليمين"
+    "orderRtl": "من اليمين",
+    "labelledCount": "({{page}} من {{count}})",
+    "readingTheme": "ألوان الصفحات"
   },
   "inspector": {
     "title": "المستند",
@@ -72,10 +108,13 @@
   },
   "errors": {
     "dismiss": "إغلاق",
-    "password_required": "هذا الملف محمي بكلمة مرور. فتح الملفات المحمية غير متاح بعد.",
+    "password_required": "ملف PDF هذا محمي بكلمة مرور.",
     "invalid_pdf": "تعذّرت قراءة هذا الملف. قد يكون تالفًا أو ليس ملف PDF.",
     "engine_unavailable": "تعذّر تشغيل محرّك PDF. إعادة تثبيت «صفحة» ستحل المشكلة على الأرجح.",
-    "generic": "حدث خطأ ما. حاول مرة أخرى."
+    "generic": "حدث خطأ ما. حاول مرة أخرى.",
+    "file_missing": "نُقل هذا الملف أو حُذف.",
+    "searchInvalid": "تعذّر تنفيذ هذا البحث. تحقّق من التعبير النمطي.",
+    "searchFailed": "تعذّر إكمال البحث."
   },
   "gallery": {
     "title": "معرض التصميم",
@@ -89,5 +128,55 @@
     "disabled": "معطّل",
     "iconButtons": "أزرار الأيقونات",
     "spacing": "المسافات"
+  },
+  "selection": {
+    "toolbar": "النص المحدد"
+  },
+  "panel": {
+    "label": "اللوحة الجانبية",
+    "views": "عرض اللوحة",
+    "thumbnails": "الصور المصغّرة",
+    "outline": "الفهرس",
+    "search": "البحث",
+    "close": "إخفاء اللوحة الجانبية",
+    "noDocument": "افتح مستندًا لترى صفحاته هنا."
+  },
+  "thumbnails": {
+    "name": "الصفحة {{page}}",
+    "labelledName": "الصفحة {{label}} ({{page}})"
+  },
+  "outline": {
+    "toggle": "إظهار العناصر الفرعية أو إخفاؤها",
+    "loading": "جارٍ قراءة الفهرس…",
+    "empty": "لا يحتوي هذا المستند على فهرس."
+  },
+  "search": {
+    "label": "البحث في المستند",
+    "placeholder": "البحث في المستند",
+    "options": "خيارات البحث",
+    "searching": "جارٍ البحث…",
+    "none": "لا توجد نتائج",
+    "count": "النتائج: {{formatted}}",
+    "countTruncated": "النتائج: تُعرض أول {{formatted}}",
+    "results": "نتائج البحث",
+    "page": "الصفحة {{page}}"
+  },
+  "palette": {
+    "label": "الأوامر",
+    "placeholder": "اكتب أمرًا…",
+    "none": "لا يوجد أمر مطابق"
+  },
+  "unlock": {
+    "title": "كلمة المرور مطلوبة",
+    "body": "أدخل كلمة المرور لفتح",
+    "password": "كلمة المرور",
+    "wrong": "كلمة المرور غير صحيحة. حاول مرة أخرى.",
+    "open": "فتح",
+    "cancel": "إلغاء"
+  },
+  "recents": {
+    "title": "الملفات الحديثة",
+    "missing": "نُقل أو حُذف",
+    "forget": "إزالة {{name}} من الملفات الحديثة"
   }
 }

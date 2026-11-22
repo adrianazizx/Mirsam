@@ -24,6 +24,9 @@ TIMEOUT_SECONDS="${SAFHA_SELFTEST_TIMEOUT:-60}"
 
 [[ -x "$APP" ]] || { echo "missing $APP: run cargo build -p safha-desktop --features devtools" >&2; exit 2; }
 rm -f "$OUT/report.json" "$OUT/canvas.png"
+# A fresh state store per run: no recents or session from the user's own use,
+# and nothing written back to them.
+rm -rf "$OUT/state"
 
 cd "$ROOT/apps/desktop"
 pnpm exec vite --port 1420 --strictPort >"$OUT/vite.log" 2>&1 &
@@ -36,7 +39,7 @@ for _ in $(seq 1 150); do
   sleep 0.2
 done
 
-SAFHA_OPEN="$PDF" SAFHA_SELFTEST_OUT="$OUT" SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" \
+SAFHA_OPEN="$PDF" SAFHA_STATE_DIR="$OUT/state" SAFHA_SELFTEST_OUT="$OUT" SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" \
   "$APP" >"$OUT/app.log" 2>&1 &
 APP_PID=$!
 ( sleep "$TIMEOUT_SECONDS"; kill "$APP_PID" 2>/dev/null || true ) &

@@ -284,22 +284,29 @@ fn build_units(glyphs: &[Glyph]) -> Vec<Unit> {
 /// With some producers (Chrome with Amiri, or with Naskh in table cells)
 /// PDFium reports a cluster both from its `/ActualText` and from one of its
 /// glyphs' own mapping (sometimes the dot): the same letter and marks again, a
-/// few characters later in the stream, drawn on top of the first. Genuine double letters sit side by side and do not overlap.
-fn drop_duplicates(units: Vec<Unit>) -> Vec<Unit> {
-    const STREAM_WINDOW: usize = 8;
-    let first_index = |u: &Unit| u.first_index;
+/// drawn on top of the first. Genuine double letters sit side by side and do
+/// not overlap.
+///
+/// The two are usually a few characters apart in PDFium's stream, but not on a
+/// rotated page, where PDFium orders characters by their displayed position
+/// and a dot glyph drawn above its letter can land in another run. So
+/// duplicates are found by position alone: a sweep over units sorted by their
+/// left edge, keeping the one PDFium listed first.
+fn drop_duplicates(mut units: Vec<Unit>) -> Vec<Unit> {
     let mut order: Vec<usize> = (0..units.len()).collect();
-    order.sort_by_key(|&u| first_index(&units[u]));
+    order.sort_by(|&a, &b| units[a].left.total_cmp(&units[b].left));
 
     let mut keep = vec![true; units.len()];
+    // (kept, dropped): the kept unit's box grows to cover the duplicate, which
+    // is often the letter's dots, so a selection highlight covers the whole
+    // letter. Only the display box grows; gaps keep using the unit's own
+    // extent, so the extracted text does not change.
+    let mut merged = Vec::new();
     for (i, &a) in order.iter().enumerate() {
-        if !keep[a] {
-            continue;
-        }
-        for &b in order[i + 1..]
-            .iter()
-            .take_while(|&&b| first_index(&units[b]) - first_index(&units[a]) <= STREAM_WINDOW)
-        {
+        for &b in order[i + 1..].iter().take_while(|&&b| units[b].left <= units[a].right) {
+            if !keep[a] {
+                break;
+            }
             let (ua, ub) = (&units[a], &units[b]);
             let narrower = (ua.right - ua.left).min(ub.right - ub.left).max(0.01);
             // A duplicate can come from the letter's dot glyph, drawn ~0.3 em higher.
@@ -309,9 +316,14 @@ fn drop_duplicates(units: Vec<Unit>) -> Vec<Unit> {
                 && same_line
                 && overlap((ua.left, ua.right), (ub.left, ub.right)) >= 0.5 * narrower
             {
-                keep[b] = false;
+                let (kept, dropped) = if ub.first_index < ua.first_index { (b, a) } else { (a, b) };
+                keep[dropped] = false;
+                merged.push((kept, dropped));
             }
         }
+    }
+    for (kept, dropped) in merged {
+        units[kept].rect = units[kept].rect.union(units[dropped].rect);
     }
     units.into_iter().zip(keep).filter_map(|(unit, keep)| keep.then_some(unit)).collect()
 }

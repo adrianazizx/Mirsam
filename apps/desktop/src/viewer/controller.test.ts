@@ -50,7 +50,17 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     backend,
     documentId: 1,
     container,
-    classNames: { page: "page", tiles: "tiles", tile: "tile", preview: "preview" },
+    classNames: {
+      page: "page",
+      tiles: "tiles",
+      tile: "tile",
+      preview: "preview",
+      overlay: "overlay",
+      searchHit: "hit",
+      searchHitActive: "hit-active",
+      selection: "selection",
+      selectionToolbar: "selection-toolbar",
+    },
     initial: {
       zoomMode: "custom",
       zoom: 0.75,

@@ -2,9 +2,17 @@ import type {
   Backend,
   DocumentInfo,
   KeptRequest,
+  Lane,
+  OpenOutcome,
+  OutlineItem,
   PageSize,
   Priority,
+  RecentFile,
   RenderedPage,
+  SearchHit,
+  SearchOptions,
+  TextLayer,
+  TextLine,
   TileRequest,
 } from "./types";
 
@@ -12,7 +20,8 @@ import type {
  * In-browser stand-in for the Rust shell, used when the UI runs outside Tauri
  * (plain `pnpm dev`, component tests). It draws placeholder pages with the 2D
  * canvas so layout, theming, scrolling, and RTL work can be reviewed in any
- * browser. Nothing here is PDF rendering.
+ * browser. Nothing here is PDF rendering, and its text geometry is an
+ * approximation (each line is treated as one direction run).
  *
  * Like the engine, it renders one request at a time, most urgent first, and
  * honours viewport generations, so the viewer's cancellation path runs here too.
@@ -22,6 +31,9 @@ const A4: PageSize = { width: Math.fround(595.276), height: Math.fround(841.89) 
 const A4_LANDSCAPE: PageSize = { width: A4.height, height: A4.width };
 
 const SAMPLE: DocumentInfo = { id: 1, name: "عقد إيجار — Lease Agreement.pdf", pageCount: 240 };
+/** A recent file that is password-protected; its password is "1234". */
+const LOCKED: DocumentInfo = { id: 2, name: "سري — Confidential.pdf", pageCount: 12 };
+const LOCKED_PASSWORD = "1234";
 
 /** Every 17th page is landscape, to exercise mixed page sizes. */
 const sizeOf = (page: number): PageSize => (page % 17 === 9 ? A4_LANDSCAPE : A4);
@@ -50,6 +62,174 @@ const PAGES: { direction: "ltr" | "rtl"; heading: string; lines: string[] }[] = 
     heading: "الملحق (Appendix A)",
     lines: ["جدول الدفعات — Payment schedule", "الدفعة 1: 4,500 ريال", "الدفعة 2: 4,500 ريال"],
   },
+];
+
+const MARGIN = 72;
+const FONT = `"IBM Plex Sans", "IBM Plex Sans Arabic", sans-serif`;
+
+interface MockLine {
+  text: string;
+  size: number;
+  weight: number;
+  baseline: number;
+}
+
+function pageContent(page: number): { direction: "ltr" | "rtl"; lines: MockLine[] } {
+  const content = PAGES[page] ?? {
+    direction: page % 2 === 0 ? "rtl" : "ltr",
+    heading: page % 2 === 0 ? `صفحة ${page + 1}` : `Page ${page + 1}`,
+    lines: [],
+  };
+  return {
+    direction: content.direction,
+    lines: [
+      { text: content.heading, size: 22, weight: 600, baseline: MARGIN + 22 },
+      ...content.lines.map((text, index) => ({
+        text,
+        size: 11,
+        weight: 400,
+        baseline: MARGIN + 64 + index * 22,
+      })),
+    ],
+  };
+}
+
+let measurer: CanvasRenderingContext2D | null | undefined;
+/** Advance of `text` in points; an estimate where no canvas exists (jsdom). */
+function measure(text: string, line: MockLine): number {
+  if (measurer === undefined) {
+    try {
+      measurer = document.createElement("canvas").getContext("2d");
+    } catch {
+      measurer = null;
+    }
+  }
+  if (!measurer) return text.length * line.size * 0.5;
+  measurer.font = `${line.weight} ${line.size}px ${FONT}`;
+  return measurer.measureText(text).width;
+}
+
+/** The mock's text layer: logical-order lines with estimated character boxes. */
+function textLayer(page: number): TextLayer {
+  const size = sizeOf(page);
+  const { direction, lines } = pageContent(page);
+  const rtl = direction === "rtl";
+  const textLines: TextLine[] = lines.map((line) => {
+    const chars = Array.from(line.text);
+    const advances = chars.map((char) => measure(char, line));
+    const natural = advances.reduce((sum, value) => sum + value, 0);
+    const width = measure(line.text, line);
+    const factor = natural > 0 ? width / natural : 1;
+    const top = line.baseline - line.size * 0.8;
+    let offset = 0;
+    let index = 0;
+    const spans = chars.map((char, i) => {
+      const advance = (advances[i] ?? 0) * factor;
+      const x = rtl ? size.width - MARGIN - offset - advance : MARGIN + offset;
+      offset += advance;
+      const start = index;
+      index += char.length;
+      return {
+        start,
+        end: index,
+        rect: char === " " ? null : { x, y: top, width: advance, height: line.size },
+      };
+    });
+    const x0 = rtl ? size.width - MARGIN - width : MARGIN;
+    return { text: line.text, spans, bounds: { x: x0, y: top, width, height: line.size } };
+  });
+  return {
+    direction,
+    quality: "good",
+    blocks: textLines.map((line) => ({ direction, lines: [line] })),
+  };
+}
+
+const TASHKEEL = /[ؐ-ًؚ-ٰٟـ]/g;
+function fold(text: string, options: SearchOptions): string {
+  let folded = options.caseSensitive ? text : text.toLowerCase();
+  if (options.arabicNormalize) {
+    // Same length as the input, so indices carry over: marks become a
+    // character that never matches instead of being removed.
+    folded = folded
+      .replace(TASHKEEL, "\uFFFF")
+      .replace(/[أإآٱ]/g, "ا")
+      .replace(/ى/g, "ي")
+      .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660));
+    if (options.taMarbutaAsHa) folded = folded.replace(/ة/g, "ه");
+  }
+  return folded;
+}
+
+function search(documentId: number, query: string, options: SearchOptions): SearchHit[] {
+  const needle = fold(query, options)
+    .replace(/\uFFFF/g, "")
+    .trim();
+  if (!needle) throw { code: "invalid_query", detail: "empty" };
+  const pageCount = documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount;
+  const hits: SearchHit[] = [];
+  for (let page = 0; page < pageCount; page += 1) {
+    const layer = textLayer(page);
+    layer.blocks.forEach((block, b) => {
+      block.lines.forEach((line, l) => {
+        const haystack = fold(line.text, options).replace(/\uFFFF/g, "");
+        // Indices into the folded text without marks; map back by walking the original.
+        const keep: number[] = [];
+        Array.from(fold(line.text, options)).forEach((char, i) => {
+          if (char !== "\uFFFF") keep.push(i);
+        });
+        let from = 0;
+        for (;;) {
+          const at = haystack.indexOf(needle, from);
+          if (at < 0) break;
+          from = at + needle.length;
+          const start = keep[at] ?? 0;
+          const end = (keep[at + needle.length - 1] ?? start) + 1;
+          const rects = line.spans
+            .filter((span) => span.rect && span.start < end && start < span.end)
+            .map((span) => span.rect)
+            .filter((rect) => rect !== null);
+          hits.push({
+            page,
+            block: b,
+            line: l,
+            start,
+            end,
+            direction: block.direction,
+            rects,
+            context: {
+              before: line.text.slice(Math.max(0, start - 24), start),
+              matched: line.text.slice(start, end),
+              after: line.text.slice(end, end + 24),
+            },
+          });
+        }
+      });
+    });
+  }
+  return hits;
+}
+
+const OUTLINE: OutlineItem[] = [
+  {
+    title: "عقد إيجار",
+    page: 0,
+    top: null,
+    children: [
+      { title: "Lease Agreement", page: 1, top: null, children: [] },
+      { title: "الملحق (Appendix A)", page: 2, top: null, children: [] },
+    ],
+  },
+  {
+    title: "الشروط العامة — General terms",
+    page: 9,
+    top: null,
+    children: [
+      { title: "المادة 1: مدة العقد", page: 10, top: null, children: [] },
+      { title: "Article 2: Payment", page: 14, top: null, children: [] },
+    ],
+  },
+  { title: "Signatures — التوقيعات", page: 239, top: null, children: [] },
 ];
 
 function blank(width: number, height: number): RenderedPage {
@@ -81,37 +261,31 @@ function drawTile(page: number, tile: TileRequest): RenderedPage {
   ctx.fillRect(0, 0, width, height);
   // Draw in page points; the transform selects this tile's window of the page.
   ctx.setTransform(scale, 0, 0, scale, -tile.x, -tile.y);
-  const content = PAGES[page] ?? {
-    direction: page % 2 === 0 ? "rtl" : "ltr",
-    heading: page % 2 === 0 ? `صفحة ${page + 1}` : `Page ${page + 1}`,
-    lines: [],
-  };
+  const content = pageContent(page);
   const rtl = content.direction === "rtl";
-  const margin = 72;
-  const x = rtl ? size.width - margin : margin;
+  const x = rtl ? size.width - MARGIN : MARGIN;
   ctx.fillStyle = "#1b1f24";
   ctx.direction = content.direction;
   ctx.textAlign = "start";
-  ctx.font = `600 22px "IBM Plex Sans", "IBM Plex Sans Arabic", sans-serif`;
-  ctx.fillText(content.heading, x, margin + 22);
-  ctx.font = `400 11px "IBM Plex Sans", "IBM Plex Sans Arabic", sans-serif`;
-  content.lines.forEach((line, index) => {
-    ctx.fillText(line, x, margin + 64 + index * 22);
-  });
+  for (const line of content.lines) {
+    ctx.font = `${line.weight} ${line.size}px ${FONT}`;
+    ctx.fillText(line.text, x, line.baseline);
+  }
   // Grey bars stand in for body text, ragged on the side text ends on.
   ctx.fillStyle = "#c9ced6";
-  const textWidth = size.width - 2 * margin;
+  const textWidth = size.width - 2 * MARGIN;
   for (let line = 0; line < 30; line += 1) {
-    const y = margin + 140 + line * 18;
-    if (y > size.height - margin - 30) break;
+    const y = MARGIN + 140 + line * 18;
+    if (y > size.height - MARGIN - 30) break;
     const length = textWidth * (line % 6 === 5 ? 0.55 : 0.92 + ((line * 37) % 8) / 100);
     const barWidth = Math.min(textWidth, length);
-    ctx.fillRect(rtl ? size.width - margin - barWidth : margin, y, barWidth, 7);
+    ctx.fillRect(rtl ? size.width - MARGIN - barWidth : MARGIN, y, barWidth, 7);
   }
   ctx.fillStyle = "#57606a";
   ctx.textAlign = "center";
   ctx.direction = "ltr";
-  ctx.fillText(`— ${page + 1} —`, size.width / 2, size.height - margin / 2);
+  ctx.font = `400 11px ${FONT}`;
+  ctx.fillText(`— ${page + 1} —`, size.width / 2, size.height - MARGIN / 2);
 
   const image = ctx.getImageData(0, 0, width, height);
   return {
@@ -124,6 +298,7 @@ function drawTile(page: number, tile: TileRequest): RenderedPage {
 }
 
 interface Job {
+  lane: Lane;
   generation: number;
   page: number;
   tile: TileRequest;
@@ -133,13 +308,13 @@ interface Job {
   reject(error: unknown): void;
 }
 
-const URGENCY = { placeholder: 0, visible: 1, prefetch: 2 } as const;
+const URGENCY = { placeholder: 0, visible: 1, thumbnail: 2, prefetch: 3 } as const;
 const CANCELLED = { code: "cancelled", detail: "the viewport moved on" };
 const sameTile = (a: TileRequest, b: TileRequest) =>
   a.scale === b.scale && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
 const queue: Job[] = [];
-let generation = 0;
+const generations: Record<Lane, number> = { main: 0, thumbnails: 0 };
 let seq = 0;
 let busy = false;
 
@@ -161,12 +336,12 @@ function pump() {
   }, 1);
 }
 
-function updateViewport(next: number, keep: KeptRequest[]) {
-  if (next < generation) return;
-  generation = next;
+function updateViewport(lane: Lane, next: number, keep: KeptRequest[]) {
+  if (next < generations[lane]) return;
+  generations[lane] = next;
   for (let index = queue.length - 1; index >= 0; index -= 1) {
     const job = queue[index];
-    if (!job) continue;
+    if (!job || job.lane !== lane) continue;
     const kept = keep.find((k) => k.page === job.page && sameTile(k.tile, job.tile));
     if (kept) {
       job.priority = kept.priority;
@@ -178,18 +353,76 @@ function updateViewport(next: number, keep: KeptRequest[]) {
   }
 }
 
+const SETTINGS_KEY = "safha.mock.settings";
+function loadSettings(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+let recents: RecentFile[] = [
+  { token: 1, name: SAMPLE.name, lastOpened: 1_795_000_000, exists: true },
+  { token: 2, name: LOCKED.name, lastOpened: 1_794_900_000, exists: true },
+  { token: 3, name: "old-report.pdf", lastOpened: 1_790_000_000, exists: false },
+];
+
+const opened = (document: DocumentInfo): OpenOutcome => ({ kind: "opened", document });
+
 export const mockBackend: Backend = {
   appInfo: async () => ({ version: "0.0.1-mock", devtools: false }),
-  openDocumentDialog: async () => SAMPLE,
-  takeStartupDocument: async () => null,
-  pageSizes: async () => Array.from({ length: SAMPLE.pageCount }, (_, page) => sizeOf(page)),
-  renderTile: (_documentId, requestGeneration, page, tile, priority) =>
+  openDocumentDialog: async () => opened(SAMPLE),
+  startup: async () => ({ documents: [], active: null }),
+  unlockDocument: async (_token, password) =>
+    password === LOCKED_PASSWORD
+      ? opened(LOCKED)
+      : { kind: "needsPassword", token: 2, name: LOCKED.name, retry: true },
+  cancelUnlock: async () => {},
+  recentFiles: async (limit) => recents.slice(0, limit),
+  openRecent: async (token) => {
+    const recent = recents.find((candidate) => candidate.token === token);
+    if (!recent?.exists) throw { code: "file_missing", detail: "gone" };
+    return token === 2
+      ? { kind: "needsPassword", token: 2, name: LOCKED.name, retry: false }
+      : opened(SAMPLE);
+  },
+  forgetRecent: async (token) => {
+    recents = recents.filter((recent) => recent.token !== token);
+  },
+  clearRecents: async () => {
+    recents = [];
+  },
+  saveViewState: async () => {},
+  saveSession: async () => {},
+  settings: async () => loadSettings(),
+  setSetting: async (key, value) => {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...loadSettings(), [key]: value }));
+    } catch {
+      // Storage unavailable: settings last one session.
+    }
+  },
+  pageSizes: async (documentId) =>
+    Array.from(
+      { length: documentId === LOCKED.id ? LOCKED.pageCount : SAMPLE.pageCount },
+      (_, page) => sizeOf(page),
+    ),
+  documentOutline: async (documentId) => (documentId === SAMPLE.id ? OUTLINE : []),
+  pageLabels: async () => null,
+  pageText: async (_documentId, page) => textLayer(page),
+  searchDocument: async (documentId, query, options) => {
+    const hits = search(documentId, query, options);
+    return { hits: hits.slice(0, 5000), truncated: hits.length > 5000 };
+  },
+  renderTile: (_documentId, requestGeneration, page, tile, priority, lane = "main") =>
     new Promise<RenderedPage>((resolve, reject) => {
-      if (requestGeneration < generation) {
+      if (requestGeneration < generations[lane]) {
         reject(CANCELLED);
         return;
       }
       queue.push({
+        lane,
         generation: requestGeneration,
         page,
         tile,
@@ -200,7 +433,8 @@ export const mockBackend: Backend = {
       });
       pump();
     }),
-  updateViewport: async (_documentId, next, keep) => updateViewport(next, keep),
+  updateViewport: async (_documentId, next, keep, lane = "main") =>
+    updateViewport(lane, next, keep),
   closeDocument: async () => {},
   selftestConfig: async () => null,
   selftestReport: async () => {},

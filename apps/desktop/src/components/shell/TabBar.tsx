@@ -1,6 +1,6 @@
-import { FolderOpen, Languages, Moon, Sun, X } from "lucide-react";
+import { Command, FolderOpen, Languages, Moon, Search, Sun, X } from "lucide-react";
 import { useMemo } from "react";
-import { Tab, TabList } from "react-aria-components";
+import { Button as AriaButton, Tab, TabList } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { resolvedTheme, runCommand, shortcutLabel } from "../../commands/registry";
@@ -26,15 +26,34 @@ export function TabBar() {
     <header className={styles.bar}>
       <TabList aria-label={t("tabs.label")} items={documents} className={styles.tabs}>
         {(document: { id: number; name: string }) => (
-          <Tab id={document.id} className={styles.tab}>
+          <Tab
+            id={document.id}
+            className={styles.tab}
+            // Middle-click closes a tab, as in browsers.
+            onAuxClick={(event: React.MouseEvent) => {
+              if (event.button === 1) void runCommand("file.close", { documentId: document.id });
+            }}
+          >
             {/* A file name can be in either script regardless of UI language. */}
             <bdi className={styles.name}>{document.name}</bdi>
+            <AriaButton
+              className={styles.close}
+              aria-label={t("tabs.close", { name: document.name })}
+              // Reachable with Cmd/Ctrl+W; kept out of the tab order so arrow keys move between tabs.
+              excludeFromTabOrder
+              onPress={() => void runCommand("file.close", { documentId: document.id })}
+            >
+              <X aria-hidden="true" />
+            </AriaButton>
           </Tab>
         )}
       </TabList>
       <div className={styles.actions}>
-        <CommandButton command="file.close">
-          <X />
+        <CommandButton command="search.focus">
+          <Search />
+        </CommandButton>
+        <CommandButton command="app.commandPalette">
+          <Command />
         </CommandButton>
         <Tooltip label={t("commands.file.open")} shortcut={shortcutLabel("file.open")}>
           <Button

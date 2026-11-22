@@ -2,6 +2,7 @@ import {
   type Backend,
   isCancelled,
   type KeptRequest,
+  type Lane,
   type Priority,
   type RenderedPage,
   type TileRequest,
@@ -81,6 +82,8 @@ export class TileClient {
     /** A render failed for a reason other than cancellation. */
     private readonly onFailure: (wanted: WantedTile, error: unknown) => void,
     generation = firstGeneration(),
+    /** Render-queue lane: the page view and the thumbnail strip each have their own. */
+    private readonly lane: Lane = "main",
   ) {
     this.generation = generation;
   }
@@ -114,7 +117,7 @@ export class TileClient {
       }
       this.stats.viewportUpdates += 1;
       this.backend
-        .updateViewport(this.documentId, this.generation, keep)
+        .updateViewport(this.documentId, this.generation, keep, this.lane)
         .catch((error: unknown) => console.warn("viewport update failed", error));
     }
 
@@ -142,7 +145,7 @@ export class TileClient {
     this.wanted.clear();
     if (this.inFlight.size > 0) {
       this.generation += 1;
-      this.backend.updateViewport(this.documentId, this.generation, []).catch(() => {
+      this.backend.updateViewport(this.documentId, this.generation, [], this.lane).catch(() => {
         // The document may already be closed; nothing left to cancel then.
       });
     }
@@ -158,7 +161,7 @@ export class TileClient {
       if (this.inFlight.get(wanted.id)?.token === token) this.inFlight.delete(wanted.id);
     };
     this.backend
-      .renderTile(this.documentId, generation, wanted.page, wanted.tile, wanted.priority)
+      .renderTile(this.documentId, generation, wanted.page, wanted.tile, wanted.priority, this.lane)
       .then(
         (bitmap) => {
           settle();

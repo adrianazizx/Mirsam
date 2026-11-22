@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 1).
+Last updated: 2026-11-22 (session 3).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -13,7 +13,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **Nothing is committed yet.** `git init` was run; committing was left to you.
+2. **Git history is local only.** Milestone 0 is on `main`, Milestone 1 work on `m1-viewer`; there
+   is no remote, so nothing is backed up beyond this machine (and OneDrive's copy of `.git`).
 3. **CI has never run.** `.github/workflows/ci.yml` is written and its YAML parses, but there is
    no remote. Expect first-run fixes, especially on Windows and Linux.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
@@ -96,7 +97,8 @@ by anything found so far.
   Windows (`pdfium.dll` beside the exe), and Linux bundle paths are still to configure and test.
 - The self-test reads back the canvas, not the composited window (ADR 0007).
 - `ocr-eval` degraded category is too easy; tables need cell-level scoring (ADR 0006).
-- Preferences live in `localStorage` until the SQLite store exists (M1).
+- ~~Preferences live in `localStorage` until the SQLite store exists (M1).~~ Done in session 3:
+  the store holds them; `localStorage` keeps a copy for the first frame only.
 - No fuzzing of the open/parse path yet (spec §11); the truncated fixture is the only malformed input.
 
 ## M1 — Viewer (P0 viewing) — in progress on branch `m1-viewer`
@@ -111,22 +113,29 @@ by anything found so far.
       need a visible-window run before they count as problems (ADR 0009, "Open")
 - [~] View modes: single / continuous / two-page / book; RTL page order — done. Reading
       `/ViewerPreferences /Direction` is not (needs an `unsafe` PDFium call)
-- [~] Thumbnails, outline, page labels, go-to-page — go-to-page done (accepts Arabic-Indic
-      digits); outline and page labels done in the core (`Document::outline()`,
-      `Document::page_label()`), no UI yet; thumbnails not started
-- [ ] Tabs (real: close, reorder), multiple windows
-- [~] Bidi-aware text extraction (spec §6.1) — core done (ADR 0008): 82/118 corpus blocks verbatim
-      (was 46), 66/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for
-      OCR. Selection/copy UI not started (spans with glyph boxes are ready for it)
-- [~] Search with Arabic normalization (spec §6.2) — core done: tashkeel/tatweel, alef forms, ى/ي,
-      optional ة/ه, digit styles, presentation forms, case, whole word, regex; 500 pages in 10 ms
-      after indexing (release). No search UI yet
-- [~] Recents, session restore, per-file position (SQLite) — core done: `safha_core::store`
-      (bundled SQLite, WAL, schema versioning, refuses newer schemas); not wired to the shell/UI yet
-- [ ] Reading themes (sepia, night); command palette; printing
-- [ ] Open password-protected PDFs (the engine already accepts a password; the UI has no prompt)
+- [x] Thumbnails, outline, page labels, go-to-page (ADR 0010) — thumbnail strip on its own render
+      lane; outline tree; the page field shows and accepts labels (`i`, `1`, `2`) and Arabic-Indic
+      digits. Verified in the real app in both directions
+- [~] Tabs — close button, middle-click, Ctrl+Tab / Ctrl+Shift+Tab, reopening a file switches to its
+      tab. **Not done:** reordering by drag, multiple windows
+- [x] Bidi-aware text extraction (spec §6.1) — core (ADR 0008): 83/118 corpus blocks verbatim
+      (was 46), 67/70 on pages with a trustworthy mapping, all broken-mapping pages flagged for OCR;
+      identical text on pages rotated 0/90/180/270°
+- [x] Selection and copy (ADR 0010) — selects visually, copies logically; word/line/page
+      selection, floating Copy button, Edit-menu copy. In the real app, select-all on page 1 copies
+      exactly the page's text in English and Arabic runs
+- [x] Search with Arabic normalization (spec §6.2) — side panel with five options, hits marked on
+      pages, ⌘G/⇧⌘G; 1,000 pages: index 1.09 s once, then 18 ms per search (release)
+- [x] Recents, session restore, per-file position (SQLite) — wired: start screen lists recents
+      (missing files marked), a second launch restores tabs, each file reopens where it was left
+- [x] Reading themes (normal, sepia, night) and command palette (⌘K, matches English and Arabic
+      titles in either UI language)
+- [ ] Printing
+- [x] Open password-protected PDFs — inline prompt; wrong password asks again; never stored
 - [ ] Re-run the tile-transport spike on Windows and Linux
-- [ ] Exit test: 1,000-page bilingual PDF at 60 fps; Arabic copy and search correct on all fixtures
+- [ ] Exit test: 1,000-page bilingual PDF at 60 fps (not measured: needs a visible window); Arabic
+      copy and search correct on all §6.6 fixtures (checked by the self-test per file run; not yet a
+      corpus-wide UI check)
 
 Known extraction gaps (floors in `crates/safha-core/tests/text.rs`): a neutral between two LTR runs
 inside RTL text (`(64-bit)`), one split Amiri cluster, the bilingual table's heading direction.
@@ -135,6 +144,23 @@ inside RTL text (`(64-bit)`), one split Amiri cluster, the bilingual table's hea
 `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh /tmp/scroll debug`
 (and `release`), then `node scripts/check-scroll-benchmark.mjs /tmp/scroll`. It refuses to report
 numbers from a hidden window.
+
+Test status at the end of session 3:
+
+- **Rust:** 103 tests pass, three runs in a row without a flake. Clippy is clean with and without
+  `devtools`, and `cargo deny` is ok.
+- **UI:** 114 tests pass. Biome, `tsc` and the production build are clean.
+- **End to end (debug app):** the self-test passes on the contract (English, light), on
+  `mixed-inline` and `page-labels` (Arabic, dark), and on the 1,000-page file. Two launches
+  sharing one state store restore the session.
+
+Remaining M1 work:
+
+- printing;
+- multiple windows and reordering tabs by drag;
+- reading `/ViewerPreferences /Direction`;
+- the tile spike on Windows and Linux;
+- the frame-rate half of the exit test.
 
 ## M2 — Annotate and organize
 
@@ -197,6 +223,38 @@ numbers from a hidden window.
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 3 — 2026-11-22 (Milestone 1: navigation, search, selection)
+
+Branch `m1-viewer`. The user-facing half of M1 on top of session 2's core (ADR 0010):
+
+- **Side panel:** thumbnails, outline, search.
+- **Selection and copy:** visual select, logical copy.
+- **Local state:** recents, session restore and remembered position, wired to the SQLite store.
+- **Also:** settings in the store, reading themes, the command palette, and the password prompt.
+- **Core:** `view::ViewTransform` (rotation-correct geometry), `search::IndexCache`, page labels in
+  one call, `Urgency::Thumbnail`, and position-only duplicate removal (ADR 0008 amendment).
+- **Fixtures:** new `derived/rotated.pdf`, 22 in all.
+- **Self-test:** now also checks selection, search and thumbnails in the real app.
+- **Test isolation:** self-tests use a throwaway state store (`SAFHA_STATE_DIR`).
+
+Things that were not obvious:
+
+- React Aria's `<Tabs>` builds its collection by rendering *everything* inside it. A search
+  results `ListBox` placed anywhere inside crashed the app with "Duplicate key 1": hit 1 against
+  the tab of document 1. `<Tabs>` now wraps only the tab bar and page area.
+- `PointerEvent.detail` is always 0 in Chromium, so double/triple-click must be counted by hand.
+- React Aria form validation in `native` mode keeps a server error as the input's custom
+  validity, which blocks the next submit: the password prompt could not be retried. `aria` mode
+  shows the message without blocking.
+- Under TypeScript 7, React Aria's render-prop and callback parameters are not inferred; they need
+  explicit types.
+- A debounced session save was lost when the app quit within the delay (the self-test does). It is
+  now written immediately; tab changes are rare.
+- On a rotated page PDFium orders characters by displayed position, so "duplicates are near each
+  other in the stream" was false; duplicates are now found by position alone.
+- The concurrency stress test holds PDFium's open lock for seconds; sharing a test binary with a
+  timing assertion made that flaky. It lives in `tests/concurrency.rs` now.
 
 ### Session 2 — 2026-11-22 (Milestone 1 started)
 

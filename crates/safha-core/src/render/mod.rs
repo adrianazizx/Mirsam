@@ -53,6 +53,9 @@ pub enum Urgency {
     Placeholder,
     /// A full-resolution tile that intersects the viewport.
     Visible,
+    /// A page thumbnail on screen in a side panel: after the document's own
+    /// visible tiles, before anything speculative.
+    Thumbnail,
     /// Near the viewport: wanted soon if the user keeps scrolling.
     Prefetch,
 }

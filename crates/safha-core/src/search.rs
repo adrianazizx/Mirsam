@@ -9,12 +9,16 @@
 //! the exact range of the page text, and through its spans to glyph boxes for
 //! highlighting.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::document::Document;
 use crate::text::{PageText, Rect};
+use crate::view::ViewTransform;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -164,6 +168,7 @@ fn extend_over_marks(text: &str, mut end: usize) -> usize {
 #[derive(Debug, Clone, Default)]
 pub struct DocumentIndex {
     pages: Vec<PageText>,
+    views: Vec<ViewTransform>,
 }
 
 impl DocumentIndex {
@@ -171,17 +176,25 @@ impl DocumentIndex {
     /// `true` stops early and yields `None`.
     pub fn build(document: &Document, cancelled: impl Fn() -> bool) -> crate::Result<Option<Self>> {
         let mut pages = Vec::with_capacity(document.page_count());
+        let mut views = Vec::with_capacity(document.page_count());
         for index in 0..document.page_count() {
             if cancelled() {
                 return Ok(None);
             }
-            pages.push(document.page_text(index)?);
+            let (text, view) = document.page_text_view(index)?;
+            pages.push(text);
+            views.push(view);
         }
-        Ok(Some(Self { pages }))
+        Ok(Some(Self { pages, views }))
     }
 
     pub fn page(&self, index: usize) -> Option<&PageText> {
         self.pages.get(index)
+    }
+
+    /// The page's mapping to displayed coordinates (see [`ViewTransform`]).
+    pub fn view(&self, index: usize) -> Option<&ViewTransform> {
+        self.views.get(index)
     }
 
     pub fn page_count(&self) -> usize {
@@ -190,11 +203,114 @@ impl DocumentIndex {
 
     /// All matches in the document, in page order.
     pub fn search(&self, query: &Query) -> Vec<(usize, SearchHit)> {
-        self.pages
-            .iter()
-            .enumerate()
-            .flat_map(|(page, text)| query.find_on_page(text).into_iter().map(move |hit| (page, hit)))
-            .collect()
+        self.search_limited(query, usize::MAX).0
+    }
+
+    /// The first `limit` matches in page order, and whether there were more.
+    pub fn search_limited(&self, query: &Query, limit: usize) -> (Vec<(usize, SearchHit)>, bool) {
+        let mut hits = Vec::new();
+        for (page, text) in self.pages.iter().enumerate() {
+            for hit in query.find_on_page(text) {
+                if hits.len() == limit {
+                    return (hits, true);
+                }
+                hits.push((page, hit));
+            }
+        }
+        (hits, false)
+    }
+}
+
+/// A document's search index, built at most once and shared by every search.
+///
+/// The first search builds it (one text extraction per page); concurrent
+/// searches wait for that build instead of starting their own. Closing the
+/// document calls [`cancel`](Self::cancel), which stops a build in progress.
+#[derive(Debug, Default)]
+pub struct IndexCache {
+    index: OnceLock<Arc<DocumentIndex>>,
+    building: Mutex<()>,
+    cancelled: AtomicBool,
+}
+
+impl IndexCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The index, building it first if needed. `None` when cancelled.
+    pub fn get_or_build(&self, document: &Document) -> crate::Result<Option<Arc<DocumentIndex>>> {
+        if let Some(index) = self.index.get() {
+            return Ok(Some(Arc::clone(index)));
+        }
+        let _building = self.building.lock().unwrap_or_else(PoisonError::into_inner);
+        // Another search may have finished the build while this one waited.
+        if let Some(index) = self.index.get() {
+            return Ok(Some(Arc::clone(index)));
+        }
+        let Some(built) = DocumentIndex::build(document, || self.cancelled.load(Ordering::Relaxed))? else {
+            return Ok(None);
+        };
+        Ok(Some(Arc::clone(self.index.get_or_init(|| Arc::new(built)))))
+    }
+
+    /// The index if it is already built; never builds.
+    pub fn ready(&self) -> Option<Arc<DocumentIndex>> {
+        self.index.get().cloned()
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Text around a match for a results list: up to `chars` characters on each
+/// side, cut at a word boundary where one is near, with `…` where text was cut.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HitContext {
+    pub before: String,
+    pub matched: String,
+    pub after: String,
+}
+
+impl HitContext {
+    pub fn of(line: &str, start: usize, end: usize, chars: usize) -> Self {
+        let before = &line[..start];
+        let after = &line[end..];
+        let mut head: String = {
+            let skip = before.chars().count().saturating_sub(chars);
+            let kept: String = before.chars().skip(skip).collect();
+            if skip == 0 {
+                kept
+            } else {
+                // Start at a word if one begins in the first third.
+                let cut =
+                    kept.char_indices().find(|&(_, c)| c.is_whitespace()).map(|(i, c)| i + c.len_utf8());
+                let kept = match cut {
+                    Some(cut) if kept[..cut].chars().count() * 3 <= chars => kept[cut..].to_string(),
+                    _ => kept,
+                };
+                format!("…{kept}")
+            }
+        };
+        let tail: String = {
+            let total = after.chars().count();
+            let kept: String = after.chars().take(chars).collect();
+            if total <= chars {
+                kept
+            } else {
+                let cut = kept.char_indices().rev().find(|&(_, c)| c.is_whitespace()).map(|(i, _)| i);
+                let kept = match cut {
+                    Some(cut) if kept[cut..].chars().count() * 3 <= chars => kept[..cut].to_string(),
+                    _ => kept,
+                };
+                format!("{kept}…")
+            }
+        };
+        if head.trim().is_empty() {
+            head.clear();
+        }
+        Self { before: head, matched: line[start..end].to_string(), after: tail }
     }
 }
 
@@ -366,6 +482,19 @@ mod tests {
         assert_eq!(Query::new("", SearchOptions::default()).err(), Some(SearchError::Empty));
         // Only tashkeel folds to nothing.
         assert_eq!(Query::new("\u{064E}\u{0650}", SearchOptions::default()).err(), Some(SearchError::Empty));
+    }
+
+    #[test]
+    fn context_is_cut_at_words_and_marked() {
+        let line = "The tenant shall pay SAR 4,500 per month for a term of twelve months in total";
+        let start = line.find("4,500").expect("present");
+        let context = HitContext::of(line, start, start + 5, 16);
+        assert_eq!(context.matched, "4,500");
+        assert_eq!(context.before, "…shall pay SAR ");
+        assert_eq!(context.after, " per month for…");
+        // Short lines are not marked.
+        let short = HitContext::of("عقد إيجار", 0, "عقد".len(), 16);
+        assert_eq!((short.before.as_str(), short.after.as_str()), ("", " إيجار"));
     }
 
     #[test]

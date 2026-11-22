@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bitmap::Bitmap;
 use crate::error::{Error, Result};
+use crate::view::ViewTransform;
 
 /// Upper bound on either side of a single rendered bitmap. Larger views are
 /// assembled from tiles; this guards against a hostile or buggy request
@@ -113,14 +114,31 @@ impl Document {
         Ok(self.page(index)?.label().map(str::to_string))
     }
 
+    /// Every page's label, or `None` when the document defines no labels.
+    ///
+    /// A `/PageLabels` tree must cover page 0, so a document whose first page
+    /// has no label has none at all and costs one page load. Otherwise every
+    /// page is loaded (PDFium reads labels only through a loaded page): call
+    /// this off the UI thread.
+    pub fn page_labels(&self) -> Result<Option<Vec<Option<String>>>> {
+        if self.page_count() == 0 || self.page_label(0)?.is_none() {
+            return Ok(None);
+        }
+        (0..self.page_count()).map(|index| self.page_label(index)).collect::<Result<Vec<_>>>().map(Some)
+    }
+
     /// The page's text in logical reading order, with per-character geometry
     /// for selection (spec section 6.1). See [`crate::text`].
     pub fn page_text(&self, index: usize) -> Result<crate::text::PageText> {
+        analyze_page(&self.page(index)?)
+    }
+
+    /// [`page_text`](Self::page_text) plus the mapping from its page-space
+    /// geometry to the page as displayed (rotation, crop-box origin), from
+    /// one page load.
+    pub fn page_text_view(&self, index: usize) -> Result<(crate::text::PageText, ViewTransform)> {
         let page = self.page(index)?;
-        let text = page.text()?;
-        let glyphs = crate::text::collect_glyphs(&text);
-        let spaces = crate::text::collect_space_marks(&page, &text);
-        Ok(crate::text::analyze(&glyphs, &spaces))
+        Ok((analyze_page(&page)?, ViewTransform::of_page(&page)?))
     }
 
     fn page(&self, index: usize) -> Result<PdfPage<'static>> {
@@ -172,6 +190,13 @@ impl std::fmt::Debug for LoadedPage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LoadedPage").field("index", &self.index).field("size", &self.size).finish()
     }
+}
+
+fn analyze_page(page: &PdfPage<'_>) -> Result<crate::text::PageText> {
+    let text = page.text()?;
+    let glyphs = crate::text::collect_glyphs(&text);
+    let spaces = crate::text::collect_space_marks(page, &text);
+    Ok(crate::text::analyze(&glyphs, &spaces))
 }
 
 fn validate_tile_size(tile: &TileRequest) -> Result<()> {

@@ -34,6 +34,7 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | Release-mode tests | set `SAFHA_PDFIUM_DIR=$PWD/third_party/pdfium/<platform>/lib` (release builds don't search `third_party/`) |
 | Render a page to PNG | `cargo run -p safha-core --example render_png -- in.pdf out.png [page] [scale]` |
 | Text-extraction baseline | `cargo run -p safha-core --example fixture_report` |
+| Search index cost (release) | `SAFHA_PDFIUM_DIR=… cargo run --release -p safha-core --example search_bench -- f.pdf [query…]` |
 | OCR eval set + score | `node ocr-eval/generate.mjs` · `cargo run -p safha-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir> --engine <name> --targets ocr-eval/targets.json` |
 
 A task is done when: code + tests pass, clippy/biome are clean, no performance budget regressed
