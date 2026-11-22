@@ -173,6 +173,11 @@
     "sanitize": {
       "setOption": "Choose what to sanitize",
       "run": "Sanitize document"
+    },
+    "security": {
+      "open": "Password and permissions…",
+      "apply": "Save with this protection",
+      "cancel": "Cancel protection changes"
     }
   },
   "viewer": {
@@ -221,7 +226,9 @@
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
     "text_failed": "The text could not be set.",
     "no_bookmarks": "This document has no top-level bookmarks to split at.",
-    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed."
+    "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed.",
+    "password_not_encodable": "That password can't be used with this encryption. Use AES-256 for passwords with other letters.",
+    "not_permitted": "This file's owner password is needed to change its protection."
   },
   "gallery": {
     "title": "Design gallery",
@@ -495,6 +502,48 @@
       "comments": "Comments",
       "hidden": "Hidden items"
     }
+  },
+  "securityDialog": {
+    "title": "Password and permissions",
+    "currentOpen": "This file has no password and no restrictions.",
+    "currentProtected": "This file is protected with {{cipher}}.",
+    "cipherName": {
+      "rc4": "RC4 (an older cipher)",
+      "aes128": "AES-128",
+      "aes256": "AES-256",
+      "unknown": "a kind of protection Mirsam can't write"
+    },
+    "needsOwner": "You opened this file with its user password. Its owner password is needed to change or remove its protection: close it and open it again with the owner password.",
+    "mode": "What to do",
+    "modeSet": "Protect with a password or permissions",
+    "modeRemove": "Remove the password and permissions",
+    "cipher": "Encryption",
+    "aes256": "AES-256 (recommended)",
+    "aes128": "AES-128 (for older readers; ASCII passwords only)",
+    "userPassword": "Password to open the file (optional)",
+    "confirmPassword": "Type the password again",
+    "ownerPassword": "Owner password (optional)",
+    "ownerHint": "The owner password lifts the permissions below. Leave it empty and nobody can lift them.",
+    "permissions": "Allow readers to",
+    "allow": {
+      "print": "Print",
+      "printHighQuality": "Print at full quality",
+      "copy": "Copy text and images",
+      "modify": "Edit content",
+      "annotate": "Add comments and markup",
+      "fillForms": "Fill in forms",
+      "assemble": "Insert, delete and rotate pages"
+    },
+    "problem": {
+      "mismatch": "The two passwords are not the same.",
+      "nothing": "Set a password or turn off a permission.",
+      "ascii": "AES-128 takes only English letters, digits and symbols. Choose AES-256 for other passwords.",
+      "control": "Passwords can't contain control characters."
+    },
+    "saveNote": "Saving rewrites the file with this protection and clears undo. Passwords can't be recovered if you forget them.",
+    "save": "Save with this protection",
+    "saveAs": "Save as…",
+    "cancel": "Cancel"
   },
   "redactDialog": {
     "title": "Apply redactions?",
