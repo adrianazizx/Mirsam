@@ -178,9 +178,6 @@ fn is_arabic_letter(c: char) -> bool {
 struct Unit {
     /// Member glyph ids.
     glyphs: Vec<usize>,
-    /// The members' PDFium character indices (what in-place editing traces
-    /// back to the content stream, ADR 0023).
-    chars: Vec<usize>,
     /// The unit's text in logical order.
     text: String,
     /// The character that decides the unit's bidi class (first base letter).
@@ -469,7 +466,6 @@ fn make_unit(glyphs: &[Glyph], mut bases: Vec<usize>, marks: Vec<usize>, reverse
     }
     let first_index = members.iter().map(|&g| glyphs[g].index).min().unwrap_or(0);
     Unit {
-        chars: members.iter().map(|&g| glyphs[g].index).collect(),
         glyphs: members,
         text,
         key,
@@ -647,7 +643,6 @@ struct Cluster {
     text: String,
     rect: Option<Rect>,
     key: char,
-    chars: Vec<usize>,
 }
 
 struct Segment {
@@ -696,7 +691,7 @@ fn make_segment(
                 p.word_gap
             };
             if forced.contains(&(k - 1)) || gap > threshold * em {
-                clusters.push(Cluster { text: " ".into(), rect: None, key: ' ', chars: Vec::new() });
+                clusters.push(Cluster { text: " ".into(), rect: None, key: ' ' });
             }
         }
 
@@ -708,12 +703,7 @@ fn make_segment(
             }
         }
         bounds = Some(bounds.map_or(unit.rect, |b| b.union(unit.rect)));
-        clusters.push(Cluster {
-            text: unit.text.clone(),
-            rect: Some(unit.rect),
-            key: unit.key,
-            chars: unit.chars.clone(),
-        });
+        clusters.push(Cluster { text: unit.text.clone(), rect: Some(unit.rect), key: unit.key });
     }
 
     Segment {
@@ -1059,7 +1049,6 @@ fn repair_quotes(clusters: &mut [Cluster]) {
 /// `)` at the start of an Arabic parenthesis back into the `(` typed.
 fn logical_line(segment: Segment, direction: Direction) -> TextLine {
     let bounds = segment.bounds;
-    let segment_baseline = segment.baseline;
     let mut visual_clusters = segment.clusters;
     let paired = bracket_shapes(&mut visual_clusters);
     let visual: String = visual_clusters.iter().map(|c| c.key).collect();
@@ -1092,9 +1081,9 @@ fn logical_line(segment: Segment, direction: Direction) -> TextLine {
     for cluster in clusters {
         let start = text.len();
         text.push_str(&cluster.text);
-        spans.push(TextSpan { start, end: text.len(), rect: cluster.rect, chars: cluster.chars });
+        spans.push(TextSpan { start, end: text.len(), rect: cluster.rect });
     }
-    TextLine { text, spans, bounds, baseline: segment_baseline }
+    TextLine { text, spans, bounds }
 }
 
 // ---------------------------------------------------------------- quality

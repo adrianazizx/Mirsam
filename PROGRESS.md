@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 10).
+Last updated: 2026-11-22 (session 9).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -336,34 +336,18 @@ Plan, in order:
    own; encrypted files; undo.
 2. ~~**Add-new-text tool**~~ **done (ADR 0021):** the Edit tool places text; a strip sets font
    (Sans, Naskh), size, colour, alignment and direction.
-3. ~~**[SPIKE] Editor surface**~~ **decided (ADR 0022): our own surface.** The engine's glyph
-   outlines are drawn on a canvas, with the caret taken from the engine's caret stops. A
-   hidden text field takes input, IME and clipboard, and serves accessibility.
-   `contenteditable` came within a pixel with the UI's own fonts, but it cannot draw a PDF's
-   embedded fonts, which in-place editing must reuse. Typing on our surface takes one frame
-   (17 ms) on WebKit. WebView2 and WebKitGTK are not measured yet.
-4. ~~**Page analysis → edit model**~~ **done (ADR 0023):**
-   - blocks with styled runs (font, size, colour), alignment and line pitch;
-   - each block traced to the content-stream operations that drew it, by our own content
-     reader;
-   - removing a block's operations removes exactly that block: checked on all 144 fully traced
-     fixture blocks, with no pixel changed outside them.
-
-   Still to do: indentation, lists, and text inside forms.
-5. ~~**In-place editing with reflow**~~ **done, with gaps (ADR 0024):**
-   - the Edit tool opens a block of the page's own text on our surface;
-   - its font is matched among the bundled faces by name, then by the widths it was drawn
-     with, and a substitute is flagged;
-   - a paragraph reflows in its box, and a single line grows along its line;
-   - written back as one undo step;
-   - blocks that cannot be edited safely say why.
-
-   Gaps:
-   - the PDF's own embedded font is not reused;
-   - installed fonts wait for embedding-permission checks;
-   - the paragraph takes one style (sizes and colours differing are flagged; bold words are
-     not);
-   - real input methods are unchecked by hand.
+3. ~~**[SPIKE] Editor surface**~~ **done (ADR 0022, `spikes/editor-surface/`):** the webview's
+   own layout matches the engine's line breaks 5 of 5 and its character positions to 0.01 pt
+   (1.1 pt on mixed bidi). **Decision: a native text field, not our own caret.** Not measured:
+   real IMEs, WKWebView.
+4. ~~**Page analysis → edit model**~~ **done (ADR 0023):** own content-stream interpreter and
+   font reader (`pdf::content`, `pdf::fontinfo`), glyphs → lines → paragraphs in the page as
+   displayed (`blocks`), with logical order, direction, alignment, line pitch, size, colour.
+5. ~~**In-place editing with reflow**~~ **done (ADR 0023, `block_edit`):** removal by byte
+   range, new text at the old text's place (z-order, clip), own font reused for Latin text it
+   has codes for, otherwise the whole paragraph in a bundled family with a "Font substituted"
+   note and a Sans/Naskh choice; unused fonts of our own drop out. The Edit tool opens a
+   paragraph when pressed.
 6. **Exit test:** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
@@ -399,9 +383,8 @@ Plan, in order:
         work).
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
-      M2's text boxes and, since session 9, written into page content (ADR 0021). Since
-      session 10 it also removes a block's text objects and replaces them (ADRs 0023, 0024).
-      Must solve:
+      M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
+      block's existing text objects (for in-place editing) is still to do. Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
@@ -411,28 +394,44 @@ Plan, in order:
         start/centre/end/justify, direction auto/RTL/LTR;
       - written into the page's content: prints, extracts and searches as page text everywhere;
       - turned pages, unbalanced page content, inherited resources, encrypted files; undo; save.
-      - Added text is editable in place like the page's own (ADR 0024). Each addition still
-        embeds its own subsets; installed fonts come with the font picker.
-- [~] In-place editing with reflow (ADR 0024).
-      - **Done:**
-        - the Edit tool, an editing session in the shell, and our surface in the page;
-        - typing measured at a median of 17 ms per keystroke in the real webview;
-        - spec §7's four acceptance tests in `tests/in_place.rs`;
-        - the self-test, in English and Arabic.
-      - **Still to do:**
-        - reuse the PDF's embedded font;
-        - installed fonts, after reading `fsType`;
-        - styled runs (bold and italic words);
-        - pair brackets across a block's lines in extraction;
-        - re-run the spike on Windows and Linux;
-        - check real input methods by hand: macOS and Windows Arabic keyboards,
-          press-and-hold, the emoji picker, dictation.
+      - Gap: not editable once added (in-place editing, step 5); each addition embeds its own
+        subsets (font reuse comes with step 5); installed fonts come with the font picker.
+- [x] In-place editing with reflow (ADR 0022, ADR 0023):
+      - the Edit tool: a press on the page's own text opens that paragraph in the shared editor;
+        a press elsewhere places new text; text that cannot be read exactly says so;
+      - removal by byte range, new text where the old was; the clip and the z-order keep;
+      - own font for Latin text it has codes for (nothing embedded), else a bundled family for
+        the whole paragraph, with the note and a Sans/Naskh choice;
+      - turned pages, `TJ`/`'`/`"` text, pages that leave their state changed, edit again
+        after save and reopen (no drift, no extra fonts); English and Arabic.
+      - Gaps (ADR 0023 "Honest limits"): bold/italic, indents and tabs, mixed styles flatten,
+        no kerning in reused fonts, forms/encrypted/Type 3, installed-font substitutes, the
+        editor field does not yet sit over the paragraph in its own width and size.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
 
-- [ ] Engine benchmark and ADR (QARI-OCR, Baseer, PP-OCRv5 Arabic, Tesseract; must beat Tesseract
-      and commercial editors in every Arabic category)
+- [~] Engine benchmark and ADR 0030 (proposed; side track on branch `pomidor/m4-ocr-benchmark-f94419`):
+  - **Primary recogniser: Nuqta-Arabic-OCR 4B.** 0.89% CER over the set, no reading-order errors.
+  - **Ensemble partner: Nuqta 0.8B.** It re-reads low-confidence lines and every number, date
+    and ID, with the platform's OCR as a third reader for fields.
+  - **Weak-hardware default:** Nuqta 0.8B, if a native runtime makes it usable without a GPU.
+    Through Transformers on the CPU it takes 677 s per page.
+  - **Quick draft:** Apple Vision on macOS, Tesseract elsewhere.
+  - **Not chosen:** QARI-OCR (invents words), PaddleOCR-VL-1.6 (weak Arabic), PP-OCRv5 Arabic
+    (32% CER; drops Latin words in Arabic lines), Baseer (no weights released).
+  - **Beats:** plain Tesseract and Apple Vision in every Arabic category.
+  - **Gaps:** synthetic set only; Acrobat and ABBYY not measured; accuracy measured in Python on
+    Metal, not yet through the runtime the app would ship.
+  - **Gates the best engine still fails:** mixed Arabic/English (2.07% CER against 2%) and
+    numbers (93.6% against 99%; 97.0% without "64-bit").
+- [x] `ocr-eval` set v2 (47 samples):
+  - Severe scans (a new tracked category) and an Arabic form.
+  - Table-cell scoring.
+  - Either column first on bilingual side-by-side pages.
+  - Baselines for nine engine runs in `ocr-eval/baselines/*.set-v2.json`.
+- [ ] Re-measure Nuqta through a shippable runtime (GGUF/llama.cpp or MLX), and its speed on CPU
+- [ ] Word boxes for VLM text: detector + alignment (PP-OCRv5's detector is the first candidate)
 - [ ] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
       verification with no silent invention
 - [ ] Background jobs with draft-then-quality results; survives restart
@@ -470,31 +469,61 @@ Plan, in order:
 
 ## Session log
 
-### Session 10 — 2026-11-22 (Milestone 3: editing a page's own text in place)
+### M4 side track — 2026-11-22 (OCR engine benchmark, branch `pomidor/m4-ocr-benchmark-f94419`)
 
-- **In-place editing (ADR 0024):**
-  - The Edit tool opens a block of the page's own text on our editor surface: engine glyphs on
-    a canvas over a paper-coloured mask, with a hidden field for typing and IME.
-  - The block is written back as one undo step.
-  - A press on a block that cannot be edited safely (broken mapping, untraced, shared, turned
-    page) says why, in both languages.
-- **Font matching for substitutes:**
-  - Candidates now include Noto Naskh Arabic and Noto Sans Arabic.
-  - Widths as drawn count, but only for letters that do not join: Arabic joined forms
-    drowned the signal.
-  - Chrome's unnamed fonts now match Noto Naskh Arabic exactly, so edited sentences keep
-    their line breaks.
-- **Single lines grow along their line** instead of wrapping into the next paragraph. The
-  self-test caught a heading's second line merging with the paragraph below it.
-- **Editing twice** drops the page's unused `MT…` fonts: one set of fonts after many edits.
-- **Self-test:**
-  - English UI: Chrome's mixed page, 17 ms per keystroke (median), read back, undone,
-    Escape.
-  - Arabic UI, dark: the page-labels fixture, 17 ms.
-  - The CoreText contract page correctly refuses every block (`needsOcr`).
-- **Tests:** 7 in-place acceptance tests, new shell and UI tests (geometry, the viewer's Edit
-  tool). The workspace's Rust tests and 163 UI tests pass on this Mac, with clippy and Biome
-  clean.
+- **ADR 0030 (proposed): Nuqta-Arabic-OCR 4B as the recogniser, Nuqta 0.8B as its partner.**
+  Nine engine runs over the eval set:
+  - **Apple Vision**, the reference.
+  - **Tesseract 5.5.4** with tessdata_best, in two configurations.
+  - **PP-OCRv5 Arabic.**
+  - **QARI-OCR 0.3 and 0.4.**
+  - **PaddleOCR-VL-1.6.**
+  - **Nuqta-Arabic-OCR 0.8B and 4B.**
+
+  Baseer was skipped: the document model was never released as weights, and Baseer-Nakba is
+  non-commercial. Every model, tool and Python environment lives under
+  `~/Library/Caches/safha-dev/ocr-bench` (about 27 GB). The owner approved each download.
+- **Eval set v2** (47 samples; v1's 30 unchanged):
+  - **Severe scans:** fax, second-generation photocopy, faded toner, curved phone photo.
+  - **An Arabic-only form.**
+  - **Table-cell scoring in the scorer.**
+  - **Either column first** on bilingual side-by-side pages. Before this, an engine that read the
+    Arabic column first lost 84% CER on a page it read perfectly.
+- **Findings that shape the pipeline:**
+  - **Self-confidence fails on digits.** Nuqta 4B is certain (p ≥ 0.9995) of the wrong digits it
+    writes on degraded pages, so numbers need a second reader whatever the confidence. Its own
+    confidence does flag the words it invents.
+  - **QARI 0.4 rewrites words.**
+  - **"(64-bit)" in an RTL sentence** comes out as "bit-64" from every engine.
+- **Harness:** `spikes/ocr-engines/`. It has runners, an agreement and confidence analysis, and
+  the tables for the ADR.
+- **Needs the owner (M4):**
+  - Real scans (item 9).
+  - If possible, Acrobat Pro or ABBYY run on `ocr-eval/out/images/` for the commercial
+    comparison.
+  - An OK before downloading Nuqta's GGUF or MLX builds to re-measure through a shippable runtime.
+- **Tests:** `cargo test --workspace`: 130 passed, 26 of them in `safha-ocr-eval`, with 6 new.
+  `clippy -D warnings` and `cargo fmt --check` are clean. The UI was not touched.
+
+### Session 10 — 2026-11-22 (Milestone 3: editor-surface spike, page analysis, in-place editing)
+
+- **Spike (ADR 0022):** the webview's own text layout matched the engine's line breaks in 5 of
+  5 paragraphs and its character positions to 0.01 pt (1.1 pt after a Latin run in mixed
+  text). Decision: a native text field, no custom caret. Unmeasured: real IMEs, WKWebView.
+- **Reading pages (ADR 0023):** `pdf::content` (tokenizer with byte ranges, interpreter),
+  `pdf::fontinfo` (ToUnicode, encodings, widths), `blocks` (glyphs → lines → paragraphs, logical
+  order, direction, alignment). `cargo run -p safha-core --example page_blocks -- f.pdf` lists
+  a page's paragraphs.
+- **Editing (ADR 0023):** `block_edit`; shell commands `page_text_blocks`, `edit_text_block`;
+  the Edit tool opens a pressed paragraph; the editor shows which font sets it.
+- **Findings on the fixtures:** CoreText's Arabic is not read (dots are separate shapes with no
+  text), Chrome's pages here use Type 3 fonts, so the editable fixtures are CoreText English,
+  our own written text, and the turned-pages file.
+- **Tests:** 127 lib + 11 new integration tests (`tests/block_edit.rs`); 158 UI tests; real
+  app self-test, English/light and Arabic/dark, edits an Arabic paragraph and reads it back.
+- **Next:** spec §7's exit test as a whole (four acceptance tests against Chrome/Acrobat
+  output), the field in the paragraph's own width and size, installed-font substitutes, and
+  the line-count self-check named in ADR 0022.
 
 ### Session 9 — 2026-11-22 (Milestone 3 started: text in page content, the add-text tool)
 
@@ -516,26 +545,7 @@ Plan, in order:
   reports such letters. The corpus is unchanged at 86/118.
 - **Self-test:** Arabic text placed with the Edit tool is painted, reads back as page text,
   and is undone, in English and Arabic.
-- **Editor-surface spike (ADR 0022):** it ran in the real app's WebKit.
-  - `contenteditable` with the same fonts was within 1 px of the engine (worst 2.8 px), with
-    the same line breaks.
-  - Our own surface is exact by construction and typed in one frame (median 17 ms, p95 18 ms,
-    up to 416 Arabic characters), with 0.4–1.9 ms of engine time.
-  - Decision: our own surface, because only it can draw a PDF's embedded fonts.
-  - New in `typeset`: `caret_stops` and `glyph_outline`, the real editor's first pieces.
-- **Page analysis (ADR 0023):**
-  - Each block now carries styled runs, alignment, line pitch, and the content-stream
-    operations that drew it, read by a new content reader (`pdf::content`).
-  - **Tracing:**
-    - PDFium numbers right-to-left text in reading order, while Chrome draws it left to
-      right a glyph at a time, so characters are matched to operations by position, object
-      by object;
-    - offset marks take the nearest operation;
-    - glyphs with no Unicode mapping (Arabic dots drawn apart) go to the block they are in.
-  - **Removing a block** (`without_text`) blanks its operations in a new content stream.
-  - **Corpus result:** 6 of 8,450 characters untraced. Every other block is removed with no
-    pixel changed outside it.
-- **Tests:** 285 Rust and 155 UI tests pass on this Mac.
+- **Tests:** 270 Rust and 155 UI tests pass on this Mac.
 
 ### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
 
@@ -651,6 +661,12 @@ the `safha:` URI scheme and CSP entry, the npm package `safha-desktop`. `m2-orga
 branch have committed and uncommitted work inside those crates, so renaming them now would make
 every one of their files conflict. Do it in one change once those branches have merged, and
 update CLAUDE.md, the spec header and the README note when it is done.
+
+CI on this PR hit a Windows runner measuring 1,133 ms for the first page (main measures about
+200 ms), so it carries `m2-organize`'s CI timing changes unchanged (the CI half of 353d2a6, and 65ba020):
+with `--ci`, the self-test's first-page budget and every scroll-benchmark timing check warn on
+hosted runners; behaviour checks and the shell's memory still fail the run. Identical hunks, so
+`m2-organize` still merges cleanly.
 
 ### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
 

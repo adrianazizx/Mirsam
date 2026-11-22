@@ -56,8 +56,6 @@
   --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
   --size-swatch: 22px; /* a colour choice */
   --border-width: 1px;
-  /* The in-place text editor's hidden field: present for input, never seen (ADR 0024). */
-  --size-hidden-field: 1px;
   --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;
 

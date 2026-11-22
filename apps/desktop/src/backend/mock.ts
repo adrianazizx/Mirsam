@@ -1,8 +1,6 @@
 import type {
   AnnotationKind,
   Backend,
-  BlockEditStart,
-  BlockLayout,
   CommentReply,
   DocumentComment,
   DocumentInfo,
@@ -13,6 +11,7 @@ import type {
   OutlineItem,
   PageEdit,
   PageSize,
+  ParagraphBlock,
   Priority,
   RecentFile,
   RecoveryInfo,
@@ -229,6 +228,9 @@ function stateOf(documentId: number): MockState {
 }
 
 /** Records the next revision; undone revisions are forgotten. */
+const MOCK_BLOCK_TEXT = "The mock page has one paragraph of text that the Edit tool can change.";
+const mockBlockTexts = new Map<number, string>();
+
 function pushState(documentId: number, next: MockState): EditOutcome {
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
@@ -591,87 +593,6 @@ let recents: RecentFile[] = [
 const opened = (document: DocumentInfo): OpenOutcome => ({ kind: "opened", document });
 
 /** Whether the file the mock's insert "picks" needs a password; tests set it. */
-/**
- * Text blocks open for editing (ADR 0024). The mock lays text out simply:
- * one advance for every character, wrapped at spaces, no shaping, and each
- * glyph's outline a box.
- */
-const blockEdits = new Map<
-  number,
-  { documentId: number; text: string; width: number; size: number; rtl: boolean; top: number }
->();
-let nextBlockToken = 1;
-
-export function mockBlockLayout(
-  text: string,
-  width: number,
-  size: number,
-  rtl: boolean,
-  top: number,
-  known: [number, number][] = [],
-): BlockLayout {
-  const advance = size * 0.5;
-  const lineHeight = size * 1.2;
-  // Greedy wrap at spaces (UTF-16 offsets).
-  const breaks: [number, number][] = [];
-  let start = 0;
-  while (start < text.length || breaks.length === 0) {
-    const fits = Math.max(1, Math.floor(width / advance));
-    let end = Math.min(text.length, start + fits);
-    const newline = text.indexOf("\n", start);
-    if (newline >= 0 && newline < end) end = newline + 1;
-    else if (end < text.length) {
-      const space = text.lastIndexOf(" ", end);
-      if (space > start) end = space + 1;
-    }
-    breaks.push([start, end]);
-    if (end >= text.length) break;
-    start = end;
-  }
-  const layout: BlockLayout = {
-    top,
-    height: 0,
-    lines: [],
-    glyphs: [],
-    clusters: [],
-    carets: [],
-    outlines: [],
-  };
-  const held = new Set(known.map(([font, id]) => `${font}:${id}`));
-  breaks.forEach(([from, to], line) => {
-    const lineTop = line * lineHeight;
-    const baseline = lineTop + size;
-    layout.lines.push({ top: lineTop, baseline, height: lineHeight, start: from, end: to, rtl });
-    const xOf = (offset: number) => {
-      const into = (offset - from) * advance;
-      return rtl ? width - into : into;
-    };
-    for (let offset = from; offset < to; offset += 1) {
-      const id = text.charCodeAt(offset);
-      const [a, b] = [xOf(offset), xOf(offset + 1)];
-      const left = Math.min(a, b);
-      layout.clusters.push({ line, start: offset, end: offset + 1, left, right: left + advance });
-      if (text[offset] === " " || text[offset] === "\n") continue;
-      layout.glyphs.push({ font: 0, id, x: left, y: baseline, size });
-      if (!held.has(`0:${id}`)) {
-        held.add(`0:${id}`);
-        layout.outlines.push({
-          font: 0,
-          id,
-          unitsPerEm: 1000,
-          path: "M60 0L440 0L440 700L60 700Z",
-        });
-      }
-    }
-    const last = line === breaks.length - 1;
-    for (let offset = from; offset <= (last ? to : to - 1); offset += 1) {
-      layout.carets.push({ offset, line, x: xOf(offset), split: false });
-    }
-  });
-  layout.height = breaks.length * lineHeight;
-  return layout;
-}
-
 let mockInsertIsLocked = false;
 let pendingInsert: { documentId: number; at: number } | null = null;
 export function setMockInsertIsLocked(locked: boolean): void {
@@ -874,61 +795,50 @@ export const mockBackend: Backend = {
       textChanged: true,
     };
   },
-  textBlocks: async (documentId, page) => {
-    const original = pagesOf(documentId)[page] ?? page;
-    if (original < 0) return [];
-    return textLayer(original).blocks.map((block) => ({
-      rect: { ...(block.lines[0]?.bounds ?? { x: 0, y: 0, width: 0, height: 0 }) },
-      refusal: null,
-    }));
+  // One paragraph on page 0, so the Edit tool can be tried in `pnpm dev`.
+  pageTextBlocks: async (documentId, page) => {
+    if (page !== 0) return [];
+    const text = mockBlockTexts.get(documentId) ?? MOCK_BLOCK_TEXT;
+    if (text.trim() === "") return [];
+    return [
+      {
+        index: 0,
+        fingerprint: text.length + 1,
+        x: 72,
+        y: 120,
+        width: 300,
+        height: 36,
+        text,
+        rtl: false,
+        align: "left",
+        size: 12,
+        color: [0, 0, 0],
+        lines: 2,
+        font: "IBMPlexSans-Regular",
+        fontReusable: true,
+        flattened: false,
+        editable: true,
+        reason: null,
+      } satisfies ParagraphBlock,
+    ];
   },
-  beginBlockEdit: async (documentId, page, block): Promise<BlockEditStart> => {
-    const original = pagesOf(documentId)[page] ?? page;
-    const found = original < 0 ? undefined : textLayer(original).blocks[block];
-    const line = found?.lines[0];
-    if (!found || !line) throw { code: "invalid_edit", detail: "no such block" };
-    const size = line.bounds.height;
-    const rtl = found.direction === "rtl";
-    const width = line.bounds.width + size;
-    const x = rtl ? line.bounds.x - size : line.bounds.x;
-    const token = nextBlockToken++;
-    blockEdits.set(token, { documentId, text: line.text, width, size, rtl, top: line.bounds.y });
+  editTextBlock: async (documentId, edit) => {
+    const state = stateOf(documentId);
+    if (state.pages[edit.page] === undefined)
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    const current = mockBlockTexts.get(documentId) ?? MOCK_BLOCK_TEXT;
+    if (edit.page !== 0 || edit.index !== 0 || edit.fingerprint !== current.length + 1) {
+      throw { code: "invalid_edit", detail: "the page's text changed since it was read" };
+    }
+    mockBlockTexts.set(documentId, edit.text);
+    const arabic = /[\u0600-\u06FF]/.test(edit.text);
     return {
-      token,
-      text: line.text,
-      font: { original: "MockSans", used: "MockSans", kind: "exact" },
-      x,
-      width,
-      original: { ...line.bounds },
-      size,
-      color: [0, 0, 0],
-      mixed: false,
-      rtl,
-      layout: mockBlockLayout(line.text, width, size, rtl, line.bounds.y),
-    };
-  },
-  layoutBlockEdit: async (token, text, known) => {
-    const edit = blockEdits.get(token);
-    if (!edit) throw { code: "stale_edit", detail: "no such text edit" };
-    return mockBlockLayout(text, edit.width, edit.size, edit.rtl, edit.top, known);
-  },
-  commitBlockEdit: async (token, text) => {
-    const edit = blockEdits.get(token);
-    blockEdits.delete(token);
-    if (!edit) throw { code: "stale_edit", detail: "no such text edit" };
-    if (text === edit.text) return null;
-    const state = stateOf(edit.documentId);
-    return {
-      ...pushState(edit.documentId, {
-        pages: state.pages,
-        markup: state.markup,
-        change: "annotations",
-      }),
+      ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
       textChanged: true,
+      substituted:
+        arabic || edit.family ? { from: "IBMPlexSans-Regular", to: edit.family ?? "sans" } : null,
+      lines: Math.max(1, Math.ceil(edit.text.length / 50)),
     };
-  },
-  cancelBlockEdit: async (token) => {
-    blockEdits.delete(token);
   },
   documentComments: async (documentId) => {
     const state = stateOf(documentId);

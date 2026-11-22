@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bitmap::Bitmap;
 use crate::error::{Error, Result};
-use crate::view::{ViewRect, ViewTransform};
+use crate::view::ViewTransform;
 
 /// Upper bound on either side of a single rendered bitmap. Larger views are
 /// assembled from tiles; this guards against a hostile or buggy request
@@ -190,6 +190,26 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, height))
     }
 
+    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+    pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
+        let view = self.view_transform(page)?;
+        crate::block_edit::text_blocks(&self.bytes, &view, page)
+    }
+
+    /// This document with one paragraph of its page's text edited in place
+    /// (ADR 0023), the update that does it, and what the edit did.
+    pub fn with_block_edit(
+        &self,
+        edit: &crate::block_edit::BlockEdit,
+    ) -> Result<(Document, Vec<u8>, crate::block_edit::EditedBlock)> {
+        let view = self.view_transform(edit.page)?;
+        let width = self.page_size(edit.page)?.width;
+        let (update, outcome) = crate::block_edit::edit_block_update(&self.bytes, &view, width, edit)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, outcome))
+    }
+
     /// The page's annotations of the kinds this app writes (markup, ink,
     /// notes, text boxes), and the map from page space to the page as
     /// displayed. Replies and review states are left out: they belong to
@@ -352,111 +372,6 @@ impl Document {
             out.extend(comments);
         }
         Ok(out)
-    }
-
-    /// An editor for block `block` of page `page` (ADR 0024): the block's
-    /// font matched among the bundled faces (and the installed ones, with
-    /// `installed`), its box and setting kept.
-    pub fn block_editor(
-        &self,
-        page: usize,
-        block: usize,
-        installed: bool,
-    ) -> Result<crate::text_edit::BlockEditor> {
-        let analysis = self.edit_blocks(page)?;
-        let view = self.view_transform(page)?;
-        let width = self.page_size(page)?.width;
-        crate::text_edit::BlockEditor::new(&analysis, page, block, &view, width, installed)
-    }
-
-    /// Page `page`'s text blocks as the edit tool sees them: each one's box
-    /// on the displayed page, and why it cannot be edited in place, if it
-    /// cannot (ADR 0024).
-    pub fn text_blocks(&self, page: usize) -> Result<Vec<(ViewRect, Option<crate::text_edit::Refusal>)>> {
-        let analysis = self.edit_blocks(page)?;
-        let view = self.view_transform(page)?;
-        Ok((0..analysis.blocks.len())
-            .map(|index| (view.rect(analysis.blocks[index].bounds), analysis.refusal(index, view.upright())))
-            .collect())
-    }
-
-    /// This document with the block `editor` edits set to `text` (removed
-    /// when `text` is blank), and the update that does it: one undo step.
-    pub fn with_replaced_block(
-        &self,
-        editor: &crate::text_edit::BlockEditor,
-        text: &str,
-    ) -> Result<(Document, Vec<u8>)> {
-        let view = self.view_transform(editor.page)?;
-        let update = editor.update(&self.bytes, self.password.as_deref(), &view, text)?;
-        let mut bytes = self.bytes.to_vec();
-        bytes.extend_from_slice(&update);
-        Ok((self.revision(Arc::from(bytes))?, update))
-    }
-
-    /// This document with the text-showing operations `ops` (from
-    /// [`edit_blocks`](Self::edit_blocks) of this revision) taken off page
-    /// `page`, and the update that does it (ADR 0023).
-    pub fn without_text(
-        &self,
-        page: usize,
-        ops: &[crate::text_edit::SourceOp],
-    ) -> Result<(Document, Vec<u8>)> {
-        let update = crate::text_edit::remove_text_update(&self.bytes, self.password.as_deref(), page, ops)?;
-        let mut bytes = self.bytes.to_vec();
-        bytes.extend_from_slice(&update);
-        Ok((self.revision(Arc::from(bytes))?, update))
-    }
-
-    /// The page's text as editable blocks (ADR 0023): each block's text with
-    /// its styled runs, alignment, line spacing, and the content-stream
-    /// operations that draw it.
-    pub fn edit_blocks(&self, index: usize) -> Result<crate::text_edit::PageAnalysis> {
-        let page = self.page(index)?;
-        let text = page.text()?;
-        let glyphs = crate::text::collect_glyphs(&text);
-        let spaces = crate::text::collect_space_marks(&page, &text);
-        let page_text = crate::text::analyze(&glyphs, &spaces);
-        let chars: Vec<crate::text_edit::CharInfo> = text
-            .chars()
-            .iter()
-            .enumerate()
-            .map(|(i, ch)| {
-                let color = ch.fill_color().map_or([0.0; 3], |c| {
-                    [f32::from(c.red()) / 255.0, f32::from(c.green()) / 255.0, f32::from(c.blue()) / 255.0]
-                });
-                // A text object is known by its matrix and bounds (Type 3
-                // objects' bounds alone do not tell neighbours apart).
-                let object = ch.text_object().ok().and_then(|object| {
-                    use pdfium_render::prelude::PdfPageObjectCommon;
-                    let quad = object.bounds().ok()?;
-                    let matrix = object.matrix().ok()?;
-                    let q = |v: f32| (v * 100.0).round() as i32;
-                    Some([
-                        q(quad.left().value),
-                        q(quad.bottom().value),
-                        q(quad.right().value),
-                        q(quad.top().value),
-                        q(matrix.a()),
-                        q(matrix.b()),
-                        q(matrix.e()),
-                        q(matrix.f()),
-                    ])
-                });
-                crate::text_edit::CharInfo {
-                    index: i,
-                    object,
-                    generated: ch.is_generated().unwrap_or(false),
-                    font: ch.font_name(),
-                    size: ch.scaled_font_size().value,
-                    color,
-                    origin: ch.origin().map_or((f32::NAN, f32::NAN), |(x, y)| (x.value, y.value)),
-                }
-            })
-            .collect();
-        let (ops, fonts, complete) =
-            crate::text_edit::page_ops(&self.bytes, self.password.as_deref(), index)?;
-        Ok(crate::text_edit::build_analysis(&page_text, &chars, &ops, &fonts, complete))
     }
 
     /// The map from page space to the page as displayed.

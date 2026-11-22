@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backend, KeptRequest, Priority, RenderedPage, TileRequest } from "../backend";
-import { mockBlockLayout } from "../backend/mock";
 import { ViewerController, type ViewerMode, type ViewState } from "./controller";
 
 /**
@@ -81,16 +80,6 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
       updates.push(keep);
     },
-    // Page 0's text: an editable block, and one on a broken character mapping.
-    textBlocks: async (_doc: number, page: number) =>
-      page === 0
-        ? [
-            { rect: { x: 20, y: 20, width: 200, height: 30 }, refusal: null },
-            { rect: { x: 20, y: 100, width: 200, height: 30 }, refusal: "needsOcr" },
-          ]
-        : [],
-    layoutBlockEdit: async (_token: number, text: string) =>
-      mockBlockLayout(text, 200, 12, false, 20),
   } as unknown as Backend;
 
   const container = document.createElement("div");
@@ -106,10 +95,6 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onErase: vi.fn(),
     onPlaceNote: vi.fn(),
     onPlaceTextBox: vi.fn(),
-    onPlaceText: vi.fn(),
-    onEditBlock: vi.fn(),
-    onBlockCommit: vi.fn(),
-    onBlockCancel: vi.fn(),
   };
   const viewer = new ViewerController({
     backend,
@@ -131,11 +116,6 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       textBoxPending: "text-box-pending",
       noteEditor: "note-editor",
       selectionToolbar: "selection-toolbar",
-      blockEditor: "block-editor",
-      blockMask: "block-mask",
-      blockCanvas: "block-canvas",
-      blockField: "block-field",
-      blockEditBar: "block-edit-bar",
     },
     initial: {
       zoomMode: "custom",
@@ -462,77 +442,6 @@ describe("viewer controller", () => {
     );
     expect(viewer.noteEditorHost.hidden).toBe(false);
     expect(callbacks.onPlaceNote).toHaveBeenCalledTimes(1);
-    viewer.destroy();
-  });
-
-  it("edits the page's own text where it is pressed, and places new text elsewhere", async () => {
-    mode = "text";
-    const { viewer, container, callbacks } = setup();
-    await settle();
-    const content = container.firstElementChild as HTMLElement;
-    const press = async (x: number, y: number, target: EventTarget = content) => {
-      for (const type of ["pointerdown", "pointerup"]) {
-        target.dispatchEvent(
-          new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
-        );
-      }
-      await settle();
-    };
-    // On a block: it opens. On one that cannot be edited: why not. Elsewhere: new text.
-    await press(50, 30);
-    expect(callbacks.onEditBlock).toHaveBeenLastCalledWith(0, 0, null);
-    await press(50, 110);
-    expect(callbacks.onEditBlock).toHaveBeenLastCalledWith(0, 1, "needsOcr");
-    await press(50, 300);
-    expect(callbacks.onPlaceText).toHaveBeenCalledWith(0, 50, 300, 240);
-    expect(callbacks.onEditBlock).toHaveBeenCalledTimes(2);
-
-    const text = "Rent is due monthly";
-    viewer.openBlockEditor(
-      {
-        token: 7,
-        text,
-        font: { original: "Helvetica", used: "IBMPlexSans", kind: "substitute" },
-        x: 20,
-        width: 200,
-        original: { x: 20, y: 20, width: 200, height: 30 },
-        size: 12,
-        color: [0, 0, 0],
-        mixed: false,
-        rtl: false,
-        layout: mockBlockLayout(text, 200, 12, false, 20),
-      },
-      0,
-    );
-    const page = container.querySelector<HTMLElement>('[data-page="0"]');
-    const field = page?.querySelector<HTMLTextAreaElement>(".block-field");
-    expect(page?.querySelector(".block-mask")).not.toBeNull();
-    expect(field?.value).toBe(text);
-    expect(document.activeElement).toBe(field);
-    expect(viewer.blockEditBarHost.hidden).toBe(false);
-    expect(viewer.blockEditorText()).toBe(text);
-
-    // Typing goes to the field; a press inside the editor neither commits nor places.
-    if (field) {
-      field.value = `${text} now`;
-      field.dispatchEvent(new Event("input"));
-    }
-    expect(viewer.blockEditorText()).toBe(`${text} now`);
-    await press(60, 30, page?.querySelector(".block-canvas") ?? content);
-    expect(callbacks.onBlockCommit).not.toHaveBeenCalled();
-    // A press elsewhere commits, and does nothing else.
-    await press(50, 300);
-    expect(callbacks.onBlockCommit).toHaveBeenCalledTimes(1);
-    expect(callbacks.onPlaceText).toHaveBeenCalledTimes(1);
-    // Escape in the field cancels.
-    field?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(callbacks.onBlockCancel).toHaveBeenCalledTimes(1);
-
-    viewer.closeBlockEditor(false);
-    expect(page?.querySelector(".block-field")).toBeNull();
-    expect(page?.querySelector(".block-mask")).toBeNull();
-    expect(viewer.blockEditBarHost.hidden).toBe(true);
-    expect(viewer.blockEditorText()).toBeNull();
     viewer.destroy();
   });
 

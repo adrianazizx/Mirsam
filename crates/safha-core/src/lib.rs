@@ -14,6 +14,8 @@
 
 pub mod annotate;
 mod bitmap;
+pub mod block_edit;
+pub mod blocks;
 pub mod catalog;
 mod document;
 pub mod edit;

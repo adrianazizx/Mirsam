@@ -75,10 +75,6 @@ pub struct TextSpan {
     pub end: usize,
     /// Where it is drawn. `None` for inferred spaces, which have no glyph.
     pub rect: Option<Rect>,
-    /// The PDFium characters that drew it (none for an inferred space). Not
-    /// sent to the UI.
-    #[serde(skip)]
-    pub chars: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -88,9 +84,6 @@ pub struct TextLine {
     /// The line's spans in logical order; selection maps through these.
     pub spans: Vec<TextSpan>,
     pub bounds: Rect,
-    /// Its baseline's height in page space. Not sent to the UI.
-    #[serde(skip)]
-    pub baseline: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

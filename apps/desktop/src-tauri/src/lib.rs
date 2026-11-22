@@ -14,11 +14,8 @@ mod navigation;
 mod print_linux;
 mod recovery;
 #[cfg(feature = "devtools")]
-mod spike_editor;
-#[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
-mod text_editing;
 mod viewer;
 
 use std::path::PathBuf;
@@ -43,11 +40,8 @@ macro_rules! product_commands {
             editing::add_note,
             editing::add_text_box,
             editing::add_text,
-            text_editing::text_blocks,
-            text_editing::begin_block_edit,
-            text_editing::layout_block_edit,
-            text_editing::commit_block_edit,
-            text_editing::cancel_block_edit,
+            editing::page_text_blocks,
+            editing::edit_text_block,
             editing::set_annotation_contents,
             editing::remove_annotations,
             editing::page_annotations,
@@ -153,7 +147,6 @@ pub fn run() {
             diagnostics::selftest_config,
             diagnostics::selftest_report,
             spike_tiles::spike_tile_raw,
-            spike_editor::spike_editor_layout,
             spike_tiles::spike_tile_channel,
             spike_tiles::spike_tile_base64,
             spike_tiles::spike_pdf_bytes,

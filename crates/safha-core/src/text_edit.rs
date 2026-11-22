@@ -22,14 +22,6 @@
 //! numbers (`pdf::crypt`). Copied resources that hold strings would no longer
 //! decrypt under the page's number; such a page is refused.
 
-mod analyze;
-mod replace;
-
-use analyze::decoded_contents;
-pub use analyze::{BlockAlign, EditBlock, EditLine, PageAnalysis, Refusal, RunStyle, SourceOp, StyledRun};
-pub(crate) use analyze::{CharInfo, build as build_analysis, page_ops};
-pub use replace::{BlockEditor, BlockFont};
-
 use crate::edit::{PageTree, Start, contains_string, set};
 use crate::error::{Error, Result};
 use crate::fonts::{FontFamily, for_text};
@@ -92,26 +84,14 @@ impl NewText {
 
     /// The text laid out in its box, and the fonts it uses.
     fn laid_out(&self) -> Result<(TextLayout, Vec<crate::pdf::text::NamedFont>)> {
-        self.laid_out_with(&Setting::default())
-    }
-
-    /// [`NewText::laid_out`], in `setting`'s fonts and line height when given
-    /// (in-place editing, ADR 0024).
-    pub(crate) fn laid_out_with(
-        &self,
-        setting: &Setting,
-    ) -> Result<(TextLayout, Vec<crate::pdf::text::NamedFont>)> {
         self.check()?;
-        let fonts = match &setting.fonts {
-            Some(fonts) => fonts.clone(),
-            None => for_text(self.family, &self.text)?,
-        };
+        let fonts = for_text(self.family, &self.text)?;
         let faces: Vec<FontFace> = fonts.iter().map(|font| font.face.clone()).collect();
         let style = ParagraphStyle {
             direction: self.direction,
             align: self.align,
             width: Some(self.width),
-            line_height: setting.line_height,
+            line_height: LineHeight::Normal,
         };
         let laid = layout(&self.text, &[Span::new(0..self.text.len(), 0, self.size)], &faces, &style)
             .map_err(|err| Error::Typeset(err.code()))?;
@@ -124,16 +104,8 @@ impl NewText {
     }
 }
 
-/// How new text is set when not by its [`FontFamily`] and the fonts' own
-/// line height: what in-place editing keeps of the paragraph it replaces.
-#[derive(Default)]
-pub(crate) struct Setting {
-    pub(crate) fonts: Option<Vec<crate::pdf::text::NamedFont>>,
-    pub(crate) line_height: LineHeight,
-}
-
 /// Marks the streams that wrap a page's original content in `q … Q`.
-const WRAP_KEY: &[u8] = b"MirsamWrap";
+pub(crate) const WRAP_KEY: &[u8] = b"MirsamWrap";
 
 /// The bytes to append to `bytes` to add `text` to its page: an incremental
 /// update. `view` maps the page to the page as displayed; `password` is the
@@ -144,18 +116,7 @@ pub fn add_text_update(
     view: &ViewTransform,
     text: &NewText,
 ) -> Result<Vec<u8>> {
-    add_text_update_with(bytes, password, view, text, &Setting::default())
-}
-
-/// [`add_text_update`], set as `setting` says.
-pub(crate) fn add_text_update_with(
-    bytes: &[u8],
-    password: Option<&str>,
-    view: &ViewTransform,
-    text: &NewText,
-    setting: &Setting,
-) -> Result<Vec<u8>> {
-    let (laid, fonts) = text.laid_out_with(setting)?;
+    let (laid, fonts) = text.laid_out()?;
     let Start { file, section, form, mut next_number } = Start::read(bytes)?;
     let tree = PageTree::read(&file)?;
     let leaf = tree
@@ -240,92 +201,9 @@ pub(crate) fn add_text_update_with(
     Ok(update.finish(form, file.trailer.clone(), section, next_number))
 }
 
-/// The bytes to append to `bytes` to take the text-showing operations `ops`
-/// (from [`crate::Document::edit_blocks`] of the same revision) off page
-/// `page`: an incremental update (ADR 0023). Each content stream they are in
-/// is written again, under a new number, with those operations blanked out;
-/// the page's `/Contents` points at the new streams. Everything else keeps
-/// its bytes, so graphics, z-order, and clipping are untouched; and a stream
-/// other pages share is left as it is for them.
-pub fn remove_text_update(
-    bytes: &[u8],
-    password: Option<&str>,
-    page: usize,
-    ops: &[SourceOp],
-) -> Result<Vec<u8>> {
-    if ops.is_empty() {
-        return Err(Error::InvalidEdit("no text to remove"));
-    }
-    let Start { file, section, form, mut next_number } = Start::read(bytes)?;
-    let tree = PageTree::read(&file)?;
-    let leaf =
-        tree.leaves.get(page).ok_or(Error::PageOutOfRange { index: page, count: tree.leaves.len() })?;
-    let crypt = Crypt::of(&file, password)?;
-    let mut contents = page_contents(&file, &leaf.dict)?;
-    let (mut streams, complete) = decoded_contents(&file, crypt.as_ref(), &contents);
-    if !complete {
-        return Err(Error::EditUnsupported("the page's content cannot be read"));
-    }
-    let mut changed = vec![false; streams.len()];
-    for op in ops {
-        let stream = streams.get_mut(op.stream).ok_or(Error::InvalidEdit("no such content stream"))?;
-        let bytes = stream.get_mut(op.range.clone()).ok_or(Error::InvalidEdit("no such operation"))?;
-        // Blanks keep every other operator where it was, and its neighbours apart.
-        bytes.fill(b' ');
-        changed[op.stream] = true;
-    }
-    let mut update = Update::new(bytes);
-    for (index, data) in streams.iter().enumerate() {
-        if !changed[index] {
-            continue;
-        }
-        let number = next_number;
-        next_number = number.checked_add(1).ok_or(Error::EditUnsupported("it has too many objects"))?;
-        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(data, 6);
-        let data = match crypt.as_ref() {
-            Some(crypt) => crypt.encrypt_stream(number, 0, &compressed),
-            None => compressed,
-        };
-        update.stream(
-            number,
-            0,
-            Dict(vec![(b"Filter".to_vec(), Object::Name(b"FlateDecode".to_vec()))]),
-            &data,
-        );
-        contents[index] = Object::Ref(number, 0);
-    }
-    let mut dict = leaf.dict.clone();
-    set(&mut dict, b"Contents", Object::Array(contents));
-    // Fonts this app added (`MT…`, see `free_prefix`) that nothing on the page
-    // draws with any more go, so editing a block twice leaves one set of
-    // fonts, not two. Fonts the page came with are left alone.
-    let (remaining, _) = crate::pdf::content::show_ops(&streams);
-    let used: std::collections::HashSet<Vec<u8>> = remaining.into_iter().map(|op| op.font).collect();
-    let resources = tree
-        .attribute(leaf, b"Resources")
-        .and_then(|value| file.resolve(&value))
-        .and_then(|value| value.as_dict().cloned());
-    if let Some(mut resources) = resources
-        && let Some(mut fonts) = resources
-            .get(b"Font")
-            .and_then(|value| file.resolve(value))
-            .and_then(|value| value.as_dict().cloned())
-    {
-        let before = fonts.0.len();
-        fonts.0.retain(|(name, _)| !name.starts_with(b"MT") || used.contains(name));
-        if fonts.0.len() != before && !(crypt.is_some() && contains_string(&Object::Dict(resources.clone())))
-        {
-            set(&mut resources, b"Font", Object::Dict(fonts));
-            set(&mut dict, b"Resources", Object::Dict(resources));
-        }
-    }
-    update.object(leaf.number, leaf.generation, &Object::Dict(dict));
-    Ok(update.finish(form, file.trailer.clone(), section, next_number))
-}
-
 /// The page's content streams, in order: `/Contents` is one stream, an array
 /// of them (possibly an object of its own), or absent.
-fn page_contents(file: &File<'_>, page: &Dict) -> Result<Vec<Object>> {
+pub(crate) fn page_contents(file: &File<'_>, page: &Dict) -> Result<Vec<Object>> {
     Ok(match page.get(b"Contents") {
         None | Some(Object::Null) => Vec::new(),
         Some(Object::Array(items)) => items.clone(),
@@ -339,7 +217,7 @@ fn page_contents(file: &File<'_>, page: &Dict) -> Result<Vec<Object>> {
 }
 
 /// A prefix (`MT`, `MT2`, …) under which no font of the page is named.
-fn free_prefix(fonts: &Dict) -> String {
+pub(crate) fn free_prefix(fonts: &Dict) -> String {
     (1..)
         .map(|n: u32| if n == 1 { "MT".to_string() } else { format!("MT{n}x") })
         .find(|prefix| !fonts.0.iter().any(|(key, _)| key.starts_with(prefix.as_bytes())))
@@ -348,7 +226,7 @@ fn free_prefix(fonts: &Dict) -> String {
 
 /// The `cm` matrix mapping a box whose top-left corner is displayed at
 /// (`x`, `y`) — its own space y up, origin at that corner — to page space.
-fn placement(view: &ViewTransform, x: f32, y: f32) -> Result<[f32; 6]> {
+pub(crate) fn placement(view: &ViewTransform, x: f32, y: f32) -> Result<[f32; 6]> {
     let origin = view.page_point(x, y);
     let right = view.page_point(x + 1.0, y);
     let up = view.page_point(x, y - 1.0);
@@ -361,7 +239,7 @@ fn placement(view: &ViewTransform, x: f32, y: f32) -> Result<[f32; 6]> {
 }
 
 /// A number for a content stream: three decimals at most, no exponent.
-fn num(value: f32) -> String {
+pub(crate) fn num(value: f32) -> String {
     let text = format!("{value:.3}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
     if text.is_empty() || text == "-0" || text == "-" { "0".into() } else { text.into() }

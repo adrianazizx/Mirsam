@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Editor surface spike: browser layout vs engine layout</title>
+<style>
+  body { font: 13px system-ui; margin: 16px; }
+  .t { position: absolute; top: 0; left: 0; white-space: normal; overflow-wrap: break-word; }
+  pre { white-space: pre-wrap; }
+</style>
+<script src="out/data.js"></script>
+<pre id="out">running…</pre>
+<div id="stage"></div>
+<script>
+const stats = (xs) => {
+  if (!xs.length) return { n: 0 };
+  const s = [...xs].sort((a, b) => a - b);
+  const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+  return { n: s.length, mean: +(s.reduce((a, b) => a + b, 0) / s.length).toFixed(3), p95: +q(0.95).toFixed(3), max: +s[s.length - 1].toFixed(3) };
+};
+async function run() {
+  for (const [name, key, extra] of [["Plex", "plex", { weight: "100 700" }], ["PlexAr", "plexAr", {}]]) {
+    const bytes = Uint8Array.from(atob(FONTS[key]), (c) => c.charCodeAt(0));
+    const face = new FontFace(name, bytes.buffer, extra); await face.load(); document.fonts.add(face);
+  }
+  await document.fonts.load("12px Plex"); await document.fonts.load("12px PlexAr");
+  const cases = LAYOUT;
+  const report = [];
+  for (const c of cases) {
+    const div = document.createElement("div");
+    div.className = "t";
+    div.dir = "auto";
+    div.contentEditable = "true"; // the candidate surface: native layout and caret
+    div.style.cssText = `width:${c.width}px;font-size:${c.size}px;text-align:${c.justify ? "justify" : "start"};font-family:${c.rtl ? "PlexAr, Plex" : "Plex, PlexAr"};line-height:normal`;
+    div.textContent = c.text;
+    document.getElementById("stage").appendChild(div);
+    const node = div.firstChild, box = div.getBoundingClientRect();
+    const rects = [];
+    for (let i = 0; i < c.text.length; i++) {
+      const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 1);
+      const b = r.getBoundingClientRect(); rects.push(b.width === 0 && b.height === 0 ? null : { l: b.left - box.left, r: b.right - box.left, t: b.top - box.top });
+    }
+    // The browser's lines: a new line where the top changes.
+    const starts = [];
+    let prev = null;
+    rects.forEach((r, i) => { if (r && (prev === null || Math.abs(r.t - prev) > 2)) { starts.push(i); prev = r.t; } });
+    const ours = c.lines.map((l) => l.start);
+    const sameBreaks = starts.length === ours.length && starts.every((s, i) => s === ours[i]);
+    // Cluster extents, on lines both layouts break the same way.
+    const dx = [];
+    let compared = 0;
+    c.lines.forEach((line, li) => {
+      if (starts[li] !== line.start) return;
+      compared++;
+      for (const k of line.clusters) {
+        let l = Infinity, r = -Infinity;
+        for (let i = k.s; i < k.e; i++) if (rects[i]) { l = Math.min(l, rects[i].l); r = Math.max(r, rects[i].r); }
+        if (l === Infinity) continue;
+        dx.push(Math.max(Math.abs(k.x0 - l), Math.abs(k.x1 - r)));
+      }
+    });
+    report.push({ case: c.name, ourLines: ours.length, browserLines: starts.length, sameBreaks, linesCompared: compared, ourHeight: +c.height.toFixed(2), browserHeight: +box.height.toFixed(2), clusterExtentErrorPt: stats(dx) });
+    div.remove();
+  }
+  document.getElementById("out").textContent = JSON.stringify(report, null, 1);
+  window.__report = report;
+}
+run();
+</script>

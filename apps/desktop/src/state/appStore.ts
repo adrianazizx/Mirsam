@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import type {
-  BlockFont,
   DocumentInfo,
   EditOutcome,
   OutlineItem,
   PageSize,
+  ParagraphBlock,
   RecentFile,
   RecoveryInfo,
   SaveOutcome,
@@ -110,24 +110,15 @@ export type CommentTool = "note" | "textBox" | "pen" | "eraser";
  */
 export interface PendingNote {
   documentId: number;
-  /** A sticky note, a text box, or text written into the page (ADR 0021). */
-  kind: "note" | "textBox" | "pageText";
+  /** A sticky note, a text box, text written into the page (ADR 0021), or a paragraph of page text edited in place (ADR 0023). */
+  kind: "note" | "textBox" | "pageText" | "block";
   page: number;
   x: number;
   y: number;
   width: number;
-}
-
-/** A block of page text being edited in place (ADR 0024). */
-export interface BlockEdit {
-  documentId: number;
-  page: number;
-  /** The engine's editing session. */
-  token: number;
-  /** The font it is set in, and whether that is the PDF's own. */
-  font: BlockFont;
-  /** Sizes or colours inside it are lost by setting it as one. */
-  mixed: boolean;
+  /** A `block`'s box height, and the paragraph being edited. */
+  height?: number;
+  block?: ParagraphBlock;
 }
 
 /** A close that waits for the user: something holds unsaved changes (ADR 0015). */
@@ -184,9 +175,6 @@ export interface AppState {
   commentTool: CommentTool;
   /** A note being written before it is added: where its icon goes. */
   pendingNote: PendingNote | null;
-  /** The block of page text being edited in place, if any. */
-  blockEdit: BlockEdit | null;
-  setBlockEdit(edit: BlockEdit | null): void;
   documents: OpenDocument[];
   activeDocumentId: number | null;
   /** Unsaved changes an earlier session left, waiting for restore or discard (ADR 0040). */
@@ -386,10 +374,6 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTool: "select",
     commentTool: "note",
     pendingNote: null,
-    blockEdit: null,
-    setBlockEdit(blockEdit) {
-      set({ blockEdit });
-    },
     commentFilter: DEFAULT_COMMENT_FILTER,
     commentSort: "page",
     textStyle: DEFAULT_TEXT_STYLE,

@@ -1,11 +1,11 @@
 import {
-  type BlockRefusal,
   backend,
   type EditOutcome,
   isBackendError,
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
+  type ParagraphBlock,
   type RestoreOutcome,
   type SplitBy,
   type StrokePoint,
@@ -106,8 +106,10 @@ export interface CommandArg {
   sort?: CommentSort;
   /** `text.setStyle`: what to change in how new page text is set. */
   textStyle?: Partial<TextStyle>;
-  /** `text.editBlock`: why the block (`page`, `index`) cannot be edited in place, if it cannot. */
-  refusal?: BlockRefusal | null;
+  /** `text.editBlock`: the paragraph to edit in place (ADR 0023). */
+  block?: ParagraphBlock;
+  /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
+  blockFamily?: "sans" | "naskh";
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -197,10 +199,8 @@ export type CommandId =
   | "comments.sort"
   | "comments.setAuthor"
   | "text.place"
-  | "text.setStyle"
   | "text.editBlock"
-  | "text.commitBlock"
-  | "text.cancelBlock"
+  | "text.setStyle"
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
@@ -229,8 +229,6 @@ const hasAnnotationSelected = (state: AppState) =>
 const isWritingNote = (state: AppState) =>
   (state.pendingNote !== null && state.pendingNote.documentId === state.activeDocumentId) ||
   ["note", "textBox"].includes(selectActiveDocument(state)?.selectedAnnotation?.kind ?? "");
-/** A block of page text is being edited in place (ADR 0024). */
-const isEditingBlock = (state: AppState) => state.blockEdit !== null;
 const canUndo = (state: AppState) => selectActiveDocument(state)?.canUndo ?? false;
 const canRedo = (state: AppState) => selectActiveDocument(state)?.canRedo ?? false;
 
@@ -365,7 +363,6 @@ const KNOWN_ERRORS = [
   "invalid_edit",
   "text_failed",
   "no_bookmarks",
-  "stale_edit",
 ];
 
 function reportError(error: unknown) {
@@ -1074,72 +1071,25 @@ const COMMANDS: Command[] = [
     },
   },
   {
-    // The Edit tool: a press on the page's own text opens it for editing in place (ADR 0024).
+    // The Edit tool pressed a paragraph of the page's own text (ADR 0023).
     id: "text.editBlock",
     paletteHidden: true,
-    isEnabled: (state) => hasDocument(state) && !isEditingBlock(state),
-    async run(arg) {
+    isEnabled: hasDocument,
+    run(arg) {
       const active = selectActiveDocument(store());
-      const viewer = active ? getViewer(active.id) : undefined;
-      if (!active || !viewer || arg?.page === undefined || arg.index === undefined) return;
-      if (arg.refusal) {
-        store().setError(`textRefused.${arg.refusal}`);
-        return;
-      }
-      store().setPendingNote(null);
-      const start = await backend.beginBlockEdit(active.id, arg.page, arg.index);
-      // The document or tool may have changed while the engine matched fonts.
-      if (selectActiveDocument(store())?.id !== active.id || store().activeTool !== "edit") {
-        await backend.cancelBlockEdit(start.token);
-        return;
-      }
-      store().setBlockEdit({
+      if (!active || arg?.page === undefined || !arg.block) return;
+      getViewer(active.id)?.clearSelection();
+      const { block } = arg;
+      store().setPendingNote({
         documentId: active.id,
+        kind: "block",
         page: arg.page,
-        token: start.token,
-        font: start.font,
-        mixed: start.mixed,
+        x: block.x,
+        y: block.y,
+        width: block.width,
+        height: block.height,
+        block,
       });
-      viewer.openBlockEditor(start, arg.page);
-    },
-  },
-  {
-    // Done (or a press outside the block, Cmd/Ctrl+Enter): the text goes into the page, one undo step.
-    id: "text.commitBlock",
-    paletteHidden: true,
-    isEnabled: isEditingBlock,
-    async run() {
-      const edit = store().blockEdit;
-      if (!edit) return;
-      store().setBlockEdit(null);
-      const viewer = getViewer(edit.documentId);
-      const text = viewer?.blockEditorText() ?? null;
-      if (text === null) {
-        await backend.cancelBlockEdit(edit.token);
-        return;
-      }
-      try {
-        const outcome = await backend.commitBlockEdit(edit.token, text);
-        // The editor stays drawn until the page shows the new text.
-        viewer?.closeBlockEditor(outcome !== null);
-        if (outcome) store().applyEdit(edit.documentId, outcome);
-      } catch (error) {
-        viewer?.closeBlockEditor(false);
-        throw error;
-      }
-    },
-  },
-  {
-    // Escape: the block is left as it was.
-    id: "text.cancelBlock",
-    paletteHidden: true,
-    isEnabled: isEditingBlock,
-    async run() {
-      const edit = store().blockEdit;
-      if (!edit) return;
-      store().setBlockEdit(null);
-      getViewer(edit.documentId)?.closeBlockEditor(false);
-      await backend.cancelBlockEdit(edit.token);
     },
   },
   {
@@ -1160,6 +1110,26 @@ const COMMANDS: Command[] = [
       const pending = store().pendingNote;
       if (pending && pending.documentId === active.id) {
         store().setPendingNote(null);
+        if (pending.kind === "block" && pending.block) {
+          // Unchanged text is no edit; emptied text removes the paragraph (undoable).
+          const { block } = pending;
+          if (text === block.text) return;
+          const done = await backend.editTextBlock(active.id, {
+            page: pending.page,
+            index: block.index,
+            fingerprint: block.fingerprint,
+            text,
+            ...(arg?.blockFamily ? { family: arg.blockFamily } : {}),
+          });
+          store().applyEdit(active.id, done);
+          if (done.substituted) {
+            store().setNotice({
+              key: "fontSubstituted",
+              values: { from: done.substituted.from, to: done.substituted.to },
+            });
+          }
+          return;
+        }
         // An empty new note or text box is none.
         if (text.trim() === "") return;
         const { page, x, y, width } = pending;

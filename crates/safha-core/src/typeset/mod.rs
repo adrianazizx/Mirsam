@@ -24,7 +24,6 @@
 //! box; a glyph's `y_offset` is measured *up* from that baseline (raised marks
 //! are positive), as in PDF text space.
 
-mod editing;
 mod font;
 mod itemize;
 mod library;
@@ -35,7 +34,6 @@ mod subset;
 
 use std::ops::Range;
 
-pub use editing::{CaretStop, caret_stops, glyph_outline, units_per_em};
 pub use font::{FontFace, LineMetrics};
 pub use library::{Coverage, FontEntry, FontLibrary, system_font_dirs};
 pub use lines::layout;

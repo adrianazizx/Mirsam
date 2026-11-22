@@ -143,9 +143,6 @@ async function navigationChecks(documentId: number) {
   // New page text (ADR 0021): Arabic written into the page's content with the
   // Edit tool, painted, read back as the page's own text, then undone.
   const addedText = await addedTextChecks(documentId);
-  // Editing in place (ADR 0024): the page's own text opened, typed into on the
-  // engine's surface, written back, read back, undone; and cancelled.
-  const inPlace = await inPlaceChecks(documentId);
 
   // Editing (ADR 0014): duplicate the page, see the new revision painted,
   // then undo back to the file as opened.
@@ -247,7 +244,6 @@ async function navigationChecks(documentId: number) {
     markup,
     notesAndInk,
     addedText,
-    inPlace,
     editing,
     windows,
   };
@@ -376,117 +372,38 @@ async function addedTextChecks(documentId: number) {
     return pixels > enough;
   }, 15_000);
   const readBack = (await pageText()).replace(/\s+/gu, " ").includes(text);
-  await runCommand("edit.undo");
-  const undone = !(await pageText()).includes(text);
-  useAppStore.getState().setActiveTool("select");
-  return { painted: pixels > enough, pixels, enough, readBack, undone };
-}
 
-async function inPlaceChecks(documentId: number) {
-  const blocks = await backend.textBlocks(documentId, 0);
-  const refusals = [...new Set(blocks.map((block) => block.refusal).filter(Boolean))];
-  const index = blocks.findIndex((block) => block.refusal === null);
-  if (index < 0) return { editable: false, blocks: blocks.length, refusals };
-  const pageText = async () =>
-    (await backend.pageText(documentId, 0)).blocks
-      .map((block) => block.lines.map((line) => line.text).join(" "))
-      .join(" ")
-      .replace(/\s+/gu, " ");
-  const editorOpen = () => document.querySelector<HTMLElement>('[data-testid="block-editor"]');
-  useAppStore.getState().setActiveTool("edit");
-  await pageSettled(documentId);
-  await runCommand("text.editBlock", { page: 0, index, refusal: null });
-  const session = useAppStore.getState().blockEdit;
-  const editor = editorOpen();
-  const field = editor?.querySelector("textarea") ?? null;
-  const opened = session !== null && field !== null && document.activeElement === field;
-  if (!session || !editor || !field || !opened) {
-    await runCommand("text.cancelBlock");
-    useAppStore.getState().setActiveTool("select");
-    return { editable: true, opened: false, blocks: blocks.length, refusals };
+  // In-place editing (ADR 0023): the paragraph just written is found as one block, in logical
+  // order, and a word inserted in its middle reads back from the page.
+  const blocks = await backend.pageTextBlocks(documentId, 0);
+  const block = blocks.find((candidate) => candidate.text.replace(/\s+/gu, " ").includes(text));
+  const edited = "أضيف هذا النص الجديد إلى الصفحة";
+  let blockEdited = false;
+  let blockReadBack = false;
+  if (block) {
+    await runCommand("text.editBlock", { page: 0, block });
+    await runCommand("note.save", { text: edited });
+    blockEdited = true;
+    const until = performance.now() + 15_000;
+    while (!blockReadBack && performance.now() < until) {
+      blockReadBack = (await pageText()).replace(/\s+/gu, " ").includes(edited);
+      if (!blockReadBack) await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    await runCommand("edit.undo");
   }
-  const original = field.value;
-  const rtl = field.dir === "rtl";
-  const word = rtl ? "تعديل" : "edited";
-  const before = await pageText();
-  // Typed at the end, one keystroke at a time, each timed to the frame that
-  // shows it (as the editor spike measured, ADR 0022).
-  const drawn = (length: number) =>
-    new Promise<void>((resolve) => {
-      const done = () => editor.dataset.laidOutLength === String(length);
-      if (done()) return resolve();
-      const observer = new MutationObserver(() => {
-        if (!done()) return;
-        observer.disconnect();
-        resolve();
-      });
-      observer.observe(editor, { attributes: true, attributeFilter: ["data-laid-out-length"] });
-      setTimeout(() => {
-        observer.disconnect();
-        resolve();
-      }, 5_000);
-    });
-  field.setSelectionRange(original.length, original.length);
-  const latencies: number[] = [];
-  for (const char of ` ${word}`) {
-    const started = performance.now();
-    document.execCommand("insertText", false, char);
-    await drawn(field.value.length);
-    await nextFrame();
-    latencies.push(performance.now() - started);
-  }
-  const typed = field.value === `${original} ${word}`;
-  const canvas = editor.querySelector("canvas");
-  const pixels = canvas?.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
-  let inked = 0;
-  for (let i = 3; pixels && i < pixels.length; i += 4) if ((pixels[i] ?? 0) > 128) inked += 1;
-
-  await runCommand("text.commitBlock");
-  // The editor stays until the page shows the new text.
-  const repainted = await waitFor(() => editorOpen() === null, 15_000);
-  const after = await pageText();
-  const readBack = !before.includes(word) && after.includes(word);
-  // The rest of the block is still there.
-  const kept = original
-    .split(/\s+/u)
-    .filter((part) => part.length > 2)
-    .slice(0, 3)
-    .every((part) => after.includes(part));
+  const blockFound = block !== undefined && block.text.replace(/\s+/gu, " ") === text && block.rtl;
   await runCommand("edit.undo");
-  const undone = !(await pageText()).includes(word);
-
-  // Escape leaves the block as it was.
-  await runCommand("text.editBlock", { page: 0, index, refusal: null });
-  const again = editorOpen()?.querySelector("textarea");
-  again?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  const cancelled =
-    again !== null &&
-    again !== undefined &&
-    (await waitFor(
-      () => useAppStore.getState().blockEdit === null && editorOpen() === null,
-      5_000,
-    ));
+  const undone = !(await pageText()).includes(text) && !(await pageText()).includes(edited);
   useAppStore.getState().setActiveTool("select");
-  const sorted = [...latencies].sort((a, b) => a - b);
-  const pick = (q: number) =>
-    Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0);
   return {
-    editable: true,
-    opened,
-    blocks: blocks.length,
-    refusals,
-    rtl,
-    font: session.font,
-    typed,
-    inked,
+    painted: pixels > enough,
+    pixels,
+    enough,
     readBack,
-    kept,
-    repainted,
     undone,
-    cancelled,
-    keystrokes: latencies.length,
-    latencyMedianMs: pick(0.5),
-    latencyP95Ms: pick(0.95),
+    blockFound,
+    blockEdited,
+    blockReadBack,
   };
 }
 
@@ -642,16 +559,6 @@ export async function runSelftestIfRequested(): Promise<void> {
     } catch (error) {
       void backend.selftestLog(`tile-memory failed: ${String(error)}`);
       await backend.selftestReport({ spike: "tile-memory", variant, error: String(error) }, null);
-    }
-    return;
-  }
-  if (config.spike === "editor-surface") {
-    const { runEditorSurfaceSpike } = await import("./spikes/editorSurface");
-    try {
-      await backend.selftestReport(await runEditorSurfaceSpike(), null);
-    } catch (error) {
-      void backend.selftestLog(`editor-surface failed: ${String(error)}`);
-      await backend.selftestReport({ spike: "editor-surface", error: String(error) }, null);
     }
     return;
   }

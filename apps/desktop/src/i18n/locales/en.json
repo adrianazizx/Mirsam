@@ -114,11 +114,7 @@
       "place": "Place a text box"
     },
     "text": {
-      "place": "Place new text",
-      "setStyle": "Set the text style",
-      "editBlock": "Edit this text",
-      "commitBlock": "Done",
-      "cancelBlock": "Cancel"
+      "editBlock": "Edit a paragraph of page text"
     },
     "ink": {
       "add": "Add ink",
@@ -201,14 +197,7 @@
     "save_failed": "The document could not be saved. The file on disk was not changed.",
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
     "text_failed": "The text could not be set.",
-    "no_bookmarks": "This document has no top-level bookmarks to split at.",
-    "textRefused": {
-      "needsOcr": "This page's text can't be read reliably, so it can't be edited in place. Run OCR on it first.",
-      "untraced": "Part of this text is drawn in a way Mirsam can't edit yet.",
-      "shared": "This text is drawn together with other text, so it can't be edited on its own yet.",
-      "turned": "Text on a rotated page can't be edited in place yet."
-    },
-    "stale_edit": "The document changed while its text was being edited. Nothing was written; try again."
+    "no_bookmarks": "This document has no top-level bookmarks to split at."
   },
   "gallery": {
     "title": "Design gallery",
@@ -305,7 +294,9 @@
   },
   "notices": {
     "extracted": "The pages were saved as {{name}}.",
-    "split": "The document was split into {{count}} files."
+    "split": "The document was split into {{count}} files.",
+    "fontSubstituted": "Font substituted: {{from}} → {{to}}.",
+    "textNotEditable": "This text cannot be edited here."
   },
   "split": {
     "title": "Split into files",
@@ -336,15 +327,6 @@
     "label": "New text",
     "text": "Text to add to the page",
     "placeholder": "Type the text…"
-  },
-  "blockEdit": {
-    "label": "Editing page text",
-    "field": "Page text being edited",
-    "exact": "Set in <bdi>{{font}}</bdi>, the PDF's own font",
-    "sameFamily": "Set in <bdi>{{font}}</bdi>, another style of the PDF's font",
-    "substitute": "Set in <bdi>{{font}}</bdi>: <bdi>{{original}}</bdi> is not available",
-    "substituteUnnamed": "Set in <bdi>{{font}}</bdi>: the PDF's own font is not available",
-    "mixed": "Its sizes and colours become the first's"
   },
   "textStyle": {
     "family": "Font",
@@ -418,5 +400,14 @@
     "reopen": "Reopen",
     "yourName": "Your name on comments",
     "yourNamePlaceholder": "Not set: comments carry no name"
+  },
+  "block": {
+    "label": "Page text",
+    "text": "Text of the paragraph",
+    "placeholder": "Type the text…",
+    "ownFont": "Set in the paragraph's own font ({{font}}) where it has the letters.",
+    "substituted": "Font substituted: the paragraph is set in a bundled font instead of {{font}}.",
+    "flattened": "This paragraph mixes fonts, sizes or colours; editing sets it in one.",
+    "familyAuto": "Automatic"
   }
 }

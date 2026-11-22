@@ -84,10 +84,9 @@ impl ViewTransform {
         Self { a: snap(self.a), b: snap(self.b), c: snap(self.c), d: snap(self.d), ..self }
     }
 
-    /// Page space is displayed as it is, only moved and flipped upright: the
-    /// page is not turned (`/Rotate` 0).
-    pub fn upright(&self) -> bool {
-        self.b == 0.0 && self.c == 0.0 && self.a > 0.0 && self.d < 0.0
+    /// The map as `[a b c d e f]`.
+    pub(crate) fn matrix(&self) -> [f64; 6] {
+        [self.a, self.b, self.c, self.d, self.e, self.f].map(f64::from)
     }
 
     pub fn point(&self, x: f32, y: f32) -> (f32, f32) {

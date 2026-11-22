@@ -1,17 +1,15 @@
 import {
   type AnnotationKind,
   type Backend,
-  type BlockEditStart,
-  type BlockRefusal,
   type MarkedPage,
   type PageAnnotation,
   type PageSize,
+  type ParagraphBlock,
   type RenderedPage,
   releaseRendered,
   renderedCanvas,
   type SearchHit,
   type StrokePoint,
-  type TextBlockInfo,
   type TextLayer,
   type TileRequest,
   type Urgency,
@@ -19,8 +17,6 @@ import {
 } from "../backend";
 import { clampZoom } from "../state/zoom";
 import { annotationAt, clampToPage, erased, inkRuns } from "./annotations";
-import { BlockEditorSurface } from "./blockEditor";
-import { blockAt } from "./blockLayout";
 import {
   PAGE_PAINTED_EVENT,
   PAGE_PREVIEW_EVENT,
@@ -116,17 +112,10 @@ export interface ViewerCallbacks {
   onPlaceTextBox?(page: number, x: number, y: number, width: number): void;
   /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
   onPlaceText?(page: number, x: number, y: number, width: number): void;
-  /**
-   * The Edit tool pressed on a block of the page's text (ADR 0024): it opens
-   * for editing, or `refusal` says why it cannot.
-   */
-  onEditBlock?(page: number, block: number, refusal: BlockRefusal | null): void;
-  /** The block being edited is done with (a press outside it, Cmd/Ctrl+Enter). */
-  onBlockCommit?(): void;
-  /** The block's changes are dropped (Escape). */
-  onBlockCancel?(): void;
-  /** The engine could not lay the edited text out. */
-  onBlockFailed?(error: unknown): void;
+  /** The Edit tool pressed a paragraph of the page's own text (ADR 0023). */
+  onEditBlock?(page: number, block: ParagraphBlock): void;
+  /** The Edit tool pressed text that cannot be edited (ADR 0023). */
+  onBlockRefused?(block: ParagraphBlock): void;
 }
 
 /** An annotation the reader selected by clicking it. */
@@ -183,13 +172,6 @@ export interface ViewerClassNames {
   noteEditor: string;
   /** Anchor element the selection toolbar is rendered into. */
   selectionToolbar: string;
-  /** The in-place text editor (ADR 0024): its surface, the mask over the original, its canvas and hidden field. */
-  blockEditor: string;
-  blockMask: string;
-  blockCanvas: string;
-  blockField: string;
-  /** Anchor element the editor's bar (font, Done, Cancel) is rendered into. */
-  blockEditBar: string;
 }
 
 export interface ViewerOptions {
@@ -203,8 +185,6 @@ export interface ViewerOptions {
   callbacks: ViewerCallbacks;
   /** Accessible name of a page, e.g. "Page 3 of contract.pdf". */
   pageLabel(page: number): string;
-  /** Accessible name of the in-place text editor's field. */
-  blockEditorLabel?(): string;
   isMac: boolean;
   /** What a press on a page does now (the active tool); "select" if absent. */
   mode?(): ViewerMode;
@@ -259,8 +239,6 @@ const GESTURE_RELAYOUT_MS = 250;
  * shows its preview with no round trip and no redraw.
  */
 const PREVIEW_CACHE_PAGES = 48;
-/** An edited block's editor stays drawn at most this long waiting for its page to repaint. */
-const EDITOR_REPAINT_TIMEOUT_MS = 4000;
 /** Text layers kept for selection; pages inside the selection are never dropped. */
 const TEXT_LAYER_PAGES = 64;
 /** While selecting, the view scrolls when the pointer is this close to an edge (CSS px). */
@@ -431,15 +409,6 @@ export class ViewerController {
   readonly noteEditorHost: HTMLDivElement;
   /** Where the selection toolbar is drawn: above the selection's first line. */
   readonly selectionToolbarHost: HTMLDivElement;
-  /** Each page's text blocks, for the Edit tool (ADR 0024); dropped on refresh. */
-  private readonly textBlocks = new Map<number, Promise<TextBlockInfo[]>>();
-  /** The text block being edited in place. */
-  private blockEditor: BlockEditorSurface | null = null;
-  /** Edited blocks still shown until their page repaints with the new text. */
-  private closingEditors: BlockEditorSurface[] = [];
-  /** Where the editor's bar is drawn: above the edited block. */
-  readonly blockEditBarHost: HTMLDivElement;
-  private readonly blockEditorLabel: () => string;
 
   constructor(options: ViewerOptions) {
     this.backend = options.backend;
@@ -468,12 +437,6 @@ export class ViewerController {
     this.noteEditorHost.className = this.classNames.noteEditor;
     this.noteEditorHost.hidden = true;
     this.content.append(this.noteEditorHost);
-    this.blockEditBarHost = document.createElement("div");
-    this.blockEditBarHost.className = this.classNames.blockEditBar;
-    this.blockEditBarHost.dataset.blockEditBar = "";
-    this.blockEditBarHost.hidden = true;
-    this.content.append(this.blockEditBarHost);
-    this.blockEditorLabel = options.blockEditorLabel ?? (() => "");
 
     this.client = this.newClient();
 
@@ -531,10 +494,6 @@ export class ViewerController {
     this.dprQuery?.removeEventListener("change", this.onDevicePixelRatioChange);
     if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
     for (const slot of this.slots.values()) releaseSlot(slot);
-    this.blockEditor?.destroy();
-    this.blockEditor = null;
-    for (const editor of this.closingEditors) editor.destroy();
-    this.closingEditors = [];
     this.content.remove();
     this.slots.clear();
     for (const canvas of this.previews.values()) releaseCanvas(canvas);
@@ -580,116 +539,8 @@ export class ViewerController {
     this.layerGeneration += 1;
     this.layers.clear();
     this.layerRequests.clear();
-    this.textBlocks.clear();
     this.setSelection(null);
     this.update();
-  }
-
-  // ------------------------------------------------------------ editing text in place
-
-  /** Opens the in-place editor over a block of `page` (ADR 0024). */
-  openBlockEditor(start: BlockEditStart, page: number): void {
-    const size = this.sizes?.[page];
-    if (!size || this.destroyed) return;
-    this.closeBlockEditor(false);
-    this.setSelection(null);
-    const editor = new BlockEditorSurface(
-      page,
-      start,
-      size,
-      this.backend,
-      {
-        commit: () => this.callbacks.onBlockCommit?.(),
-        cancel: () => this.callbacks.onBlockCancel?.(),
-        failed: (error) => this.callbacks.onBlockFailed?.(error),
-      },
-      {
-        editor: this.classNames.blockEditor,
-        mask: this.classNames.blockMask,
-        canvas: this.classNames.blockCanvas,
-        field: this.classNames.blockField,
-      },
-      this.blockEditorLabel(),
-    );
-    this.blockEditor = editor;
-    const slot = this.slots.get(page);
-    if (slot) editor.attach(slot.element);
-    this.placeBlockEditor();
-    editor.focus();
-  }
-
-  /**
-   * Closes the in-place editor. `afterRepaint`: its text was written, so it
-   * stays drawn (taking no input) until the page shows the new text.
-   */
-  closeBlockEditor(afterRepaint: boolean): void {
-    const editor = this.blockEditor;
-    this.blockEditor = null;
-    this.blockEditBarHost.hidden = true;
-    if (!editor) return;
-    if (afterRepaint && this.slots.has(editor.page)) {
-      editor.freeze();
-      this.closingEditors.push(editor);
-      // Should the page not repaint (scrolled away), it goes anyway.
-      window.setTimeout(() => this.finishClosing(editor), EDITOR_REPAINT_TIMEOUT_MS);
-    } else {
-      editor.destroy();
-    }
-    this.container.focus({ preventScroll: true });
-  }
-
-  /** The text in the in-place editor, or null when none is open. */
-  blockEditorText(): string | null {
-    return this.blockEditor?.text() ?? null;
-  }
-
-  private finishClosing(editor: BlockEditorSurface): void {
-    const index = this.closingEditors.indexOf(editor);
-    if (index < 0) return;
-    this.closingEditors.splice(index, 1);
-    editor.destroy();
-  }
-
-  /** Follows zoom and the device pixel ratio; puts the bar above the block. */
-  private placeBlockEditor(): void {
-    const host = this.blockEditBarHost;
-    const editor = this.blockEditor;
-    for (const shown of [editor, ...this.closingEditors]) {
-      if (!shown) continue;
-      const box = this.layout?.boxes[shown.page];
-      const size = this.sizes?.[shown.page];
-      if (box && size) shown.setScale(box.width / size.width, this.devicePixelRatio);
-    }
-    const box = editor ? this.layout?.boxes[editor.page] : undefined;
-    const size = editor ? this.sizes?.[editor.page] : undefined;
-    if (!editor || !box || !size) {
-      host.hidden = true;
-      return;
-    }
-    const sx = box.width / size.width;
-    const sy = box.height / size.height;
-    const { original } = editor.start;
-    const top = Math.min(original.y, editor.start.layout.top);
-    host.hidden = false;
-    // Over the block as it was (a one-line block's box reaches along its line).
-    // The page area is always left to right: inline-start is the left edge.
-    host.style.insetInlineStart = `${box.x + original.x * sx}px`;
-    host.style.insetBlockStart = `${box.y + top * sy}px`;
-    host.style.inlineSize = `${original.width * sx}px`;
-  }
-
-  /** Page `page`'s text blocks (cached until the next refresh). */
-  private blocksOf(page: number): Promise<TextBlockInfo[]> {
-    let blocks = this.textBlocks.get(page);
-    if (!blocks) {
-      blocks = this.backend.textBlocks(this.documentId, page).catch((error: unknown) => {
-        this.textBlocks.delete(page);
-        console.warn("text blocks unavailable", page, error);
-        return [];
-      });
-      this.textBlocks.set(page, blocks);
-    }
-    return blocks;
   }
 
   /** Applies zoom and view-mode changes from the store. */
@@ -932,13 +783,14 @@ export class ViewerController {
       page: number;
       x: number;
       y: number;
-      kind: "note" | "textBox" | "pageText";
+      kind: "note" | "textBox" | "pageText" | "block";
       width: number;
+      height?: number;
     } | null,
   ): void {
     const previous = this.noteAnchor;
     if (note) {
-      const height = note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE;
+      const height = note.height ?? (note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE);
       this.noteAnchor = {
         page: note.page,
         rect: { x: note.x, y: note.y, width: note.width, height },
@@ -1281,12 +1133,6 @@ export class ViewerController {
     ) {
       return;
     }
-    // The in-place editor handles its own presses; one elsewhere ends it
-    // (its own listener commits) and does nothing else.
-    if (this.blockEditor) {
-      if (!this.blockEditor.contains(event.target)) event.preventDefault();
-      return;
-    }
     // Clicks on the scrollbars land on the container, not the content.
     this.container.focus({ preventScroll: true });
     const point = this.pointAt(event.clientX, event.clientY);
@@ -1419,21 +1265,23 @@ export class ViewerController {
       } else if (hit?.kind === mode) {
         this.setSelectedAnnotation(hit);
       } else if (mode === "text") {
-        // On a block of the page's text: edit it there (ADR 0024). Elsewhere: new text.
-        void this.blocksOf(pressed.page).then((blocks) => {
-          if (this.destroyed || press !== this.presses || this.blockEditor) return;
-          const index = blockAt(blocks, pressed.x, pressed.y);
-          const block = blocks[index];
-          if (block) {
-            this.callbacks.onEditBlock?.(pressed.page, index, block.refusal);
-            return;
-          }
-          if (!size) return;
-          const x = Math.max(0, Math.min(pressed.x, size.width - TEXT_BOX_MIN_WIDTH - 4));
-          const y = Math.max(0, Math.min(pressed.y, size.height - TEXT_BOX_LINE));
-          const width = Math.min(TEXT_BOX_WIDTH, size.width - x - 4);
-          this.callbacks.onPlaceText?.(pressed.page, x, y, width);
-        });
+        // A press on the page's own text edits that paragraph (ADR 0023); elsewhere it places new text.
+        void this.backend.pageTextBlocks(this.documentId, pressed.page).then(
+          (blocks) => {
+            if (this.destroyed || press !== this.presses) return;
+            const block = blocks.find(
+              (b) =>
+                pressed.x >= b.x - 2 &&
+                pressed.x <= b.x + b.width + 2 &&
+                pressed.y >= b.y - 2 &&
+                pressed.y <= b.y + b.height + 2,
+            );
+            if (block?.editable) this.callbacks.onEditBlock?.(pressed.page, block);
+            else if (block) this.callbacks.onBlockRefused?.(block);
+            else this.placeNewText(pressed.page, pressed.x, pressed.y);
+          },
+          () => this.placeNewText(pressed.page, pressed.x, pressed.y),
+        );
       } else if (mode === "textBox") {
         // Its top-left corner at the press, as wide as the page allows.
         if (!size) return;
@@ -1455,6 +1303,16 @@ export class ViewerController {
       }
     });
   };
+
+  /** New page text: its top-left corner at the press, as wide as the page allows. */
+  private placeNewText(page: number, pressedX: number, pressedY: number): void {
+    const size = this.sizes?.[page];
+    if (!size) return;
+    const x = Math.max(0, Math.min(pressedX, size.width - TEXT_BOX_MIN_WIDTH - 4));
+    const y = Math.max(0, Math.min(pressedY, size.height - TEXT_BOX_LINE));
+    const width = Math.min(TEXT_BOX_WIDTH, size.width - x - 4);
+    this.callbacks.onPlaceText?.(page, x, y, width);
+  }
 
   private extendSelection(): void {
     const dragging = this.dragging;
@@ -1821,7 +1679,6 @@ export class ViewerController {
     if (this.pinned) this.pinned.scrollTop = this.container.scrollTop;
     this.placeSelectionToolbar();
     this.placeNoteEditor();
-    this.placeBlockEditor();
   }
 
   /** `at` is relative to the viewport's top-left; null means its centre. */
@@ -2023,9 +1880,6 @@ export class ViewerController {
     this.placeSlot(slot, box);
     this.slots.set(page, slot);
     this.content.append(element);
-    for (const editor of [this.blockEditor, ...this.closingEditors]) {
-      if (editor?.page === page) editor.attach(element);
-    }
     if (
       this.searchMarks.has(page) ||
       this.selectionRects.has(page) ||
@@ -2178,10 +2032,6 @@ export class ViewerController {
     slot.sharpAt = performance.now();
     // The engine's tiles now show the ink the preview stood in for.
     if (this.inkPreview.delete(slot.page)) this.paintOverlay(slot);
-    // …and the text an in-place editor stood in for.
-    for (const editor of this.closingEditors.filter((closing) => closing.page === slot.page)) {
-      this.finishClosing(editor);
-    }
     const size = this.sizes?.[slot.page];
     if (!size) return;
     const pixels = pagePixelSize(size, this.scale);
