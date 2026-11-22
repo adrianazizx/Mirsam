@@ -204,12 +204,13 @@ M1 closed in session 6 at the owner's go-ahead, with these items carried forward
 
 Plan, in order: every later slice edits documents, so the editing model and saving come first.
 
-1. **[SPIKE] Editing model** (ADR 0014). Each edit is an incremental update written by our own
-   writer, and undo pops the last one. The alternative is PDFium's edit API plus a full save.
-   The spike tries both on the corpus and validates each with PDFium and `qpdf --check`. It
-   checks fidelity (outline, forms, signatures) and cost.
-2. **Page organizer:** rotate, delete, reorder, duplicate, insert blank, with undo and redo; a
-   page grid in the UI.
+1. ~~**Editing model**~~ **done (ADR 0014):** each edit is an incremental update written by our
+   own writer, and undo pops the last one. PDFium's safe API cannot reorder pages without
+   breaking the outline and links, and cannot save incrementally. Validated on the corpus with
+   PDFium and `qpdf --check`.
+2. **Page organizer:** rotate, delete, duplicate and insert blank work on the current page, with
+   undo and redo, and are in the palette. Still to do: moving pages, and a page grid with
+   multi-select and drag to reorder.
 3. **Safe save:** Save and Save As (temp file → validate → atomic rename). The original is never
    written in place; signed files are saved incrementally.
 4. **Merge, insert from another PDF, extract, split.**
@@ -221,8 +222,11 @@ Plan, in order: every later slice edits documents, so the editing model and savi
 
 - [ ] Markup, notes, text boxes, ink
 - [ ] Comments panel
-- [ ] Page organizer (reorder/rotate/delete/merge/split/extract)
-- [ ] Undo journal
+- [~] Page organizer (reorder/rotate/delete/merge/split/extract): rotate, delete, duplicate and
+      insert blank on the current page, from the palette, in both directions; the core also
+      moves pages. No page grid yet.
+- [x] Undo journal: undo and redo for page edits (`EditHistory`, ADR 0014); annotations will
+      use it too
 - [ ] Safe save pipeline (temp → validate with reopen + `qpdf --check` → atomic rename)
 - [ ] Autosave and recovery
 
