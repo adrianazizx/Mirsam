@@ -16,9 +16,12 @@ import {
   type PageSize,
   type ParagraphBlock,
   type RecentFile,
+  type RedactHits,
+  type RedactOutcome,
   type RenderedPage,
   type RenderStats,
   type RestoreOutcome,
+  type SanitizeOutcome,
   type SaveOutcome,
   type SearchResults,
   type SelftestConfig,
@@ -150,6 +153,12 @@ export const tauriBackend: Backend = {
   editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
   undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),
   redoEdit: (documentId) => invoke<EditOutcome>("redo_edit", { documentId }),
+  findRedactions: (documentId, pattern) =>
+    invoke<RedactHits>("find_redactions", { documentId, pattern }),
+  applyRedactions: (documentId, marks) =>
+    invoke<RedactOutcome>("apply_redactions", { documentId, marks }),
+  sanitizeDocument: (documentId, options) =>
+    invoke<SanitizeOutcome>("sanitize_document", { documentId, options }),
   addMarkup: (documentId, kind, pages) =>
     invoke<EditOutcome>("add_markup", { documentId, kind, pages }),
   addInk: (documentId, page, strokes) =>

@@ -394,7 +394,7 @@ pub(crate) struct Leaf {
     under_root: bool,
     /// Inheritable attributes the page takes from an ancestor other than the
     /// root (it keeps those from the root wherever it moves).
-    inherited_below_root: Vec<(Vec<u8>, Object)>,
+    pub(crate) inherited_below_root: Vec<(Vec<u8>, Object)>,
 }
 
 impl Leaf {
@@ -420,7 +420,7 @@ impl Leaf {
 pub(crate) struct PageTree {
     root_number: u32,
     root_generation: u16,
-    root: Dict,
+    pub(crate) root: Dict,
     pub(crate) leaves: Vec<Leaf>,
 }
 
