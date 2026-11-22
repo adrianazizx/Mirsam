@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (M4 runtime and word-box side track, merged with `main` after session M5-a).
+Last updated: 2026-11-22 (session M5-b: encryption and permissions, PAdES spike; on top of `main` after M3, M4 runtime and M5-a).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -468,7 +468,9 @@ Plan, in order:
 - [ ] Form filling with shaped appearance streams
 - [ ] Fill & Sign on flat forms
 - [ ] Drawn/typed/image signatures
-- [ ] Encryption and permissions
+- [x] Encryption and permissions (session M5-b, ADR 0043): set, change or remove passwords on save
+      (AES-256 revision 6 by default, AES-128 for old readers), owner and user passwords, permission
+      flags honoured by the command registry; Arabic passwords tested; `qpdf --check` and reopen pass.
 - [~] True redaction with pattern search (session M5-a, ADR 0042): text, image pixels, paths,
       annotations and metadata mentions removed from the file and checked by extraction and render;
       e-mail/phone/IBAN/ID/card presets and regex, Arabic-Indic digits normalised; mark by drag,
@@ -478,7 +480,10 @@ Plan, in order:
       native shell are untested.
 - [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
       rewritten in full so unlinked objects are gone (ADR 0042)
-- [ ] Form creation; certificate signatures (PAdES) — **[SPIKE]** crypto library first
+- [ ] Form creation
+- [~] Certificate signatures (PAdES) — **[SPIKE] done (ADR 0044, `spikes/pades`)**: RustCrypto stack
+      recommended; a prototype signs an incremental update that Poppler/NSS and OpenSSL verify. The
+      feature itself (`safha_core::sign`, key import, signing UI, revocation) is not built.
 
 ## M6 — Edit everything else + convert
 
@@ -538,6 +543,44 @@ Plan, in order:
   - **Real scans (item 9).** Box truth for skewed and warped pages too.
 - **Tests:** no Rust or UI code changed. The scorer runs in this session used `safha-ocr-eval`
   as it was.
+
+### Session M5-b — 2026-11-22 (Milestone 5: encryption and permissions; PAdES spike)
+
+Branch `pomidor/m5-crypto-e11ba5`, from `main`. Stayed out of OCR, forms/Fill & Sign and exports.
+
+- **Encryption and permissions** (ADR 0043). `pdf::protect::rewrite` takes PDFium's full rewrite,
+  decrypts every object with the document's password, unpacks object streams, and writes it again
+  encrypted for the new settings (or plain): AES-256 revision 6 (random file key wrapped by user and
+  owner passwords, `/Perms`) and AES-128 revision 4. `safha_core::security` has `Permissions` (the `/P`
+  flags), `Protection`, `SecurityChange` (keep, remove, set) and `SecurityInfo` (cipher, revision,
+  flags, owner or user); `Document::security()` and `save::save_secured`.
+- **Unicode passwords:** R6 stores SASLprep-style normalised UTF-8 (NFKC, spaces, mapped-to-nothing),
+  read as typed then normalised, and `Engine::open_shared` retries PDFium with the normalised form.
+  AES-128 takes ASCII only (`password_not_encodable`). Tested with Arabic passwords (presentation forms
+  vs letters) and a decomposed accent.
+- **Rules:** changing protection needs the owner password when `/P` restricts anything (`not_permitted`);
+  a signed file is refused; undo starts over after the save (new bytes).
+- **UI:** commands `security.open|apply|cancel` (palette: "Password and permissions…"), a dialog with
+  mode, cipher, passwords, seven permission switches, Save and Save as…; the form lives only in the
+  dialog. `PERMISSION_GATES` in the registry disables Print, Copy, page edits, text edits, redaction and
+  markup for a file opened with its user password. English and Arabic strings.
+- **Tests:** seven integration tests (`tests/security.rs`: qpdf `--check` and `--show-encryption` for
+  both ciphers, user and owner passwords, owner-only files, Arabic, unlocking an encrypted fixture,
+  object streams, identical render), unit tests for the keys and normalisation, 7 UI tests.
+  Protection adds 4–5 % to a file; 21 ms for 1,000 pages (release).
+- **PAdES spike** (ADR 0044, `spikes/pades`, `make-test-pki.sh`): RustCrypto `cms` 0.3.0-rc.2 +
+  `x509-cert` + `x509-tsp` + `rsa` 0.10 + `p256` sign an incremental update (P-256, RSA-2048, an Arabic
+  subject, an RFC 3161 time-stamp). **Poppler `pdfsig`: valid and trusted; OpenSSL `cms -verify -cades` and
+  `ts -verify`: OK**; a flipped byte is caught; our engine opens it as signed and a later edit keeps it
+  valid. CMS 1.3–2.9 KB, signing 0.2–9 ms. Recommendation: build on this stack; B-B, then B-T, then B-LT.
+- **Not done / not checked:** Adobe Acrobat (not installed; ask someone to open the spike's PDFs), the
+  signing feature and UI, revocation, key import (`.p12`, keychain, smart cards); public-key security
+  handlers, RC4 writing, `/Perms` verification; the dialog was exercised with component tests, not
+  clicked through in the running app.
+- **For the owner:** two used crates are release candidates (`cms`, `x509-tsp`), pinned with `=`;
+  OK to build the signing feature on them until their stable releases?
+- Setup note: a fresh worktree has no PDFium or fixture corpus; symlink `third_party/pdfium` and
+  `fixtures/out` from the main checkout (both are git-ignored).
 
 ### Session M5-a — 2026-11-22 (Milestone 5: true redaction, pattern search, sanitize; parallel to M3/M4)
 

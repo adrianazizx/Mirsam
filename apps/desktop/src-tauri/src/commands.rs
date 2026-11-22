@@ -41,6 +41,9 @@ pub struct DocumentInfo {
     /// Restored with unsaved changes (ADR 0040).
     modified: bool,
     can_undo: bool,
+    /// How the file is protected, and what the password it was opened with
+    /// allows (ADR 0043).
+    security: safha_core::security::SecurityInfo,
 }
 
 impl DocumentInfo {
@@ -72,6 +75,7 @@ impl DocumentInfo {
             }),
             modified: false,
             can_undo: false,
+            security: document.security(),
         }
     }
 }
