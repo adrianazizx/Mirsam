@@ -45,6 +45,17 @@
   display: block;
 }
 
+/* The pages during a zoom gesture, drawn by the viewer over the page area, which
+   is hidden meanwhile (ADR 0011). */
+.gesture {
+  position: absolute;
+  pointer-events: none;
+}
+
+[data-viewer-content][data-zooming] {
+  visibility: hidden;
+}
+
 /* Search hits and the text selection, above the tiles. */
 .overlay {
   position: absolute;
@@ -212,11 +223,16 @@
 }
 
 /* Reading themes tint the page images and their marks, not the window. */
-:global(:root[data-reading-theme="sepia"]) .page {
+:global(:root[data-reading-theme="sepia"]) .page,
+:global(:root[data-reading-theme="sepia"]) .gesture {
   filter: var(--filter-reading-sepia);
 }
 
-:global(:root[data-reading-theme="night"]) .page {
+:global(:root[data-reading-theme="night"]) .page,
+:global(:root[data-reading-theme="night"]) .gesture {
   filter: var(--filter-reading-night);
+}
+
+:global(:root[data-reading-theme="night"]) .page {
   box-shadow: none;
 }

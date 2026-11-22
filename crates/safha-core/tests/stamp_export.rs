@@ -35,11 +35,20 @@ fn open(name: &str) -> Document {
 }
 
 fn qpdf_check(bytes: &[u8], name: &str) {
+    qpdf_check_with(bytes, name, None);
+}
+
+fn qpdf_check_with(bytes: &[u8], name: &str, password: Option<&str>) {
     let dir = std::env::temp_dir().join(format!("safha-m6-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path: PathBuf = dir.join(name);
     std::fs::write(&path, bytes).expect("write");
-    let output = Command::new("qpdf").arg("--check").arg(&path).output().expect("qpdf runs (install qpdf)");
+    let output = Command::new("qpdf")
+        .arg(format!("--password={}", password.unwrap_or("")))
+        .arg("--check")
+        .arg(&path)
+        .output()
+        .expect("qpdf runs (install qpdf)");
     assert!(
         matches!(output.status.code(), Some(0 | 3)),
         "qpdf --check {name} failed:\n{}{}",
@@ -282,6 +291,23 @@ fn image_watermarks_take_png_with_alpha_and_our_own_jpeg() {
     let close = |p: [u8; 4], q: [u8; 3]| (0..3).all(|i| (i32::from(p[i]) - i32::from(q[i])).abs() < 12);
     assert!(close(left, [200, 30, 30]), "{left:?}");
     assert!(close(right, [30, 160, 40]), "{right:?}");
+}
+
+#[test]
+fn image_watermarks_in_encrypted_files_are_encrypted_with_them() {
+    let document = open("qpdf/encrypted");
+    let size = document.page_size(0).expect("size");
+    let png = png_bytes(40, 40, |x, _| if x < 20 { [0, 0, 0, 0] } else { [0, 0, 255, 255] });
+    let watermark =
+        Watermark { mark: Mark::Image { data: png, width: 0.5 }, opacity: 1.0, rotation: 0.0, behind: false };
+    let stamped = stamp(&document, vec![0], StampKind::Watermark(watermark));
+    // PDFium decrypts the image and its soft mask: written in the clear, they would not decode.
+    let bitmap = stamped.render_page(0, 1.0).expect("renders");
+    let (cx, cy) = (size.width / 2.0, size.height / 2.0);
+    let at = |x: f32, y: f32| bitmap.pixel(x as u32, y as u32).expect("pixel");
+    assert_eq!(&at(cx + size.width * 0.15, cy)[..3], &[0, 0, 255], "opaque half is blue");
+    assert_ne!(&at(cx - size.width * 0.15, cy)[..3], &[0, 0, 255], "transparent half shows the page");
+    qpdf_check_with(&stamped.bytes(), "encrypted-png-watermark.pdf", Some("safha-test"));
 }
 
 #[test]

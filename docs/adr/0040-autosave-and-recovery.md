@@ -78,8 +78,8 @@ So a recovery file left at startup means a session ended without saving or disca
   edit.
 - **Two copies of the app** keep their own recovery files (the key holds the process id), and each
   lists only files that no document of its own holds. A second copy started while the first is
-  still running would offer the first one's files. Running a single copy is not enforced yet; it
-  is listed as a gap in `PROGRESS.md`.
+  still running would offer the first one's files. Since ADR 0046 only one copy runs per state
+  directory: a second launch hands its documents to the first and exits.
 - **Recovery files hold document contents in the app data directory** (encrypted when the
   document is). They are removed as above; "Decide later" keeps them until they are restored or
   discarded.

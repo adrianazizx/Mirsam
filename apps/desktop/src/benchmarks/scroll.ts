@@ -32,8 +32,21 @@ function quantile(values: number[], q: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? Number.NaN;
 }
 
+/**
+ * Main-thread time of each frame: from its animation-frame callback to the
+ * first task after it, which runs once the rendering update (the step's own
+ * work, style, layout, paint, and the commit to the compositor) is done.
+ */
+const afterRender = new MessageChannel();
+let renderStartedAt = 0;
+let onRendered: ((ms: number) => void) | null = null;
+afterRender.port1.onmessage = () => {
+  onRendered?.(performance.now() - renderStartedAt);
+  onRendered = null;
+};
+
 /** Next animation frame's timestamp; a timer stands in if the window gets no frames. */
-function frame(): Promise<{ time: number; fallback: boolean }> {
+function frame(rendered?: (ms: number) => void): Promise<{ time: number; fallback: boolean }> {
   return new Promise((resolve) => {
     const timer = window.setTimeout(
       () => resolve({ time: performance.now(), fallback: true }),
@@ -41,9 +54,24 @@ function frame(): Promise<{ time: number; fallback: boolean }> {
     );
     requestAnimationFrame((time) => {
       window.clearTimeout(timer);
+      if (rendered) {
+        renderStartedAt = performance.now();
+        onRendered = rendered;
+        afterRender.port2.postMessage(null);
+      }
       resolve({ time, fallback: false });
     });
   });
+}
+
+/** One frame of a traced phase. */
+interface FrameRecord {
+  /** The frame's timestamp, relative to the phase's first frame. */
+  at: number;
+  /** Interval since the previous frame. */
+  gap: number;
+  /** Main-thread time of the frame (see `afterRender`); null if never measured. */
+  workMs: number | null;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,6 +113,8 @@ interface PhaseResult {
   endPage: number;
   zoomStart: number;
   zoomEnd: number;
+  /** Traced phases (zoom gestures): every frame, and the viewer's steps relative to the first. */
+  frameTrace?: FrameRecord[];
 }
 
 /** Per-frame bookkeeping of frame gaps and blank pages. */
@@ -143,7 +173,12 @@ class Monitor {
   }
 }
 
-export async function runScrollBenchmark(first: PagePaintedDetail) {
+/**
+ * `zoomOnly`: just the zoom gestures, three times over, with no random access,
+ * scrolling, or long idle: a quick loop for work on zooming. Its report is not
+ * a budget check.
+ */
+export async function runScrollBenchmark(first: PagePaintedDetail, { zoomOnly = false } = {}) {
   const viewer = getViewer(first.documentId);
   const container = document.querySelector<HTMLElement>('[data-testid="viewer"]');
   if (!viewer || !container) throw new Error("no viewer is mounted");
@@ -167,6 +202,7 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
     name: string,
     maxMs: number,
     step: (elapsed: number, delta: number) => boolean | undefined,
+    trace = false,
   ) => {
     const since = Math.round(performance.now() - startedAt);
     // A hidden webview gets no frames and throttles timers ever harder:
@@ -178,17 +214,28 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
     }
     void backend.selftestLog(`phase "${name}" at ${since} ms (${document.visibilityState})`);
     const monitor = new Monitor(viewer);
-    viewer.profile = emptyProfile();
+    viewer.profile = emptyProfile(trace);
     const startTop = container.scrollTop;
     const startPage = viewer.snapshot().currentPage;
     const zoomStart = viewer.snapshot().zoom;
     let scrolled = 0;
     let previousTop = startTop;
-    const begin = await frame();
+    const frames: FrameRecord[] = [];
+    const record = (time: number, gap: number) => {
+      const entry: FrameRecord = { at: time, gap: round(gap), workMs: null };
+      frames.push(entry);
+      return (ms: number) => {
+        entry.workMs = round(ms);
+      };
+    };
+    const begin = await frame(trace ? record(0, 0) : undefined);
     let last = begin.time;
     monitor.sample(begin.time, begin.fallback);
     for (;;) {
-      const { time, fallback } = await frame();
+      // The callback fills in the frame's record once its rendering is done.
+      let fill: ((ms: number) => void) | undefined;
+      const { time, fallback } = await frame(trace ? (ms) => fill?.(ms) : undefined);
+      if (trace) fill = record(time - begin.time, time - last);
       monitor.sample(time, fallback);
       scrolled += Math.abs(container.scrollTop - previousTop);
       previousTop = container.scrollTop;
@@ -199,7 +246,14 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
       }
       last = time;
     }
+    // The last frame's rendering finishes before the next task.
+    if (trace) await frame();
     const snapshot = viewer.snapshot();
+    const profile = viewer.profile ?? emptyProfile();
+    for (const event of profile.trace ?? []) {
+      event.at = round(event.at - begin.time);
+      if (event.ms !== undefined) event.ms = round(event.ms);
+    }
     phases.push({
       name,
       durationMs: round(last - begin.time),
@@ -209,7 +263,8 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
       endPage: snapshot.currentPage,
       zoomStart: round(zoomStart),
       zoomEnd: round(snapshot.zoom),
-      profile: viewer.profile ?? emptyProfile(),
+      profile,
+      ...(trace ? { frameTrace: frames } : {}),
       // Sampled after the phase's last frame, so it does not disturb it.
       memoryAfter: await memory(),
     });
@@ -227,23 +282,28 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
   const pinch = (name: string, frames: number, deltaY: number) => {
     const bounds = container.getBoundingClientRect();
     let count = 0;
-    return phase(name, frames * 50, () => {
-      container.dispatchEvent(
-        new WheelEvent("wheel", {
-          deltaY,
-          ctrlKey: true,
-          clientX: bounds.left + bounds.width / 2,
-          clientY: bounds.top + bounds.height / 2,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-      count += 1;
-      return count < frames;
-    });
+    return phase(
+      name,
+      frames * 50,
+      () => {
+        container.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY,
+            ctrlKey: true,
+            clientX: bounds.left + bounds.width / 2,
+            clientY: bounds.top + bounds.height / 2,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        count += 1;
+        return count < frames;
+      },
+      true,
+    );
   };
 
-  const idle = (name: string, ms: number) => phase(name, ms, () => true);
+  const idle = (name: string, ms: number, trace = false) => phase(name, ms, () => true, trace);
 
   // Random access, timed by the viewer's own events rather than by frames, so
   // it is valid even when the window is hidden: jump to 40 pages spread over
@@ -274,7 +334,7 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
     return result;
   };
   const slowJumps: unknown[] = [];
-  for (let i = 1; i <= 40; i += 1) {
+  for (let i = 1; i <= (zoomOnly ? 0 : 40); i += 1) {
     const page = (i * 397) % pageCount;
     const jumpedAt = performance.now();
     calls.length = 0;
@@ -313,35 +373,48 @@ export async function runScrollBenchmark(first: PagePaintedDetail) {
   viewer.goToPage(0);
 
   await idle("settle", 500);
-  await scroll("scroll 4,000 px/s", 8000, () => 4000);
-  await scroll("scroll 12,000 px/s", 4000, () => 12_000);
-  // A fling: 30,000 px/s decaying with a 600 ms time constant.
-  await scroll("fling", 2500, (elapsed) => 30_000 * Math.exp(-elapsed / 600));
-  await idle("after fling", 300);
-
-  // Scrollbar drags: land in the middle of nowhere, nothing prefetched.
-  for (const page of [500, 900, 250]) {
-    await phase(`jump to page ${page + 1}`, 400, (elapsed) => {
-      if (elapsed < 20) viewer.goToPage(page);
-      return true;
-    });
+  if (zoomOnly) {
+    for (let round = 1; round <= 3; round += 1) {
+      await pinch(`pinch in ${round}`, 45, -4);
+      await idle(`after pinch in ${round}`, 400, true);
+      await scroll(`scroll zoomed in ${round}`, 1000, () => 3000);
+      await pinch(`pinch out ${round}`, 75, 4);
+      await idle(`after pinch out ${round}`, 400, true);
+      await runCommand("view.fitWidth");
+      await idle(`fit width ${round}`, 300);
+    }
   }
+  if (!zoomOnly) {
+    await scroll("scroll 4,000 px/s", 8000, () => 4000);
+    await scroll("scroll 12,000 px/s", 4000, () => 12_000);
+    // A fling: 30,000 px/s decaying with a 600 ms time constant.
+    await scroll("fling", 2500, (elapsed) => 30_000 * Math.exp(-elapsed / 600));
+    await idle("after fling", 300);
 
-  await pinch("pinch in", 45, -4);
-  await idle("after pinch in", 400);
-  await scroll("scroll zoomed in 3,000 px/s", 2000, () => 3000);
-  await pinch("pinch out", 75, 4);
-  await idle("after pinch out", 400);
-  await scroll("scroll zoomed out 6,000 px/s", 2000, () => 6000);
-  await runCommand("view.fitWidth");
-  await idle("fit width", 500);
+    // Scrollbar drags: land in the middle of nowhere, nothing prefetched.
+    for (const page of [500, 900, 250]) {
+      await phase(`jump to page ${page + 1}`, 400, (elapsed) => {
+        if (elapsed < 20) viewer.goToPage(page);
+        return true;
+      });
+    }
+
+    await pinch("pinch in", 45, -4);
+    await idle("after pinch in", 400, true);
+    await scroll("scroll zoomed in 3,000 px/s", 2000, () => 3000);
+    await pinch("pinch out", 75, 4);
+    await idle("after pinch out", 400, true);
+    await scroll("scroll zoomed out 6,000 px/s", 2000, () => 6000);
+    await runCommand("view.fitWidth");
+    await idle("fit width", 500);
+  }
 
   const memoryAtEnd = await memory();
   await sleep(2000);
   const memoryAfterIdle = await memory();
   // WebKit frees garbage and returns memory to the system lazily; a longer
   // idle separates retained memory from not-yet-reclaimed memory.
-  await sleep(13_000);
+  if (!zoomOnly) await sleep(13_000);
   const memoryAfterIdle15s = await memory();
   const statsAfter = await backend.renderStats();
   const snapshot = viewer.snapshot();

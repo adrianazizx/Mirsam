@@ -1404,6 +1404,7 @@ export const mockBackend: Backend = {
   }),
   moveToNewWindow: async () => {},
   onSettingChanged: async () => () => {},
+  onDocumentsArrived: async () => () => {},
   onCloseRequested: async () => () => {},
   onQuitRequested: async () => () => {},
   closeWindowDiscarding: async () => {},

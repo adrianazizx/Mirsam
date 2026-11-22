@@ -42,8 +42,9 @@ use. Nothing on the page is regenerated or touched.
   it is decoration: as text, "CONFIDENTIAL" across every page would be read into copy, search and text
   export, and at 45° it reads back as scattered letters ("L IA T N E ID F N O C").
 - **An image watermark** is a PNG (alpha becomes a soft mask; `png`, MIT/Apache, already in the tree
-  through Tauri) or a JPEG embedded as it is (`DCTDecode`; only its frame header is read). The image is
-  picked and read by the shell; the UI gets its file name.
+  through Tauri) or a JPEG embedded as it is (`DCTDecode`; only its frame header is read), written by
+  `pdf::image`, which image signatures use too (ADR 0045). The image is picked and read by the shell;
+  the UI gets its file name.
 - **Opacity** is an `ExtGState` (`/ca`, `/CA`).
 
 ### 2. Page images: PDFium renders, our encoders write

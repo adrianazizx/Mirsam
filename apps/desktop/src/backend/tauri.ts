@@ -8,6 +8,7 @@ import {
   type BookmarkPart,
   type CompressReport,
   type DocumentComment,
+  type DocumentsArrived,
   type EditOutcome,
   type FormInfo,
   type InsertOutcome,
@@ -198,6 +199,10 @@ export const tauriBackend: Backend = {
   deleteSignature: (id) => invoke<void>("delete_signature", { id }),
   signatureImageUrl: (id) => `${convertFileSrc("signature", "safha")}?id=${id}`,
   // Addressed to one window: listen on this window only.
+  onDocumentsArrived: (listener) =>
+    getCurrentWebviewWindow().listen<DocumentsArrived>("documents-arrived", (event) =>
+      listener(event.payload),
+    ),
   onCloseRequested: (listener) =>
     getCurrentWebviewWindow().listen("close-requested", () => listener()),
   onQuitRequested: (listener) =>
