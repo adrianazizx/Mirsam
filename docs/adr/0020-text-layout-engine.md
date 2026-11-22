@@ -4,7 +4,7 @@ Status: Accepted (M3 groundwork). Date: 2026-11-22.
 
 ## Context
 
-Every piece of text Safha writes — new text, in-place edits, form appearances, stamps, typed
+Every piece of text Mirsam writes — new text, in-place edits, form appearances, stamps, typed
 signatures — has to be laid out by our own engine (spec §6.3, §6.4, §7). ADR 0005 put that
 pipeline in `safha-core` and, as amended for M3, has our own writer emit it. The same engine
 will drive the editor surface, because spec §7 requires that what the user sees while typing is

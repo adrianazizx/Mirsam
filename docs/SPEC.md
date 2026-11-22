@@ -1,6 +1,7 @@
 # PDF Viewer & Editor — Project Spec
 
-> Working name: **Safha** (placeholder, Arabic صفحة = "page"). Rename freely.
+> Name: **Mirsam** (Arabic مرسام), chosen 2026-11-22. The working name was Safha (صفحة); code
+> identifiers still use `safha` until the rename tracked in `PROGRESS.md`.
 > Audience for this file: Claude Code. Read it fully before writing any code.
 
 ---

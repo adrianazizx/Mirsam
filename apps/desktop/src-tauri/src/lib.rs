@@ -1,4 +1,4 @@
-//! Safha desktop shell.
+//! Mirsam desktop shell.
 //!
 //! This crate is deliberately thin: it owns the window, exposes `safha-core`
 //! to the UI through typed commands, and nothing else. Engine logic belongs in
@@ -102,7 +102,7 @@ pub fn run() {
             spike_tiles::spike_rss_kb,
         ]);
 
-    let app = builder.build(tauri::generate_context!()).expect("failed to start the Safha desktop shell");
+    let app = builder.build(tauri::generate_context!()).expect("failed to start the Mirsam desktop shell");
     app.run(|handle, event| {
         // Quitting closes every window; their tabs are the session to restore.
         if let tauri::RunEvent::ExitRequested { .. } = event {
