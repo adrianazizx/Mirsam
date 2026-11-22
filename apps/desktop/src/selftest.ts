@@ -244,26 +244,23 @@ async function markupChecks(documentId: number) {
   await runCommand("edit.selectAll");
   await waitFor(() => viewer?.hasSelection() ?? false, 3_000);
   const runs = viewer?.selectionMarks().reduce((sum, page) => sum + page.rects.length, 0) ?? 0;
-  const repaint = waitForPagePainted(0, 15_000, () => getViewer(documentId) === viewer);
   const started = performance.now();
   await runCommand("markup.highlight");
   const markMs = Math.round(performance.now() - started);
-  const painted = await repaint;
-  // Highlighter yellow (multiplied over white) in what is on screen now.
-  let yellowPixels = 0;
-  for (const { canvas, tile } of viewer?.pageCanvases(0).tiles ?? []) {
-    const data = canvas.getContext("2d")?.getImageData(0, 0, tile.width, tile.height).data;
-    for (let i = 0; data && i < data.length; i += 4) {
-      const [r, g, b] = [data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0];
-      if (r > 200 && g > 150 && b < 120) yellowPixels += 1;
-    }
-  }
+  // Highlighter yellow (multiplied over white), once the repainted tiles show it.
+  // A highlight of a page's text covers far more than a few tiles' worth.
+  const highlighted = 500;
+  const yellowPixels = await pixelsOnScreen(
+    documentId,
+    (r, g, b) => r > 200 && g > 150 && b < 120,
+    highlighted,
+  );
   const listed = await backend.pageAnnotations(documentId, 0);
   const open = useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
   const result = {
     runs,
     markMs,
-    painted: painted !== null,
+    painted: yellowPixels > highlighted,
     sameViewer: getViewer(documentId) === viewer,
     yellowPixels,
     kinds: listed.map((item) => item.kind),
@@ -275,6 +272,41 @@ async function markupChecks(documentId: number) {
   await runCommand("edit.undo");
   result.removedByUndo = (await backend.pageAnnotations(documentId, 0)).length === 0;
   return result;
+}
+
+/** More matching pixels than this means the thing looked for is on screen. */
+const ENOUGH = 50;
+
+/**
+ * Page 0's on-screen pixels that `match` takes, once there are more than
+ * `enough` (or when `timeoutMs` runs out). A repaint after an edit replaces
+ * tiles one by one, and a slow machine may still be repainting for another
+ * reason (a zoom change) when the edit lands: waiting for one "painted" event
+ * can catch the wrong one. What is on screen is what counts.
+ */
+async function pixelsOnScreen(
+  documentId: number,
+  match: (r: number, g: number, b: number) => boolean,
+  enough = ENOUGH,
+  timeoutMs = 15_000,
+): Promise<number> {
+  let count = 0;
+  await waitFor(() => {
+    count = countPixels(documentId, match);
+    return count > enough;
+  }, timeoutMs);
+  return count;
+}
+
+/** Waits until page 0's visible part is covered by current tiles. */
+function pageSettled(documentId: number, timeoutMs = 15_000): Promise<boolean> {
+  return waitFor(
+    () =>
+      getViewer(documentId)
+        ?.snapshot()
+        .visible.some((page) => page.page === 0 && page.sharp) ?? false,
+    timeoutMs,
+  );
 }
 
 /** Pixels of page 0's on-screen tiles that `match` takes. */
@@ -291,7 +323,6 @@ function countPixels(documentId: number, match: (r: number, g: number, b: number
 
 async function notesAndInkChecks(documentId: number) {
   const viewer = getViewer(documentId);
-  const painted = () => waitForPagePainted(0, 15_000, () => getViewer(documentId) === viewer);
   const text = "راجع البند ٤ — check clause 4";
   // The note and the stroke go near the page's top: show it, so its tiles are on screen.
   if (viewer) {
@@ -301,34 +332,37 @@ async function notesAndInkChecks(documentId: number) {
   }
 
   await runCommand("note.place", { page: 0, x: 24, y: 24 });
-  let repaint = painted();
   await runCommand("note.save", { text });
-  const notePainted = (await repaint) !== null;
   // The icon's yellow.
-  const notePixels = countPixels(documentId, (r, g, b) => r > 220 && g > 180 && b < 80);
+  const notePixels = await pixelsOnScreen(documentId, (r, g, b) => r > 220 && g > 180 && b < 80);
+  const notePainted = notePixels > ENOUGH;
   const note = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "note");
 
   // A text box (ADR 0019): Arabic, shaped and drawn with embedded fonts.
   const boxText = "تمت المراجعة والموافقة";
   const dark = (r: number, g: number, b: number) => r < 90 && g < 90 && b < 90;
+  // Counted against the page as it is before, every tile in place.
+  await pageSettled(documentId);
   const darkBefore = countPixels(documentId, dark);
   await runCommand("textBox.place", { page: 0, x: 60, y: 24, width: 200 });
-  repaint = painted();
   await runCommand("note.save", { text: boxText });
-  const boxPainted = (await repaint) !== null;
-  const boxPixels = countPixels(documentId, dark) - darkBefore;
+  let boxPixels = 0;
+  await waitFor(() => {
+    boxPixels = countPixels(documentId, dark) - darkBefore;
+    return boxPixels > ENOUGH;
+  }, 15_000);
+  const boxPainted = boxPixels > ENOUGH;
   const box = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "textBox");
 
-  repaint = painted();
   const stroke = [
     { x: 60, y: 60, pressure: 0.5 },
     { x: 140, y: 64, pressure: 0.8 },
     { x: 220, y: 60, pressure: 1 },
   ];
   await runCommand("ink.add", { page: 0, strokes: [stroke] });
-  const inkPainted = (await repaint) !== null;
   // The pen's dark blue.
-  const inkPixels = countPixels(documentId, (r, g, b) => r < 70 && g < 110 && b > 110);
+  const inkPixels = await pixelsOnScreen(documentId, (r, g, b) => r < 70 && g < 110 && b > 110);
+  const inkPainted = inkPixels > ENOUGH;
   const ink = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "ink");
 
   await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
