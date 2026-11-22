@@ -179,6 +179,37 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
+    /// This document with `text` written into its page's content (ADR 0021),
+    /// the update that does it, and the text's height as displayed.
+    pub fn with_new_text(&self, text: &crate::text_edit::NewText) -> Result<(Document, Vec<u8>, f32)> {
+        let view = self.view_transform(text.page)?;
+        let update = crate::text_edit::add_text_update(&self.bytes, self.password.as_deref(), &view, text)?;
+        let height = text.height()?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, height))
+    }
+
+    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+    pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
+        let view = self.view_transform(page)?;
+        crate::block_edit::text_blocks(&self.bytes, &view, page)
+    }
+
+    /// This document with one paragraph of its page's text edited in place
+    /// (ADR 0023), the update that does it, and what the edit did.
+    pub fn with_block_edit(
+        &self,
+        edit: &crate::block_edit::BlockEdit,
+    ) -> Result<(Document, Vec<u8>, crate::block_edit::EditedBlock)> {
+        let view = self.view_transform(edit.page)?;
+        let width = self.page_size(edit.page)?.width;
+        let (update, outcome) = crate::block_edit::edit_block_update(&self.bytes, &view, width, edit)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, outcome))
+    }
+
     /// The page's annotations of the kinds this app writes (markup, ink,
     /// notes, text boxes), and the map from page space to the page as
     /// displayed. Replies and review states are left out: they belong to

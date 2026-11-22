@@ -5,9 +5,11 @@ import {
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
+  type ParagraphBlock,
   type RestoreOutcome,
   type SplitBy,
   type StrokePoint,
+  type TextStyle,
 } from "../backend";
 import {
   type AppState,
@@ -102,6 +104,12 @@ export interface CommandArg {
   filter?: Partial<CommentFilter>;
   /** `comments.sort`. */
   sort?: CommentSort;
+  /** `text.setStyle`: what to change in how new page text is set. */
+  textStyle?: Partial<TextStyle>;
+  /** `text.editBlock`: the paragraph to edit in place (ADR 0023). */
+  block?: ParagraphBlock;
+  /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
+  blockFamily?: "sans" | "naskh";
 }
 
 /** DOM id of the status bar's page number field, which `view.goToPage` focuses. */
@@ -190,6 +198,9 @@ export type CommandId =
   | "comments.filter"
   | "comments.sort"
   | "comments.setAuthor"
+  | "text.place"
+  | "text.editBlock"
+  | "text.setStyle"
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
@@ -1041,6 +1052,54 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    // The Edit tool: a press places new page text there (ADR 0021).
+    id: "text.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      getViewer(active.id)?.clearSelection();
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "pageText",
+        page: arg.page,
+        x: arg.x,
+        y: arg.y,
+        width: arg.width ?? TEXT_BOX_WIDTH,
+      });
+    },
+  },
+  {
+    // The Edit tool pressed a paragraph of the page's own text (ADR 0023).
+    id: "text.editBlock",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || !arg.block) return;
+      getViewer(active.id)?.clearSelection();
+      const { block } = arg;
+      store().setPendingNote({
+        documentId: active.id,
+        kind: "block",
+        page: arg.page,
+        x: block.x,
+        y: block.y,
+        width: block.width,
+        height: block.height,
+        block,
+      });
+    },
+  },
+  {
+    id: "text.setStyle",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.textStyle) store().setTextStyle(arg.textStyle);
+    },
+  },
+  {
     id: "note.save",
     paletteHidden: true,
     isEnabled: isWritingNote,
@@ -1051,13 +1110,35 @@ const COMMANDS: Command[] = [
       const pending = store().pendingNote;
       if (pending && pending.documentId === active.id) {
         store().setPendingNote(null);
+        if (pending.kind === "block" && pending.block) {
+          // Unchanged text is no edit; emptied text removes the paragraph (undoable).
+          const { block } = pending;
+          if (text === block.text) return;
+          const done = await backend.editTextBlock(active.id, {
+            page: pending.page,
+            index: block.index,
+            fingerprint: block.fingerprint,
+            text,
+            ...(arg?.blockFamily ? { family: arg.blockFamily } : {}),
+          });
+          store().applyEdit(active.id, done);
+          if (done.substituted) {
+            store().setNotice({
+              key: "fontSubstituted",
+              values: { from: done.substituted.from, to: done.substituted.to },
+            });
+          }
+          return;
+        }
         // An empty new note or text box is none.
         if (text.trim() === "") return;
         const { page, x, y, width } = pending;
         const outcome =
-          pending.kind === "textBox"
-            ? await backend.addTextBox(active.id, page, x, y, width, text)
-            : await backend.addNote(active.id, page, x, y, text);
+          pending.kind === "pageText"
+            ? await backend.addText(active.id, page, x, y, width, text, store().textStyle)
+            : pending.kind === "textBox"
+              ? await backend.addTextBox(active.id, page, x, y, width, text)
+              : await backend.addNote(active.id, page, x, y, text);
         store().applyEdit(active.id, outcome);
         return;
       }

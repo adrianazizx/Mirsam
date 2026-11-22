@@ -84,6 +84,11 @@ impl ViewTransform {
         Self { a: snap(self.a), b: snap(self.b), c: snap(self.c), d: snap(self.d), ..self }
     }
 
+    /// The map as `[a b c d e f]`.
+    pub(crate) fn matrix(&self) -> [f64; 6] {
+        [self.a, self.b, self.c, self.d, self.e, self.f].map(f64::from)
+    }
+
     pub fn point(&self, x: f32, y: f32) -> (f32, f32) {
         (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
     }

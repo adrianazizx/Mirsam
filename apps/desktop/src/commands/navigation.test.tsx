@@ -6,6 +6,7 @@ import { setMockInsertIsLocked, setMockRecoveries } from "../backend/mock";
 import { paletteMatch } from "../components/palette/match";
 import { pageFromInput } from "../components/shell/StatusBar";
 import {
+  DEFAULT_TEXT_STYLE,
   IDLE_SEARCH,
   parseSettings,
   resetSettingsChanges,
@@ -426,5 +427,31 @@ describe("inserting from a password-protected file", () => {
     } finally {
       setMockInsertIsLocked(false);
     }
+  });
+});
+
+describe("the Edit tool's text style", () => {
+  it("chooses font, size, colour, alignment and direction, in both languages", async () => {
+    render(<App />);
+    act(() => {
+      useAppStore.getState().addDocument({ id: 44, name: "a.pdf", pageCount: 240 });
+      useAppStore.getState().setActiveTool("edit");
+    });
+    const bar = await screen.findByTestId("text-toolbar");
+    fireEvent.click(within(bar).getByRole("radio", { name: "Naskh" }));
+    fireEvent.click(within(bar).getByRole("radio", { name: "Red" }));
+    fireEvent.click(within(bar).getByRole("radio", { name: "Centre" }));
+    fireEvent.click(within(bar).getByRole("radio", { name: "Right to left" }));
+    await act(async () => {});
+    expect(useAppStore.getState().textStyle).toMatchObject({
+      family: "naskh",
+      color: [0.72, 0.11, 0.11],
+      align: "center",
+      direction: "rtl",
+    });
+    act(() => useAppStore.getState().setLocale("ar"));
+    expect(await within(bar).findByRole("radio", { name: "نسخ" })).toBeTruthy();
+    expect(within(bar).getByRole("radio", { name: "أحمر" })).toBeTruthy();
+    act(() => useAppStore.getState().setTextStyle(DEFAULT_TEXT_STYLE));
   });
 });

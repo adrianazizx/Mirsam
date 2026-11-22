@@ -11,6 +11,7 @@ import type {
   OutlineItem,
   PageEdit,
   PageSize,
+  ParagraphBlock,
   Priority,
   RecentFile,
   RecoveryInfo,
@@ -227,6 +228,9 @@ function stateOf(documentId: number): MockState {
 }
 
 /** Records the next revision; undone revisions are forgotten. */
+const MOCK_BLOCK_TEXT = "The mock page has one paragraph of text that the Edit tool can change.";
+const mockBlockTexts = new Map<number, string>();
+
 function pushState(documentId: number, next: MockState): EditOutcome {
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
@@ -776,6 +780,65 @@ export const mockBackend: Backend = {
     return (original === undefined ? [] : (state.markup.get(original) ?? [])).map(
       ({ kind, rects, contents, strokes }, index) => ({ index, kind, rects, contents, strokes }),
     );
+  },
+  // The mock keeps no page content of its own: the text is a step to undo.
+  addText: async (documentId, page, x, y, width, text) => {
+    if (text.trim() === "") throw { code: "invalid_edit", detail: "new text needs some text" };
+    if (!(width >= 1) || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw { code: "invalid_edit", detail: "text needs a place on the page" };
+    }
+    const state = stateOf(documentId);
+    if (state.pages[page] === undefined)
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    return {
+      ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
+      textChanged: true,
+    };
+  },
+  // One paragraph on page 0, so the Edit tool can be tried in `pnpm dev`.
+  pageTextBlocks: async (documentId, page) => {
+    if (page !== 0) return [];
+    const text = mockBlockTexts.get(documentId) ?? MOCK_BLOCK_TEXT;
+    if (text.trim() === "") return [];
+    return [
+      {
+        index: 0,
+        fingerprint: text.length + 1,
+        x: 72,
+        y: 120,
+        width: 300,
+        height: 36,
+        text,
+        rtl: false,
+        align: "left",
+        size: 12,
+        color: [0, 0, 0],
+        lines: 2,
+        font: "IBMPlexSans-Regular",
+        fontReusable: true,
+        flattened: false,
+        editable: true,
+        reason: null,
+      } satisfies ParagraphBlock,
+    ];
+  },
+  editTextBlock: async (documentId, edit) => {
+    const state = stateOf(documentId);
+    if (state.pages[edit.page] === undefined)
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    const current = mockBlockTexts.get(documentId) ?? MOCK_BLOCK_TEXT;
+    if (edit.page !== 0 || edit.index !== 0 || edit.fingerprint !== current.length + 1) {
+      throw { code: "invalid_edit", detail: "the page's text changed since it was read" };
+    }
+    mockBlockTexts.set(documentId, edit.text);
+    const arabic = /[\u0600-\u06FF]/.test(edit.text);
+    return {
+      ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
+      textChanged: true,
+      substituted:
+        arabic || edit.family ? { from: "IBMPlexSans-Regular", to: edit.family ?? "sans" } : null,
+      lines: Math.max(1, Math.ceil(edit.text.length / 50)),
+    };
   },
   documentComments: async (documentId) => {
     const state = stateOf(documentId);
