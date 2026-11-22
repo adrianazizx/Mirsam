@@ -1,7 +1,9 @@
-# Safha — PDF viewer & editor
+# Mirsam (مرسام) — PDF viewer & editor
 
 Desktop PDF viewer/editor (Tauri 2: Rust core + React UI) with first-class Arabic/RTL and
-quality-first OCR. "Safha" is a placeholder name.
+quality-first OCR. The product is **Mirsam** (مرسام in Arabic UI text). Its working name was
+Safha, and code identifiers (`safha-core`, `SAFHA_*` variables, the `safha:` URI scheme) keep
+that name until the identifier rename noted in `PROGRESS.md`; do not rename them piecemeal.
 
 **Read `docs/SPEC.md` before any non-trivial work.** It is the source of truth for scope,
 priorities, quality bars, and licensing. `PROGRESS.md` says where we are; `docs/adr/` records

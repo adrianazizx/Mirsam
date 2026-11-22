@@ -13,8 +13,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
-   and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
+2. **The code is on GitHub** as the public repository `adrianazizx/Mirsam` (public since
+   2026-11-22): `main` (Milestone 0) and `m1-viewer` (Milestone 1), open as pull request #1 with
+   Auto-fix on. It has no licence file, so the code is all rights reserved until you choose one
+   (spec D2).
 3. **CI on pull request #1:**
    - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows,
      including printing through GTK on Linux.
@@ -29,7 +31,9 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    says to ask.
 5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
    zoom? Probably a setting; which default? (ADR 0003.)
-6. **Product name and bundle identifier.** `Safha` / `app.safha.desktop` are placeholders.
+6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
+   `app.mirsam.desktop`. Before the first signed release it should be the reverse of a domain you
+   own; changing it later moves where the app keeps its state (recents, session, positions).
 7. **Shell PATH.** Homebrew's rustup is keg-only. To use `cargo` in your own terminal:
    `export PATH=/opt/homebrew/opt/rustup/bin:$PATH` (not added to `~/.zshrc` for you).
 8. **More fixture producers and OCR baselines need installs** (none done without asking):
@@ -211,14 +215,47 @@ Remaining M1 work:
 - [ ] Safe save pipeline (temp → validate with reopen + `qpdf --check` → atomic rename)
 - [ ] Autosave and recovery
 
-## M3 — Text engine
+## M3 — Text engine — groundwork merged to `main` ahead of M2
 
-- [ ] Layout/shaping engine (itemize → shape → break → position), LTR and RTL together
-- [ ] Font matching and subsetting
-- [ ] **First:** verify PDFium content regeneration when existing objects are deleted/replaced
-      (clipping, z-order, marked content) — the one open check from ADR 0005
-- [ ] Text pipeline → positioned glyph runs; emit through PDFium's CID Type 2 font API (ADR 0005)
-- [ ] Own content-stream writer as second backend where PDFium cannot serve (incremental save, PDF/A)
+The parts that do not depend on M2, built on branch `pomidor/m3-text-engine-3c22b6` in
+parallel with M2 and merged by pull request at the owner's request.
+
+- [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
+      `spikes/pdfium-regenerate/`).
+      - Deleting, replacing, or merely dirtying one object and regenerating damages untouched
+        content on 27 of 34 pages, and `qpdf --check` passes on every damaged file.
+      - Type 3 text vanishes (19 pages). Simple fonts sharing a `/BaseFont` are merged, which
+        turns Arabic into tofu (7 CoreText pages). Inline images, `sh`, text clipping and
+        `Tc`/`Tw`/`Tz` are dropped.
+      - Clips, z-order and marked content survive where fonts are not hit. Appending is safe.
+      - **Decision: PDFium never regenerates existing content. Text is written by our own
+        content-stream writer as incremental updates**, fitting M2's ADR 0014. PDFium renders,
+        verifies, and does the full rewrite on save.
+- [x] Layout/shaping engine, LTR and RTL together (ADR 0020, `safha_core::typeset`):
+      - itemize: bidi, script runs, font fallback per grapheme cluster;
+      - shape with `harfrust` 0.16.1;
+      - break per UAX #14 (ICU4X);
+      - position: per-line reordering, alignment, justification by spaces.
+      Output: lines of glyph runs with positions and glyph↔text clusters, backend-neutral.
+      0.24–0.34 ms per 306-character mixed paragraph, release build (noisy machine).
+- [x] Text pipeline → positioned glyph runs. Proven end to end by a test writer: PDFium draws
+      the result, and `safha-core`'s extractor reads back exactly the input, in English, Arabic,
+      mixed, and justified mixed text with fallback.
+- [x] Font matching and subsetting (one gap, below):
+      - Subsetting done (`typeset::subset_fonts`, `subsetter` 0.2.6). Variable fonts are
+        instanced. The subsets draw pixel-identical pages from files 33–44× smaller.
+      - Matching done (`typeset::match_font`): family, then classification and style, then
+        `/Widths`, with text coverage first. It reports exact, same family, or substitute.
+      - Installed fonts done (`typeset::FontLibrary`): indexes the platform's font folders from
+        a few small tables each (694 faces in 25–45 ms on this Mac, debug build). `find` reads
+        the best few in full and instances variable fonts at the requested weight.
+      - **Gap:** reusing the PDF's own embedded font when it has the glyphs (in-place-editing
+        work).
+- [ ] **Own content-stream writer** (now the only backend). Waits for M2's
+      `safha_core::pdf` writer to merge. Must solve:
+      - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
+        `/ActualText`);
+      - encrypting new objects in encrypted files.
 - [ ] Add-new-text tool
 - [ ] In-place editing with reflow — **[SPIKE]** editor surface vs `contenteditable` overlay first
 - [ ] Exit test: all acceptance tests in spec §7
@@ -318,6 +355,79 @@ Remaining M1 work:
   - An OK before downloading Nuqta's GGUF or MLX builds to re-measure through a shippable runtime.
 - **Tests:** `cargo test --workspace`: 130 passed, 26 of them in `safha-ocr-eval`, with 6 new.
   `clippy -D warnings` and `cargo fmt --check` are clean. The UI was not touched.
+
+### Rename to Mirsam — 2026-11-22
+
+The owner chose the name **Mirsam** (مرسام). Renamed everything a user or reader sees: window
+titles, `productName` (the macOS bundle is now `Mirsam.app`), `app.name` and the
+`engine_unavailable` message in `en.json` and `ar.json`, the bundle identifier
+(`app.mirsam.desktop`, so the app starts with empty state once), README, CLAUDE.md, the spec
+header, two ADRs, and the bundle paths in `scripts/selftest.sh` and
+`scripts/scroll-benchmark.sh`. The Arabic word صفحة ("page") stays wherever it means a page.
+
+**Not renamed yet, on purpose:** code identifiers — the crates `safha-core`, `safha-ocr-eval` and
+`safha-desktop` (and their directories), `safha_core` imports, `SAFHA_*` environment variables,
+the `safha:` URI scheme and CSP entry, the npm package `safha-desktop`. `m2-organize` and the OCR
+branch have committed and uncommitted work inside those crates, so renaming them now would make
+every one of their files conflict. Do it in one change once those branches have merged, and
+update CLAUDE.md, the spec header and the README note when it is done.
+
+### Session M3-a — 2026-11-22 (M3 groundwork, parallel to M2)
+
+Branch `pomidor/m3-text-engine-3c22b6`, cut from `main`, in its own worktree. M2 continued on
+`m2-organize` meanwhile; this session touched no UI file. ADR numbers 0020–0029 are reserved
+for this track. Merged to `main` by pull request at the owner's request, ahead of M2.
+
+- **ADR 0005 check run:** PDFium's content regeneration is lossy (27 of 34 pages damaged).
+  Text moves to our own writer as incremental updates (ADR 0005 amendment).
+- **`safha_core::typeset` (ADR 0020):**
+  - the layout engine;
+  - font subsets with variable-font instancing;
+  - font matching;
+  - an index of installed fonts (`FontLibrary`).
+- **Tests:** 165 Rust tests pass (41 new). Clippy, fmt, `cargo deny` and the licence report
+  are clean.
+- **New dependencies** (all verified, all allowed):
+  - `harfrust` 0.16.1 (MIT);
+  - `icu_segmenter` / `icu_properties` 2.4 (Unicode-3.0);
+  - `subsetter` 0.2.6 with fontations' `skrifa`/`write-fonts` and linebender's `kurbo`
+    (MIT/Apache-2.0);
+  - `read-fonts` 0.47 as a direct dependency (it was already in the tree).
+- **Timings are noisy:** other sessions were building on the same Mac. The scroll benchmark
+  was not run.
+
+Things that were not obvious:
+
+- PDFium's `FPDFPage_GenerateContent` cannot write Type 3 text at all. It emits `BT … Tm` and
+  stops, leaving the stream unbalanced. Chrome writes Type 3 for variable fonts, so most of the
+  corpus is affected.
+- PDFium keys generated font resources by name and type. CoreText's several subsets of one
+  face share a `/BaseFont`, so they collapse into one.
+- PDFium renders a page from its in-memory object list. Rendering before and after
+  save-and-reload is therefore an exact oracle for what serialization lost.
+- Noto Naskh Arabic has Latin glyphs of its own, and draws Arabic dots as separate glyphs.
+  Fallback tests need a Latin-only first font (IBM Plex Sans).
+- An empty ToUnicode destination does not hide a glyph from PDFium: it falls back to the CID
+  as a character. `/ActualText` around a one-letter cluster works. Around a two-glyph,
+  two-mark cluster, PDFium emits the text once per glyph.
+- `subsetter` keeps the hinting tables of a default instance and drops them when instancing,
+  so a regular subset can be larger than a bold one.
+- On macOS, 112 installed faces have family names starting with a dot. These are hidden UI
+  fonts, and they include LastResort, whose `cmap` claims every character. A font index must
+  drop them, or LastResort "covers" any text.
+- macOS's Courier declares itself neither fixed-pitch nor serif. A curated family table beats
+  font metadata.
+
+### CI: docs-only changes skip the build — 2026-11-22
+
+- **The repository went public** on 2026-11-22, so standard GitHub-hosted runners are free and
+  CI keeps all three platforms on every pull request.
+- **Documentation-only changes** (`docs/`, Markdown files other than `THIRD_PARTY_LICENSES.md`)
+  run nothing. "Run workflow" on the Actions tab runs everything on any branch.
+- **If the repository goes private again:** CI draws on a $12 monthly Actions allowance (GitHub
+  Free), and macOS minutes cost about ten Linux ones. The nine runs on 2026-11-22 used about
+  $4.90, 60% of it on macOS. Drop macOS from pull requests first; keep the runs on `main`,
+  because they build the caches that pull requests reuse.
 
 ### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
 

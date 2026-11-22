@@ -1,4 +1,4 @@
-//! Safha core engine.
+//! Mirsam core engine.
 //!
 //! UI-independent: nothing in this crate may depend on Tauri, a webview, or any
 //! windowing API. The desktop shell, the future CLI, and tests all drive the
@@ -7,8 +7,8 @@
 //! Surface so far: bind PDFium, open documents, report page geometry, render
 //! through a prioritized queue ([`render`]), extract text in logical order
 //! ([`text`]), search it ([`search`]), read the outline and page labels, map
-//! page space to the displayed page ([`view`]), and keep local app state
-//! ([`store`]).
+//! page space to the displayed page ([`view`]), keep local app state
+//! ([`store`]), and lay out text for writing ([`typeset`]).
 
 mod bitmap;
 pub mod catalog;
@@ -20,6 +20,7 @@ pub mod render;
 pub mod search;
 pub mod store;
 pub mod text;
+pub mod typeset;
 pub mod view;
 
 pub use bitmap::{BMP_HEADER_LEN, Bitmap};
