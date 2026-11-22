@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backend, KeptRequest, Priority, RenderedPage, TileRequest } from "../backend";
-import { ViewerController, type ViewerMode, type ViewState } from "./controller";
+import { resizedRect, ViewerController, type ViewerMode, type ViewState } from "./controller";
 
 /**
  * The controller against a fake backend and a stubbed 1000 x 800 viewport
@@ -75,6 +75,14 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
               contents: "ملاحظة",
               strokes: [],
             },
+            // A signature placed with Fill & Sign (ADR 0045).
+            {
+              index: 6,
+              kind: "signature",
+              rects: [{ x: 150, y: 340, width: 60, height: 20 }],
+              contents: null,
+              strokes: [],
+            },
           ]
         : [],
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
@@ -103,6 +111,8 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onErase: vi.fn(),
     onPlaceNote: vi.fn(),
     onPlaceTextBox: vi.fn(),
+    onPlace: vi.fn(),
+    onMoveItem: vi.fn(),
     onPlaceText: vi.fn(),
     onEditBlock: vi.fn(),
     onBlockRefused: vi.fn(),
@@ -128,6 +138,8 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       noteEditor: "note-editor",
       selectionToolbar: "selection-toolbar",
       gesture: "gesture",
+      fillMoving: "fill-moving",
+      fillHandle: "fill-handle",
     },
     initial: {
       zoomMode: "custom",
@@ -483,6 +495,103 @@ describe("viewer controller", () => {
     viewer.destroy();
   });
 
+  it.each(["place", "select"] as const)(
+    "drags a Fill & Sign item in %s mode, kept on its page; a press that stays selects it",
+    async (pressMode) => {
+      mode = pressMode;
+      const { viewer, container, callbacks } = setup();
+      await settle();
+      const content = container.firstElementChild as HTMLElement;
+      const at = (type: string, x: number, y: number) =>
+        content.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+        );
+      // The page's annotations arrive with the first press.
+      at("pointerdown", 5, 390);
+      at("pointerup", 5, 390);
+      await settle();
+      callbacks.onPlace.mockClear();
+
+      // Pressed at (160, 350), dragged by (+40, -100): the box follows.
+      at("pointerdown", 160, 350);
+      at("pointermove", 180, 300);
+      at("pointermove", 200, 250);
+      expect(container.querySelectorAll(".fill-moving")).toHaveLength(1);
+      at("pointerup", 200, 250);
+      expect(callbacks.onMoveItem).toHaveBeenCalledWith(
+        expect.objectContaining({ index: 6, kind: "signature" }),
+        { x: 190, y: 240, width: 60, height: 20 },
+      );
+      expect(container.querySelectorAll(".fill-moving")).toHaveLength(0);
+
+      // Dragged past the page's edge, it stops at the edge.
+      at("pointerdown", 160, 350);
+      at("pointermove", 400, 395);
+      at("pointerup", 400, 395);
+      expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(expect.anything(), {
+        x: 240,
+        y: 380,
+        width: 60,
+        height: 20,
+      });
+
+      // A press that does not travel selects it, and places nothing.
+      at("pointerdown", 160, 350);
+      at("pointermove", 161, 351);
+      at("pointerup", 161, 351);
+      expect(callbacks.onAnnotationSelect).toHaveBeenLastCalledWith(
+        expect.objectContaining({ index: 6, kind: "signature" }),
+      );
+      expect(callbacks.onMoveItem).toHaveBeenCalledTimes(2);
+      expect(callbacks.onPlace).not.toHaveBeenCalled();
+      viewer.destroy();
+    },
+  );
+
+  it("resizes a selected Fill & Sign item by its corner handles, in proportion", async () => {
+    mode = "place";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    at("pointerdown", 5, 390);
+    at("pointerup", 5, 390);
+    await settle();
+    expect(container.querySelectorAll(".fill-handle")).toHaveLength(0);
+
+    // Selected (a press that stays), it shows a handle at each corner.
+    at("pointerdown", 180, 350);
+    at("pointerup", 180, 350);
+    const handles = [...container.querySelectorAll<HTMLElement>(".fill-handle")];
+    expect(handles.map((handle) => handle.dataset.corner)).toEqual(["nw", "ne", "sw", "se"]);
+
+    // The bottom-right handle, dragged out by half: half as large again, the top-left kept.
+    at("pointerdown", 211, 361);
+    at("pointermove", 230, 365);
+    at("pointermove", 240, 370);
+    expect(container.querySelectorAll(".fill-moving")).toHaveLength(1);
+    at("pointerup", 240, 370);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 6, kind: "signature" }),
+      { x: 150, y: 340, width: 90, height: 30 },
+    );
+
+    // The middle of the item still drags it.
+    at("pointerdown", 180, 350);
+    at("pointermove", 190, 350);
+    at("pointerup", 190, 350);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(expect.anything(), {
+      x: 160,
+      y: 340,
+      width: 60,
+      height: 20,
+    });
+    viewer.destroy();
+  });
+
   it("edits the page's text where pressed, says why where it cannot, and places new text elsewhere", async () => {
     mode = "text";
     const { viewer, container, callbacks } = setup();
@@ -520,5 +629,39 @@ describe("viewer controller", () => {
     expect(container.children).toHaveLength(0);
     // Nothing was in flight before the page sizes arrived, so nothing to cancel.
     expect(updates).toEqual([]);
+  });
+});
+
+describe("resizing a Fill & Sign item (ADR 0045)", () => {
+  const rect = { x: 100, y: 100, width: 60, height: 20 };
+
+  it("keeps the opposite corner and the item's proportions", () => {
+    // Out from the bottom-right corner: the farther axis decides.
+    expect(resizedRect(rect, "se", { x: 220, y: 125 }, 600, 800)).toEqual({
+      x: 100,
+      y: 100,
+      width: 120,
+      height: 40,
+    });
+    // In from the top-left corner: the bottom-right stays.
+    expect(resizedRect(rect, "nw", { x: 130, y: 110 }, 600, 800)).toEqual({
+      x: 130,
+      y: 110,
+      width: 30,
+      height: 10,
+    });
+  });
+
+  it("stays at least 6 points and on the page", () => {
+    // Dragged past the anchor: the smallest it may be.
+    expect(resizedRect(rect, "se", { x: 50, y: 50 }, 600, 800)).toEqual({
+      x: 100,
+      y: 100,
+      width: 18,
+      height: 6,
+    });
+    // Dragged off a 200 × 800 page: as large as fits.
+    expect(resizedRect(rect, "ne", { x: 400, y: 0 }, 200, 800).width).toBeCloseTo(100);
+    expect(resizedRect(rect, "ne", { x: 400, y: 0 }, 200, 800).y).toBeCloseTo(120 - 100 / 3);
   });
 });

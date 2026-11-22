@@ -115,6 +115,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         redactMark: styles.redactMark ?? "",
         redactPreview: styles.redactPreview ?? "",
         gesture: styles.gesture ?? "",
+        fillMoving: styles.fillMoving ?? "",
+        fillHandle: styles.fillHandle ?? "",
       },
       initial: {
         zoomMode: current.zoomMode,
@@ -149,6 +151,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
           void runCommand("textBox.place", { page, x, y, width }),
         onMarkArea: (page, rect) => void runCommand("redact.addArea", { page, rect }),
         onPlace: (page, x, y) => void runCommand("fill.place", { page, x, y }),
+        onMoveItem: (annotation, rect) => void runCommand("fill.move", { annotation, rect }),
         onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
         onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
         onBlockRefused: (block) =>
