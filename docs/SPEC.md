@@ -454,7 +454,7 @@ The KITAB-Bench benchmark is a useful public reference for Arabic OCR and docume
 | Shaping / bidi / fonts | HarfBuzz-compatible Rust shaper (`rustybuzz` or `harfrust`), `unicode-bidi`, a font database crate, a font subsetter | Pick the actively maintained options. |
 | Repair / linearize / validate | `qpdf` (as a library or bundled tool) | Also used in tests to validate every saved file. |
 | OCR runtime | llama.cpp for the vision-language recognisers (GGUF) + ONNX Runtime (`ort` crate) for the detector + optional Tesseract | Section 8; ADR 0030, ADR 0031. |
-| Crypto / signatures | Established Rust crypto crates; PAdES implementation | **[SPIKE]** — do not hand-roll cryptography. |
+| Crypto / signatures | Established Rust crypto crates; PAdES implementation | **[SPIKE] done** (ADR 0044: RustCrypto `cms`/`x509-cert`/`x509-tsp`/`rsa` 0.10) — do not hand-roll cryptography. Encryption: ADR 0043. |
 | Storage | SQLite for recent files, per-file view state, settings | |
 
 ### Rendering design

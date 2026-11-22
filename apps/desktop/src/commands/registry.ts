@@ -7,10 +7,12 @@ import {
   type OpenOutcome,
   type PageEdit,
   type ParagraphBlock,
+  type Permissions,
   type RedactPattern,
   type RedactPreset,
   type RestoreOutcome,
   type SanitizeOptions,
+  type SecurityChange,
   type SplitBy,
   type StrokePoint,
   type TextStyle,
@@ -125,6 +127,9 @@ export interface CommandArg {
   preset?: RedactPreset;
   /** `redact.removeMark`. */
   markId?: number;
+  /** `security.apply`: what the save does to the protection, and where it saves. */
+  securityChange?: SecurityChange;
+  saveAs?: boolean;
   /** `sanitize.setOption`. */
   option?: keyof SanitizeOptions;
   value?: boolean;
@@ -203,6 +208,9 @@ export type CommandId =
   | "redact.cancel"
   | "sanitize.setOption"
   | "sanitize.run"
+  | "security.open"
+  | "security.apply"
+  | "security.cancel"
   | "recovery.restore"
   | "recovery.discard"
   | "recovery.later"
@@ -501,6 +509,8 @@ const KNOWN_ERRORS = [
   "no_bookmarks",
   "redaction_failed",
   "store_unavailable",
+  "password_not_encodable",
+  "not_permitted",
 ];
 
 function reportError(error: unknown) {
@@ -740,7 +750,7 @@ function markHits(active: OpenDocument, indices: number[]) {
   });
 }
 
-const COMMANDS: Command[] = [
+const DECLARED: Command[] = [
   {
     id: "file.open",
     shortcut: { key: "o", mod: true },
@@ -1375,6 +1385,34 @@ const COMMANDS: Command[] = [
     },
   },
   {
+    id: "security.open",
+    isEnabled: hasDocument,
+    run: () => store().setSecurityPrompt(true),
+  },
+  {
+    id: "security.apply",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.securityChange) return;
+      const outcome = await backend.secureDocument(
+        active.id,
+        arg.securityChange,
+        arg.saveAs ?? false,
+      );
+      // Cancelled in the file picker: the dialog stays for another try.
+      if (!outcome) return;
+      store().applySecured(active.id, outcome);
+      store().setSecurityPrompt(false);
+    },
+  },
+  {
+    id: "security.cancel",
+    paletteHidden: true,
+    run: () => store().setSecurityPrompt(false),
+  },
+  {
     id: "recovery.restore",
     paletteHidden: true,
     isEnabled: (state) => state.recoveries.length > 0,
@@ -2006,6 +2044,61 @@ const COMMANDS: Command[] = [
     },
   },
 ];
+
+/**
+ * What a file's permissions switch off (ADR 0043): a viewer honours the flags
+ * of a file opened with its user password. The owner password lifts them.
+ */
+const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
+  "file.print": "print",
+  "edit.copy": "copy",
+  "pages.rotateClockwise": "assemble",
+  "pages.rotateCounterclockwise": "assemble",
+  "pages.delete": "assemble",
+  "pages.duplicate": "assemble",
+  "pages.insertBlank": "assemble",
+  "pages.moveEarlier": "assemble",
+  "pages.moveLater": "assemble",
+  "pages.move": "assemble",
+  "pages.insertFromFile": "assemble",
+  "pages.extract": "assemble",
+  "text.place": "modify",
+  "text.editBlock": "modify",
+  "redact.apply": "modify",
+  "sanitize.run": "modify",
+  "markup.highlight": "annotate",
+  "markup.underline": "annotate",
+  "markup.strikeOut": "annotate",
+  "markup.squiggly": "annotate",
+  "comment.note": "annotate",
+  "comment.textBox": "annotate",
+  "comment.pen": "annotate",
+  "annotation.delete": "annotate",
+  // Form filling and Fill & Sign (ADR 0045).
+  "form.setValue": "fillForms",
+  "fill.text": "annotate",
+  "fill.date": "annotate",
+  "fill.check": "annotate",
+  "fill.cross": "annotate",
+  "fill.dot": "annotate",
+  "fill.signature": "annotate",
+  "fill.place": "annotate",
+  "fill.larger": "annotate",
+  "fill.smaller": "annotate",
+};
+
+/** Whether the active document's protection lets its reader do what `flag` names. */
+export function permits(state: AppState, flag: keyof Permissions): boolean {
+  const security = selectActiveDocument(state)?.security;
+  return !security || security.owner || security.permissions[flag];
+}
+
+const COMMANDS: Command[] = DECLARED.map((command) => {
+  const flag = PERMISSION_GATES[command.id];
+  if (!flag) return command;
+  const own = command.isEnabled;
+  return { ...command, isEnabled: (state) => permits(state, flag) && (own?.(state) ?? true) };
+});
 
 const BY_ID = new Map(COMMANDS.map((command) => [command.id, command]));
 

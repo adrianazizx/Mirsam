@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Checkbox, Radio, RadioGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { backend, type FormField, type FormInfo } from "../../backend";
-import { runCommand } from "../../commands/registry";
+import { isCommandEnabled, runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
@@ -34,6 +34,8 @@ export function FormsPanel({ documentId }: { documentId: number }) {
   const paint = useAppStore(
     (state) => state.documents.find((open) => open.id === documentId)?.paint ?? 0,
   );
+  // A file opened with its user password may not allow filling in (ADR 0043).
+  const permitted = useAppStore((state) => isCommandEnabled("form.setValue", state));
   const [form, setForm] = useState<FormInfo | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -80,6 +82,7 @@ export function FormsPanel({ documentId }: { documentId: number }) {
       </p>
       {form.xfa ? <p className={styles.warning}>{t("forms.xfa")}</p> : null}
       {form.needAppearances ? <p className={styles.hint}>{t("forms.needAppearances")}</p> : null}
+      {permitted ? null : <p className={styles.warning}>{t("forms.notPermitted")}</p>}
       {pages.map((page) => (
         <section key={page ?? "none"} className={styles.page}>
           <h3 className={styles.pageHeading}>
@@ -90,7 +93,10 @@ export function FormsPanel({ documentId }: { documentId: number }) {
           {fillable
             .filter((field) => pageOf(field) === page)
             .map((field) => (
-              <FieldControl key={field.id} field={field} />
+              <FieldControl
+                key={field.id}
+                field={permitted ? field : { ...field, readOnly: true }}
+              />
             ))}
         </section>
       ))}

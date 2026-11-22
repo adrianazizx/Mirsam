@@ -173,7 +173,9 @@ listed but not filled here.
   Image (the native dialog).
 
 Every control runs a registry command: `forms.openTool`, `form.setValue`, `sign.openTool`, `fill.*`,
-`signature.*`, and `signatures.load`. The viewer has a new `place` mode. Signature previews are ink on
+`signature.*`, and `signatures.load`. They follow ADR 0043's permission gates: in a file opened with
+its user password, `form.setValue` needs `fillForms` and the `fill.*` commands need `annotate`. The
+panels say so when a gate is off. The viewer has a new `place` mode. Signature previews are ink on
 paper in both themes (`--color-ink` on `--color-page-paper`, a new contrast pair).
 
 ## Consequences

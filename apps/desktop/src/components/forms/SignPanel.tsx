@@ -12,7 +12,7 @@ import { useEffect } from "react";
 import { type Key, ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { FILL_KINDS, type SignatureInfo } from "../../backend";
-import { type CommandId, runCommand } from "../../commands/registry";
+import { type CommandId, isCommandEnabled, runCommand } from "../../commands/registry";
 import { type FillTool, type OpenDocument, useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
 import { CommandButton } from "../ui/CommandButton";
@@ -45,6 +45,8 @@ export function SignPanel({ document }: { document: OpenDocument }) {
   const fillSignature = useAppStore((state) => state.fillSignature);
   const signatures = useAppStore((state) => state.signatures);
   const selected = document.selectedAnnotation;
+  // A file opened with its user password may not allow annotating (ADR 0043).
+  const permitted = useAppStore((state) => isCommandEnabled("fill.text", state));
   const fillSelected = selected !== null && FILL_KINDS.includes(selected.kind);
 
   useEffect(() => {
@@ -74,14 +76,19 @@ export function SignPanel({ document }: { document: OpenDocument }) {
         >
           {TOOLS.map(({ id, command, icon: Icon }) => (
             <Tooltip key={id} label={t(`commands.${command}`)}>
-              <ToggleButton id={id} className={styles.tool} aria-label={t(`commands.${command}`)}>
+              <ToggleButton
+                id={id}
+                className={styles.tool}
+                aria-label={t(`commands.${command}`)}
+                isDisabled={id !== "select" && !permitted}
+              >
                 <Icon aria-hidden="true" />
               </ToggleButton>
             </Tooltip>
           ))}
         </ToggleButtonGroup>
         <p className={styles.hint} data-testid="fill-hint">
-          {t(`sign.hint.${fillTool ?? "select"}`)}
+          {t(permitted ? `sign.hint.${fillTool ?? "select"}` : "sign.notPermitted")}
         </p>
       </section>
 

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { backend } from "../backend";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
+import { ALL_PERMISSIONS } from "../state/security";
 import { fillDate, isCommandEnabled, runCommand } from "./registry";
 
 const active = () => selectActiveDocument(useAppStore.getState());
@@ -64,6 +65,29 @@ describe("form filling (ADR 0045)", () => {
     useAppStore.getState().setError(null);
     await runCommand("form.setValue", { field: (await field("contractNo")).id, values: ["x"] });
     expect(useAppStore.getState().errorCode).toBe("invalid_edit");
+  });
+});
+
+describe("a file's permissions (ADR 0043)", () => {
+  it("switch off filling and Fill & Sign unless opened with the owner password", () => {
+    const security = {
+      encrypted: true,
+      cipher: "aes256" as const,
+      revision: 6,
+      owner: false,
+      permissions: { ...ALL_PERMISSIONS, fillForms: false, annotate: false },
+    };
+    useAppStore.getState().removeDocument(1);
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 3, security });
+    for (const command of ["form.setValue", "fill.check", "fill.place", "fill.text"] as const) {
+      expect(isCommandEnabled(command), command).toBe(false);
+    }
+    useAppStore.getState().removeDocument(1);
+    useAppStore
+      .getState()
+      .addDocument({ id: 1, name: "a.pdf", pageCount: 3, security: { ...security, owner: true } });
+    expect(isCommandEnabled("form.setValue")).toBe(true);
+    expect(isCommandEnabled("fill.check")).toBe(true);
   });
 });
 

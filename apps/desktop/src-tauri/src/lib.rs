@@ -15,6 +15,7 @@ mod navigation;
 mod print_linux;
 mod recovery;
 mod redaction;
+mod security;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
@@ -40,6 +41,7 @@ macro_rules! product_commands {
             redaction::find_redactions,
             redaction::apply_redactions,
             redaction::sanitize_document,
+            security::secure_document,
             editing::add_markup,
             editing::add_ink,
             editing::add_note,

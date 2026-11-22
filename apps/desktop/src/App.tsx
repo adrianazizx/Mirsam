@@ -12,6 +12,7 @@ import {
 import { SignatureDialog } from "./components/forms/SignatureDialog";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
+import { SecurityDialog } from "./components/protect/SecurityDialog";
 import { AppShell } from "./components/shell/AppShell";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
@@ -188,6 +189,7 @@ export function App() {
       <SplitDialog />
       <SignatureDialog />
       <RedactDialog />
+      <SecurityDialog />
     </I18nProvider>
   );
 }

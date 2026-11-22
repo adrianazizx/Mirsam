@@ -45,6 +45,16 @@ const A4_LANDSCAPE: PageSize = { width: A4.height, height: A4.width };
 
 const SAMPLE: DocumentInfo = { id: 1, name: "عقد إيجار — Lease Agreement.pdf", pageCount: 240 };
 /** A recent file that is password-protected; its password is "1234". */
+const ALL_PERMISSIONS = {
+  print: true,
+  printHighQuality: true,
+  modify: true,
+  copy: true,
+  annotate: true,
+  fillForms: true,
+  accessibility: true,
+  assemble: true,
+};
 const LOCKED: DocumentInfo = { id: 2, name: "سري — Confidential.pdf", pageCount: 12 };
 const LOCKED_PASSWORD = "1234";
 
@@ -1304,6 +1314,26 @@ export const mockBackend: Backend = {
   // One window in the browser.
   newWindow: async () => {},
   printDocument: async () => {},
+  secureDocument: async (documentId, change) => ({
+    name: documentId === LOCKED.id ? LOCKED.name : SAMPLE.name,
+    modified: false,
+    security:
+      change.kind === "set"
+        ? {
+            encrypted: true,
+            cipher: change.cipher,
+            revision: change.cipher === "aes256" ? 6 : 4,
+            permissions: change.permissions,
+            owner: true,
+          }
+        : {
+            encrypted: false,
+            cipher: null,
+            revision: 0,
+            permissions: ALL_PERMISSIONS,
+            owner: true,
+          },
+  }),
   moveToNewWindow: async () => {},
   onSettingChanged: async () => () => {},
   onCloseRequested: async () => () => {},
