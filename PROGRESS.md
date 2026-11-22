@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 16, with sessions M5-a and M5-b and the M4 runtime side track merged from `main`).
+Last updated: 2026-11-22 (session 16: Milestone 3 closed; sessions M5-a and M5-b and the M4 runtime side track merged from `main`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -348,7 +348,10 @@ M2 closed in session 8 at the owner's go-ahead, with these items carried forward
 - **Autosave:** a single running copy is not enforced.
 - **From M1:** extreme pinch-out, and printing on screen (owner item 13).
 
-## M3 — Text engine — started in session 9 on branch `m3-text` (groundwork merged to `main` ahead of M2)
+## M3 — Text engine — done; closed on `m3-text` (PR #8) with the open items below
+
+Closed in session 16 at the owner's go-ahead, with the exit test's gaps stated rather than
+waited on. Demo script: `docs/demos/m3.md`.
 
 The groundwork that did not depend on M2 was built on branch `pomidor/m3-text-engine-3c22b6`
 in parallel with M2 and merged by pull request at the owner's request. M3 proper started in
@@ -373,7 +376,7 @@ Plan, in order:
    has codes for, otherwise the whole paragraph in a bundled family with a "Font substituted"
    note and a Sans/Naskh choice; unused fonts of our own drop out. The Edit tool opens a
    paragraph when pressed.
-6. **Exit test:** spec §7's four acceptance tests.
+6. ~~**Exit test**~~ **done with stated gaps (session 16):** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
       `spikes/pdfium-regenerate/`).
@@ -409,7 +412,7 @@ Plan, in order:
 - [~] **Own content-stream writer** (now the only backend). The text half exists:
       `pdf::text` (ADR 0019) turns a layout into operators and embeds its font subsets, used by
       M2's text boxes and, since session 9, written into page content (ADR 0021). Removing a
-      block's existing text objects (for in-place editing) is still to do. Must solve:
+      block's existing text objects is done (`block_edit`, by byte range, ADR 0023). Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
         `/ActualText`);
       - encrypting new objects in encrypted files (done in M2: `pdf::crypt`, ADR 0017).
@@ -472,6 +475,24 @@ Plan, in order:
         - the scroll benchmark is to be re-run on an idle machine (owner item 16).
       - **Typing** in the paragraph field takes 17–18 ms a keystroke (median), within the 32 ms
         budget.
+
+M3 closed in session 16 at the owner's go-ahead, with these items carried forward:
+
+- **The exit test by hand** (owner item 16): Acrobat Reader, real input methods, and the scroll
+  and zoom benchmark on an idle machine.
+- **Copying our Arabic in Chrome and Poppler** (owner item 10): they reverse ligatures' letters
+  and print mixed lines in visual order, in Chrome's own files too.
+- **Editing:**
+  - underline, sizes and colours are not settable from the editor;
+  - only regular and bold weights;
+  - indents, lists and tab stops are not kept;
+  - reused fonts lose kerning;
+  - a paragraph that grows can overlap the text below it;
+  - direction is decided by the majority of letters.
+- **Fonts:** Type 1 and bare CFF programs are not re-set; installed fonts are not offered as
+  substitutes (comes with the font picker).
+- **Not edited:** text in forms, encrypted files, Type 3 and CMap-encoded fonts. Each is refused
+  with its reason.
 
 ## M4 — OCR (quality-first)
 
@@ -585,6 +606,8 @@ Plan, in order:
 - **Benchmark:** the scroll benchmark ran under a load average of 85 and is to be re-run (owner
   item 16).
 - **Demo script:** `docs/demos/m3.md`.
+- **Milestone 3 closed** at the owner's go-ahead, with the gaps above carried forward rather than
+  the benchmark re-run first. `main` (M5-b: encryption and permissions) was merged in first.
 
 ### Session 15 — 2026-11-22 (Milestone 3: tashkeel in paragraphs edited in place)
 
