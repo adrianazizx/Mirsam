@@ -21,7 +21,7 @@ PDFium: Its own third-party notices ship in third_party/pdfium/<platform>/licens
 
 SQLite: Compiled into the app from source by rusqlite's `bundled` feature; public domain.
 
-## Rust crates (552)
+## Rust crates (555)
 
 | Component | Version | Licence | Source |
 |---|---|---|---|
@@ -493,11 +493,14 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | unicode-normalization | 0.1.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/unicode-rs/unicode-normalization |
 | unicode-properties | 0.1.5 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/unicode-rs/unicode-properties |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation |
+| ureq | 3.5.2 | MIT OR Apache-2.0 | https://github.com/algesten/ureq |
+| ureq-proto | 0.7.1 | MIT OR Apache-2.0 | https://github.com/algesten/ureq-proto |
 | url | 2.5.9 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
 | urlpattern | 0.6.0 | MIT | https://github.com/denoland/rust-urlpattern |
 | utf_types | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf_types |
 | utf16string | 0.2.0 | MIT OR Apache-2.0 | https://github.com/getsentry/utf16string |
 | utf8_iter | 1.1.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf8_iter |
+| utf8-zero | 0.8.1 | MIT OR Apache-2.0 | https://github.com/algesten/utf8-zero |
 | uuid | 1.29.3 | Apache-2.0 OR MIT | https://github.com/uuid-rs/uuid |
 | vcpkg | 0.2.15 | MIT/Apache-2.0 | https://github.com/mcgoo/vcpkg-rs |
 | vecmath | 1.0.0 | MIT | https://github.com/pistondevelopers/vecmath.git |
