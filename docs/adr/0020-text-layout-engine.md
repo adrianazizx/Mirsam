@@ -95,7 +95,7 @@ layout(text: &str, spans: &[Span], fonts: &[FontFace], style: &ParagraphStyle)
 ## Verified
 
 `cargo test -p safha-core --test typeset --test typeset_pdf`, plus unit tests in
-`typeset/itemize.rs` and `typeset/matching.rs`. Fonts: Amiri, IBM Plex Sans (variable), IBM Plex Sans Arabic, Noto Naskh
+`typeset/itemize.rs`, `typeset/matching.rs` and `typeset/library.rs`. Fonts: Amiri, IBM Plex Sans (variable), IBM Plex Sans Arabic, Noto Naskh
 Arabic (variable), all OFL, from `assets/fonts/`.
 
 - **Every layout** is checked for:
@@ -196,16 +196,54 @@ Added in the same session, in the same module.
   - descriptor weight;
   - a bold variable instance.
 
+**Installed fonts** (`FontLibrary`, `system_font_dirs`).
+- Spec §6.3 says to use system fonts too. The index scans folders: the platform's (macOS
+  `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`; Windows `%WINDIR%\Fonts` and
+  the per-user folder; elsewhere `/usr/share/fonts`, `/usr/local/share/fonts`,
+  `$XDG_DATA_HOME/fonts`, `~/.fonts`) and any others, such as the bundled fonts.
+- For each face of each `.ttf`/`.otf`/`.ttc`/`.otc` it reads only `name`, `OS/2`, `post`,
+  `cmap`, `head`, `hhea`, `maxp`, `fvar`, `avar` and `STAT`, with seeks. It rebuilds a small
+  sfnt from them and records:
+  - the traits;
+  - which scripts it fully covers (Latin, Arabic, the Persian/Urdu letters, Hebrew, Greek,
+    Cyrillic, CJK);
+  - the `wght` range of a variable font.
+- No new dependency.
+- Unreadable files are counted and skipped. Faces whose family starts with a dot are left
+  out: macOS's convention for fonts hidden from documents, which includes LastResort, whose
+  `cmap` claims every character.
+- `find` ranks the index by name and style among faces that cover the text's scripts, reads
+  the best six in full, and decides with `match_font`. A variable face is instanced at the
+  requested weight.
+- **On this Mac:** 694 faces indexed (806 before dropping the hidden ones), none skipped, in
+  25–45 ms in a debug build. A find reads a few faces and takes 1–15 ms.
+  - "TimesNewRomanPS-BoldMT" finds Times New Roman Bold, "Arial,Bold" Arial Bold, and Tahoma
+    Tahoma.
+  - A nameless request for Hebrew text gets Times New Roman, which has Hebrew.
+
+**Refinements, from trying it on installed fonts:**
+- A curated table of common families takes precedence over a font's own classification:
+  macOS's Courier declares neither fixed pitch nor serif.
+- Faces that PANOSE or the IBM class mark as script, decorative or symbol rank lower as
+  substitutes.
+- Families in the table win ties.
+- An unstated weight only leans toward regular, so that `/Widths` (`FontRequest::widths`, 20
+  points per 10% mean difference) can decide between a regular and a bold.
+
 ## Not done, and known limits
 
 - **Each piece is shaped twice:** once whole, to measure, and once per line, exactly. The
   second pass could reuse the first where harfrust marks the glyphs safe to break.
 - **Greedy line filling.** No hyphenation, tabs, letter- or word-spacing input, kashida (P2),
   or vertical text.
-- **Fonts come from the caller.** Matching ranks the fonts it is given. Not done yet:
-  - discovering installed fonts;
-  - reusing the PDF's own embedded font when it has every glyph (spec §7, step 4);
-  - comparing metrics from `/Widths`.
+- **Font matching gaps:**
+  - The PDF's own embedded font is not yet reused when it has every glyph (spec §7, step 4).
+    That needs the font program and its encoding from the page, which is in-place-editing
+    work.
+  - The index is rebuilt per scan, not cached. At these timings that is fine; a cache would
+    belong in the SQLite store.
+  - The script coverage flags are coarse. The exact check happens when a face is read in
+    full.
 - **Complex-script line breaking** (Thai, Lao, Khmer, Myanmar) needs ICU4X's dictionary or
   LSTM data. That data is not built in: a size decision for when those scripts matter.
 - **Bidi data is `unicode-bidi`'s own tables** (an older Unicode version than ICU 2.4's). The

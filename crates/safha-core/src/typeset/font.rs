@@ -109,8 +109,22 @@ impl FontFace {
         self.font.charmap().map_unicode(ch).is_some()
     }
 
+    /// Advance width of `ch`'s nominal glyph in thousandths of an em, at this
+    /// face's variation; `None` if the font lacks it.
+    pub fn advance(&self, ch: char) -> Option<f32> {
+        let shaper = harfrust::ShaperFont::new(&self.font);
+        let glyph = shaper.nominal_glyph(u32::from(ch))?;
+        Some(shaper.glyph_h_advance(glyph) as f32 * 1000.0 / f32::from(self.units_per_em))
+    }
+
     pub(super) fn shaper_font(&self) -> &harfrust::Font {
         &self.font
+    }
+
+    /// Minimum and maximum of a variable font's `wght` axis.
+    pub fn weight_axis(&self) -> Option<(f32, f32)> {
+        let axis = self.font.axes().get_by_tag(Tag::new(b"wght"))?;
+        Some((axis.min_value(), axis.max_value()))
     }
 
     pub(super) fn variation_list(&self) -> &[(Tag, f32)] {

@@ -26,6 +26,9 @@ pub struct FontTraits {
     /// `None` when neither the font nor its name says.
     pub serif: Option<bool>,
     pub monospace: bool,
+    /// Script (handwriting), decorative or symbol designs, by PANOSE or the
+    /// IBM class: never a good stand-in for body text.
+    pub decorative: bool,
 }
 
 /// What we know about the font a PDF paragraph was set in, from its font
@@ -42,6 +45,9 @@ pub struct FontRequest {
     pub italic: Option<bool>,
     pub serif: Option<bool>,
     pub monospace: Option<bool>,
+    /// Advance widths of some characters in thousandths of an em, from the
+    /// PDF font's `/Widths` (or `/W`) and its encoding. Optional.
+    pub widths: Vec<(char, f32)>,
 }
 
 /// How good a match is.
@@ -57,7 +63,7 @@ pub enum MatchKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FontMatch {
-    /// Index into the candidates.
+    /// Index into the candidates (for [`FontLibrary::find`](super::FontLibrary::find), into its entries).
     pub index: usize,
     pub kind: MatchKind,
     /// Whether the font has every character of the text.
@@ -79,13 +85,17 @@ impl FontFace {
         let italic = !matches!(attributes.style, Style::Normal);
         let tables = font.tables();
         let os2 = tables.os2().ok();
-        let monospace = tables.post().is_ok_and(|p| p.is_fixed_pitch() != 0)
+        // The curated table of common families wins over the font's own
+        // metadata, which is often missing or wrong (macOS's Courier says
+        // neither fixed-pitch nor serif).
+        let known = known_class(&family_key(&family));
+        let monospace = known == Some(Class::Monospace)
+            || tables.post().is_ok_and(|p| p.is_fixed_pitch() != 0)
             || os2.as_ref().is_some_and(|o| o.panose_10().get(3) == Some(&9));
         // PANOSE (Latin text, family kind 2): serif styles 2–10, sans 11–13.
-        // IBM's class: 1–7 and 10 are serif families, 8 sans serif.
-        let serif = os2
-            .as_ref()
-            .and_then(|o| {
+        // IBM's class: 1–7 are serif families, 8 sans serif.
+        let serif = known.filter(|c| *c != Class::Monospace).map(|c| c == Class::Serif).or_else(|| {
+            os2.as_ref().and_then(|o| {
                 let panose = o.panose_10();
                 let by_panose = match (panose.first(), panose.get(1)) {
                     (Some(2), Some(2..=10)) => Some(true),
@@ -93,13 +103,26 @@ impl FontFace {
                     _ => None,
                 };
                 by_panose.or(match o.s_family_class() >> 8 {
-                    1..=7 | 10 => Some(true),
+                    1..=7 => Some(true),
                     8 => Some(false),
                     _ => None,
                 })
             })
-            .or_else(|| known_class(&family_key(&family)).map(|c| c == Class::Serif));
-        FontTraits { family, postscript_name, weight: attributes.weight.value(), italic, serif, monospace }
+        });
+        // PANOSE family kinds 3–5: hand-written, decorative, symbol. IBM classes
+        // 9, 10, 12: ornamentals, scripts, symbolic.
+        let decorative = os2.as_ref().is_some_and(|o| {
+            matches!(o.panose_10().first(), Some(3..=5)) || matches!(o.s_family_class() >> 8, 9 | 10 | 12)
+        });
+        FontTraits {
+            family,
+            postscript_name,
+            weight: attributes.weight.value(),
+            italic,
+            serif,
+            monospace,
+            decorative,
+        }
     }
 }
 
@@ -129,6 +152,7 @@ impl FontRequest {
             // never set it), so it says nothing; the name table may.
             serif: flags.filter(|f| f & (1 << 1) != 0).map(|_| true),
             monospace: flags.map(|f| f & 1 != 0),
+            widths: Vec::new(),
         }
     }
 }
@@ -136,66 +160,140 @@ impl FontRequest {
 /// Picks the candidate closest to `request` that can draw `text`.
 ///
 /// Order of preference: draws every character of `text`; same family; then
-/// classification and style. Returns `None` only when there are no candidates.
+/// classification, style, and — when the request has `/Widths` — how close the
+/// candidate's advance widths are. Returns `None` only when there are no
+/// candidates.
 pub fn match_font(request: &FontRequest, text: &str, candidates: &[FontFace]) -> Option<FontMatch> {
-    let parsed = parse_name(&request.name);
-    let wanted_keys: Vec<String> = request
-        .family
-        .iter()
-        .map(|f| family_key(f))
-        .chain(std::iter::once(parsed.family_key.clone()))
-        .filter(|k| !k.is_empty())
-        .collect();
-    let wanted_weight = request.weight.or(parsed.weight).unwrap_or(400.0);
-    let wanted_italic = request.italic.unwrap_or(parsed.italic);
-    let wanted_serif =
-        request.serif.or_else(|| wanted_keys.iter().find_map(|k| known_class(k)).map(|c| c == Class::Serif));
-    let wanted_mono = request.monospace.unwrap_or(false)
-        || wanted_keys.iter().any(|k| known_class(k) == Some(Class::Monospace));
-    let needed: Vec<char> = text.chars().filter(|c| !c.is_whitespace() && !c.is_control()).collect();
-
+    let wanted = Wanted::new(request);
+    let needed = needed_chars(text);
     candidates
         .iter()
         .enumerate()
         .map(|(index, face)| {
-            let traits = face.traits();
             let covered = needed.iter().filter(|c| face.covers(**c)).count();
-            let keys: Vec<String> = std::iter::once(family_key(&traits.family))
-                .chain(traits.postscript_name.as_deref().map(|p| parse_name(p).family_key))
-                .filter(|k| !k.is_empty())
-                .collect();
-            let same_family = wanted_keys.iter().any(|w| keys.contains(w));
-            // "IBMPlexSans" asked for, "IBM Plex Sans Arabic" here: a relative.
-            let related = !same_family
-                && wanted_keys
-                    .iter()
-                    .any(|w| keys.iter().any(|k| k.starts_with(w.as_str()) || w.starts_with(k.as_str())));
-
-            let mut score = 0.0f32;
-            if same_family {
-                score += 1000.0;
-            } else if related {
-                score += 400.0;
-            }
-            if let (Some(want), Some(have)) = (wanted_serif, traits.serif) {
-                score += if want == have { 60.0 } else { -60.0 };
-            }
-            score += if wanted_mono == traits.monospace { 30.0 } else { -80.0 };
-            score -= (wanted_weight - traits.weight).abs() / 10.0;
-            if wanted_italic != traits.italic {
-                score -= 25.0;
-            }
-            let style_matches =
-                (wanted_weight - traits.weight).abs() < 50.0 && wanted_italic == traits.italic;
-            let kind = match (same_family, style_matches) {
-                (true, true) => MatchKind::Exact,
-                (true, false) => MatchKind::SameFamily,
-                _ => MatchKind::Substitute,
-            };
+            let (mut score, kind) = wanted.rank(&face.traits());
+            score -= wanted.width_penalty(face);
             (index, covered, score, kind)
         })
         .max_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)))
         .map(|(index, covered, _, kind)| FontMatch { index, kind, covers_text: covered == needed.len() })
+}
+
+/// The characters a font must have to set `text`.
+pub(super) fn needed_chars(text: &str) -> Vec<char> {
+    let mut chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace() && !c.is_control()).collect();
+    chars.sort_unstable();
+    chars.dedup();
+    chars
+}
+
+/// A request, resolved once: family keys and the style it implies.
+pub(super) struct Wanted {
+    keys: Vec<String>,
+    /// `None` when neither the name nor the descriptor says.
+    weight: Option<f32>,
+    italic: bool,
+    serif: Option<bool>,
+    monospace: bool,
+    widths: Vec<(char, f32)>,
+}
+
+impl Wanted {
+    pub(super) fn new(request: &FontRequest) -> Self {
+        let parsed = parse_name(&request.name);
+        let keys: Vec<String> = request
+            .family
+            .iter()
+            .map(|f| family_key(f))
+            .chain(std::iter::once(parsed.family_key.clone()))
+            .filter(|k| !k.is_empty())
+            .collect();
+        let serif =
+            request.serif.or_else(|| keys.iter().find_map(|k| known_class(k)).map(|c| c == Class::Serif));
+        let monospace = request.monospace.unwrap_or(false)
+            || keys.iter().any(|k| known_class(k) == Some(Class::Monospace));
+        Wanted {
+            weight: request.weight.or(parsed.weight),
+            italic: request.italic.unwrap_or(parsed.italic),
+            serif,
+            monospace,
+            keys,
+            widths: request.widths.iter().copied().filter(|(_, w)| w.is_finite() && *w > 0.0).collect(),
+        }
+    }
+
+    /// The weight asked for (400 when nothing says).
+    pub(super) fn weight(&self) -> f32 {
+        self.weight.unwrap_or(400.0)
+    }
+
+    /// Score from names and style alone (higher is better), and the kind of
+    /// match it would be.
+    pub(super) fn rank(&self, traits: &FontTraits) -> (f32, MatchKind) {
+        let keys: Vec<String> = std::iter::once(family_key(&traits.family))
+            .chain(traits.postscript_name.as_deref().map(|p| parse_name(p).family_key))
+            .filter(|k| !k.is_empty())
+            .collect();
+        let same_family = self.keys.iter().any(|w| keys.contains(w));
+        // "IBMPlexSans" asked for, "IBM Plex Sans Arabic" here: a relative.
+        let related = !same_family
+            && self
+                .keys
+                .iter()
+                .any(|w| keys.iter().any(|k| k.starts_with(w.as_str()) || w.starts_with(k.as_str())));
+
+        let mut score = 0.0f32;
+        if same_family {
+            score += 1000.0;
+        } else if related {
+            score += 400.0;
+        }
+        if let (Some(want), Some(have)) = (self.serif, traits.serif) {
+            score += if want == have { 60.0 } else { -60.0 };
+        }
+        score += if self.monospace == traits.monospace { 30.0 } else { -80.0 };
+        // A stated weight counts fully; an unstated one only leans toward
+        // regular, so that `/Widths` can outweigh it.
+        score -= match self.weight {
+            Some(w) => (w - traits.weight).abs() / 10.0,
+            None => (400.0 - traits.weight).abs() / 40.0,
+        };
+        if self.italic != traits.italic {
+            score -= 25.0;
+        }
+        if traits.decorative && !same_family {
+            score -= 50.0;
+        }
+        // Among otherwise equal substitutes, a mainstream document family
+        // (one in the curated table) beats an unusual one.
+        if keys.iter().any(|k| known_class(k).is_some()) {
+            score += 5.0;
+        }
+        let style_matches = (self.weight() - traits.weight).abs() < 50.0 && self.italic == traits.italic;
+        let kind = match (same_family, style_matches) {
+            (true, true) => MatchKind::Exact,
+            (true, false) => MatchKind::SameFamily,
+            _ => MatchKind::Substitute,
+        };
+        (score, kind)
+    }
+
+    /// How far the face's advance widths are from the PDF font's, as a score
+    /// penalty: 0 for identical widths, 20 points per 10% mean difference,
+    /// at most 100. A substitute with close widths changes the line breaks of
+    /// the re-set paragraph least.
+    pub(super) fn width_penalty(&self, face: &FontFace) -> f32 {
+        let diffs: Vec<f32> = self
+            .widths
+            .iter()
+            .filter_map(|(c, want)| face.advance(*c).map(|have| (have - want).abs() / want))
+            .collect();
+        if diffs.is_empty() {
+            return 0.0;
+        }
+        let mean = diffs.iter().sum::<f32>() / diffs.len() as f32;
+        (mean * 200.0).min(100.0)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

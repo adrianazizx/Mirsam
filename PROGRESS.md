@@ -236,15 +236,16 @@ The parts that do not depend on M2. Not merged, not pushed.
 - [x] Text pipeline → positioned glyph runs. Proven end to end by a test writer: PDFium draws
       the result, and `safha-core`'s extractor reads back exactly the input, in English, Arabic,
       mixed, and justified mixed text with fallback.
-- [~] Font matching and subsetting:
+- [x] Font matching and subsetting (one gap, below):
       - Subsetting done (`typeset::subset_fonts`, `subsetter` 0.2.6). Variable fonts are
         instanced. The subsets draw pixel-identical pages from files 33–44× smaller.
-      - Matching done (`typeset::match_font`): family, then classification and style, with
-        text coverage first. It reports exact, same family, or substitute.
-      - **Gaps:**
-        - system font discovery (only the fonts given are searched);
-        - using the PDF's own embedded font when it has the glyphs;
-        - metric comparison from `/Widths`.
+      - Matching done (`typeset::match_font`): family, then classification and style, then
+        `/Widths`, with text coverage first. It reports exact, same family, or substitute.
+      - Installed fonts done (`typeset::FontLibrary`): indexes the platform's font folders from
+        a few small tables each (694 faces in 25–45 ms on this Mac, debug build). `find` reads
+        the best few in full and instances variable fonts at the requested weight.
+      - **Gap:** reusing the PDF's own embedded font when it has the glyphs (in-place-editing
+        work).
 - [ ] **Own content-stream writer** (now the only backend). Waits for M2's
       `safha_core::pdf` writer to merge. Must solve:
       - ToUnicode for multi-glyph clusters (Noto Naskh's shadda + fatha extracts twice with
@@ -306,8 +307,9 @@ for this track.
 - **`safha_core::typeset` (ADR 0020):**
   - the layout engine;
   - font subsets with variable-font instancing;
-  - font matching.
-- **Tests:** 158 Rust tests pass (34 new). Clippy, fmt, `cargo deny` and the licence report
+  - font matching;
+  - an index of installed fonts (`FontLibrary`).
+- **Tests:** 165 Rust tests pass (41 new). Clippy, fmt, `cargo deny` and the licence report
   are clean.
 - **New dependencies** (all verified, all allowed):
   - `harfrust` 0.16.1 (MIT);
@@ -334,6 +336,11 @@ Things that were not obvious:
   two-mark cluster, PDFium emits the text once per glyph.
 - `subsetter` keeps the hinting tables of a default instance and drops them when instancing,
   so a regular subset can be larger than a bold one.
+- On macOS, 112 installed faces have family names starting with a dot. These are hidden UI
+  fonts, and they include LastResort, whose `cmap` claims every character. A font index must
+  drop them, or LastResort "covers" any text.
+- macOS's Courier declares itself neither fixed-pitch nor serif. A curated family table beats
+  font metadata.
 
 ### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
 

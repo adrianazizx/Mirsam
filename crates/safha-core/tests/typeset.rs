@@ -588,3 +588,100 @@ fn matching_uses_descriptor_weight_slant_and_variable_instances() {
         vec![plex.clone(), plex.with_variations(&[(*b"wght", 700.0)]).unwrap_or_else(|e| panic!("{e}"))];
     assert_eq!(pick("IBMPlexSans-Bold", "Quarterly Report", &candidates), (1, MatchKind::Exact, true));
 }
+
+// ---------------------------------------------------------------- Installed fonts
+
+use safha_core::typeset::{Coverage, FontLibrary, system_font_dirs};
+
+fn assets_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts")
+}
+
+#[test]
+fn library_indexes_a_folder_from_small_tables_only() {
+    let library = FontLibrary::scan(&[assets_dir()]);
+    assert_eq!(library.skipped(), 0);
+    assert_eq!(library.entries().len(), BUNDLED.len());
+    for entry in library.entries() {
+        let name = entry.path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        // What the index read from a handful of tables equals the full parse.
+        assert_eq!(entry.traits, font(name).traits(), "{name}");
+        assert_eq!(
+            entry.weight_range.is_some(),
+            name.contains("-VF"),
+            "{name}: only the variable fonts have a wght axis"
+        );
+        let arabic = entry.coverage.contains(Coverage::ARABIC);
+        assert_eq!(arabic, name != "IBMPlexSans-VF.ttf", "{name}: Arabic coverage");
+    }
+    let plex = library.entries().iter().find(|e| e.traits.family == "IBM Plex Sans");
+    assert!(plex.is_some_and(|e| e.coverage.contains(Coverage::LATIN)));
+}
+
+#[test]
+fn library_finds_by_name_style_and_coverage() {
+    let library = FontLibrary::scan(&[assets_dir()]);
+    let find = |name: &str, text: &str| {
+        let request = FontRequest::from_pdf(name, None, None, None, None);
+        library.find(&request, text).unwrap_or_else(|| panic!("nothing for {name}"))
+    };
+    let (_, entry, found) = find("ABCDEF+Amiri-Bold", ARABIC);
+    assert_eq!((entry.traits.postscript_name.as_deref(), found.kind), (Some("Amiri-Bold"), MatchKind::Exact));
+    assert_eq!(library.entries()[found.index], entry);
+
+    // A variable font is instanced at the weight asked for.
+    let (face, entry, found) = find("IBMPlexSans-Bold", "Quarterly Report");
+    assert_eq!((entry.traits.family.as_str(), found.kind), ("IBM Plex Sans", MatchKind::Exact));
+    assert_eq!(face.traits().weight, 700.0);
+
+    // IBM Plex Sans cannot set Arabic: its Arabic relative does.
+    let (face, entry, found) = find("IBMPlexSans-Regular", ARABIC);
+    assert_eq!(entry.traits.family, "IBM Plex Sans Arabic");
+    assert!(found.covers_text && ARABIC.chars().all(|c| c == ' ' || face.covers(c)));
+
+    let (_, entry, _) = find("Tahoma", ARABIC);
+    assert_eq!(entry.traits.serif, Some(false));
+}
+
+#[test]
+fn library_skips_unreadable_files() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("font-library-bad");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    let amiri = std::fs::read(assets_dir().join("Amiri-Regular.ttf")).unwrap_or_else(|e| panic!("{e}"));
+    let write =
+        |name: &str, data: &[u8]| std::fs::write(dir.join(name), data).unwrap_or_else(|e| panic!("{e}"));
+    write("garbage.ttf", b"not a font at all, just some bytes");
+    write("truncated.ttf", &amiri[..amiri.len() / 50]);
+    write("notes.txt", b"ignored: not a font file name");
+    let library = FontLibrary::scan(&[dir]);
+    assert_eq!((library.entries().len(), library.skipped()), (0, 2));
+}
+
+#[test]
+fn widths_from_the_pdf_pick_the_closest_substitute() {
+    // A font with an unknown name and no descriptor style: only its widths
+    // (here Amiri Bold's) say which candidate sets text the same width.
+    let candidates = [amiri(), font("Amiri-Bold.ttf"), font("NotoNaskhArabic-VF.ttf")];
+    for (source, expected) in [(1usize, 1usize), (0, 0)] {
+        let widths: Vec<(char, f32)> = "abcdefghijklmnopالسلامعليكم"
+            .chars()
+            .filter_map(|c| candidates[source].advance(c).map(|w| (c, w)))
+            .collect();
+        let request = FontRequest { name: "ABCDEF+Unknown".into(), widths, ..FontRequest::default() };
+        let found = match_font(&request, ARABIC, &candidates).map(|m| m.index);
+        assert_eq!(found, Some(expected), "widths of candidate {source}");
+    }
+}
+
+#[test]
+fn this_platform_has_installed_fonts_to_index() {
+    let dirs = system_font_dirs();
+    assert!(!dirs.is_empty(), "no system font folder found on this platform");
+    let library = FontLibrary::system();
+    assert!(!library.entries().is_empty(), "no font indexed under {dirs:?}");
+    // Something installed can set English.
+    let request = FontRequest::from_pdf("ABCDEF+Unknown", None, None, None, None);
+    let found = library.find(&request, "The quick brown fox");
+    assert!(found.is_some_and(|(_, _, m)| m.covers_text));
+}
