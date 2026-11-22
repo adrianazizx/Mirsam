@@ -49,6 +49,42 @@ export interface TextStyle {
   direction: "auto" | "ltr" | "rtl";
 }
 
+/**
+ * A paragraph of a page's text, rebuilt from its glyphs (ADR 0023). Its box is
+ * on the displayed page: points from the top-left corner, y down.
+ */
+export interface ParagraphBlock {
+  index: number;
+  /** Changes when the page's text does: an edit names the block it read. */
+  fingerprint: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  rtl: boolean;
+  align: "left" | "right" | "center" | "justify";
+  size: number;
+  color: [number, number, number];
+  lines: number;
+  /** The font it is set in now. */
+  font: string;
+  /** The paragraph's own font can set new Latin text. */
+  fontReusable: boolean;
+  /** More than one font, size or colour was found; editing sets it in one. */
+  flattened: boolean;
+  editable: boolean;
+  /** Why it is not editable (English, for logs). */
+  reason: string | null;
+}
+
+/** A paragraph edited in place: the usual outcome, and what became of its font. */
+export interface BlockEditOutcome extends EditOutcome {
+  /** Set in a substitute family: the original font's name, and the family. */
+  substituted: { from: string; to: "sans" | "naskh" } | null;
+  lines: number;
+}
+
 /** The four text-markup annotations (ADR 0017). */
 export type MarkupKind = "highlight" | "underline" | "strikeOut" | "squiggly";
 
@@ -520,6 +556,23 @@ export interface Backend {
     text: string,
     style: TextStyle,
   ): Promise<EditOutcome>;
+  /** The paragraphs of a page's text, in reading order (ADR 0023). */
+  pageTextBlocks(documentId: number, page: number): Promise<ParagraphBlock[]>;
+  /**
+   * Replaces a paragraph's text in place, reflowed inside its box (ADR 0023).
+   * `family` forces a bundled substitute; absent, the paragraph's own font is
+   * kept when it can set the text. An empty text removes the paragraph.
+   */
+  editTextBlock(
+    documentId: number,
+    edit: {
+      page: number;
+      index: number;
+      fingerprint: number;
+      text: string;
+      family?: "sans" | "naskh";
+    },
+  ): Promise<BlockEditOutcome>;
   /** Answers a comment; signed with the `commentAuthor` setting. */
   replyToComment(
     documentId: number,

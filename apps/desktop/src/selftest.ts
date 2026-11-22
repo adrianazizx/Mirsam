@@ -372,10 +372,39 @@ async function addedTextChecks(documentId: number) {
     return pixels > enough;
   }, 15_000);
   const readBack = (await pageText()).replace(/\s+/gu, " ").includes(text);
+
+  // In-place editing (ADR 0023): the paragraph just written is found as one block, in logical
+  // order, and a word inserted in its middle reads back from the page.
+  const blocks = await backend.pageTextBlocks(documentId, 0);
+  const block = blocks.find((candidate) => candidate.text.replace(/\s+/gu, " ").includes(text));
+  const edited = "أضيف هذا النص الجديد إلى الصفحة";
+  let blockEdited = false;
+  let blockReadBack = false;
+  if (block) {
+    await runCommand("text.editBlock", { page: 0, block });
+    await runCommand("note.save", { text: edited });
+    blockEdited = true;
+    const until = performance.now() + 15_000;
+    while (!blockReadBack && performance.now() < until) {
+      blockReadBack = (await pageText()).replace(/\s+/gu, " ").includes(edited);
+      if (!blockReadBack) await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    await runCommand("edit.undo");
+  }
+  const blockFound = block !== undefined && block.text.replace(/\s+/gu, " ") === text && block.rtl;
   await runCommand("edit.undo");
-  const undone = !(await pageText()).includes(text);
+  const undone = !(await pageText()).includes(text) && !(await pageText()).includes(edited);
   useAppStore.getState().setActiveTool("select");
-  return { painted: pixels > enough, pixels, enough, readBack, undone };
+  return {
+    painted: pixels > enough,
+    pixels,
+    enough,
+    readBack,
+    undone,
+    blockFound,
+    blockEdited,
+    blockReadBack,
+  };
 }
 
 async function notesAndInkChecks(documentId: number) {

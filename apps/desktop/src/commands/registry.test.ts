@@ -171,6 +171,60 @@ describe("command registry", () => {
     }
   });
 
+  it("edits a paragraph of the page's own text in place (ADR 0023)", async () => {
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 3 });
+    useAppStore.getState().setActiveTool("edit");
+    const [block] = await backend.pageTextBlocks(1, 0);
+    expect(block).toMatchObject({ editable: true, fontReusable: true });
+    if (!block) return;
+    const edit = vi.spyOn(backend, "editTextBlock");
+    try {
+      await runCommand("text.editBlock", { page: 0, block });
+      expect(useAppStore.getState().pendingNote).toMatchObject({
+        kind: "block",
+        page: 0,
+        x: 72,
+        y: 120,
+        width: 300,
+        height: 36,
+      });
+
+      // Unchanged text is no edit.
+      await runCommand("note.save", { text: block.text });
+      expect(edit).not.toHaveBeenCalled();
+
+      await runCommand("text.editBlock", { page: 0, block });
+      await runCommand("note.save", { text: block.text.replace("one", "a single") });
+      expect(edit).toHaveBeenCalledWith(1, {
+        page: 0,
+        index: 0,
+        fingerprint: block.fingerprint,
+        text: block.text.replace("one", "a single"),
+      });
+      expect(useAppStore.getState().pendingNote).toBeNull();
+      expect(selectActiveDocument(useAppStore.getState())).toMatchObject({
+        modified: true,
+        canUndo: true,
+      });
+      // Latin text in the paragraph's own font: nothing was substituted.
+      expect(useAppStore.getState().notice).toBeNull();
+
+      // Arabic needs a bundled font: the user is told, and the family can be chosen.
+      const [next] = await backend.pageTextBlocks(1, 0);
+      if (!next) return;
+      await runCommand("text.editBlock", { page: 0, block: next });
+      await runCommand("note.save", { text: "فقرة جديدة", blockFamily: "naskh" });
+      expect(edit).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ text: "فقرة جديدة", family: "naskh" }),
+      );
+      expect(useAppStore.getState().notice).toMatchObject({ key: "fontSubstituted" });
+    } finally {
+      edit.mockRestore();
+      useAppStore.getState().setNotice(null);
+    }
+  });
+
   it("asks before closing a tab with unsaved changes", async () => {
     useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
     useAppStore.getState().addDocument({ id: 2, name: "b.pdf", pageCount: 12 });

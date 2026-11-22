@@ -190,6 +190,26 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, height))
     }
 
+    /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+    pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
+        let view = self.view_transform(page)?;
+        crate::block_edit::text_blocks(&self.bytes, &view, page)
+    }
+
+    /// This document with one paragraph of its page's text edited in place
+    /// (ADR 0023), the update that does it, and what the edit did.
+    pub fn with_block_edit(
+        &self,
+        edit: &crate::block_edit::BlockEdit,
+    ) -> Result<(Document, Vec<u8>, crate::block_edit::EditedBlock)> {
+        let view = self.view_transform(edit.page)?;
+        let width = self.page_size(edit.page)?.width;
+        let (update, outcome) = crate::block_edit::edit_block_update(&self.bytes, &view, width, edit)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update, outcome))
+    }
+
     /// The page's annotations of the kinds this app writes (markup, ink,
     /// notes, text boxes), and the map from page space to the page as
     /// displayed. Replies and review states are left out: they belong to

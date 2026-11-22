@@ -105,7 +105,7 @@ impl NewText {
 }
 
 /// Marks the streams that wrap a page's original content in `q … Q`.
-const WRAP_KEY: &[u8] = b"MirsamWrap";
+pub(crate) const WRAP_KEY: &[u8] = b"MirsamWrap";
 
 /// The bytes to append to `bytes` to add `text` to its page: an incremental
 /// update. `view` maps the page to the page as displayed; `password` is the
@@ -203,7 +203,7 @@ pub fn add_text_update(
 
 /// The page's content streams, in order: `/Contents` is one stream, an array
 /// of them (possibly an object of its own), or absent.
-fn page_contents(file: &File<'_>, page: &Dict) -> Result<Vec<Object>> {
+pub(crate) fn page_contents(file: &File<'_>, page: &Dict) -> Result<Vec<Object>> {
     Ok(match page.get(b"Contents") {
         None | Some(Object::Null) => Vec::new(),
         Some(Object::Array(items)) => items.clone(),
@@ -217,7 +217,7 @@ fn page_contents(file: &File<'_>, page: &Dict) -> Result<Vec<Object>> {
 }
 
 /// A prefix (`MT`, `MT2`, …) under which no font of the page is named.
-fn free_prefix(fonts: &Dict) -> String {
+pub(crate) fn free_prefix(fonts: &Dict) -> String {
     (1..)
         .map(|n: u32| if n == 1 { "MT".to_string() } else { format!("MT{n}x") })
         .find(|prefix| !fonts.0.iter().any(|(key, _)| key.starts_with(prefix.as_bytes())))
@@ -226,7 +226,7 @@ fn free_prefix(fonts: &Dict) -> String {
 
 /// The `cm` matrix mapping a box whose top-left corner is displayed at
 /// (`x`, `y`) — its own space y up, origin at that corner — to page space.
-fn placement(view: &ViewTransform, x: f32, y: f32) -> Result<[f32; 6]> {
+pub(crate) fn placement(view: &ViewTransform, x: f32, y: f32) -> Result<[f32; 6]> {
     let origin = view.page_point(x, y);
     let right = view.page_point(x + 1.0, y);
     let up = view.page_point(x, y - 1.0);
@@ -239,7 +239,7 @@ fn placement(view: &ViewTransform, x: f32, y: f32) -> Result<[f32; 6]> {
 }
 
 /// A number for a content stream: three decimals at most, no exponent.
-fn num(value: f32) -> String {
+pub(crate) fn num(value: f32) -> String {
     let text = format!("{value:.3}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
     if text.is_empty() || text == "-0" || text == "-" { "0".into() } else { text.into() }

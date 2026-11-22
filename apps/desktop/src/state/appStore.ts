@@ -4,6 +4,7 @@ import type {
   EditOutcome,
   OutlineItem,
   PageSize,
+  ParagraphBlock,
   RecentFile,
   RecoveryInfo,
   SaveOutcome,
@@ -109,12 +110,15 @@ export type CommentTool = "note" | "textBox" | "pen" | "eraser";
  */
 export interface PendingNote {
   documentId: number;
-  /** A sticky note, a text box, or text written into the page (ADR 0021). */
-  kind: "note" | "textBox" | "pageText";
+  /** A sticky note, a text box, text written into the page (ADR 0021), or a paragraph of page text edited in place (ADR 0023). */
+  kind: "note" | "textBox" | "pageText" | "block";
   page: number;
   x: number;
   y: number;
   width: number;
+  /** A `block`'s box height, and the paragraph being edited. */
+  height?: number;
+  block?: ParagraphBlock;
 }
 
 /** A close that waits for the user: something holds unsaved changes (ADR 0015). */

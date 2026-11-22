@@ -114,6 +114,9 @@ if (nav) {
     check(added.painted, `the added text was not painted (${added.pixels} px, ${added.enough} needed)`);
     check(added.readBack, "the added Arabic text did not read back as page text");
     check(added.undone, "undo did not take the added text away");
+    // In-place editing (ADR 0023): the paragraph is found, edited, and read back.
+    check(added.blockFound, "the added paragraph was not found as one right-to-left block in logical order");
+    check(added.blockEdited && added.blockReadBack, "the edited paragraph did not read back as page text");
   }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
@@ -172,7 +175,10 @@ if (nav) {
   }
   if (nav.addedText) {
     const a = nav.addedText;
-    console.log(`  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}`);
+    console.log(
+      `  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}; ` +
+        `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}`,
+    );
   }
   if (nav.editing) {
     const e = nav.editing;

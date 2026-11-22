@@ -40,6 +40,8 @@ macro_rules! product_commands {
             editing::add_note,
             editing::add_text_box,
             editing::add_text,
+            editing::page_text_blocks,
+            editing::edit_text_block,
             editing::set_annotation_contents,
             editing::remove_annotations,
             editing::page_annotations,

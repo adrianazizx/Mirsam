@@ -136,6 +136,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
         onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
+        onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
+        onBlockRefused: () => useAppStore.getState().setNotice({ key: "textNotEditable" }),
       },
     });
     viewerRef.current = viewer;

@@ -336,14 +336,18 @@ Plan, in order:
    own; encrypted files; undo.
 2. ~~**Add-new-text tool**~~ **done (ADR 0021):** the Edit tool places text; a strip sets font
    (Sans, Naskh), size, colour, alignment and direction.
-3. **[SPIKE] Editor surface:** our own caret, selection and IME drawing over the page vs. a
-   transparent `contenteditable` synchronized with the layout engine. Measure caret fidelity,
-   Arabic IME behaviour, and effort; ADR before in-place editing.
-4. **Page analysis → edit model:** text objects with font, size, matrix and colour, then
-   lines, then blocks; direction, alignment, spacing, lists.
-5. **In-place editing with reflow** inside a block's box: reuse the embedded font when it has
-   the glyphs, otherwise substitute for the whole paragraph (with an indicator); remove the
-   block's text objects and write the new ones, keeping z-order and clipping.
+3. ~~**[SPIKE] Editor surface**~~ **done (ADR 0022, `spikes/editor-surface/`):** the webview's
+   own layout matches the engine's line breaks 5 of 5 and its character positions to 0.01 pt
+   (1.1 pt on mixed bidi). **Decision: a native text field, not our own caret.** Not measured:
+   real IMEs, WKWebView.
+4. ~~**Page analysis → edit model**~~ **done (ADR 0023):** own content-stream interpreter and
+   font reader (`pdf::content`, `pdf::fontinfo`), glyphs → lines → paragraphs in the page as
+   displayed (`blocks`), with logical order, direction, alignment, line pitch, size, colour.
+5. ~~**In-place editing with reflow**~~ **done (ADR 0023, `block_edit`):** removal by byte
+   range, new text at the old text's place (z-order, clip), own font reused for Latin text it
+   has codes for, otherwise the whole paragraph in a bundled family with a "Font substituted"
+   note and a Sans/Naskh choice; unused fonts of our own drop out. The Edit tool opens a
+   paragraph when pressed.
 6. **Exit test:** spec §7's four acceptance tests.
 
 - [x] **ADR 0005's open check: PDFium's content regeneration is lossy** (ADR 0005 amendment,
@@ -392,7 +396,17 @@ Plan, in order:
       - turned pages, unbalanced page content, inherited resources, encrypted files; undo; save.
       - Gap: not editable once added (in-place editing, step 5); each addition embeds its own
         subsets (font reuse comes with step 5); installed fonts come with the font picker.
-- [ ] In-place editing with reflow — **[SPIKE]** editor surface vs `contenteditable` overlay first
+- [x] In-place editing with reflow (ADR 0022, ADR 0023):
+      - the Edit tool: a press on the page's own text opens that paragraph in the shared editor;
+        a press elsewhere places new text; text that cannot be read exactly says so;
+      - removal by byte range, new text where the old was; the clip and the z-order keep;
+      - own font for Latin text it has codes for (nothing embedded), else a bundled family for
+        the whole paragraph, with the note and a Sans/Naskh choice;
+      - turned pages, `TJ`/`'`/`"` text, pages that leave their state changed, edit again
+        after save and reopen (no drift, no extra fonts); English and Arabic.
+      - Gaps (ADR 0023 "Honest limits"): bold/italic, indents and tabs, mixed styles flatten,
+        no kerning in reused fonts, forms/encrypted/Type 3, installed-font substitutes, the
+        editor field does not yet sit over the paragraph in its own width and size.
 - [ ] Exit test: all acceptance tests in spec §7
 
 ## M4 — OCR (quality-first)
@@ -435,6 +449,26 @@ Plan, in order:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 10 — 2026-11-22 (Milestone 3: editor-surface spike, page analysis, in-place editing)
+
+- **Spike (ADR 0022):** the webview's own text layout matched the engine's line breaks in 5 of
+  5 paragraphs and its character positions to 0.01 pt (1.1 pt after a Latin run in mixed
+  text). Decision: a native text field, no custom caret. Unmeasured: real IMEs, WKWebView.
+- **Reading pages (ADR 0023):** `pdf::content` (tokenizer with byte ranges, interpreter),
+  `pdf::fontinfo` (ToUnicode, encodings, widths), `blocks` (glyphs → lines → paragraphs, logical
+  order, direction, alignment). `cargo run -p safha-core --example page_blocks -- f.pdf` lists
+  a page's paragraphs.
+- **Editing (ADR 0023):** `block_edit`; shell commands `page_text_blocks`, `edit_text_block`;
+  the Edit tool opens a pressed paragraph; the editor shows which font sets it.
+- **Findings on the fixtures:** CoreText's Arabic is not read (dots are separate shapes with no
+  text), Chrome's pages here use Type 3 fonts, so the editable fixtures are CoreText English,
+  our own written text, and the turned-pages file.
+- **Tests:** 127 lib + 11 new integration tests (`tests/block_edit.rs`); 158 UI tests; real
+  app self-test, English/light and Arabic/dark, edits an Arabic paragraph and reads it back.
+- **Next:** spec §7's exit test as a whole (four acceptance tests against Chrome/Acrobat
+  output), the field in the paragraph's own width and size, installed-font substitutes, and
+  the line-count self-check named in ADR 0022.
 
 ### Session 9 — 2026-11-22 (Milestone 3 started: text in page content, the add-text tool)
 

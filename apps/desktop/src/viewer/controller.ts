@@ -4,6 +4,7 @@ import {
   type MarkedPage,
   type PageAnnotation,
   type PageSize,
+  type ParagraphBlock,
   type RenderedPage,
   releaseRendered,
   renderedCanvas,
@@ -111,6 +112,10 @@ export interface ViewerCallbacks {
   onPlaceTextBox?(page: number, x: number, y: number, width: number): void;
   /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
   onPlaceText?(page: number, x: number, y: number, width: number): void;
+  /** The Edit tool pressed a paragraph of the page's own text (ADR 0023). */
+  onEditBlock?(page: number, block: ParagraphBlock): void;
+  /** The Edit tool pressed text that cannot be edited (ADR 0023). */
+  onBlockRefused?(block: ParagraphBlock): void;
 }
 
 /** An annotation the reader selected by clicking it. */
@@ -778,13 +783,14 @@ export class ViewerController {
       page: number;
       x: number;
       y: number;
-      kind: "note" | "textBox" | "pageText";
+      kind: "note" | "textBox" | "pageText" | "block";
       width: number;
+      height?: number;
     } | null,
   ): void {
     const previous = this.noteAnchor;
     if (note) {
-      const height = note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE;
+      const height = note.height ?? (note.kind === "note" ? NOTE_SIZE : TEXT_BOX_LINE);
       this.noteAnchor = {
         page: note.page,
         rect: { x: note.x, y: note.y, width: note.width, height },
@@ -1258,14 +1264,31 @@ export class ViewerController {
         if (hit) this.setSelectedAnnotation(hit);
       } else if (hit?.kind === mode) {
         this.setSelectedAnnotation(hit);
-      } else if (mode === "textBox" || mode === "text") {
+      } else if (mode === "text") {
+        // A press on the page's own text edits that paragraph (ADR 0023); elsewhere it places new text.
+        void this.backend.pageTextBlocks(this.documentId, pressed.page).then(
+          (blocks) => {
+            if (this.destroyed || press !== this.presses) return;
+            const block = blocks.find(
+              (b) =>
+                pressed.x >= b.x - 2 &&
+                pressed.x <= b.x + b.width + 2 &&
+                pressed.y >= b.y - 2 &&
+                pressed.y <= b.y + b.height + 2,
+            );
+            if (block?.editable) this.callbacks.onEditBlock?.(pressed.page, block);
+            else if (block) this.callbacks.onBlockRefused?.(block);
+            else this.placeNewText(pressed.page, pressed.x, pressed.y);
+          },
+          () => this.placeNewText(pressed.page, pressed.x, pressed.y),
+        );
+      } else if (mode === "textBox") {
         // Its top-left corner at the press, as wide as the page allows.
         if (!size) return;
         const x = Math.max(0, Math.min(pressed.x, size.width - TEXT_BOX_MIN_WIDTH - 4));
         const y = Math.max(0, Math.min(pressed.y, size.height - TEXT_BOX_LINE));
         const width = Math.min(TEXT_BOX_WIDTH, size.width - x - 4);
-        const place = mode === "text" ? this.callbacks.onPlaceText : this.callbacks.onPlaceTextBox;
-        place?.(pressed.page, x, y, width);
+        this.callbacks.onPlaceTextBox?.(pressed.page, x, y, width);
       } else {
         // The icon centred on the press, kept on the page.
         if (!size) return;
@@ -1280,6 +1303,16 @@ export class ViewerController {
       }
     });
   };
+
+  /** New page text: its top-left corner at the press, as wide as the page allows. */
+  private placeNewText(page: number, pressedX: number, pressedY: number): void {
+    const size = this.sizes?.[page];
+    if (!size) return;
+    const x = Math.max(0, Math.min(pressedX, size.width - TEXT_BOX_MIN_WIDTH - 4));
+    const y = Math.max(0, Math.min(pressedY, size.height - TEXT_BOX_LINE));
+    const width = Math.min(TEXT_BOX_WIDTH, size.width - x - 4);
+    this.callbacks.onPlaceText?.(page, x, y, width);
+  }
 
   private extendSelection(): void {
     const dragging = this.dragging;

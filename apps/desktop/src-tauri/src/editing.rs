@@ -167,6 +167,67 @@ pub async fn add_text(
     Ok(EditOutcome::new(page_count, &history, Change::Content))
 }
 
+/// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023).
+#[tauri::command]
+pub async fn page_text_blocks(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+) -> CommandResult<Vec<safha_core::block_edit::TextBlock>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    Ok(document.text_blocks(page)?)
+}
+
+/// A paragraph's new text, as the UI sends it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockEditArg {
+    page: usize,
+    index: usize,
+    fingerprint: u32,
+    text: String,
+    /// A bundled family for the substitute; absent keeps the paragraph's own font if it can.
+    family: Option<safha_core::fonts::FontFamily>,
+}
+
+/// The document after a paragraph was edited in place, and what became of its font.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockEditOutcome {
+    #[serde(flatten)]
+    outcome: EditOutcome,
+    substituted: Option<safha_core::block_edit::Substitution>,
+    lines: usize,
+}
+
+/// Edits a paragraph of a page's text in place (ADR 0023): one undo step.
+#[tauri::command]
+pub async fn edit_text_block(
+    state: State<'_, AppState>,
+    document_id: u32,
+    edit: BlockEditArg,
+) -> CommandResult<BlockEditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let edit = safha_core::block_edit::BlockEdit {
+        page: edit.page,
+        index: edit.index,
+        fingerprint: edit.fingerprint,
+        text: edit.text,
+        family: edit.family,
+    };
+    let (revision, update, done) = document.with_block_edit(&edit)?;
+    history.push_content(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(BlockEditOutcome {
+        outcome: EditOutcome::new(page_count, &history, Change::Content),
+        substituted: done.substituted,
+        lines: done.lines,
+    })
+}
+
 /// Marked text on one page: the displayed-page rectangles of its runs.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MarkedPage {
