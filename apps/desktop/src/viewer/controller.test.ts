@@ -75,6 +75,14 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
               contents: "ملاحظة",
               strokes: [],
             },
+            // A signature placed with Fill & Sign (ADR 0045).
+            {
+              index: 6,
+              kind: "signature",
+              rects: [{ x: 150, y: 340, width: 60, height: 20 }],
+              contents: null,
+              strokes: [],
+            },
           ]
         : [],
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
@@ -95,6 +103,8 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onErase: vi.fn(),
     onPlaceNote: vi.fn(),
     onPlaceTextBox: vi.fn(),
+    onPlace: vi.fn(),
+    onMoveItem: vi.fn(),
   };
   const viewer = new ViewerController({
     backend,
@@ -116,6 +126,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       textBoxPending: "text-box-pending",
       noteEditor: "note-editor",
       selectionToolbar: "selection-toolbar",
+      fillMoving: "fill-moving",
     },
     initial: {
       zoomMode: "custom",
@@ -444,6 +455,59 @@ describe("viewer controller", () => {
     expect(callbacks.onPlaceNote).toHaveBeenCalledTimes(1);
     viewer.destroy();
   });
+
+  it.each(["place", "select"] as const)(
+    "drags a Fill & Sign item in %s mode, kept on its page; a press that stays selects it",
+    async (pressMode) => {
+      mode = pressMode;
+      const { viewer, container, callbacks } = setup();
+      await settle();
+      const content = container.firstElementChild as HTMLElement;
+      const at = (type: string, x: number, y: number) =>
+        content.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+        );
+      // The page's annotations arrive with the first press.
+      at("pointerdown", 5, 390);
+      at("pointerup", 5, 390);
+      await settle();
+      callbacks.onPlace.mockClear();
+
+      // Pressed at (160, 350), dragged by (+40, -100): the box follows.
+      at("pointerdown", 160, 350);
+      at("pointermove", 180, 300);
+      at("pointermove", 200, 250);
+      expect(container.querySelectorAll(".fill-moving")).toHaveLength(1);
+      at("pointerup", 200, 250);
+      expect(callbacks.onMoveItem).toHaveBeenCalledWith(
+        expect.objectContaining({ index: 6, kind: "signature" }),
+        { x: 190, y: 240, width: 60, height: 20 },
+      );
+      expect(container.querySelectorAll(".fill-moving")).toHaveLength(0);
+
+      // Dragged past the page's edge, it stops at the edge.
+      at("pointerdown", 160, 350);
+      at("pointermove", 400, 395);
+      at("pointerup", 400, 395);
+      expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(expect.anything(), {
+        x: 240,
+        y: 380,
+        width: 60,
+        height: 20,
+      });
+
+      // A press that does not travel selects it, and places nothing.
+      at("pointerdown", 160, 350);
+      at("pointermove", 161, 351);
+      at("pointerup", 161, 351);
+      expect(callbacks.onAnnotationSelect).toHaveBeenLastCalledWith(
+        expect.objectContaining({ index: 6, kind: "signature" }),
+      );
+      expect(callbacks.onMoveItem).toHaveBeenCalledTimes(2);
+      expect(callbacks.onPlace).not.toHaveBeenCalled();
+      viewer.destroy();
+    },
+  );
 
   it("cancels what it still waits for and removes its pages when destroyed", async () => {
     const { viewer, container, updates } = setup();

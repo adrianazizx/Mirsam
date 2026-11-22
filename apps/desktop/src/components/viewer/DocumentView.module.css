@@ -135,6 +135,18 @@
   cursor: text;
 }
 
+/* The Sign tool places where it is pressed; a placed item is dragged to move it (ADR 0045). */
+[data-viewer-content][data-mode="place"] {
+  cursor: crosshair;
+}
+
+/* Where a dragged Fill & Sign item will land. */
+.fillMoving {
+  position: absolute;
+  outline: var(--focus-ring-width) dashed var(--color-focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 /* An area marked for redaction: solid red outline and a hatch, so it reads without colour too. */
 .redactMark,
 .redactPreview {
@@ -162,6 +174,11 @@
 
 [data-viewer-content][data-over-text] {
   cursor: text;
+}
+
+/* After the text cursor: an item placed over text is dragged, not selected through. */
+[data-viewer-content][data-over-item] {
+  cursor: move;
 }
 
 /* Anchor of the floating selection toolbar (positioned by the viewer). */

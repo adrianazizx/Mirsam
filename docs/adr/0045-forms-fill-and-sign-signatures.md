@@ -169,6 +169,17 @@ listed but not filled here.
     next field. A date or a signature goes back to selecting.
   - **Selecting:** pressing an item placed before selects it, never places over it. Fill text opens
     the note editor, to change its text.
+  - **Moving:** an item placed before is dragged to move it, with the Sign tool (armed or not) or
+    the Select tool.
+    - A press that travels 3 px is a drag; one that does not is a click, which selects. A dashed
+      outline shows where the item will land, and it is kept on its own page.
+    - Letting go moves it as one undo step (`fill.move`, the same `SetRect` as resizing), and it
+      stays selected.
+    - The arrow keys nudge the selected item 1 pt, and with Shift 10 pt (`fill.moveLeft`,
+      `fill.moveLeftMore`, and so on). They do so only while the page view has the focus, so a
+      toolbar's or a list's arrow keys keep their meaning. Each nudge is one undo step.
+    - After an edit the viewer reads the visible pages' annotations again at once, so an item just
+      placed can be dragged without first moving the pointer over it.
 - **New signature** dialog: Draw (an SVG pad with pressure), Type (Naskh or Sans, previewed), or
   Image (the native dialog).
 
@@ -197,7 +208,7 @@ paper in both themes (`--color-ink` on `--color-page-paper`, a new contrast pair
     - Form creation, import/export (FDF/XFDF), and flattening are P1.
   - **Fill & Sign:**
     - An item is resized in 25% steps from the panel or toolbar, not by dragging a handle.
-    - It cannot be dragged to move; delete it and place it again.
+    - An item moves only on its own page; dragging it onto another page stops at the edge.
     - Fill text and marks are black, at 11 pt and 14 pt.
   - **Signatures and the shell:**
     - Typed-signature previews use the webview's fonts (Amiri where the system has it). The PDF is

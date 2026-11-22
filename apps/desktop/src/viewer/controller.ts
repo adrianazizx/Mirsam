@@ -112,6 +112,8 @@ export interface ViewerCallbacks {
   onPlaceTextBox?(page: number, x: number, y: number, width: number): void;
   /** The Sign tool placed something (ADR 0045): the press, in displayed-page points. */
   onPlace?(page: number, x: number, y: number): void;
+  /** A Fill & Sign item was dragged to `rect`, on the displayed page (ADR 0045). */
+  onMoveItem?(item: SelectedAnnotation, rect: ViewRect): void;
   /** A drag marked an area (Protect tool): the box on the displayed page. */
   onMarkArea?(page: number, rect: ViewRect): void;
   /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
@@ -153,6 +155,8 @@ export type ViewerMode =
 
 /** Fill & Sign items, which a press with the Sign tool selects rather than places over. */
 const FILL_ITEMS: readonly string[] = ["fillText", "mark", "signature"];
+/** A press on a Fill & Sign item that travels this far (CSS px) is a drag, not a click. */
+const MOVE_SLOP = 3;
 
 /** A note's icon, in points (the engine's `NOTE_SIZE`). */
 export const NOTE_SIZE = 20;
@@ -193,6 +197,8 @@ export interface ViewerClassNames {
   /** An area marked for redaction, and the one being dragged (ADR 0042). */
   redactMark?: string;
   redactPreview?: string;
+  /** Where a Fill & Sign item being dragged will go (ADR 0045). */
+  fillMoving?: string;
 }
 
 export interface ViewerOptions {
@@ -418,6 +424,16 @@ export class ViewerController {
   /** Strokes drawn but not yet in the page's tiles: shown until the page repaints. */
   private readonly inkPreview = new Map<number, StrokePoint[][]>();
   /** An area being dragged out for redaction, kept on the page it started on. */
+  /** A Fill & Sign item being dragged (ADR 0045): where it was, and where it would go. */
+  private moving: {
+    pointerId: number;
+    item: SelectedAnnotation;
+    from: PagePoint;
+    clientX: number;
+    clientY: number;
+    rect: ViewRect;
+    moved: boolean;
+  } | null = null;
   private marking: { pointerId: number; page: number; from: PagePoint; to: PagePoint } | null =
     null;
   /** Areas marked for redaction, by page, shown until they are applied or removed. */
@@ -570,6 +586,9 @@ export class ViewerController {
     this.keepAfterRefresh = null;
     if (keep) this.setSelectedAnnotation(keep);
     this.update();
+    // The pages on screen read their annotations again at once, so an item
+    // just placed can be pressed (dragged, ADR 0045) before the pointer moves.
+    for (const page of this.slots.keys()) void this.loadAnnotations(page);
   }
 
   /**
@@ -1210,6 +1229,24 @@ export class ViewerController {
       this.content.setPointerCapture?.(event.pointerId);
       return;
     }
+    if (mode === "select" || mode === "place") {
+      // A press on a Fill & Sign item drags it; one that does not travel selects it (ADR 0045).
+      const item = this.annotationAt(point);
+      if (item && FILL_ITEMS.includes(item.kind)) {
+        this.setSelection(null);
+        this.moving = {
+          pointerId: event.pointerId,
+          item,
+          from: point,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          rect: item.rect,
+          moved: false,
+        };
+        this.content.setPointerCapture?.(event.pointerId);
+        return;
+      }
+    }
     const clicks = this.countClick(event);
     // A plain click on an annotation selects it, unless the press turns into a text selection.
     this.presses += 1;
@@ -1284,6 +1321,10 @@ export class ViewerController {
       }
       return;
     }
+    if (this.moving && event.pointerId === this.moving.pointerId) {
+      this.dragItem(event);
+      return;
+    }
     const dragging = this.dragging;
     if (!dragging) {
       if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
@@ -1315,6 +1356,17 @@ export class ViewerController {
     }
     if (this.erasing && event.pointerId === this.erasing.pointerId) {
       this.finishErasing(event);
+      return;
+    }
+    if (this.moving && event.pointerId === this.moving.pointerId) {
+      const { item, rect, moved } = this.moving;
+      this.moving = null;
+      this.content.releasePointerCapture?.(event.pointerId);
+      const slot = this.slots.get(item.page);
+      if (slot) this.paintOverlay(slot);
+      if (event.type === "pointercancel") return;
+      if (moved) this.callbacks.onMoveItem?.(item, rect);
+      else this.setSelectedAnnotation(item);
       return;
     }
     if (this.marking && event.pointerId === this.marking.pointerId) {
@@ -1446,6 +1498,39 @@ export class ViewerController {
    * The cursor: the text cursor over text when selecting, or the Comment
    * tool's own; a page's text and annotations arrive on first hover.
    */
+  /**
+   * Follows a dragged Fill & Sign item: its box moves with the pointer, kept
+   * on its own page, and is shown where it would land.
+   */
+  private dragItem(event: PointerEvent): void {
+    const moving = this.moving;
+    const size = moving ? this.sizes?.[moving.item.page] : undefined;
+    if (!moving || !size) return;
+    if (!moving.moved) {
+      const travelled = Math.hypot(event.clientX - moving.clientX, event.clientY - moving.clientY);
+      if (travelled < MOVE_SLOP) return;
+      moving.moved = true;
+    }
+    const point = this.pointOnPage(moving.item.page, event.clientX, event.clientY);
+    if (!point) return;
+    const { rect } = moving.item;
+    const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
+    moving.rect = {
+      x: clamp(rect.x + point.x - moving.from.x, size.width - rect.width),
+      y: clamp(rect.y + point.y - moving.from.y, size.height - rect.height),
+      width: rect.width,
+      height: rect.height,
+    };
+    const slot = this.slots.get(moving.item.page);
+    if (slot) this.paintOverlay(slot);
+  }
+
+  /** Whether a press here would drag a Fill & Sign item (the cursor says so). */
+  private overFillItem(point: PagePoint | null): boolean {
+    const item = point ? this.annotationAt(point) : null;
+    return item !== null && FILL_ITEMS.includes(item.kind);
+  }
+
   private updateCursor(event: PointerEvent): void {
     const mode = this.mode();
     this.content.dataset.mode = mode;
@@ -1453,9 +1538,13 @@ export class ViewerController {
       delete this.content.dataset.overText;
       const point = mode === "none" ? null : this.pointAt(event.clientX, event.clientY);
       if (point) void this.loadAnnotations(point.page);
+      if (mode === "place" && this.overFillItem(point)) this.content.dataset.overItem = "";
+      else delete this.content.dataset.overItem;
       return;
     }
     const point = this.pointAt(event.clientX, event.clientY);
+    if (this.overFillItem(point)) this.content.dataset.overItem = "";
+    else delete this.content.dataset.overItem;
     const layer = point ? this.layers.get(point.page) : undefined;
     if (point && !layer) void this.loadLayer(point.page);
     if (point) void this.loadAnnotations(point.page);
@@ -1570,6 +1659,12 @@ export class ViewerController {
       const element = document.createElement("div");
       element.className = this.classNames.redactMark ?? "";
       place(element, rect);
+      slot.overlay.append(element);
+    }
+    if (this.moving?.moved && this.moving.item.page === slot.page) {
+      const element = document.createElement("div");
+      element.className = this.classNames.fillMoving ?? this.classNames.markupSelected;
+      place(element, this.moving.rect);
       slot.overlay.append(element);
     }
     if (this.marking?.page === slot.page) {
