@@ -39,7 +39,8 @@ read-fonts = "0.47.0"
 # (MIT OR Apache-2.0). Page images go to it as base64 PNGs.
 ureq = { version = "3.5.2", default-features = false }
 base64 = "0.23.1"
-# PNG: image signatures (ADR 0045) and OCR page images (ADR 0032).
+# PNG (MIT OR Apache-2.0): image signatures (ADR 0045), OCR page images (ADR 0032),
+# page export and image watermarks (ADR 0050).
 png = "0.18"
 serde_json = { workspace = true }
 

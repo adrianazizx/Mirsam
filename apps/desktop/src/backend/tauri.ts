@@ -6,6 +6,7 @@ import {
   type Backend,
   type BlockEditOutcome,
   type BookmarkPart,
+  type CompressReport,
   type DocumentComment,
   type EditOutcome,
   type FormInfo,
@@ -207,6 +208,16 @@ export const tauriBackend: Backend = {
   insertPagesFromFiles: (documentId, at) =>
     invoke<InsertOutcome | null>("insert_pages_from_files", { documentId, at }),
   unlockInsert: (token, password) => invoke<InsertOutcome>("unlock_insert", { token, password }),
+  stampPages: (documentId, pages, stamp) =>
+    invoke<EditOutcome>("stamp_pages", { documentId, pages, stamp }),
+  pickWatermarkImage: () => invoke<string | null>("pick_watermark_image"),
+  exportPageImages: (documentId, pages, dpi, format) =>
+    invoke<number | null>("export_page_images", { documentId, pages, dpi, format }),
+  exportText: (documentId, pages, format) =>
+    invoke<string | null>("export_text", { documentId, pages, format }),
+  compressDocument: (documentId, options) =>
+    invoke<CompressReport>("compress_document", { documentId, options }),
+  saveCompressed: (documentId) => invoke<string | null>("save_compressed", { documentId }),
   extractPages: (documentId, pages) =>
     invoke<string | null>("extract_pages", { documentId, pages }),
   splitDocument: (documentId, by) => invoke<number | null>("split_document", { documentId, by }),

@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 16: Milestone 3 closed; merged from `main`: sessions M5-a, M5-b and M5-c, the M4 runtime side track, and M4 pipeline slices 1 and 3).
+Last updated: 2026-11-22 (session M6-a: headers/footers, page numbers, watermarks, image and text export, compression; on top of `main` after session 16 (M3 closed), M5-a/b/c and M4 pipeline slices 1 and 3).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -79,6 +79,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
+    **Update (M6-a):** the *encoder* half is solved without a dependency: `safha_core::jpeg` is our
+    own baseline encoder (ADR 0050), checked against PDFium's decoder. Only a **decoder** is still
+    needed — for redacting scans and for downsampling JPEG images when compressing (scans are
+    mostly JPEG, so it is compression's biggest gap). `zune-jpeg` (decoder only) is the candidate.
 16. **M3's exit, by hand** (`docs/demos/m3.md`):
     - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
       cannot be driven here);
@@ -609,9 +613,16 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 ## M6 — Edit everything else + convert
 
 - [ ] Images, links, object manipulation
-- [ ] Headers/footers, page numbers, watermarks
+- [~] Headers/footers, page numbers (Western or Arabic-Indic digits, start on the right in RTL),
+      watermarks (text as outlines, PNG/JPEG images; opacity, rotation, behind or over; page
+      ranges) — ADR 0050. Gap: text that runs vertically in page space (an upright footer on a
+      page turned 90°) extracts letter by letter (extractor work); no "remove stamp" yet
 - [ ] Find and replace
-- [ ] Compression; image export; text/Markdown export
+- [~] Compression (unused objects, object streams, Flate, images reduced by drawn resolution, size
+      preview before saving a copy), image export (PNG, own baseline JPEG encoder, 36–600 dpi),
+      text/Markdown export (logical order, RTL blocks marked) — ADR 0050. Gaps: JPEG images are not
+      downsampled (needs a decoder, owner item 15); no font re-subsetting or duplicate merging;
+      no progress bar or cancel for long exports
 - [ ] OCR review mode, region re-OCR, replacing poor text layers, scan-to-editable-text
 
 ## M7 — v1.0 polish
@@ -623,6 +634,54 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### Session M6-a — 2026-11-22 (Milestone 6: stamps, exports, compression; parallel to M4/M5)
+
+Branch `pomidor/m6-exports-a29095`, from `main` after M4 runtime; `main` merged in as it moved (M5-b encryption, M4 pipeline slices 1 and 3, M5-c forms, session 16's M3 close).
+Stayed out of OCR, forms/signatures and encryption code, as asked.
+
+- **ADR 0050** records the approach. In short: headers, footers, page numbers and watermarks are
+  *stamps*, one incremental update each (one undo), drawn by our own writer in a new content stream per
+  page (ADR 0021's wrapping; nothing regenerated), placed on the page as displayed, marked as
+  pagination artifacts; compression is our own full rewrite, previewed before a copy is saved.
+- **Engine (`safha_core`):**
+  - `stamp`: `Band` (start/centre/end, `{page}`/`{pages}`, digits, first number, `rtl`), `Watermark`
+    (text or image, opacity, rotation, behind); `Document::with_stamp`. A band embeds **one** font set
+    for all its pages (1,000-page numbering: 1.0 MB, 0.49 s release; 5.3 MB with a subset per page).
+    Text watermarks are drawn as glyph outlines (`pdf::outline`), so they stay out of copy, search and
+    export (at 45° as text they read back as "L IA T N E ID F N O C").
+  - `jpeg`: our own baseline JPEG encoder (no licence question; see owner item 15).
+  - `export`: `Document::export_page_image` (PNG/JPEG, 36–600 dpi), `Document::export_text`
+    (plain with form feeds between pages; Markdown with escaping, page markers, and
+    `<div dir="rtl">` around blocks whose direction differs from the document's).
+  - `compress`: `Document::compressed` (refuses signed and encrypted files; checked by reopening).
+    1,000-page fixture 571 KB → 170 KB in 0.24 s; single-page Chrome fixtures 12–26 % smaller.
+  - `pdf::text::draw_text` split into `draw_with_subsets` + `fonts_to_embed` (same output).
+  - `png` is a normal dependency (OCR page images and image signatures use it too). M5-c's
+    `pdf::image` and this branch's watermark image writer overlap: a follow-up can merge them.
+  - `examples/m6_report.rs`: stamping and compression timings and sizes for any PDFs.
+- **Shell (`output.rs`):** `stamp_pages`, `pick_watermark_image` (the image is read here; the UI gets
+  its name), `export_page_images` (one file, or a folder for several, never overwriting),
+  `export_text`, `compress_document` (kept in memory with the bytes it came from) and
+  `save_compressed` (`compress_stale` once the document changed). Error codes `no_image`,
+  `image_unreadable`, `compress_stale`.
+- **UI:** six commands open one dialog each (`pages.headerFooter`, `pages.pageNumbers`,
+  `pages.watermark`, `file.exportImages`, `file.exportText`, `file.compress`), which run `output.*`
+  commands. Page ranges are typed as "1-3, 5, 8-" (Arabic-Indic digits, the Arabic comma and dashes
+  read too). The Arabic UI defaults to Arabic-Indic digits, right to left and Naskh. Stamps need the
+  `modify` permission and exports `copy` (ADR 0043); compression is off for encrypted files. Strings
+  in English and Arabic. Checked in the browser preview in both directions; found and fixed number
+  fields snapping 150 dpi to 156 (a step of 12 from a minimum of 36).
+- **Tests:** `tests/stamp_export.rs` (10, English and Arabic: footer and header placement on plain
+  and turned pages, Arabic-Indic digits and right-side start, undo, translucent rotated and behind
+  watermarks, PNG alpha and our JPEG decoded by PDFium, page images, text/Markdown in logical order,
+  compression of the whole corpus with page text unchanged and `qpdf --check`, image reduction,
+  encrypted refused); unit tests in `jpeg`, `stamp`, `export`, `compress`, `pdf::outline`, `output.rs`;
+  UI `pageRanges.test.ts` and `output.test.tsx` (dialogs in English and Arabic, permissions).
+  Workspace tests, clippy (with and without `devtools`), Biome, `tsc`, `cargo deny` and the licence
+  report pass. The end-to-end shell self-test was not re-run (no shell window code changed).
+- **Not done here:** images/links/object editing and find & replace (other M6 items); OCR review
+  items (depend on M4).
 
 ### Session 16 — 2026-11-22 (Milestone 3's exit test)
 
