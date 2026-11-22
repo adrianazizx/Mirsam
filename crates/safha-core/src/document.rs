@@ -307,6 +307,52 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, height))
     }
 
+    /// This document with `stamp` (a header or footer, page numbers, or a
+    /// watermark) drawn on its pages (ADR 0050), and the update that does it.
+    pub fn with_stamp(&self, stamp: &crate::stamp::Stamp) -> Result<(Document, Vec<u8>)> {
+        let mut pages = stamp.pages.clone();
+        pages.sort_unstable();
+        pages.dedup();
+        let targets = pages
+            .iter()
+            .map(|&index| {
+                let size = self.page_size(index)?;
+                Ok(crate::stamp::Target {
+                    index,
+                    view: self.view_transform(index)?,
+                    width: size.width,
+                    height: size.height,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let stamp = crate::stamp::Stamp { pages, kind: stamp.kind.clone() };
+        let update = crate::stamp::stamp_update(&self.bytes, self.password.as_deref(), &targets, &stamp)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// The document written again, smaller (ADR 0050), and what that did.
+    /// The result is checked by opening it: same page count, or it is
+    /// refused. A signed document is refused, since a rewrite breaks its
+    /// signatures; so is an encrypted one.
+    pub fn compressed(
+        &self,
+        options: crate::compress::CompressOptions,
+    ) -> Result<(Vec<u8>, crate::compress::CompressReport)> {
+        if self.is_signed() {
+            return Err(Error::EditUnsupported("it is signed, and compressing would break its signatures"));
+        }
+        let (bytes, report) = crate::compress::compress(&self.bytes, options)?;
+        let reopened = self
+            .revision(Arc::from(bytes.as_slice()))
+            .map_err(|_| Error::SaveRejected("the compressed file would not open"))?;
+        if reopened.page_count() != self.page_count() {
+            return Err(Error::SaveRejected("the compressed file would have a different number of pages"));
+        }
+        Ok((bytes, report))
+    }
+
     /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023),
     /// then where its text cannot be edited and why. When the page's content
     /// cannot be read at all (an encrypted file, a filter the editor does

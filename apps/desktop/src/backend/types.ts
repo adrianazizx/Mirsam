@@ -324,6 +324,75 @@ export type InsertOutcome =
   | { kind: "inserted"; edit: EditOutcome }
   | { kind: "needsPassword"; token: number; name: string; retry: boolean };
 
+/** Digits a stamp writes numbers in (spec §6): 0–9 or ٠–٩. */
+export type StampDigits = "western" | "arabicIndic";
+
+/**
+ * A header or footer (page numbers are one), ADR 0050. `{page}` and `{pages}`
+ * in the text become the page's number and the last number. `start` sits on
+ * the right when `rtl`.
+ */
+export interface Band {
+  edge: "top" | "bottom";
+  start: string;
+  center: string;
+  end: string;
+  rtl: boolean;
+  family: "sans" | "naskh";
+  /** Points. */
+  size: number;
+  /** RGB, each 0 to 1. */
+  color: [number, number, number];
+  /** From the page's edges to the text, in points. */
+  margin: number;
+  digits: StampDigits;
+  firstNumber: number;
+}
+
+/** What a watermark shows: text, or the image last picked (`width`: of the page's width, 0.05–1). */
+export type WatermarkMark =
+  | {
+      kind: "text";
+      text: string;
+      family: "sans" | "naskh";
+      size: number;
+      color: [number, number, number];
+    }
+  | { kind: "image"; width: number };
+
+export interface Watermark {
+  mark: WatermarkMark;
+  /** 0 to 1. */
+  opacity: number;
+  /** Degrees counter-clockwise. */
+  rotation: number;
+  /** Behind the page's content instead of over it. */
+  behind: boolean;
+}
+
+export type StampArg = { kind: "band"; band: Band } | { kind: "watermark"; watermark: Watermark };
+
+export type ImageFormat = { kind: "png" } | { kind: "jpeg"; quality: number };
+
+export type TextFormat = "plain" | "markdown";
+
+/** How to compress (ADR 0050). `imageDpi` null keeps images; `jpegQuality` null keeps them lossless. */
+export interface CompressOptions {
+  imageDpi: number | null;
+  jpegQuality: number | null;
+  objectStreams: boolean;
+}
+
+/** Sizes in bytes before and after, and what compressing did. */
+export interface CompressReport {
+  before: number;
+  after: number;
+  imagesReduced: number;
+  imagesKept: number;
+  streamsCompressed: number;
+  objectsRemoved: number;
+}
+
 /** How to split a document (ADR 0016): by pages per file, at top-level bookmarks, or by bytes per file. */
 export type SplitBy =
   | { kind: "pages"; size: number }
@@ -933,6 +1002,23 @@ export interface Backend {
   insertPagesFromFiles(documentId: number, at: number): Promise<InsertOutcome | null>;
   /** Tries the password of the file an insert waits for, and goes on. */
   unlockInsert(token: number, password: string): Promise<InsertOutcome>;
+  /** Draws a header, footer, page numbers, or watermark on `pages`: one undo step (ADR 0050). */
+  stampPages(documentId: number, pages: number[], stamp: StampArg): Promise<EditOutcome>;
+  /** Asks for a PNG or JPEG for an image watermark; its name, or null if cancelled. */
+  pickWatermarkImage(): Promise<string | null>;
+  /** Asks where, and writes `pages` as images at `dpi`; how many files, or null if cancelled. */
+  exportPageImages(
+    documentId: number,
+    pages: number[],
+    dpi: number,
+    format: ImageFormat,
+  ): Promise<number | null>;
+  /** Asks where, and writes the text of `pages`; the file's name, or null if cancelled. */
+  exportText(documentId: number, pages: number[], format: TextFormat): Promise<string | null>;
+  /** Compresses in memory and reports the sizes; `saveCompressed` writes the result. */
+  compressDocument(documentId: number, options: CompressOptions): Promise<CompressReport>;
+  /** Asks where, and writes the compressed copy; its name, or null if cancelled. */
+  saveCompressed(documentId: number): Promise<string | null>;
   /** Asks where, and writes `pages` as a new PDF; its name, or null if cancelled. */
   extractPages(documentId: number, pages: number[]): Promise<string | null>;
   /** Asks for a folder and writes the document in parts; how many, or null (ADR 0016). */
