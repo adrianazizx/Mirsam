@@ -74,3 +74,44 @@
   gap: var(--space-2);
   margin-block-start: var(--space-2);
 }
+
+.methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.method {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--size-hit);
+  font-size: var(--font-size-md);
+  cursor: default;
+}
+
+/* The radio's circle, drawn before the label (at the inline start in either direction). */
+.method::before {
+  content: "";
+  box-sizing: border-box;
+  inline-size: var(--size-icon-sm);
+  block-size: var(--size-icon-sm);
+  border: var(--border-width-thick) solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-surface);
+  transition: border-width var(--motion-fast) var(--motion-ease);
+}
+
+.method[data-selected]::before {
+  border: calc(var(--size-icon-sm) / 3) solid var(--color-accent);
+}
+
+.method[data-focus-visible]::before {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}
+
+.method[data-disabled] {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}

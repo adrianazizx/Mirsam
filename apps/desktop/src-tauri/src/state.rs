@@ -85,6 +85,8 @@ pub struct AppState {
     locked: Mutex<HashMap<u32, PathBuf>>,
     /// Recovery files waiting for a password, by token (their keys).
     locked_recoveries: Mutex<HashMap<u32, String>>,
+    /// Inserts from files waiting for a password (ADR 0016), by token.
+    pending_inserts: Mutex<HashMap<u32, crate::editing::PendingInsert>>,
     /// Recovery files from the last listing, by token (their keys).
     recoveries: Mutex<HashMap<u32, String>>,
     /// Bumped by each change to a document: an autosave writes only for the
@@ -124,6 +126,7 @@ impl AppState {
             documents: Mutex::new(HashMap::new()),
             locked: Mutex::new(HashMap::new()),
             locked_recoveries: Mutex::new(HashMap::new()),
+            pending_inserts: Mutex::new(HashMap::new()),
             recoveries: Mutex::new(HashMap::new()),
             autosave: Mutex::new(HashMap::new()),
             recovery: OnceLock::new(),
@@ -513,6 +516,18 @@ impl AppState {
     pub fn forget_pending(&self, token: u32) {
         lock(&self.locked).remove(&token);
         lock(&self.locked_recoveries).remove(&token);
+        lock(&self.pending_inserts).remove(&token);
+    }
+
+    /// Keeps an insert that waits for a file's password; the token asks for it.
+    pub fn hold_insert(&self, pending: crate::editing::PendingInsert) -> u32 {
+        let token = self.next_token();
+        lock(&self.pending_inserts).insert(token, pending);
+        token
+    }
+
+    pub fn take_insert(&self, token: u32) -> Option<crate::editing::PendingInsert> {
+        lock(&self.pending_inserts).remove(&token)
     }
 
     /// Replaces the recent-file tokens with a fresh listing.

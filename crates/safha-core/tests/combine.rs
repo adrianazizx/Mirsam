@@ -96,3 +96,112 @@ fn inserting_another_file_merges_it_and_undo_restores_the_original() {
     assert_eq!(texts(&undone), original);
     assert!(matches!(document.with_pages_from(&[&other], 4), Err(Error::PageOutOfRange { .. })));
 }
+
+/// A five-page file whose outline has top-level entries on pages 2, 3 (twice,
+/// the second a duplicate) and 5, a child entry on page 4, and one entry that
+/// points nowhere. Each page draws its own number.
+fn bookmarked_pdf() -> Vec<u8> {
+    let mut objects: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R /Outlines 14 0 R >>".into(),
+        "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R 7 0 R] /Count 5 >>".into(),
+    ];
+    // Pages 3–7, their contents 8–12, the font 13.
+    for page in 0..5 {
+        objects.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {} 0 R /Resources << /Font << /F1 13 0 R >> >> >>",
+            8 + page
+        ));
+    }
+    for page in 0..5 {
+        let text = format!("BT /F1 24 Tf 20 100 Td (Page {}) Tj ET", page + 1);
+        objects.push(format!("<< /Length {} >>\nstream\n{text}\nendstream", text.len()));
+    }
+    objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into());
+    // The outline, 14–20.
+    let dest = |page: usize| format!("/Dest [{} 0 R /XYZ null null null]", 3 + page);
+    objects.extend([
+        "<< /Type /Outlines /First 15 0 R /Last 19 0 R /Count 5 >>".into(),
+        format!("<< /Title (Intro) /Parent 14 0 R /Next 16 0 R {} >>", dest(1)),
+        format!("<< /Title <FEFF06270644064106350644002006270644062306480644> /Parent 14 0 R /Prev 15 0 R /Next 17 0 R {} >>", dest(2)),
+        format!("<< /Title (Duplicate) /Parent 14 0 R /Prev 16 0 R /Next 18 0 R {} >>", dest(2)),
+        format!(
+            "<< /Title (Chapter 2) /Parent 14 0 R /Prev 17 0 R /Next 19 0 R /First 20 0 R /Last 20 0 R /Count 1 {} >>",
+            dest(4)
+        ),
+        "<< /Title (Nowhere) /Parent 14 0 R /Prev 18 0 R >>".into(),
+        format!("<< /Title (Section 2.1) /Parent 18 0 R {} >>", dest(3)),
+    ]);
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1)
+            .as_bytes(),
+    );
+    pdf
+}
+
+#[test]
+fn splitting_at_top_level_bookmarks() {
+    let document = reopen(&bookmarked_pdf());
+    let parts = document.bookmark_parts();
+    // Pages before the first entry go with it; the duplicate, the child, and
+    // the entry that points nowhere add no part.
+    assert_eq!(
+        parts.iter().map(|(title, range)| (title.as_str(), range.clone())).collect::<Vec<_>>(),
+        [("Intro", 0..2), ("الفصل الأول", 2..4), ("Chapter 2", 4..5)]
+    );
+    let ranges: Vec<_> = parts.into_iter().map(|(_, range)| range).collect();
+    let files = document.split_ranges(&ranges).expect("splits");
+    let texts: Vec<Vec<String>> = files
+        .iter()
+        .map(|bytes| {
+            qpdf_check(bytes);
+            texts(&reopen(bytes))
+        })
+        .collect();
+    assert_eq!(texts, [vec!["Page 1", "Page 2"], vec!["Page 3", "Page 4"], vec!["Page 5"]]);
+
+    // One top-level entry gives no split.
+    assert_eq!(open("chrome/en-paragraphs").bookmark_parts().len(), 1);
+}
+
+#[test]
+fn splitting_by_size_fills_each_file_up_to_the_limit() {
+    let document = open("qpdf/rtl-book");
+    let count = document.page_count();
+    let size = |range: std::ops::Range<usize>| {
+        document.extract_pages(&range.collect::<Vec<_>>()).expect("extracts").len()
+    };
+    let limit = size(0..2);
+    let parts = document.split_by_size(limit).expect("splits");
+    // In order, every page once, each part within the limit (or one page),
+    // and none could have taken its next page.
+    assert_eq!(parts.first().map(|(range, _)| range.start), Some(0));
+    assert_eq!(parts.last().map(|(range, _)| range.end), Some(count));
+    for window in parts.windows(2) {
+        assert_eq!(window[0].0.end, window[1].0.start);
+    }
+    for (range, bytes) in &parts {
+        assert!(bytes.len() <= limit || range.len() == 1, "{range:?}: {} > {limit}", bytes.len());
+        assert_eq!(reopen(bytes).page_count(), range.len());
+        if range.end < count {
+            assert!(size(range.start..range.end + 1) > limit, "{range:?} could have held one more page");
+        }
+    }
+    assert!(parts[0].0.len() >= 2, "the first two pages fit by construction");
+
+    // A limit below any page: one page per file. Above the whole: one file.
+    assert_eq!(document.split_by_size(1).expect("splits").len(), count);
+    let whole = document.split_by_size(usize::MAX).expect("splits");
+    assert_eq!(whole.len(), 1);
+    qpdf_check(&whole[0].1);
+}

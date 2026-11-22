@@ -220,12 +220,15 @@ describe("command registry", () => {
 
     await runCommand("pages.split");
     expect(useAppStore.getState().splitPrompt).toBe(true);
-    await runCommand("pages.splitInto", { size: 100 });
+    await runCommand("pages.splitInto", { split: { kind: "pages", size: 100 } });
     expect(useAppStore.getState().splitPrompt).toBe(false);
     expect(useAppStore.getState().notice).toEqual({
       key: "split",
       values: { count: String(Math.ceil((before + 3) / 100)) },
     });
+    // At the top-level bookmarks: the mock's outline has three on different pages.
+    await runCommand("pages.splitInto", { split: { kind: "bookmarks" } });
+    expect(useAppStore.getState().notice).toEqual({ key: "split", values: { count: "3" } });
     await runCommand("edit.undo");
     doc = selectActiveDocument(useAppStore.getState());
     expect(doc?.pageCount).toBe(before);

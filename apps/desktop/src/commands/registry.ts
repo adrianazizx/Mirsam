@@ -1,10 +1,12 @@
 import {
   backend,
+  type EditOutcome,
   isBackendError,
   type MarkupKind,
   type OpenOutcome,
   type PageEdit,
   type RestoreOutcome,
+  type SplitBy,
   type StrokePoint,
 } from "../backend";
 import {
@@ -78,8 +80,8 @@ export interface CommandArg {
   pages?: number[];
   /** `pages.move`: the index the first moved page takes in the result. */
   to?: number;
-  /** `pages.splitInto`: pages per file. */
-  size?: number;
+  /** `pages.splitInto`: how to split. */
+  split?: SplitBy;
   /** `note.save`: the note's text. */
   text?: string;
   /** `note.place`, `textBox.place`: the top-left corner, in displayed-page points. */
@@ -349,6 +351,7 @@ const KNOWN_ERRORS = [
   "edit_unsupported",
   "invalid_edit",
   "text_failed",
+  "no_bookmarks",
 ];
 
 function reportError(error: unknown) {
@@ -390,6 +393,19 @@ async function saveDocument(id: number): Promise<boolean> {
     if (outcome) store().applySave(id, outcome);
     return outcome !== null;
   }
+}
+
+/** Pages inserted from files: the new revision, with the inserted pages selected. */
+function applyInsert(
+  insert: { documentId: number; at: number; pageCount: number },
+  edit: EditOutcome,
+) {
+  store().applyEdit(insert.documentId, edit);
+  const added = Math.max(0, edit.pageCount - insert.pageCount);
+  store().setSelectedPages(
+    insert.documentId,
+    Array.from({ length: added }, (_, i) => insert.at + i),
+  );
 }
 
 /** The recovery file `token` is dealt with: it leaves the list. */
@@ -720,12 +736,12 @@ const COMMANDS: Command[] = [
       const at = inOrganizer ? last + 1 : active.pageCount;
       const outcome = await backend.insertPagesFromFiles(active.id, at);
       if (!outcome) return;
-      store().applyEdit(active.id, outcome);
-      const added = Math.max(0, outcome.pageCount - active.pageCount);
-      store().setSelectedPages(
-        active.id,
-        Array.from({ length: added }, (_, i) => at + i),
-      );
+      const insert = { documentId: active.id, at, pageCount: active.pageCount };
+      if (outcome.kind === "inserted") {
+        applyInsert(insert, outcome.edit);
+      } else {
+        store().pushUnlock({ ...outcome, insert });
+      }
     },
   },
   {
@@ -739,7 +755,7 @@ const COMMANDS: Command[] = [
     },
   },
   {
-    // Asks how many pages per file, then `pages.splitInto` writes them.
+    // Asks how to split, then `pages.splitInto` writes the files.
     id: "pages.split",
     isEnabled: (state) => (selectActiveDocument(state)?.pageCount ?? 0) > 1,
     run() {
@@ -753,9 +769,11 @@ const COMMANDS: Command[] = [
     async run(arg) {
       store().setSplitPrompt(false);
       const active = selectActiveDocument(store());
-      const size = arg?.size;
-      if (!active || size === undefined || !Number.isInteger(size) || size < 1) return;
-      const count = await backend.splitDocument(active.id, size);
+      const split = arg?.split;
+      if (!active || !split) return;
+      if (split.kind === "pages" && (!Number.isInteger(split.size) || split.size < 1)) return;
+      if (split.kind === "bytes" && !(split.limit >= 1)) return;
+      const count = await backend.splitDocument(active.id, split);
       if (count !== null) store().setNotice({ key: "split", values: { count: String(count) } });
     },
   },
@@ -812,6 +830,16 @@ const COMMANDS: Command[] = [
     async run(arg) {
       const pending = store().unlocks[0];
       if (!pending || arg?.password === undefined) return;
+      if (pending.insert) {
+        const outcome = await backend.unlockInsert(pending.token, arg.password);
+        if (outcome.kind === "inserted") {
+          store().resolveUnlock(null);
+          applyInsert(pending.insert, outcome.edit);
+        } else {
+          store().resolveUnlock({ ...outcome, insert: pending.insert });
+        }
+        return;
+      }
       if (pending.recovery) {
         const restored = await backend.unlockRecovery(pending.token, arg.password);
         const { outcome } = restored;

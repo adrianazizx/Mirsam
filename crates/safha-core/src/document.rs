@@ -373,6 +373,83 @@ impl Document {
         pages.chunks(size).map(|part| self.extract_pages(part)).collect()
     }
 
+    /// Where a split at each top-level bookmark falls (ADR 0016): one part
+    /// per top-level outline entry that points into this document, from its
+    /// page to the next one's, in page order, named by the entry's title.
+    /// Pages before the first such entry go with it; entries on the same page
+    /// as an earlier one add nothing. Fewer than two parts means the outline
+    /// gives no split.
+    pub fn bookmark_parts(&self) -> Vec<(String, std::ops::Range<usize>)> {
+        let count = self.page_count();
+        let mut starts: Vec<(usize, String)> = self
+            .outline()
+            .into_iter()
+            .filter_map(|item| Some((item.page.filter(|page| *page < count)?, item.title)))
+            .collect();
+        // Stable: of entries on one page, the first listed names the part.
+        starts.sort_by_key(|(page, _)| *page);
+        starts.dedup_by_key(|(page, _)| *page);
+        let mut parts = Vec::new();
+        for (i, (page, title)) in starts.iter().enumerate() {
+            let start = if i == 0 { 0 } else { *page };
+            let end = starts.get(i + 1).map_or(count, |(next, _)| *next);
+            parts.push((title.clone(), start..end));
+        }
+        parts
+    }
+
+    /// The pages of each range, in order, each as a PDF of its own (as
+    /// [`Document::extract_pages`] makes them).
+    pub fn split_ranges(&self, ranges: &[std::ops::Range<usize>]) -> Result<Vec<Vec<u8>>> {
+        ranges.iter().map(|range| self.extract_pages(&range.clone().collect::<Vec<_>>())).collect()
+    }
+
+    /// The document split, in page order, into files of at most `limit`
+    /// bytes each: every part holds as many pages as fit (ADR 0016). A page
+    /// that alone is larger than `limit` makes a part of its own. Each part's
+    /// size is measured by writing it, so shared fonts and images count in
+    /// every part that uses them.
+    pub fn split_by_size(&self, limit: usize) -> Result<Vec<(std::ops::Range<usize>, Vec<u8>)>> {
+        let count = self.page_count();
+        let part = |range: std::ops::Range<usize>| self.extract_pages(&range.collect::<Vec<_>>());
+        let mut parts = Vec::new();
+        let mut start = 0;
+        while start < count {
+            // One page always goes; then the longest run that still fits,
+            // found by doubling, then halving the gap (sizes grow with pages).
+            let mut fits = start + 1;
+            let mut bytes = part(start..fits)?;
+            if bytes.len() <= limit {
+                let mut too_long = None;
+                let mut length = 2;
+                while fits < count {
+                    let end = (start + length).min(count);
+                    let candidate = part(start..end)?;
+                    if candidate.len() > limit {
+                        too_long = Some(end);
+                        break;
+                    }
+                    (fits, bytes) = (end, candidate);
+                    length *= 2;
+                }
+                if let Some(mut over) = too_long {
+                    while over - fits > 1 {
+                        let middle = fits + (over - fits) / 2;
+                        let candidate = part(start..middle)?;
+                        if candidate.len() > limit {
+                            over = middle;
+                        } else {
+                            (fits, bytes) = (middle, candidate);
+                        }
+                    }
+                }
+            }
+            parts.push((start..fits, bytes));
+            start = fits;
+        }
+        Ok(parts)
+    }
+
     /// This document with every page of `others` inserted before page `at`
     /// (`at` = page count appends), in order; and the new revision's bytes.
     ///

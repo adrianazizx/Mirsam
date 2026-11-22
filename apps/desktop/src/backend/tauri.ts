@@ -4,8 +4,10 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   type AppInfo,
   type Backend,
+  type BookmarkPart,
   type DocumentComment,
   type EditOutcome,
+  type InsertOutcome,
   isBackendError,
   type OpenOutcome,
   type OutlineItem,
@@ -169,11 +171,12 @@ export const tauriBackend: Backend = {
   quitDiscarding: () => invoke<void>("quit_discarding"),
   saveDocument: (documentId) => invoke<SaveOutcome>("save_document", { documentId }),
   insertPagesFromFiles: (documentId, at) =>
-    invoke<EditOutcome | null>("insert_pages_from_files", { documentId, at }),
+    invoke<InsertOutcome | null>("insert_pages_from_files", { documentId, at }),
+  unlockInsert: (token, password) => invoke<InsertOutcome>("unlock_insert", { token, password }),
   extractPages: (documentId, pages) =>
     invoke<string | null>("extract_pages", { documentId, pages }),
-  splitDocument: (documentId, size) =>
-    invoke<number | null>("split_document", { documentId, size }),
+  splitDocument: (documentId, by) => invoke<number | null>("split_document", { documentId, by }),
+  bookmarkParts: (documentId) => invoke<BookmarkPart[]>("bookmark_parts", { documentId }),
   saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>

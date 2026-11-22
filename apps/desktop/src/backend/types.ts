@@ -55,6 +55,24 @@ export interface PageAnnotation {
   strokes: [number, number][][];
 }
 
+/** What inserting pages from files led to: done, or a file's password is needed (ADR 0016). */
+export type InsertOutcome =
+  | { kind: "inserted"; edit: EditOutcome }
+  | { kind: "needsPassword"; token: number; name: string; retry: boolean };
+
+/** How to split a document (ADR 0016): by pages per file, at top-level bookmarks, or by bytes per file. */
+export type SplitBy =
+  | { kind: "pages"; size: number }
+  | { kind: "bookmarks" }
+  | { kind: "bytes"; limit: number };
+
+/** One file of a split at the top-level bookmarks: its title and pages (zero-based, end exclusive). */
+export interface BookmarkPart {
+  title: string;
+  start: number;
+  end: number;
+}
+
 /** A reply in a comment's thread (ADR 0041). */
 export interface CommentReply {
   index: number;
@@ -492,11 +510,15 @@ export interface Backend {
    * Asks for PDFs and inserts their pages before page `at`, in order (ADR 0016);
    * null if cancelled.
    */
-  insertPagesFromFiles(documentId: number, at: number): Promise<EditOutcome | null>;
+  insertPagesFromFiles(documentId: number, at: number): Promise<InsertOutcome | null>;
+  /** Tries the password of the file an insert waits for, and goes on. */
+  unlockInsert(token: number, password: string): Promise<InsertOutcome>;
   /** Asks where, and writes `pages` as a new PDF; its name, or null if cancelled. */
   extractPages(documentId: number, pages: number[]): Promise<string | null>;
-  /** Asks for a folder and writes the document in parts of `size` pages; how many, or null. */
-  splitDocument(documentId: number, size: number): Promise<number | null>;
+  /** Asks for a folder and writes the document in parts; how many, or null (ADR 0016). */
+  splitDocument(documentId: number, by: SplitBy): Promise<number | null>;
+  /** Where a split at the top-level bookmarks would fall (fewer than two: none). */
+  bookmarkParts(documentId: number): Promise<BookmarkPart[]>;
   /** Saves over the document's file (ADR 0015). */
   saveDocument(documentId: number): Promise<SaveOutcome>;
   /** Asks where to save, saves there, and the document becomes that file; null if cancelled. */

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { backend } from "../backend";
-import { setMockRecoveries } from "../backend/mock";
+import { setMockInsertIsLocked, setMockRecoveries } from "../backend/mock";
 import { paletteMatch } from "../components/palette/match";
 import { pageFromInput } from "../components/shell/StatusBar";
 import {
@@ -365,5 +365,66 @@ describe("comments panel", () => {
     // The UI's own numbers are Western digits in Arabic too (i18n `formatTag`).
     expect(within(panel).getByRole("heading", { name: "الصفحة 1" })).toBeTruthy();
     expect(within(panel).getByText("بلا اسم")).toBeTruthy();
+  });
+});
+
+describe("split dialog", () => {
+  it("splits by pages, at top-level bookmarks, or by file size", async () => {
+    render(<App />);
+    act(() => useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 }));
+    await act(async () => {
+      await runCommand("pages.split");
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Split into files" });
+    expect(within(dialog).getByLabelText("Pages per file")).toBeTruthy();
+
+    // The mock's outline starts parts at its three top-level entries, named in the dialog.
+    fireEvent.click(await within(dialog).findByRole("radio", { name: "At top-level bookmarks" }));
+    const list = await within(dialog).findByTestId("split-bookmarks");
+    expect(list.textContent).toContain("عقد إيجار");
+    expect(list.querySelector("bdi")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: "By file size" }));
+    expect(within(dialog).getByLabelText("Largest file, in MB")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: "At top-level bookmarks" }));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Choose a folder…" }));
+    });
+    expect(useAppStore.getState().splitPrompt).toBe(false);
+    expect(useAppStore.getState().notice).toEqual({ key: "split", values: { count: "3" } });
+  });
+});
+
+describe("inserting from a password-protected file", () => {
+  it("asks for its password in the page area, then inserts and selects the pages", async () => {
+    setMockInsertIsLocked(true);
+    try {
+      render(<App />);
+      const before = (await backend.pageSizes(43)).length;
+      act(() =>
+        useAppStore.getState().addDocument({ id: 43, name: "merge.pdf", pageCount: before }),
+      );
+      await act(async () => {
+        await runCommand("pages.insertFromFile");
+      });
+      expect(await screen.findByText("Enter the password to insert pages from")).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Insert" }));
+      });
+      expect(await screen.findByText("That password is not correct. Try again.")).toBeTruthy();
+      expect(useAppStore.getState().unlocks[0]?.insert?.documentId).toBe(43);
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "1234" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Insert" }));
+      });
+      expect(useAppStore.getState().unlocks).toHaveLength(0);
+      const merged = selectActiveDocument(useAppStore.getState());
+      expect(merged?.pageCount).toBe(before + 3);
+      expect(merged?.selectedPages).toEqual([before, before + 1, before + 2]);
+    } finally {
+      setMockInsertIsLocked(false);
+    }
   });
 });

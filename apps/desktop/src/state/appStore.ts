@@ -128,6 +128,8 @@ export interface PendingUnlock {
   retry: boolean;
   /** A recovery file's password, not a file's (ADR 0040). */
   recovery?: boolean;
+  /** A file's whose pages are being inserted (ADR 0016): where, and the page count before. */
+  insert?: { documentId: number; at: number; pageCount: number };
 }
 
 export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {

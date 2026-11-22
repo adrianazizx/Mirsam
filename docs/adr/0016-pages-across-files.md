@@ -57,9 +57,48 @@ PDFium's `FPDF_ImportPagesByIndex` does all of that, through pdfium-render's saf
 - **Extracting from an encrypted file** gives an unencrypted file. The reader opened the original
   with its password, so this is the user's own choice. The owner's permission flags (for example
   "assembly not allowed") are not enforced yet; that comes with M5 (security).
-- **Not yet:** a signed document gets no incremental insert, sources with passwords cannot be
-  inserted (no prompt in the insert flow), and there is no split by size or by bookmarks (spec
-  §5.4 names them). Each is a later step.
+- **Not yet:** a signed document gets no incremental insert. (Sources with passwords and
+  splitting by size or bookmarks came in session 8; see the amendment.)
+
+## Amendment (session 8): splitting by bookmarks and size; protected sources
+
+- **Split at top-level bookmarks** (`Document::bookmark_parts`, `split_ranges`):
+  - one file per top-level outline entry that points into the document, from its page to the
+    next entry's;
+  - pages before the first entry go with it;
+  - entries on a page an earlier one already starts add nothing;
+  - fewer than two parts means no split (the dialog disables the option, the shell answers
+    `no_bookmarks`).
+
+  Files are named `name (n) title.pdf`. The title loses path separators, characters file
+  systems refuse, control characters, and bidi overrides (which can make a name display as
+  something it is not), and is cut to 60 characters.
+- **Split by file size** (`Document::split_by_size`):
+  - each file holds as many pages as fit under the limit, found by doubling, then halving the
+    gap, and measured by writing the part (so fonts shared by its pages count once per file);
+  - a page larger than the limit alone gets a file of its own.
+
+  The dialog takes megabytes (10⁶ bytes, as file managers count). The parts are computed off
+  the UI's thread, after the folder is chosen.
+- **Inserting from password-protected files:**
+  - each picked file that needs a password stops the insert, which is held under a token
+    (`InsertOutcome::NeedsPassword`);
+  - the page area's password prompt asks for that file (wrong passwords ask again), and
+    `unlock_insert` goes on to the next file;
+  - once all are open, they are inserted as one step;
+  - cancelling forgets the held insert.
+
+  Passwords are used once and not kept, as for opening. The inserted pages are unencrypted
+  copies in the target, as with extract.
+- **Verified:**
+  - a hand-made five-page file with an Arabic entry, a duplicate, a child and an entry that
+    points nowhere splits into the three expected files, each passing `qpdf --check`;
+  - the RTL book split by size: every part within the limit, and none could have taken its
+    next page; one page per file below any page's size; one file above the whole;
+  - safe file names, including a right-to-left override;
+  - the shell holds an insert for a protected file, asks again after a wrong password, and
+    inserts with the right one;
+  - UI tests for the dialog's three ways and the protected insert.
 
 ## Verified
 

@@ -26,7 +26,8 @@ export function UnlockPanel() {
         {t("unlock.title")}
       </h1>
       <p className={styles.body}>
-        {t("unlock.body")} <bdi className={styles.name}>{pending.name}</bdi>
+        {t(pending.insert ? "unlock.insertBody" : "unlock.body")}{" "}
+        <bdi className={styles.name}>{pending.name}</bdi>
       </p>
       <Form
         className={styles.form}
@@ -57,7 +58,7 @@ export function UnlockPanel() {
         </TextField>
         <div className={styles.actions}>
           <Button type="submit" variant="primary" isDisabled={busy || password === ""}>
-            {t("unlock.open")}
+            {t(pending.insert ? "unlock.insert" : "unlock.open")}
           </Button>
           <Button variant="ghost" onPress={() => void runCommand("file.cancelUnlock")}>
             {t("unlock.cancel")}

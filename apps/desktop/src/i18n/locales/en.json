@@ -193,7 +193,8 @@
     "invalid_edit": "That change can't be made to this document.",
     "save_failed": "The document could not be saved. The file on disk was not changed.",
     "io_error": "The file could not be read or written. Check that its folder exists and can be written to.",
-    "text_failed": "The text could not be set."
+    "text_failed": "The text could not be set.",
+    "no_bookmarks": "This document has no top-level bookmarks to split at."
   },
   "gallery": {
     "title": "Design gallery",
@@ -250,9 +251,11 @@
   "unlock": {
     "title": "Password required",
     "body": "Enter the password to open",
+    "insertBody": "Enter the password to insert pages from",
     "password": "Password",
     "wrong": "That password is not correct. Try again.",
     "open": "Open",
+    "insert": "Insert",
     "cancel": "Cancel"
   },
   "recents": {
@@ -292,6 +295,14 @@
   },
   "split": {
     "title": "Split into files",
+    "method": "How to split",
+    "byPages": "By page count",
+    "byBookmarks": "At top-level bookmarks",
+    "bySize": "By file size",
+    "megabytes": "Largest file, in MB",
+    "sizeHelp": "Each file holds as many pages as fit. A page larger than this gets a file of its own.",
+    "bookmarksHelp": "One file per bookmark: <bdi>{{titles}}</bdi>",
+    "noBookmarks": "This document has no top-level bookmarks on different pages.",
     "size": "Pages per file",
     "help": "Each file gets this many pages, in order; the last one gets the rest.",
     "confirm": "Choose a folder…",

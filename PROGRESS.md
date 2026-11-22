@@ -205,7 +205,9 @@ M1 closed in session 6 at the owner's go-ahead, with these items carried forward
 - confirm printing on screen on macOS and Windows (owner item 13);
 - pinch-out frames (needs WebKit's own profiler).
 
-## M2 — Annotate and organize — started in session 6 on branch `m2-organize`
+## M2 — Annotate and organize — done in session 8 on branch `m2-organize` (PR #2), with the open items below
+
+Merging into `main` waits for the owner's go-ahead. Demo script: `docs/demos/m2.md`.
 
 Plan, in order: every later slice edits documents, so the editing model and saving come first.
 
@@ -220,8 +222,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
    rename). The original is never written in place; signed files are saved incrementally. The
    app asks before a modified tab, window, or the app closes.
 4. ~~**Merge, insert from another PDF, extract, split**~~ **done (ADR 0016):** PDFium's page
-   import; snapshot steps in the history; refuses signed targets and sources with passwords.
-   Splitting by size or by bookmarks comes later.
+   import; snapshot steps in the history; refuses signed targets. Session 8 added split by
+   top-level bookmarks and by file size, and inserting from password-protected files (the
+   page area asks for each file's password).
 5. ~~**Markup**~~ **done (ADR 0017):** highlight, underline, strikethrough and squiggly from the
    text selection, as standard annotations with appearance streams. Click a markup to select
    it; Delete removes it. New objects in encrypted files are encrypted (RC4, AES-128, AES-256).
@@ -261,8 +264,9 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       - Select pages with click, Shift and Cmd/Ctrl; drag to reorder; move earlier or later.
       - Rotate, delete, duplicate and insert act on the selection.
       - Both directions: the grid flows right to left in Arabic.
-      - Insert pages from files (also merges), extract to a new file, and split into files of
-        N pages (ADR 0016).
+      - Insert pages from files (also merges), including password-protected ones; extract to a
+        new file; split by page count, at top-level bookmarks (files named after them), or by
+        file size (ADR 0016).
       - Pointer dragging is untested: browser automation cannot start a native drag. The drop
         arithmetic is unit-tested, and the move commands are the keyboard path.
 - [x] Undo journal: undo and redo for page edits and annotations (`EditHistory`, ADRs 0014
@@ -283,6 +287,41 @@ Plan, in order: every later slice edits documents, so the editing model and savi
       - encrypted documents stay encrypted, and restoring asks for the password.
       - Gap: running a single copy of the app is not enforced. A second copy started while
         the first runs would offer the first one's recovery files.
+- [x] Budgets not regressed (spec §11; measurements below)
+
+### M2 measurements (Apple-silicon MacBook, macOS 26, session 8)
+
+M2 adds no budgets of its own; the check is that M1's did not regress.
+
+- **Search:** 1,000 pages index in 1.11 s once (M1: 1.09 s), then 17–18 ms per search (M1:
+  18 ms). Release build, `search_bench`.
+- **Scroll and zoom:** the debug-build benchmark ran with a visible window, on `m2-organize`
+  and on `main` (M1, without M2) one after the other:
+
+| Debug build, 1,000 pages | `main` | `m2-organize` |
+|---|---|---|
+| Scrolling 4,000 / 12,000 px/s, fling: median, p95 frame | 17 ms, 17–18 ms | 17 ms, 18 ms |
+| Longest blank page; random jump to preview (p95) | 0 ms; 19 ms | 0 ms; 19 ms |
+| Pinch in: p95 frame, frames > 20 ms | 25 ms, 4 | 23 ms, 4 |
+| Pinch out: p95 frame, frames > 20 ms | 36 ms, 12 | 37 ms, 12 |
+| The app's own memory at the end | 334 MB | 344 MB |
+
+  The same on both. Pinch is over budget in debug builds on both; the release figures
+  (pinch-in clean, extreme pinch-out p95 25 ms) are M1's open item.
+- **First page on screen:** 31–45 ms in the self-test (debug, dev server).
+- **M2's own interactions** (not budgeted): an edit is painted in 20–40 ms; a markup is
+  added in 15–20 ms.
+
+M2 closed in session 8, with these items carried forward:
+
+- **Annotations:** callouts (P0), choosing fonts, sizes and colours, and moving annotations.
+  These come with the inspector.
+- **Comments:** shapes, stamps and other kinds from other tools are not listed; a single reply
+  cannot be edited or deleted from the panel; XFDF import and export, summaries and
+  flattening (P1).
+- **Organizer:** pointer dragging is untested by automation.
+- **Autosave:** a single running copy is not enforced.
+- **From M1:** extreme pinch-out, and printing on screen (owner item 13).
 
 ## M3 — Text engine — groundwork merged to `main` ahead of M2
 
@@ -371,7 +410,7 @@ parallel with M2 and merged by pull request at the owner's request.
 
 ## Session log
 
-### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel)
+### Session 8 — 2026-11-22 (Milestone 2: autosave and recovery, comments panel, close-out)
 
 - **Autosave (ADR 0040):**
   - After each edit, undo or redo, a modified document's current bytes (a valid PDF: the file
@@ -409,8 +448,19 @@ parallel with M2 and merged by pull request at the owner's request.
     the decrypted text, names and dates.
   - "Your name on comments" (a setting) signs new annotations of every kind. The system's
     user name is never written unasked.
-- **Tests:** 254 Rust and 151 UI tests pass on this Mac. The self-test passes in English (LTR)
-  and Arabic (RTL, dark), autosave and the comments panel included.
+- **Closing M2:**
+  - **Split** (ADR 0016 amendment): at top-level bookmarks (one file per entry, named after
+    it; titles made safe for file names) and by file size (each file holds as many pages as
+    fit, measured by writing it). The split dialog offers all three ways and lists the
+    bookmark titles.
+  - **Inserting from password-protected files:** the page area asks for each file's password
+    in turn, then inserts them all as one undo step.
+  - **Budgets:** search, scrolling, jumps and memory measured against `main`; no regression
+    (table in M2).
+  - **Demo script:** `docs/demos/m2.md`.
+- **Tests:** 259 Rust and 153 UI tests pass on this Mac. The self-test passes in English (LTR)
+  and Arabic (RTL, dark), autosave and the comments panel included. CI is green on macOS,
+  Linux and Windows.
 
 ### Session 7 — 2026-11-22 (Milestone 2: markup, ink, notes, text boxes)
 

@@ -588,6 +588,21 @@ let recents: RecentFile[] = [
 
 const opened = (document: DocumentInfo): OpenOutcome => ({ kind: "opened", document });
 
+/** Whether the file the mock's insert "picks" needs a password; tests set it. */
+let mockInsertIsLocked = false;
+let pendingInsert: { documentId: number; at: number } | null = null;
+export function setMockInsertIsLocked(locked: boolean): void {
+  mockInsertIsLocked = locked;
+  pendingInsert = null;
+}
+
+/** Inserts the sample's first three pages before page `at`. */
+function insertSample(documentId: number, at: number): EditOutcome {
+  const state = stateOf(documentId);
+  const pages = [...state.pages.slice(0, at), 0, 1, 2, ...state.pages.slice(at)];
+  return pushState(documentId, { pages, markup: state.markup, change: "pages" });
+}
+
 /** Recovery files the mock's startup offers; tests set them. */
 let mockRecoveries: RecoveryInfo[] = [];
 export function setMockRecoveries(list: RecoveryInfo[]): void {
@@ -798,13 +813,44 @@ export const mockBackend: Backend = {
   setCommentResolved: async (documentId, page, index, resolved) =>
     withComment(documentId, page, index, (comment) => ({ ...comment, resolved })),
   // The mock "picks" a file whose pages are the sample's first three.
+  // The mock "picks" a file whose pages are the sample's first three; when
+  // tests say so, it is the locked sample's, which asks for its password.
   insertPagesFromFiles: async (documentId, at) => {
-    const state = stateOf(documentId);
-    const pages = [...state.pages.slice(0, at), 0, 1, 2, ...state.pages.slice(at)];
-    return pushState(documentId, { pages, markup: state.markup, change: "pages" });
+    if (mockInsertIsLocked) {
+      pendingInsert = { documentId, at };
+      return { kind: "needsPassword", token: 9, name: LOCKED.name, retry: false };
+    }
+    return { kind: "inserted", edit: insertSample(documentId, at) };
+  },
+  unlockInsert: async (_token, password) => {
+    const pending = pendingInsert;
+    if (!pending) throw { code: "unknown_token", detail: "no insert waiting" };
+    if (password !== LOCKED_PASSWORD) {
+      return { kind: "needsPassword", token: 9, name: LOCKED.name, retry: true };
+    }
+    pendingInsert = null;
+    return { kind: "inserted", edit: insertSample(pending.documentId, pending.at) };
   },
   extractPages: async () => "Extract.pdf",
-  splitDocument: async (documentId, size) => Math.ceil(pagesOf(documentId).length / size),
+  // The mock "writes" parts of 20 pages when split by size, whatever the limit.
+  splitDocument: async (documentId, by) => {
+    const count = pagesOf(documentId).length;
+    if (by.kind === "bookmarks") return (await mockBackend.bookmarkParts(documentId)).length;
+    return Math.ceil(count / (by.kind === "pages" ? by.size : 20));
+  },
+  bookmarkParts: async (documentId) => {
+    const count = pagesOf(documentId).length;
+    const starts = (documentId === SAMPLE.id ? OUTLINE : [])
+      .filter((item) => item.page !== null && item.page < count)
+      .map((item) => ({ title: item.title, page: item.page ?? 0 }))
+      .sort((a, b) => a.page - b.page)
+      .filter((item, i, all) => i === 0 || item.page !== all[i - 1]?.page);
+    return starts.map((item, i) => ({
+      title: item.title,
+      start: i === 0 ? 0 : item.page,
+      end: starts[i + 1]?.page ?? count,
+    }));
+  },
   saveDocument: async (documentId) => {
     const history = edits.get(documentId);
     if (history) history.saved = history.at;

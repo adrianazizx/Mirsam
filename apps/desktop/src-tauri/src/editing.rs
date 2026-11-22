@@ -515,35 +515,96 @@ fn save_locked(state: &AppState, document_id: u32, path: PathBuf) -> CommandResu
     })
 }
 
+/// What inserting pages from files led to (ADR 0016).
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum InsertOutcome {
+    Inserted {
+        edit: EditOutcome,
+    },
+    /// A picked file needs its password; `unlock_insert` takes it and goes on.
+    NeedsPassword {
+        token: u32,
+        name: String,
+        /// The last password given was wrong.
+        retry: bool,
+    },
+}
+
+/// An insert waiting for a password: the files picked, and those opened so far.
+pub struct PendingInsert {
+    document_id: u32,
+    at: usize,
+    paths: Vec<PathBuf>,
+    opened: Vec<safha_core::Document>,
+}
+
 /// Asks for one or more PDFs and inserts all their pages before page `at`
 /// (`at` = page count appends), in the order picked: insert, or merge
-/// (ADR 0016). `None` when the user cancels.
+/// (ADR 0016). A file that needs a password is asked for it, one at a time.
+/// `None` when the user cancels the picker.
 #[tauri::command]
 pub async fn insert_pages_from_files(
     app: AppHandle,
     state: State<'_, AppState>,
     document_id: u32,
     at: usize,
-) -> CommandResult<Option<EditOutcome>> {
+) -> CommandResult<Option<InsertOutcome>> {
     let picked = app.dialog().file().add_filter("PDF", &["pdf"]).blocking_pick_files();
     let Some(paths) = picked else { return Ok(None) };
     let paths: Vec<PathBuf> = paths.into_iter().filter_map(|file| file.into_path().ok()).collect();
     if paths.is_empty() {
         return Ok(None);
     }
-    let engine = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)?;
-    // A file that needs a password cannot be inserted yet; the error says so.
-    let others = paths.iter().map(|path| engine.open_file(path, None)).collect::<Result<Vec<_>, _>>()?;
-    let others: Vec<&safha_core::Document> = others.iter().collect();
+    continue_insert(&state, PendingInsert { document_id, at, paths, opened: Vec::new() }, None).map(Some)
+}
 
+/// Tries the password of the file an insert waits for, and goes on.
+#[tauri::command]
+pub async fn unlock_insert(
+    state: State<'_, AppState>,
+    token: u32,
+    password: String,
+) -> CommandResult<InsertOutcome> {
+    let pending =
+        state.take_insert(token).ok_or_else(|| CommandError::new("unknown_token", "no insert waiting"))?;
+    continue_insert(&state, pending, Some(&password))
+}
+
+/// Opens the insert's remaining files (the next with `password`) and, once
+/// all are open, inserts their pages as one undo step. Stops at a file that
+/// needs a password, keeping what is open so far.
+fn continue_insert(
+    state: &AppState,
+    mut pending: PendingInsert,
+    password: Option<&str>,
+) -> CommandResult<InsertOutcome> {
+    let engine = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)?;
+    let mut password = password;
+    while let Some(path) = pending.paths.get(pending.opened.len()) {
+        match engine.open_file(path, password) {
+            Ok(document) => {
+                pending.opened.push(document);
+                password = None;
+            }
+            Err(safha_core::Error::PasswordRequired) => {
+                let name = crate::state::display_name(path);
+                let retry = password.is_some();
+                return Ok(InsertOutcome::NeedsPassword { token: state.hold_insert(pending), name, retry });
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+    let document_id = pending.document_id;
+    let others: Vec<&safha_core::Document> = pending.opened.iter().collect();
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let (revision, bytes) = document.with_pages_from(&others, at)?;
+    let (revision, bytes) = document.with_pages_from(&others, pending.at)?;
     history.push_snapshot(bytes);
     let page_count = revision.page_count();
     state.replace_revision(document_id, revision);
-    Ok(Some(EditOutcome::new(page_count, &history, Change::Pages)))
+    Ok(InsertOutcome::Inserted { edit: EditOutcome::new(page_count, &history, Change::Pages) })
 }
 
 /// Writes `pages` as a new PDF where the user chooses. Returns the new
@@ -574,19 +635,63 @@ pub async fn extract_pages(
     Ok(Some(crate::state::display_name(&path)))
 }
 
-/// Splits the document into files of at most `size` pages, written into a
-/// folder the user chooses as `name (1).pdf`, `name (2).pdf`, … next to
-/// nothing they would overwrite. Returns how many files were written, or
-/// `None` when the user cancels.
+/// How to split a document (ADR 0016), as the UI sends it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SplitBy {
+    /// Files of `size` pages; the last gets the rest.
+    Pages { size: usize },
+    /// One file per top-level bookmark.
+    Bookmarks,
+    /// Files of at most `limit` bytes.
+    Bytes { limit: u64 },
+}
+
+/// Where a split at the top-level bookmarks would fall: what the split
+/// dialog shows before the user chooses it.
+#[derive(Debug, Serialize)]
+pub struct BookmarkPart {
+    title: String,
+    /// Zero-based, end exclusive.
+    start: usize,
+    end: usize,
+}
+
+#[tauri::command]
+pub async fn bookmark_parts(
+    state: State<'_, AppState>,
+    document_id: u32,
+) -> CommandResult<Vec<BookmarkPart>> {
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    Ok(document
+        .bookmark_parts()
+        .into_iter()
+        .map(|(title, range)| BookmarkPart { title, start: range.start, end: range.end })
+        .collect())
+}
+
+/// Splits the document (by page count, top-level bookmarks, or file size)
+/// into files written into a folder the user chooses: `name (1).pdf`,
+/// `name (2).pdf`, … (with the bookmark's title after the number when split
+/// at bookmarks), never over an existing file. Returns how many files were
+/// written, or `None` when the user cancels.
 #[tauri::command]
 pub async fn split_document(
     app: AppHandle,
     state: State<'_, AppState>,
     document_id: u32,
-    size: usize,
+    by: SplitBy,
 ) -> CommandResult<Option<usize>> {
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let parts = document.split_every(size)?;
+    match by {
+        SplitBy::Pages { size: 0 } | SplitBy::Bytes { limit: 0 } => {
+            return Err(CommandError::new("invalid_edit", "parts need at least one page and one byte"));
+        }
+        SplitBy::Bookmarks if document.bookmark_parts().len() < 2 => {
+            return Err(CommandError::new("no_bookmarks", "no top-level bookmarks on different pages"));
+        }
+        _ => {}
+    }
     let current = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let stem = current.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let mut dialog = app.dialog().file();
@@ -596,13 +701,78 @@ pub async fn split_document(
     let Some(folder) = dialog.blocking_pick_folder().and_then(|folder| folder.into_path().ok()) else {
         return Ok(None);
     };
-    let total = document.page_count();
-    for (index, part) in parts.iter().enumerate() {
-        let path = free_path(&folder, &format!("{stem} ({})", index + 1));
-        let expected = size.min(total - index * size);
-        write_new_pdf(&path, part, expected)?;
+    // Splitting by size writes each candidate part to measure it: off the UI's way.
+    let parts = tauri::async_runtime::spawn_blocking(move || split_parts(&document, &stem, &by))
+        .await
+        .map_err(|err| CommandError::new("engine_error", err.to_string()))??;
+    for (name, bytes, pages) in &parts {
+        write_new_pdf(&free_path(&folder, name), bytes, *pages)?;
     }
     Ok(Some(parts.len()))
+}
+
+/// The files of a split: each one's name (without `.pdf`), bytes, and page count.
+fn split_parts(
+    document: &safha_core::Document,
+    stem: &str,
+    by: &SplitBy,
+) -> CommandResult<Vec<(String, Vec<u8>, usize)>> {
+    let numbered = |index: usize| format!("{stem} ({})", index + 1);
+    Ok(match *by {
+        SplitBy::Pages { size } => {
+            let total = document.page_count();
+            document
+                .split_every(size)?
+                .into_iter()
+                .enumerate()
+                .map(|(index, bytes)| (numbered(index), bytes, size.min(total - index * size)))
+                .collect()
+        }
+        SplitBy::Bookmarks => {
+            let parts = document.bookmark_parts();
+            let ranges: Vec<_> = parts.iter().map(|(_, range)| range.clone()).collect();
+            document
+                .split_ranges(&ranges)?
+                .into_iter()
+                .zip(parts)
+                .enumerate()
+                .map(|(index, (bytes, (title, range)))| {
+                    let title = file_name_part(&title);
+                    let name = if title.is_empty() {
+                        numbered(index)
+                    } else {
+                        format!("{} {title}", numbered(index))
+                    };
+                    (name, bytes, range.len())
+                })
+                .collect()
+        }
+        SplitBy::Bytes { limit } => document
+            .split_by_size(usize::try_from(limit).unwrap_or(usize::MAX))?
+            .into_iter()
+            .enumerate()
+            .map(|(index, (range, bytes))| (numbered(index), bytes, range.len()))
+            .collect(),
+    })
+}
+
+/// A bookmark title made fit for a file name: no path separators or other
+/// characters file systems refuse, no control characters, no bidi overrides
+/// (which can make a name display as something it is not), at most 60
+/// characters.
+fn file_name_part(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .map(|c| {
+            let refused = c.is_control()
+                || r#"/\:*?"<>|"#.contains(c)
+                || matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+            if refused { ' ' } else { c }
+        })
+        .collect();
+    let joined = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let short: String = joined.chars().take(60).collect();
+    short.trim_end_matches(['.', ' ']).to_string()
 }
 
 /// Validates a new PDF (it opens, with `pages` pages) and writes it atomically.
@@ -660,6 +830,87 @@ mod tests {
 
     use super::*;
     use crate::state::MAIN_WINDOW;
+
+    #[test]
+    fn inserting_asks_for_each_protected_files_password() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/out");
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(fixtures.join("manifest.json"))
+                .expect("fixture corpus: run `node fixtures/generate.mjs`"),
+        )
+        .expect("manifest");
+        let encrypted = manifest["fixtures"]
+            .as_array()
+            .and_then(|all| all.iter().find(|f| f["producer"] == "qpdf" && f["id"] == "encrypted"))
+            .expect("the encrypted fixture");
+        let password = encrypted["password"].as_str().expect("its password").to_string();
+        let protected = fixtures.join(encrypted["path"].as_str().expect("path"));
+        let plain = fixtures.join("chrome/en-paragraphs.pdf");
+
+        let state = AppState::new(Instant::now(), None);
+        let outcome = crate::commands::open_path(&state, &plain, None, MAIN_WINDOW).expect("opens");
+        let id =
+            serde_json::to_value(&outcome).expect("json")["document"]["id"].as_u64().expect("opened") as u32;
+        let pages = |state: &AppState| state.document(id).expect("document").page_count();
+        let before = pages(&state);
+        let protected_pages = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)
+            .expect("engine")
+            .open_file(&protected, Some(&password))
+            .expect("opens")
+            .page_count();
+
+        let pending = PendingInsert {
+            document_id: id,
+            at: before,
+            paths: vec![protected.clone(), plain.clone()],
+            opened: Vec::new(),
+        };
+        let token = |outcome: InsertOutcome, retry: bool| match outcome {
+            InsertOutcome::NeedsPassword { token, name, retry: asked } => {
+                assert_eq!((name.as_str(), asked), ("encrypted.pdf", retry));
+                token
+            }
+            InsertOutcome::Inserted { .. } => panic!("inserted without the password"),
+        };
+        let first = token(continue_insert(&state, pending, None).expect("asks"), false);
+        let pending = state.take_insert(first).expect("held");
+        let second = token(continue_insert(&state, pending, Some("wrong")).expect("asks again"), true);
+        assert_eq!(pages(&state), before, "nothing inserted while waiting");
+        let pending = state.take_insert(second).expect("held");
+        let InsertOutcome::Inserted { edit } =
+            continue_insert(&state, pending, Some(&password)).expect("inserts")
+        else {
+            panic!("the right password inserts");
+        };
+        assert!(edit.pages_changed && edit.can_undo);
+        assert_eq!(pages(&state), before + protected_pages + before);
+
+        // Giving up forgets the held insert.
+        let pending = PendingInsert { document_id: id, at: 0, paths: vec![protected], opened: Vec::new() };
+        let held = token(continue_insert(&state, pending, None).expect("asks"), false);
+        state.forget_pending(held);
+        assert!(state.take_insert(held).is_none());
+    }
+
+    #[test]
+    fn splits_arrive_in_the_shape_the_ui_sends() {
+        let parse = |json: &str| serde_json::from_str::<SplitBy>(json).expect("parses");
+        assert_eq!(parse(r#"{"kind":"pages","size":3}"#), SplitBy::Pages { size: 3 });
+        assert_eq!(parse(r#"{"kind":"bookmarks"}"#), SplitBy::Bookmarks);
+        assert_eq!(parse(r#"{"kind":"bytes","limit":5000000}"#), SplitBy::Bytes { limit: 5_000_000 });
+    }
+
+    #[test]
+    fn bookmark_titles_become_safe_file_names() {
+        assert_eq!(file_name_part("الفصل الأول: البداية"), "الفصل الأول البداية");
+        // No separators survive: the title cannot leave the chosen folder
+        // (and always follows the document's name and number).
+        assert_eq!(file_name_part("../../etc/passwd"), ".. .. etc passwd");
+        assert_eq!(file_name_part("a\u{202E}fdp.exe"), "a fdp.exe");
+        assert_eq!(file_name_part("Chapter 1..."), "Chapter 1");
+        assert_eq!(file_name_part("\t\n"), "");
+        assert_eq!(file_name_part(&"x".repeat(100)).chars().count(), 60);
+    }
 
     #[test]
     fn comments_are_signed_with_the_chosen_name_and_answered() {
