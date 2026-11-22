@@ -260,8 +260,9 @@ Remaining M1 work:
 - **Printing:** through the platform's PDF viewer, still unverified.
 - **CI:** the first CI run's fixes were pushed as PR #1 (Auto-fix on). PR #1's first run then
   failed three checks, fixed in `40a9331`:
-  - Windows: the 1,000-page fixture's qpdf arguments overflowed the command line; they now go
-    through an `@file`.
+  - Windows: the 1,000-page fixture's qpdf arguments overflowed the command line. An `@file`
+    list fixed Windows but Ubuntu's qpdf does not read it, so the fixture is now a two-page file
+    whose range `1-2` is repeated 500 times in one argument.
   - Linux and Windows: tests skip CoreText fixtures only where the manifest records the producer
     as unavailable.
   - macOS self-test: an unmeasured warm-up launch, because a cold first launch took 461 ms to the

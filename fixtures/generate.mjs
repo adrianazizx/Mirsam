@@ -210,16 +210,14 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
 
   // 1,000 pages alternating the bilingual contract and the mixed-direction page:
   // the Milestone 1 exit-test document.
-  const pages = [];
-  for (let i = 0; i < 500; i += 1) {
-    pages.push(src("contract-two-column"), "1", src("mixed-inline"), "1");
-  }
-  // 2,000 arguments overflow Windows' command line; qpdf reads them from a file
-  // (`@file`, one argument per line) on every platform.
-  const pageArgs = derived("bilingual-1000-pages.args");
-  writeFileSync(pageArgs, `${["--empty", "--pages", ...pages, "--"].join("\n")}\n`);
-  execFileSync(qpdf, [`@${pageArgs}`, derived("bilingual-1000-pages.pdf")]);
-  rmSync(pageArgs);
+  // A two-page file, then its page range repeated 500 times in one argument:
+  // one file argument per page overflowed Windows' command line, and an
+  // `@file` argument list is not read by every qpdf build (Ubuntu's).
+  const pair = derived("bilingual-pair.tmp.pdf");
+  execFileSync(qpdf, ["--empty", "--pages", src("contract-two-column"), "1", src("mixed-inline"), "1", "--", pair]);
+  const range = Array.from({ length: 500 }, () => "1-2").join(",");
+  execFileSync(qpdf, ["--empty", "--pages", pair, range, "--", derived("bilingual-1000-pages.pdf")]);
+  rmSync(pair);
   add("bilingual-1000-pages.pdf", {
     pages: pageCount(derived("bilingual-1000-pages.pdf")),
     description: "1,000 pages alternating chrome/contract-two-column and chrome/mixed-inline.",
