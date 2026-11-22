@@ -1,8 +1,10 @@
 import {
   type BlockMark,
   backend,
+  type CompressOptions,
   type EditOutcome,
   FILL_KINDS,
+  type ImageFormat,
   isBackendError,
   type MarkupKind,
   type OpenOutcome,
@@ -15,7 +17,9 @@ import {
   type SanitizeOptions,
   type SecurityChange,
   type SplitBy,
+  type StampArg,
   type StrokePoint,
+  type TextFormat,
   type TextStyle,
   type ViewRect,
 } from "../backend";
@@ -27,6 +31,7 @@ import {
   type FillTool,
   type LeftPanel,
   type OpenDocument,
+  type OutputDialog,
   type ReadingTheme,
   selectActiveDocument,
   useAppStore,
@@ -141,6 +146,15 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /** `output.stamp`: the header, footer, page numbers, or watermark (`pages` above). */
+  stamp?: StampArg;
+  /** `output.exportImages`: resolution and format (`pages` above). */
+  dpi?: number;
+  imageFormat?: ImageFormat;
+  /** `output.exportText` (`pages` above). */
+  textFormat?: TextFormat;
+  /** `output.compress`. */
+  compress?: CompressOptions;
   /** `note.save` of a paragraph: bold and italic as its field set them (ADR 0025). */
   blockMarks?: BlockMark[];
   /** `form.setValue`: the field (its id) and its new value (as `FormField.values`). */
@@ -159,6 +173,9 @@ export const SIGNATURE_WIDTH = 150;
 export const INITIALS_WIDTH = 60;
 /** How much one step of "larger" or "smaller" scales a Fill & Sign item. */
 const FILL_STEP = 1.25;
+/** How far an arrow key moves a Fill & Sign item, and Shift with it, in points. */
+const NUDGE = 1;
+const NUDGE_MORE = 10;
 /** The pen width drawn signatures are kept with, in pad pixels. */
 export const SIGNATURE_PEN = 3;
 
@@ -229,6 +246,15 @@ export type CommandId =
   | "fill.dot"
   | "fill.signature"
   | "fill.place"
+  | "fill.move"
+  | "fill.moveLeft"
+  | "fill.moveRight"
+  | "fill.moveUp"
+  | "fill.moveDown"
+  | "fill.moveLeftMore"
+  | "fill.moveRightMore"
+  | "fill.moveUpMore"
+  | "fill.moveDownMore"
   | "fill.larger"
   | "fill.smaller"
   | "signatures.load"
@@ -264,6 +290,19 @@ export type CommandId =
   | "pages.extract"
   | "pages.split"
   | "pages.splitInto"
+  | "pages.headerFooter"
+  | "pages.pageNumbers"
+  | "pages.watermark"
+  | "file.exportImages"
+  | "file.exportText"
+  | "file.compress"
+  | "output.stamp"
+  | "output.pickImage"
+  | "output.exportImages"
+  | "output.exportText"
+  | "output.compress"
+  | "output.saveCompressed"
+  | "output.cancel"
   | "edit.selectAll"
   | "edit.deselect"
   | "view.zoomIn"
@@ -314,6 +353,11 @@ export type CommandId =
 
 const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
+/** An open document that is not encrypted. */
+const isUnencrypted = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  return active !== null && !active.security?.encrypted;
+};
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
 const hasAnnotationSelected = (state: AppState) =>
@@ -367,6 +411,11 @@ export function targetPages(state: AppState = store()): number[] {
   if (!active) return [];
   if (state.activeTool === "pages" && active.selectedPages.length > 0) return active.selectedPages;
   return [active.page];
+}
+
+/** Opens an output dialog (ADR 0050). */
+function openOutput(dialog: OutputDialog): void {
+  store().setOutputDialog(dialog);
 }
 
 /**
@@ -445,16 +494,44 @@ async function loadSignatures(): Promise<void> {
 
 /** Scales the selected Fill & Sign item, its top-left corner kept, and keeps it selected. */
 async function resizeFill(factor: number): Promise<void> {
-  const active = selectActiveDocument(store());
-  const selected = active?.selectedAnnotation;
-  if (!active || !selected || !FILL_KINDS.includes(selected.kind)) return;
+  const selected = selectActiveDocument(store())?.selectedAnnotation;
+  if (!selected) return;
   const { rect } = selected;
   const next = { x: rect.x, y: rect.y, width: rect.width * factor, height: rect.height * factor };
   if (next.width < 4 || next.height < 4 || next.width > 2000 || next.height > 2000) return;
-  const outcome = await backend.setAnnotationRect(active.id, selected.page, selected.index, next);
-  getViewer(active.id)?.reselectAfterRefresh({ ...selected, rect: next });
+  await placeFill(selected, next);
+}
+
+/** Moves the selected Fill & Sign item by (`dx`, `dy`) points, kept on the page. */
+async function nudgeFill(dx: number, dy: number): Promise<void> {
+  const selected = selectActiveDocument(store())?.selectedAnnotation;
+  if (!selected) return;
+  const { rect } = selected;
+  await placeFill(selected, { ...rect, x: Math.max(0, rect.x + dx), y: Math.max(0, rect.y + dy) });
+}
+
+/**
+ * Gives a Fill & Sign item a new box on the displayed page (moved or
+ * resized, ADR 0045) as one undo step, and keeps it selected.
+ */
+async function placeFill(item: SelectedAnnotation, rect: ViewRect): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active || !FILL_KINDS.includes(item.kind)) return;
+  const outcome = await backend.setAnnotationRect(active.id, item.page, item.index, rect);
+  getViewer(active.id)?.reselectAfterRefresh({ ...item, rect });
   store().applyEdit(active.id, outcome);
 }
+
+/**
+ * Arrow keys move the selected Fill & Sign item only while the page view
+ * has the focus: elsewhere (a toolbar, a list) they keep their own meaning.
+ */
+const nudgesFill = (state: AppState) =>
+  hasFillSelected(state) &&
+  (typeof document === "undefined" ||
+    document.activeElement === null ||
+    document.activeElement === document.body ||
+    document.activeElement.closest("[data-testid='viewer']") !== null);
 
 /** Keeps a new signature, places it next, and closes the dialog. */
 function keepSignature(kept: { id: number }) {
@@ -530,6 +607,9 @@ const KNOWN_ERRORS = [
   "text_failed",
   "no_bookmarks",
   "redaction_failed",
+  "no_image",
+  "image_unreadable",
+  "compress_stale",
   "store_unavailable",
   "password_not_encodable",
   "not_permitted",
@@ -1012,6 +1092,103 @@ const DECLARED: Command[] = [
       const count = await backend.splitDocument(active.id, split);
       if (count !== null) store().setNotice({ key: "split", values: { count: String(count) } });
     },
+  },
+  // Output (ADR 0050): each opens its dialog; the dialog runs `output.*` with what was chosen.
+  ...(
+    [
+      ["pages.headerFooter", "headerFooter"],
+      ["pages.pageNumbers", "pageNumbers"],
+      ["pages.watermark", "watermark"],
+      ["file.exportImages", "exportImages"],
+      ["file.exportText", "exportText"],
+      ["file.compress", "compress"],
+    ] as const
+  ).map(
+    ([id, dialog]): Command => ({
+      id,
+      // Compression rewrites the file, which this app does not do to an encrypted one (ADR 0050).
+      isEnabled: id === "file.compress" ? isUnencrypted : hasDocument,
+      run: () => openOutput(dialog),
+    }),
+  ),
+  {
+    id: "output.stamp",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.stamp || !arg.pages || arg.pages.length === 0) return;
+      const outcome = await backend.stampPages(active.id, arg.pages, arg.stamp);
+      store().setOutputDialog(null);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "output.pickImage",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run() {
+      const name = await backend.pickWatermarkImage();
+      if (name) store().setWatermarkImage(name);
+    },
+  },
+  {
+    id: "output.exportImages",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.pages || arg.pages.length === 0 || !arg.imageFormat || !arg.dpi) return;
+      const count = await backend.exportPageImages(active.id, arg.pages, arg.dpi, arg.imageFormat);
+      if (count === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "exportedImages", values: { count: String(count) } });
+    },
+  },
+  {
+    id: "output.exportText",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.pages || arg.pages.length === 0 || !arg.textFormat) return;
+      const name = await backend.exportText(active.id, arg.pages, arg.textFormat);
+      if (name === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "exportedText", values: { name } });
+    },
+  },
+  {
+    // Compresses in memory and shows the sizes; nothing is written yet.
+    id: "output.compress",
+    paletteHidden: true,
+    isEnabled: isUnencrypted,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || !arg?.compress) return;
+      store().setCompressed(null);
+      const report = await backend.compressDocument(active.id, arg.compress);
+      store().setCompressed({ documentId: active.id, report });
+    },
+  },
+  {
+    id: "output.saveCompressed",
+    paletteHidden: true,
+    isEnabled: (state) =>
+      state.compressed !== null && state.compressed.documentId === state.activeDocumentId,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const name = await backend.saveCompressed(active.id);
+      if (name === null) return;
+      store().setOutputDialog(null);
+      store().setNotice({ key: "compressedSaved", values: { name } });
+    },
+  },
+  {
+    id: "output.cancel",
+    paletteHidden: true,
+    run: () => store().setOutputDialog(null),
   },
   {
     // Opens a page from the organizer in the page view.
@@ -1555,6 +1732,36 @@ const DECLARED: Command[] = [
       }
     },
   },
+  {
+    // A Fill & Sign item dragged on the page (ADR 0045).
+    id: "fill.move",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      if (arg?.annotation && arg.rect) await placeFill(arg.annotation, arg.rect);
+    },
+  },
+  ...(
+    [
+      ["fill.moveLeft", "ArrowLeft", -1, 0],
+      ["fill.moveRight", "ArrowRight", 1, 0],
+      ["fill.moveUp", "ArrowUp", 0, -1],
+      ["fill.moveDown", "ArrowDown", 0, 1],
+    ] as const
+  ).flatMap(([id, key, dx, dy]): Command[] => [
+    {
+      id,
+      shortcut: { key, notInFields: true },
+      isEnabled: nudgesFill,
+      run: () => nudgeFill(dx * NUDGE, dy * NUDGE),
+    },
+    {
+      id: `${id}More` as CommandId,
+      shortcut: { key, shift: true, notInFields: true },
+      isEnabled: nudgesFill,
+      run: () => nudgeFill(dx * NUDGE_MORE, dy * NUDGE_MORE),
+    },
+  ]),
   { id: "fill.larger", isEnabled: hasFillSelected, run: () => resizeFill(FILL_STEP) },
   { id: "fill.smaller", isEnabled: hasFillSelected, run: () => resizeFill(1 / FILL_STEP) },
   { id: "signatures.load", paletteHidden: true, run: loadSignatures },
@@ -2118,6 +2325,15 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "comment.textBox": "annotate",
   "comment.pen": "annotate",
   "annotation.delete": "annotate",
+  // Output (ADR 0050): stamps change pages; exports take their content out.
+  "pages.headerFooter": "modify",
+  "pages.pageNumbers": "modify",
+  "pages.watermark": "modify",
+  "output.stamp": "modify",
+  "file.exportImages": "copy",
+  "output.exportImages": "copy",
+  "file.exportText": "copy",
+  "output.exportText": "copy",
   // Form filling and Fill & Sign (ADR 0045).
   "form.setValue": "fillForms",
   "fill.text": "annotate",
@@ -2127,6 +2343,15 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "fill.dot": "annotate",
   "fill.signature": "annotate",
   "fill.place": "annotate",
+  "fill.move": "annotate",
+  "fill.moveLeft": "annotate",
+  "fill.moveRight": "annotate",
+  "fill.moveUp": "annotate",
+  "fill.moveDown": "annotate",
+  "fill.moveLeftMore": "annotate",
+  "fill.moveRightMore": "annotate",
+  "fill.moveUpMore": "annotate",
+  "fill.moveDownMore": "annotate",
   "fill.larger": "annotate",
   "fill.smaller": "annotate",
 };
@@ -2219,6 +2444,10 @@ export function shortcutLabel(id: CommandId, mac = isMac): string | null {
     // A Mac's delete key sends Backspace.
     Delete: mac ? "⌫" : "Del",
     Tab: mac ? "⇥" : "Tab",
+    ArrowLeft: "←",
+    ArrowRight: "→",
+    ArrowUp: "↑",
+    ArrowDown: "↓",
   };
   const key = names[shortcut.key] ?? shortcut.key.toUpperCase();
   if (mac) {

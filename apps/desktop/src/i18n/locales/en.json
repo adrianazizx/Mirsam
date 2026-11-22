@@ -30,7 +30,10 @@
       "print": "Print…",
       "save": "Save",
       "saveAs": "Save as…",
-      "saveAndClose": "Save and close"
+      "saveAndClose": "Save and close",
+      "exportImages": "Export pages as images…",
+      "exportText": "Export text…",
+      "compress": "Compress…"
     },
     "view": {
       "zoomIn": "Zoom in",
@@ -151,7 +154,10 @@
       "insertFromFile": "Insert pages from a file…",
       "extract": "Extract pages to a new file…",
       "split": "Split into files…",
-      "splitInto": "Split"
+      "splitInto": "Split",
+      "headerFooter": "Add header or footer…",
+      "pageNumbers": "Add page numbers…",
+      "watermark": "Add watermark…"
     },
     "redact": {
       "openTool": "Redact content…",
@@ -198,7 +204,16 @@
       "signature": "Place a signature",
       "place": "Place on the page",
       "larger": "Larger",
-      "smaller": "Smaller"
+      "smaller": "Smaller",
+      "move": "Move a Fill & Sign item",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moveLeftMore": "Move left 10 points",
+      "moveRightMore": "Move right 10 points",
+      "moveUpMore": "Move up 10 points",
+      "moveDownMore": "Move down 10 points"
     },
     "signatures": {
       "load": "Load signatures"
@@ -211,6 +226,15 @@
       "saveTyped": "Keep the typed signature",
       "importImage": "Choose an image…",
       "delete": "Delete this signature"
+    },
+    "output": {
+      "stamp": "Apply to pages",
+      "pickImage": "Choose a watermark image",
+      "exportImages": "Export images",
+      "exportText": "Export text",
+      "compress": "Compress",
+      "saveCompressed": "Save compressed copy",
+      "cancel": "Close dialog"
     }
   },
   "viewer": {
@@ -262,7 +286,10 @@
     "redaction_failed": "The redaction was stopped because the marked text could still be read afterwards. Nothing was changed.",
     "password_not_encodable": "That password can't be used with this encryption. Use AES-256 for passwords with other letters.",
     "not_permitted": "This file's owner password is needed to change its protection.",
-    "store_unavailable": "Mirsam's local storage is unavailable, so signatures cannot be kept."
+    "store_unavailable": "Mirsam's local storage is unavailable, so signatures cannot be kept.",
+    "no_image": "Choose an image for the watermark first.",
+    "image_unreadable": "That image can't be used. Choose a PNG or JPEG file under 50 MB.",
+    "compress_stale": "The document changed after it was compressed. Compress it again."
   },
   "gallery": {
     "title": "Design gallery",
@@ -369,7 +396,10 @@
       "rotated": "Rotated text can't be edited yet.",
       "encrypted": "Text in encrypted files can't be edited yet.",
       "unsupported": "This text is drawn in a way that can't be edited yet."
-    }
+    },
+    "exportedImages": "{{count}} image files were written.",
+    "exportedText": "The text was saved as {{name}}.",
+    "compressedSaved": "The compressed copy was saved as {{name}}."
   },
   "split": {
     "title": "Split into files",
@@ -613,7 +643,7 @@
     "fillHeading": "Fill",
     "tools": "What a click on the page places",
     "hint": {
-      "select": "Click an item you placed to select it.",
+      "select": "Click an item you placed to select it. Drag it, or use the arrow keys, to move it.",
       "text": "Click on the page where the text goes.",
       "date": "Click on the page where today's date goes.",
       "check": "Click each box to tick.",
@@ -656,5 +686,94 @@
     "label": "Fill & Sign text",
     "text": "Text",
     "placeholder": "Type the text…"
+  },
+  "output": {
+    "pages": "Pages",
+    "allPages": "All ({{count}})",
+    "currentPage": "Current page",
+    "range": "Range",
+    "rangeLabel": "Page range",
+    "rangePlaceholder": "1-3, 5, 8-",
+    "rangeHelp": "Pages 1 to {{last}}, separated by commas; an open end runs to the last page.",
+    "apply": "Apply",
+    "export": "Export…",
+    "cancel": "Cancel",
+    "edge": "Where",
+    "top": "Top",
+    "bottom": "Bottom",
+    "position": "Along the edge",
+    "start": "At the start",
+    "center": "In the centre",
+    "end": "At the end",
+    "direction": "Line direction",
+    "ltr": "Left to right",
+    "rtl": "Right to left",
+    "digits": "Digits",
+    "western": "Western (123)",
+    "arabicIndic": "Arabic-Indic (١٢٣)",
+    "font": "Font",
+    "size": "Size (pt)",
+    "color": "Colour",
+    "colors": {
+      "grey": "Grey",
+      "black": "Black",
+      "blue": "Blue",
+      "red": "Red",
+      "green": "Green"
+    },
+    "firstNumber": "First number",
+    "headerFooter": {
+      "title": "Header or footer",
+      "tokens": "Type {page} for the page number and {pages} for the last one."
+    },
+    "pageNumbers": {
+      "title": "Page numbers",
+      "format": "Format",
+      "number": "1",
+      "ofTotal": "Page 1 of 9",
+      "slash": "1 / 9",
+      "ofTotalText": "Page {page} of {pages}"
+    },
+    "watermark": {
+      "title": "Watermark",
+      "kind": "Show",
+      "text": "Text",
+      "image": "Image",
+      "textLabel": "Watermark text",
+      "default": "CONFIDENTIAL",
+      "choose": "Choose image…",
+      "noImage": "No image chosen",
+      "width": "Width (of the page)",
+      "opacity": "Opacity",
+      "rotation": "Rotation (degrees)",
+      "behind": "Behind the page's content"
+    },
+    "exportImages": {
+      "title": "Export pages as images",
+      "format": "Format",
+      "dpi": "Resolution (dpi)",
+      "quality": "JPEG quality"
+    },
+    "exportText": {
+      "title": "Export text",
+      "format": "Format",
+      "plain": "Plain text (.txt)",
+      "markdown": "Markdown (.md)",
+      "help": "Text is written in reading order, so Arabic copies and searches correctly."
+    },
+    "compress": {
+      "title": "Compress",
+      "reduce": "Reduce image resolution",
+      "dpi": "Largest resolution (dpi)",
+      "jpeg": "JPEG for colour images",
+      "objectStreams": "Pack objects into compressed streams",
+      "help": "Unused objects are removed. Your document is not changed: the result is saved as a copy.",
+      "run": "Compress",
+      "working": "Compressing…",
+      "save": "Save compressed copy…",
+      "sizes": "{{before}} → {{after}} ({{saved}} smaller)",
+      "details": "Images reduced: {{images}}. Unused objects removed: {{objects}}.",
+      "kept": "{{count}} images were kept as they are (JPEG and other formats are not reduced yet)."
+    }
   }
 }

@@ -135,6 +135,31 @@
   cursor: text;
 }
 
+/* The Sign tool places where it is pressed; a placed item is dragged to move it (ADR 0045). */
+[data-viewer-content][data-mode="place"] {
+  cursor: crosshair;
+}
+
+/* A selected Fill & Sign item's corner handles: dragged, they resize it (ADR 0045). */
+.fillHandle {
+  position: absolute;
+  box-sizing: border-box;
+  inline-size: var(--size-fill-handle);
+  block-size: var(--size-fill-handle);
+  /* Centred on the corner; the page area is laid out left to right in either UI language. */
+  translate: -50% -50%;
+  border: var(--border-width-thick) solid var(--color-focus-ring);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+}
+
+/* Where a dragged Fill & Sign item will land. */
+.fillMoving {
+  position: absolute;
+  outline: var(--focus-ring-width) dashed var(--color-focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 /* An area marked for redaction: solid red outline and a hatch, so it reads without colour too. */
 .redactMark,
 .redactPreview {
@@ -162,6 +187,20 @@
 
 [data-viewer-content][data-over-text] {
   cursor: text;
+}
+
+/* After the text cursor: an item placed over text is dragged, not selected through. */
+[data-viewer-content][data-over-item] {
+  cursor: move;
+}
+
+/* After the move cursor: a handle at an item's corner resizes it. */
+[data-viewer-content][data-over-handle="nwse"] {
+  cursor: nwse-resize;
+}
+
+[data-viewer-content][data-over-handle="nesw"] {
+  cursor: nesw-resize;
 }
 
 /* Anchor of the floating selection toolbar (positioned by the viewer). */
