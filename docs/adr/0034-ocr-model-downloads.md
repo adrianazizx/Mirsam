@@ -1,6 +1,6 @@
 # 0034 — Downloading the OCR models
 
-Status: Accepted for M4. The runtime's entries wait for the owner (licences, below). Date: 2026-11-22.
+Status: Accepted for M4; the runtime's licences approved by the owner (below). Date: 2026-11-22.
 Builds on ADR 0030 (which models), ADR 0032 (`llama-server` as a child process).
 
 ## Context
@@ -93,11 +93,21 @@ all of this lives in Rust.
 |---|---|---|
 | Nuqta-Arabic-OCR 4B / 0.8B GGUF | Apache-2.0: LICENSE file and card in each repo; base models Qwen3.5-4B / 0.8B are Apache-2.0 | 2026-11-22, Hugging Face API and files |
 | llama.cpp `b12359` builds | MIT (ggml, cpp-httplib, nlohmann/json, stb_image), BoringSSL Apache-2.0 (macOS, Windows), LLVM OpenMP Apache-2.0 WITH LLVM-exception (Windows `libomp.dll`, shipped with its licence) | 2026-11-22, release workflow and `vendor/` at the tag |
-| — outside the list | sheredom `subprocess.h` (Unlicense) and miniaudio (Unlicense OR MIT-0), compiled into `llama-server`/`mtmd`; the built-in web UI's npm packages (not audited; the app passes `--no-webui`) | asked the owner |
+| — outside the list | sheredom `subprocess.h` (Unlicense) and miniaudio (Unlicense OR MIT-0), compiled into `llama-server`/`mtmd`; the built-in web UI's npm packages (not audited) | **approved by the owner**, 2026-11-22, on two conditions (below) |
 
-**The runtime is therefore not in the catalog yet.** `runtime_package` defines and tests the six
-builds, and `Catalog::for_platform` adds them once the owner agrees. Until then `llama-server`
-comes from the machine, as ADR 0032's tests use it.
+**The owner's decision (2026-11-22).** The llama.cpp builds may ship, Unlicense and MIT-0 parts
+included. The approval holds on two conditions:
+
+- **The web UI stays off.** The app starts `llama-server` with `--no-webui`, as
+  `ocr::ServerConfig` does (ADR 0032), so the unaudited web UI is never served.
+- **No CUDA builds.** They need NVIDIA's CUDA runtime under NVIDIA's own licence. NVIDIA GPUs are
+  used through the Vulkan builds.
+
+**Where the decision is recorded.** The MIT-0 approval also settles that part of owner item 4.
+`Catalog::for_platform` now offers the runtime for each platform with a build, as a required
+package. `cargo deny` and `scripts/third-party-licenses.mjs` check Cargo crates and npm
+packages only. The runtime is neither, so their allowlists (which have no `Unlicense`) are
+unchanged; this ADR and the catalog's comments are the record.
 
 New crates are all permissive and maintained:
 
@@ -139,8 +149,11 @@ New crates are all permissive and maintained:
 
 ## Consequences / open
 
-1. **The owner** decides on the runtime's licences (PROGRESS.md). With a yes, the runtime joins
-   the catalog as a required package. The prompt then names both downloads in its total.
+1. **The runtime is in the catalog** (owner's approval above).
+   - **First use:** the prompt's total covers the model and the runtime (5.5 GB with 17–38 MB
+     for the runtime), and *Download* fetches both.
+   - **A later llama.cpp bump** gets the same licence check before its pin changes. That covers
+     a new vendored library, and the web UI still being optional.
 2. **The OCR pipeline** finds its files through `ModelsState::installed` (shell) and
    `ModelStore::installed` (core): `ServerConfig::for_model(program, &installed.dir, model)`.
 3. **Code signing (M7).** A downloaded `llama-server` is not signed by us. On macOS, files our

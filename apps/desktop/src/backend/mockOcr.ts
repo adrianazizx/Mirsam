@@ -54,6 +54,19 @@ function catalog(): OcrPackage[] {
       installedSize: 1_077_594_432,
       required: false,
     },
+    {
+      ...base,
+      id: "llama-cpp",
+      role: "runtime",
+      name: "llama.cpp",
+      version: "b12359",
+      licence:
+        "MIT AND Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND (Unlicense OR MIT-0) AND Unlicense",
+      homepage: "https://github.com/ggml-org/llama.cpp",
+      downloadSize: 16_907_811,
+      installedSize: 67_631_244,
+      required: true,
+    },
   ];
 }
 

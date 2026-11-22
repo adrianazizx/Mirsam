@@ -24,7 +24,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
    dependency tree (Unicode data, ICU4X), so they cannot be avoided on this stack — but the spec
-   says to ask.
+   says to ask. **`MIT-0`: approved by the owner (2026-11-22)**, with the llama.cpp runtime
+   (item 16).
 5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
    zoom? Probably a setting; which default? (ADR 0003.)
 6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
@@ -70,16 +71,14 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
 
-16. **The llama.cpp runtime's licences (M4, ADR 0034).** The download manager can fetch
-    llama.cpp's own `llama-server` builds (release `b12359`), but they are held out of its catalog
-    until you answer. Most of each build is MIT, Apache-2.0, or Apache-2.0 WITH LLVM-exception. Outside
-    spec §10's list:
-    - sheredom `subprocess.h` (Unlicense, a public-domain dedication), compiled in;
-    - miniaudio (Unlicense OR MIT-0), compiled in (MIT-0 is item 4);
-    - its built-in web UI's npm packages, not audited (we start it with `--no-webui`).
-
-    May they ship? The CUDA builds are left out either way: they need NVIDIA's CUDA runtime
-    (NVIDIA's licence). NVIDIA GPUs are used through the Vulkan builds.
+16. ~~May the llama.cpp runtime's builds ship?~~ **Decided (2026-11-22): yes** (ADR 0034).
+    - **What was approved:** llama.cpp's own `llama-server` builds (release `b12359`): Metal,
+      CPU, and Vulkan with a CPU fallback. Outside spec §10's list, they compile in sheredom
+      `subprocess.h` (Unlicense) and miniaudio (Unlicense OR MIT-0), and carry an unaudited web
+      UI.
+    - **Conditions:** the server always runs with `--no-webui`, and no CUDA build ships (NVIDIA's
+      CUDA runtime licence).
+    - **Now:** the runtime is in the download catalog.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -479,9 +478,9 @@ Plan, in order:
   - **UI:** Settings (Cmd/Ctrl+,) lists the models with size, licence, state and progress. The
     OCR tool's inspector panel shows the model's state. The first OCR use without the model asks
     to download it and explains its size.
+  - **Runtime:** the llama.cpp runtime (`b12359`; Metal, CPU, and Vulkan with CPU fallback; no
+    CUDA) is a required package, with the owner's licence approval (item 16).
   - **Gaps:**
-    - The llama.cpp runtime is not in the catalog until the owner answers item 16 (its six
-      builds are defined and tested).
     - Acceleration is reported, not yet used by recognition.
     - Windows memory detection and the Windows/Linux archive paths are untested on those OSes
       (CI builds them).
@@ -531,8 +530,9 @@ Plan, in order:
   - **`Catalog`:** the Nuqta 4B (5.5 GB) and 0.8B (1.1 GB) Q8_0 GGUF files and their vision
     encoders, pinned to the revisions ADR 0030 measured. `runtime_package` defines llama.cpp
     `b12359` for six platforms: Metal on Apple silicon, CPU on Intel Macs, Vulkan with CPU
-    fallback on Windows and Linux; no CUDA, because of NVIDIA's runtime licence. It stays out of
-    the catalog until owner item 16 is answered.
+    fallback on Windows and Linux; no CUDA, because of NVIDIA's runtime licence. The owner
+    approved its licences (item 16; MIT-0 settles that part of item 4), on condition of
+    `--no-webui` and no CUDA. It is in the catalog as a required package.
   - **`ModelStore`:**
     - Status: not installed, partial, installed, outdated.
     - Install: resumable `.part` files named by SHA-256, the whole file hashed, a disk-space
@@ -560,7 +560,7 @@ Plan, in order:
     whose downloads take a few timer steps.
 - **Licences checked:**
   - Nuqta GGUF and the Qwen3.5 base models: Apache-2.0.
-  - llama.cpp builds: see owner item 16.
+  - llama.cpp builds: approved by the owner (item 16).
   - New crates: ureq, rustls, ring, rustls-native-certs, tar, flate2, fs4. All MIT, Apache-2.0
     or ISC; `cargo deny` passes.
 - **Tests:**
@@ -573,7 +573,6 @@ Plan, in order:
     inspector).
   - **Browser build:** seen in English (light) and Arabic (dark).
 - **Not done / not checked:**
-  - The runtime in the catalog (owner item 16).
   - A real multi-GB download end to end in the app.
   - Windows and Linux runs.
   - A native-speaker review of the new Arabic strings (owner item 11).

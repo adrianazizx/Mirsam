@@ -52,8 +52,16 @@ describe("OCR models (ADR 0034)", () => {
     await waitFor(() => expect(within(row).getByRole("progressbar")).toBeTruthy());
     expect(within(row).getByRole("button", { name: "Cancel" })).toBeTruthy();
 
+    // The runtime that runs it is needed too, and downloads alongside.
+    const runtime = within(settings).getByTestId("ocr-model-llama-cpp");
+    expect(runtime.textContent).toContain("Runs the models on this computer");
     await waitFor(() => expect(within(row).getByText("Installed")).toBeTruthy());
-    expect(ocr().models?.packages[0]?.state).toEqual({ kind: "installed" });
+    await waitFor(() => expect(within(runtime).getByText("Installed")).toBeTruthy());
+    expect(ocr().models?.packages.map((pkg) => pkg.state.kind)).toEqual([
+      "installed",
+      "notInstalled",
+      "installed",
+    ]);
     expect(ocr().jobs).toEqual({});
 
     // With the model there, OCR no longer asks.

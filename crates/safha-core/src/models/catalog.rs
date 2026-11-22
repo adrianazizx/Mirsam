@@ -155,14 +155,12 @@ impl Catalog {
         Self::for_platform(Platform::current())
     }
 
-    /// The models, which are the same everywhere.
-    ///
-    /// The llama.cpp runtime ([`runtime_package`]) is not offered yet: its
-    /// builds compile in code under the Unlicense and MIT-0, outside spec §10's
-    /// list, and wait for the owner's answer (PROGRESS.md, "Needs the project
-    /// owner"). Until then `llama-server` comes from the machine (`PATH`).
-    pub fn for_platform(_platform: Platform) -> Self {
-        Self::new(vec![nuqta_4b(), nuqta_0_8b()])
+    /// The models, which are the same everywhere, then the llama.cpp runtime
+    /// built for `platform` ([`runtime_package`]) where it publishes one.
+    pub fn for_platform(platform: Platform) -> Self {
+        let mut packages = vec![nuqta_4b(), nuqta_0_8b()];
+        packages.extend(runtime_package(platform));
+        Self::new(packages)
     }
 
     /// A catalog of the given packages (tests, or a mirror).
@@ -280,10 +278,11 @@ const LLAMA_CPP_TAG: &str = "b12359";
 /// llama.cpp, cpp-httplib, nlohmann/json and stb_image are MIT; BoringSSL
 /// (macOS, Windows) is Apache-2.0; LLVM's OpenMP runtime (Windows, shipped as
 /// `libomp.dll` with its licence) is Apache-2.0 WITH LLVM-exception. Outside
-/// spec §10: sheredom's `subprocess.h` (Unlicense) and miniaudio (Unlicense OR
-/// MIT-0), both compiled in; and the built-in web UI's npm packages, not
-/// audited (the app starts the server with `--no-webui`). The owner decides
-/// before this joins [`Catalog::for_platform`].
+/// spec §10, and approved by the owner on 2026-11-22 (ADR 0034): sheredom's
+/// `subprocess.h` (Unlicense) and miniaudio (Unlicense OR MIT-0), both compiled
+/// in; and the built-in web UI's npm packages, not audited. That approval
+/// holds only while the app starts the server with `--no-webui`
+/// (`ocr::ServerConfig` does) and ships no CUDA build.
 pub fn runtime_package(platform: Platform) -> Option<Package> {
     let (file, size, sha256, unpack) = match (platform.os, platform.arch) {
         (Os::MacOs, Arch::Aarch64) => (
@@ -389,6 +388,13 @@ mod tests {
             let required: Vec<&str> = catalog.required().iter().map(|p| p.id.as_str()).collect();
             assert!(required.contains(&PRIMARY));
             assert!(!required.contains(&ENSEMBLE));
+            // The runtime comes last, and only where llama.cpp publishes a build.
+            let runtime = runtime_package(platform);
+            assert_eq!(catalog.get(RUNTIME).cloned(), runtime);
+            assert_eq!(required.contains(&RUNTIME), runtime.is_some(), "{platform:?}");
+            if runtime.is_some() {
+                assert_eq!(ids.last(), Some(&RUNTIME));
+            }
         }
     }
 
