@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-22 (session 5).
+Last updated: 2026-11-22 (session 6).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -14,16 +14,14 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
 2. **The code is on GitHub** as the private repository `adrianazizx/Mirsam`: `main` (Milestone 0)
-   and `m1-viewer` (Milestone 1). CI runs on pushes to `main` and on pull requests, so Milestone 1
-   is checked by CI only once a pull request from `m1-viewer` is open.
-3. **CI's first run** (on `main`) failed in three ways, all fixed on `m1-viewer` but not yet seen
-   green in CI:
-   - a type error that this machine's typecheck could not see;
-   - Windows checking files out with CRLF line endings, which the formatters reject;
-   - the licence report naming a platform-specific package.
-
-   The macOS self-test job passed. The Rust steps on Linux and Windows have not run yet: they come
-   after the failing step.
+   and `m1-viewer` (Milestone 1), open as pull request #1 with Auto-fix on.
+3. **CI on pull request #1:**
+   - **Green:** licences; the macOS tests; and the shell self-test on macOS, Linux and Windows.
+   - **Red: the Linux tests.** Chrome on Linux lays out two Arabic fixtures differently from
+     Chrome on macOS: lam-alef extracts 4 of 5 blocks there, vocalized 2 of 4. This is the first
+     run to get that far; the next run uploads the Linux-made PDFs so the extractor can be fixed
+     for both.
+   - **Windows tests:** their last run was cancelled by a newer push.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
    `CC0-1.0`, `0BSD`, and `MIT-0`; and the app now compiles in **SQLite** (public domain, SPDX
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
@@ -53,10 +51,14 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     WebKit alone needs about 155 MB with just one page on screen. A budget for the shell only, or
     a separate one for the webview (say 400 MB), is achievable today; 500 MB in total is not
     without deeper work. ADR 0011 has the numbers. Which do you want?
-13. **Try Print once (Cmd/Ctrl+P).** Printing goes through the platform's own PDF viewer
-    (ADR 0012): a window shows the PDF and the system print panel opens over it. This session
-    could not see the screen, so it is unverified. If you see a blank window, or the panel prints
-    only part of the document, say so; the fallback is printing pages as images.
+13. **Try Print once (Cmd/Ctrl+P).** On macOS and Windows, printing goes through the platform's
+    own PDF viewer (ADR 0012): a window shows the PDF and the system print panel opens over it.
+    No session so far could see the screen, so it is unverified. If you see a blank window, or
+    the panel prints only part of the document, say so. The fallback is the Linux path below,
+    which prints pages as images.
+
+    Linux uses GTK's print dialog, with each page drawn at the printer's resolution (ADR 0013).
+    CI checks it by printing to a file; it has not been tried on a desktop with a real printer.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -65,8 +67,8 @@ by anything found so far.
 
 - [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
-- [~] CI on Windows/macOS/Linux — runs on GitHub. The first runs failed (fixes in sessions 4
-      and 5; see owner item 3); a green run on PR #1 is still to be confirmed
+- [~] CI on Windows/macOS/Linux — runs on GitHub. Everything is green on PR #1 except the Linux
+      tests: Linux Chrome makes two Arabic fixtures differently (owner item 3)
 - [x] Tauri shell with window; capabilities locked down (no fs/shell/dialog for the webview)
 - [x] PDFium bound (pinned build 8125, checksum-verified) and rendering a page to a canvas —
       verified in the real WKWebView in English/LTR and Arabic/RTL via `scripts/selftest.sh`
@@ -154,14 +156,25 @@ by anything found so far.
       (missing files marked), a second launch restores tabs, each file reopens where it was left
 - [x] Reading themes (normal, sepia, night) and command palette (⌘K, matches English and Arabic
       titles in either UI language)
-- [~] Printing — Cmd/Ctrl+P prints through the platform's PDF viewer (ADR 0012). Built, but not
-      yet seen working on screen (owner item 13); Linux needs another path
+- [~] Printing — Cmd/Ctrl+P:
+      - macOS and Windows print through the platform's PDF viewer (ADR 0012). Built, but not yet
+        seen working on screen (owner item 13).
+      - Linux uses GTK's print dialog, with PDFium drawing each page at the printer's resolution
+        (ADR 0013). CI prints the four rotated pages to a file and checks them.
 - [x] Open password-protected PDFs — inline prompt; wrong password asks again; never stored
-- [ ] Re-run the tile-transport spike on Windows and Linux
+- [x] Tiles on Windows and Linux. The shell self-test passes on WebView2 and on WebKitGTK in
+      CI: first page 99–155 ms on virtual machines (ADR 0011, session 6 amendment). The memory
+      experiment is WebKit-on-macOS only.
 - [~] Exit test, part 1 (the 1,000-page bilingual PDF at 60 fps): passes except extreme
-      pinch-out (above), and memory if WebKit counts (owner question 12).
-- [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures): checked by the
-      self-test one file per run; not yet a corpus-wide UI check.
+      pinch-out (above), and memory if WebKit counts (owner question 12). Session 6 tested three
+      causes of the pinch-out drops; none was it (ADR 0011).
+- [~] Exit test, part 2 (Arabic copy and search correct on all §6.6 fixtures):
+      - Pages with a trustworthy text layer: 69 of 70 blocks verbatim, and every word of their
+        ground truth is found by search as typed (542 words, `tests/search.rs`).
+      - Copy in the real app equals the extracted text (self-test).
+      - The one miss is `(64-bit)` in an Arabic line, which is drawn exactly like `(bit-64)`.
+      - Pages with a broken mapping are flagged for OCR (M4).
+      - Not met yet on fixtures made by Linux Chrome (owner item 3).
 
 Known extraction gap (floors in `crates/safha-core/tests/text.rs`): `(64-bit)` inside an Arabic
 line comes out `(bit-64)`. The two are drawn identically, and the same file's `INV-2026-00417`
@@ -174,20 +187,21 @@ rejected as invalid, so run it again):
 - debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
 - release: `(cd apps/desktop && pnpm tauri build --features devtools --bundles app) && scripts/scroll-benchmark.sh <out> release`
 
-Test status at the end of session 5:
+Test status at the end of session 6:
 
-- **Rust:** 118 tests pass. Clippy is clean with and without `devtools`, `cargo deny` is ok, and
-  the licence report is current.
-- **UI:** 121 tests pass. Biome, `tsc` and the production build are clean.
-- **End to end:** self-tests pass in English/light and Arabic/dark. The Arabic run also opens a
-  second window and the right-to-left book. The scroll benchmark ran visibly in session 4.
+- **Rust:** 123 tests pass on this Mac. Clippy is clean with and without `devtools`, `cargo deny`
+  is ok, and the licence report is current. The Linux-only printing code is compiled and linted
+  only by CI.
+- **UI:** 122 tests pass. Biome, `tsc` and the production build are clean.
+- **End to end:** self-tests pass on macOS, Linux and Windows in English/light and Arabic/dark.
+  The scroll benchmark ran visibly in a debug build (pinch-out 7 dropped frames).
 
 Remaining M1 work:
 
-- confirm printing on screen (owner item 13), and a Linux path;
-- the tile spike on Windows and Linux (the new tile scheme included);
-- pinch-out frames;
-- the memory budget decision.
+- extraction on fixtures made by Linux Chrome (two Arabic files; owner item 3);
+- confirm printing on screen on macOS and Windows (owner item 13);
+- pinch-out frames (needs WebKit's own profiler);
+- the memory budget decision (owner item 12).
 
 ## M2 — Annotate and organize
 
@@ -250,6 +264,26 @@ Remaining M1 work:
 - [ ] Performance hardening
 
 ## Session log
+
+### Session 6 — 2026-11-22 (Milestone 1: exit tests, other platforms, Linux printing)
+
+- **CI fixes for PR #1:**
+  - The 1,000-page fixture no longer overflows Windows' command line, and no longer depends
+    on qpdf reading `@file` arguments, which Ubuntu's qpdf does not.
+  - Tests skip CoreText fixtures only where the manifest says so.
+  - The macOS self-test gets a warm-up launch.
+  - The benchmark's frame budgets warn on CI virtual machines.
+- **Text extraction** (ADR 0008 amendment): 85/118 blocks verbatim (was 83), and 69/70 on
+  trustworthy pages. The fixes cover Amiri clusters drawn from one origin, a heading alone in its
+  column, and bracket pairs mirrored by bidi level. `(64-bit)` is documented as undecidable from
+  the page.
+- **Search across the corpus:** a new test searches every ground-truth word as typed.
+- **Windows and Linux:** the shell self-test runs on both in CI, and passed on its first run.
+- **Printing on Linux:** GTK's print dialog, with PDFium drawing each page (ADR 0013). CI
+  exports four pages to a file and checks them.
+- **Pinch-out:** three hypotheses measured and rejected (ADR 0011).
+- **New on CI:** Linux Chrome makes two Arabic fixtures differently, so extraction there falls
+  below the macOS floors. Under investigation.
 
 ### Session 5 — 2026-11-22 (Milestone 1: reading preferences, tabs, windows, printing)
 

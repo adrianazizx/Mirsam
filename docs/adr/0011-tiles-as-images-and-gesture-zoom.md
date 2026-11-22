@@ -135,3 +135,52 @@ collection runs on its own schedule), small for frames.
   as invalid, as designed.
 - **Windows and Linux** are untested. The scheme URL differs on Windows (`convertFileSrc`
   handles it), and the CSP lists both forms.
+
+## Amendment (session 6): Windows and Linux, CI runners, and pinch-out experiments
+
+### The tile scheme on the other platforms
+
+CI now runs the full shell self-test on Linux (WebKitGTK under Xvfb) and Windows (WebView2).
+Both passed on their first run, in English/light and Arabic/dark. The self-test covers:
+
+- tiles over `safha://localhost`, and `http://safha.localhost` on Windows;
+- selection, search and thumbnails;
+- a second window.
+
+| Runner (virtual machine, debug build) | First preview after open | Sharp |
+|---|---|---|
+| macOS | 45–50 ms | 46–51 ms |
+| Ubuntu (WebKitGTK, software rendering) | 154–155 ms | 159–185 ms |
+| Windows (WebView2) | 99–116 ms | 138–162 ms |
+
+All are inside the 300 ms budget. The memory experiment (`tileMemory.ts`) measures WebKit's
+processes on macOS only and was not repeated elsewhere. WebView2 is Chromium, whose image and
+buffer handling differs from WebKit's, so the reason for the `<img>` transport is WebKit-specific.
+It works everywhere.
+
+### Benchmark on hosted CI
+
+The macOS runner's debug build passes the hard budgets but not the frame ones (pinch p95 22–23 ms,
+shell + webview 646 MB). Since a virtual machine without a GPU says little about a laptop, CI runs
+the benchmark with `--ci`:
+
+- **Warnings only:** frame timing, and the shell + webview total (owner question 12).
+- **Still fail the run:** blank time, jump-to-preview, and the shell's own memory.
+
+### Pinch-out: three hypotheses tested, none confirmed
+
+Debug build, visible window, the benchmark's pinch-out (×1/20 in 75 frames):
+
+| Variant | Dropped frames | p95 |
+|---|---|---|
+| As is | 7 | 30 ms |
+| No time-based relayouts during a gesture (5 relayouts instead of 6) | 7 | 34 ms |
+| Unblurred outline instead of the shadow, only while zooming | 11 | 35 ms |
+| No page shadow at all | 9 | 33 ms |
+
+Run-to-run noise is about ±3 dropped frames, so none of these helped, and all were reverted. The
+viewer's own work during the phase is 8 ms in total (longest step 3 ms, 4 mounts). The cost is in
+WebKit: probably rasterizing the area each zoom-out frame reveals.
+
+Finding it needs Web Inspector's timeline on a real machine, with a person at it. The extreme
+case stays open; ordinary pinches meet the budget.
