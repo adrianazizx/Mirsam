@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect } from "react";
 import { I18nProvider } from "react-aria-components";
+import { announceLayerChecks, announceOcrJob, announceOcrModel } from "./a11y/ocrAnnouncements";
 import { backend, type DocumentsArrived, isBackendError } from "./backend";
 import {
   acceptOutcome,
@@ -14,6 +15,7 @@ import {
   runCommand,
 } from "./commands/registry";
 import { SignatureDialog } from "./components/forms/SignatureDialog";
+import { ShortcutsDialog } from "./components/help/ShortcutsDialog";
 import { OcrModelPrompt } from "./components/ocr/OcrModelPrompt";
 import { OnboardingGuide } from "./components/onboarding/OnboardingGuide";
 import { OutputDialog } from "./components/output/OutputDialog";
@@ -182,6 +184,8 @@ export function App() {
     let live = true;
     backend
       .onOcrModelProgress((event) => {
+        // Before the event is applied, while the listing still names the package.
+        announceOcrModel(event);
         useOcrModels.getState().applyEvent(event);
         if (event.kind !== "progress") {
           refreshOcrModels().catch((error: unknown) =>
@@ -215,13 +219,20 @@ export function App() {
       );
     backend
       .onOcrJob((job) => {
+        const previous = useOcrJobs.getState().jobs[job.id];
+        announceOcrJob(previous, job);
         useOcrJobs.getState().setJob(job);
+        const checked = job.state === "done" && previous?.state !== "done";
         // A check's verdicts, as its pages are checked (ADR 0038).
         if (job.options.kind.kind === "check")
           for (const documentId of job.documentIds)
             backend
               .ocrLayerChecks(documentId)
-              .then((checks) => useOcrJobs.getState().setChecks(documentId, checks))
+              .then((checks) => {
+                useOcrJobs.getState().setChecks(documentId, checks);
+                if (checked && documentId === useAppStore.getState().activeDocumentId)
+                  announceLayerChecks(checks);
+              })
               .catch((error: unknown) => console.warn("OCR layer checks unavailable", error));
       })
       .then(keep)
@@ -302,7 +313,7 @@ export function App() {
         (error: unknown) => console.warn("cannot receive documents from elsewhere", error),
       )
       .then(() => backend.startup())
-      .then(({ documents, active, recoveries }) => {
+      .then(({ documents, active, recoveries, first: appStart }) => {
         starting = false;
         for (const outcome of documents) acceptOutcome(outcome, { activate: false });
         // Unsaved changes an earlier session left (ADR 0040).
@@ -314,7 +325,13 @@ export function App() {
           store.activateDocument(target);
         }
         // A crash since the last start: ask about its report, once (ADR 0061).
-        return offerNewCrashReports().then(() => settingsRead.then(offerFirstRunGuide));
+        // The first-run guide is decided only by the call that started the app:
+        // a second one (React's StrictMode runs this effect twice in development)
+        // can get here before the launch document is open, see an empty window,
+        // and open the guide over the document it then shows.
+        return offerNewCrashReports().then(() =>
+          appStart === false ? undefined : settingsRead.then(offerFirstRunGuide),
+        );
       })
       .catch((error: unknown) => {
         starting = false;
@@ -384,6 +401,7 @@ export function App() {
       <SecurityDialog />
       <CertSignDialog />
       <SettingsDialog />
+      <ShortcutsDialog />
       <OcrModelPrompt />
       <OnboardingGuide />
     </I18nProvider>

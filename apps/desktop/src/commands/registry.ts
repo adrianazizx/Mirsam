@@ -1,3 +1,4 @@
+import { announceOcrJob } from "../a11y/ocrAnnouncements";
 import {
   type BlockMark,
   backend,
@@ -13,6 +14,7 @@ import {
   type MarkupKind,
   type ObjectEdit,
   type OcrAction,
+  type OcrJob,
   type OcrLanguage,
   type OpenOutcome,
   type PageEdit,
@@ -500,6 +502,8 @@ export type CommandId =
   | "app.commandPalette"
   | "app.settings"
   | "app.closeSettings"
+  | "app.shortcuts"
+  | "app.closeShortcuts"
   | "app.reloadWindow"
   | "app.languageEnglish"
   | "app.languageArabic"
@@ -535,6 +539,7 @@ export type CommandId =
   | "ocr.reviewNumbers"
   | "ocr.drawRegion"
   | "ocr.setRegion"
+  | "ocr.regionWholePage"
   | "ocr.setRegionOptions"
   | "ocr.readRegion"
   | "ocr.cancelRegion"
@@ -880,6 +885,8 @@ async function signNow(
   const sign = useCertSign.getState();
   sign.setBusy(true);
   sign.setError(null);
+  // A time-stamp can take seconds: say that it is under way (the dialog's line is not live).
+  announce(i18n.t("certSign.signing", { lng: store().locale }));
   try {
     const outcome = await backend.signDocument(documentId, request, saveAs);
     if (!outcome) return false;
@@ -893,6 +900,7 @@ async function signNow(
   } catch (error) {
     if (sign.dialogOpen && isBackendError(error) && SIGNING_ERRORS.includes(error.code)) {
       sign.setError(error.code);
+      announce(i18n.t(`errors.${error.code}`, { lng: store().locale }), "assertive");
       return false;
     }
     // A visible signature: placing it again would fail the same way.
@@ -1602,6 +1610,12 @@ function markHits(active: OpenDocument, indices: number[]) {
 const ocr = () => useOcrModels.getState();
 const ocrJobs = () => useOcrJobs.getState();
 
+/** Keeps a job the shell reported to a command, saying what changed (ADR 0070). */
+function trackJob(job: OcrJob): void {
+  announceOcrJob(ocrJobs().jobs[job.id], job);
+  ocrJobs().setJob(job);
+}
+
 /** Loads a document's OCR jobs, review list and layer checks from the shell (ADR 0035, 0038). */
 export async function refreshOcrJobs(documentId: number): Promise<void> {
   const [jobs, review, checks] = await Promise.all([
@@ -1649,7 +1663,7 @@ async function modelsReady(): Promise<boolean> {
 async function recognize(pages?: number[], replace = false): Promise<void> {
   const active = selectActiveDocument(store());
   if (!active || !(await modelsReady())) return;
-  ocrJobs().setJob(await backend.startOcr(active.id, pages, replace));
+  trackJob(await backend.startOcr(active.id, pages, replace));
   // The OCR panel shows the job's progress and, as pages finish, what to review.
   store().setActiveTool("ocr");
 }
@@ -1716,6 +1730,13 @@ async function convert(pages: number[] | null): Promise<void> {
   try {
     const outcome = await backend.ocrConvert(active.id, pages, keepScan, family);
     store().applyEdit(active.id, outcome);
+    const lng = store().locale;
+    const [only] = pages ?? [];
+    announce(
+      pages?.length === 1 && only !== undefined
+        ? i18n.t("ocrPanel.convert.donePage", { page: formatNumber(only + 1, lng), lng })
+        : i18n.t("ocrPanel.convert.doneDocument", { lng }),
+    );
   } catch (error) {
     if (isBackendError(error) && error.code === "ocr_convert_unreviewed") {
       const locale = store().locale;
@@ -1733,7 +1754,7 @@ async function convert(pages: number[] | null): Promise<void> {
 
 async function controlJob(arg: CommandArg | undefined, action: "pause" | "resume" | "cancel") {
   if (arg?.jobId === undefined) return;
-  ocrJobs().setJob(await backend.controlOcrJob(arg.jobId, action));
+  trackJob(await backend.controlOcrJob(arg.jobId, action));
 }
 
 /** Shows a flagged word of the active document's review list: its page, its box marked. */
@@ -3674,16 +3695,20 @@ const DECLARED: Command[] = [
   // The interface's size (WCAG 1.4.4): text and controls, not the pages.
   {
     id: "app.uiLarger",
+    // Option/Alt beside the document zoom's keys, matched by the physical key.
+    shortcut: { key: "=", mod: true, alt: true },
     isEnabled: (state) => state.uiScale < Math.max(...UI_SCALES),
     run: () => stepUiScale(1),
   },
   {
     id: "app.uiSmaller",
+    shortcut: { key: "-", mod: true, alt: true },
     isEnabled: (state) => state.uiScale > Math.min(...UI_SCALES),
     run: () => stepUiScale(-1),
   },
   {
     id: "app.uiDefaultSize",
+    shortcut: { key: "0", mod: true, alt: true },
     isEnabled: (state) => state.uiScale !== 1,
     run: () => store().setUiScale(1),
   },
@@ -3965,6 +3990,18 @@ const DECLARED: Command[] = [
     run: () => useOnboarding.getState().dismissHint(),
   },
   {
+    // Every shortcut, F6 and F8 included (the palette leaves those out).
+    id: "app.shortcuts",
+    shortcut: { key: "/", mod: true },
+    run: () => store().setShortcutsOpen(true),
+  },
+  {
+    id: "app.closeShortcuts",
+    paletteHidden: true,
+    isEnabled: (state) => state.shortcutsOpen,
+    run: () => store().setShortcutsOpen(false),
+  },
+  {
     // After an error the window could not recover from (ADR 0061). The
     // shell keeps the documents; the reloaded window shows them again.
     id: "app.reloadWindow",
@@ -4181,7 +4218,10 @@ const DECLARED: Command[] = [
       store().setActiveTool("ocr");
       ocrJobs().setReviewing(false);
       ocrJobs().setDrawingRegion(drawing);
-      if (drawing) ocrJobs().setRegion(null);
+      if (drawing) {
+        ocrJobs().setRegion(null);
+        announce(i18n.t("ocrPanel.region.drawing", { lng: store().locale }));
+      }
     },
   },
   {
@@ -4192,8 +4232,33 @@ const DECLARED: Command[] = [
       const active = selectActiveDocument(store());
       if (!active || arg?.page === undefined || !arg.rect) return;
       if (arg.rect.width < 2 || arg.rect.height < 2) return;
-      ocrJobs().setRegion({ documentId: active.id, page: arg.page, rect: arg.rect });
+      const size = getViewer(active.id)?.pageSize(arg.page) ?? null;
+      const known = ocrJobs().region;
+      ocrJobs().setRegion({ documentId: active.id, page: arg.page, rect: arg.rect, size });
       ocrJobs().setDrawingRegion(false);
+      // Said once when an area is set, not as its fields are adjusted.
+      if (known?.documentId !== active.id || known.page !== arg.page) {
+        const page = formatNumber(arg.page + 1, store().locale);
+        announce(i18n.t("ocrPanel.region.drawn", { page, lng: store().locale }));
+      }
+    },
+  },
+  {
+    // The keyboard's way to an area (WCAG 2.1.1): the whole displayed page,
+    // then narrowed with the panel's fields.
+    id: "ocr.regionWholePage",
+    isEnabled: hasDocument,
+    run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const size = getViewer(active.id)?.pageSize(active.page) ?? active.pageSize;
+      if (!size) return;
+      store().setActiveTool("ocr");
+      ocrJobs().setReviewing(false);
+      void runCommand("ocr.setRegion", {
+        page: active.page,
+        rect: { x: 0, y: 0, width: size.width, height: size.height },
+      });
     },
   },
   {
@@ -4211,7 +4276,7 @@ const DECLARED: Command[] = [
       if (!region || !(await modelsReady())) return;
       const { x, y, width, height } = region.rect;
       const { regionLanguage, regionNumbers } = ocrJobs();
-      ocrJobs().setJob(
+      trackJob(
         await backend.startOcrRegion(
           region.documentId,
           region.page,
@@ -4239,7 +4304,7 @@ const DECLARED: Command[] = [
       const active = selectActiveDocument(store());
       if (!active) return;
       store().setActiveTool("ocr");
-      ocrJobs().setJob(await backend.checkTextLayers(active.id));
+      trackJob(await backend.checkTextLayers(active.id));
     },
   },
   {
@@ -4826,6 +4891,13 @@ export function shortcutOf(command: Command, mac = isMac): Shortcut | undefined 
   return mac ? (command.macShortcut ?? command.shortcut) : command.shortcut;
 }
 
+/** The `KeyboardEvent.code` of the key that types `key` on a US layout (for Option shortcuts). */
+function physicalCode(key: string): string {
+  if (/^[a-z]$/.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  return { "=": "Equal", "-": "Minus" }[key] ?? key;
+}
+
 export function matchesShortcut(shortcut: Shortcut, event: KeyboardEvent, mac = isMac): boolean {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   // "+" is Shift+"=" on most layouts; accept either for zoom in.
@@ -4834,7 +4906,7 @@ export function matchesShortcut(shortcut: Shortcut, event: KeyboardEvent, mac = 
     key === shortcut.key ||
     key === shortcut.alternate ||
     (shortcut.key === "=" && key === "+") ||
-    (Boolean(shortcut.alt) && event.code === `Key${shortcut.key.toUpperCase()}`);
+    (Boolean(shortcut.alt) && event.code === physicalCode(shortcut.key));
   const shiftMatches = shortcut.key === "=" || event.shiftKey === Boolean(shortcut.shift);
   const altMatches = event.altKey === Boolean(shortcut.alt);
   if (shortcut.ctrl) {
@@ -4869,6 +4941,25 @@ export function commandForEvent(event: KeyboardEvent, mac = isMac): Command | un
   });
   // A key several commands share (Delete, Escape, the arrows) runs the one that applies now.
   return matching.find((command) => isCommandEnabled(command.id)) ?? matching[0];
+}
+
+/**
+ * A shortcut in `aria-keyshortcuts` syntax ("Meta+Shift+Enter", "F8"), which
+ * screen readers announce in their own words.
+ */
+export function ariaShortcut(id: CommandId, mac = isMac): string | undefined {
+  const shortcut = shortcutOf(getCommand(id), mac);
+  if (!shortcut) return undefined;
+  const key = shortcut.key.length === 1 ? shortcut.key.toUpperCase() : shortcut.key;
+  return [
+    shortcut.ctrl || (shortcut.mod && !mac) ? "Control" : null,
+    shortcut.mod && mac ? "Meta" : null,
+    shortcut.alt ? "Alt" : null,
+    shortcut.shift ? "Shift" : null,
+    key,
+  ]
+    .filter(Boolean)
+    .join("+");
 }
 
 /** Human-readable shortcut, e.g. "⌘O" on macOS and "Ctrl+O" elsewhere. */

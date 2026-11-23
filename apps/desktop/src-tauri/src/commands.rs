@@ -38,6 +38,9 @@ pub struct DocumentInfo {
     /// /Direction`, `/PageLayout`), the defaults for its page order and layout.
     reading_direction: Option<&'static str>,
     page_layout: Option<&'static str>,
+    /// The document's `/Lang` (a BCP 47 tag), for the page text read by
+    /// screen readers (ADR 0070).
+    language: Option<String>,
     /// Restored with unsaved changes (ADR 0040).
     modified: bool,
     can_undo: bool,
@@ -75,6 +78,7 @@ impl DocumentInfo {
                 PageLayout::TwoColumnLeft | PageLayout::TwoPageLeft => "spread",
                 PageLayout::TwoColumnRight | PageLayout::TwoPageRight => "book",
             }),
+            language: hints.language,
             modified: false,
             can_undo: false,
             security: document.security(),
@@ -109,6 +113,12 @@ pub struct Startup {
     /// Unsaved changes an earlier session left (ADR 0040), offered once, at
     /// the app's start, in the main window.
     recoveries: Vec<crate::recovery::RecoveryInfo>,
+    /// This call was the app's start in the main window (restored the session,
+    /// opened the launch documents). False for another window, a reload, or a
+    /// second call while the first is still opening files (React's StrictMode
+    /// runs the UI's startup twice in development): those must not decide
+    /// first-run things such as the onboarding guide from a partial list.
+    first: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -165,7 +175,12 @@ pub async fn startup(
                 Some(OpenOutcome::Opened { document: DocumentInfo::new(id, name, &document, view_state) })
             })
             .collect();
-        return Ok(Startup { documents, active: state.window_tabs(label).active, recoveries: Vec::new() });
+        return Ok(Startup {
+            documents,
+            active: state.window_tabs(label).active,
+            recoveries: Vec::new(),
+            first: false,
+        });
     }
 
     let mut documents = Vec::new();
@@ -211,7 +226,7 @@ pub async fn startup(
             documents.push(outcome);
         }
     }
-    Ok(Startup { documents, active, recoveries: crate::recovery::list(&state) })
+    Ok(Startup { documents, active, recoveries: crate::recovery::list(&state), first: true })
 }
 
 /// Event sent to a window when documents arrive from elsewhere while the app

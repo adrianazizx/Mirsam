@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import {
   Checkbox,
   type Key,
@@ -16,6 +16,7 @@ import type {
   OcrReviewWord,
 } from "../../backend/types";
 import {
+  ariaShortcut,
   isCommandEnabled,
   OCR_JOB_ERRORS,
   refreshOcrJobs,
@@ -24,8 +25,16 @@ import {
   shortcutLabel,
 } from "../../commands/registry";
 import { formatBytes, formatNumber, isolate } from "../../i18n";
+import { announce } from "../../state/announcer";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
-import { isLive, jobsOf, reviewQueue, useOcrJobs, wordAt } from "../../state/ocrJobs";
+import {
+  isLive,
+  jobsOf,
+  type OcrRegion,
+  reviewQueue,
+  useOcrJobs,
+  wordAt,
+} from "../../state/ocrJobs";
 import { bytesToDownload, missingRequired, useOcrModels } from "../../state/ocrModels";
 import { Button } from "../ui/Button";
 import styles from "./OcrPanel.module.css";
@@ -77,9 +86,9 @@ export function OcrPanel() {
 
   return (
     <div className={styles.panel} data-testid="ocr-panel">
-      <p className={styles.status} role="status">
-        {status}
-      </p>
+      {/* Not a live region: download progress would be spoken at every step. Its end is
+          announced (a11y/ocrAnnouncements). */}
+      <p className={styles.status}>{status}</p>
       <div className={styles.actions}>
         <Button
           variant="primary"
@@ -165,9 +174,8 @@ function Jobs({ documentId }: { documentId: number }) {
             >
               {({ percentage, valueText }) => (
                 <>
-                  <span className={styles.status} role="status">
-                    {stateText(job)}
-                  </span>
+                  {/* Changes are announced, not live (a11y/ocrAnnouncements). */}
+                  <span className={styles.status}>{stateText(job)}</span>
                   <span className={styles.track}>
                     <span
                       className={styles.draft}
@@ -265,9 +273,18 @@ function ReviewCard({ documentId }: { documentId: number }) {
     state.focus?.documentId === documentId ? state.focus : null,
   );
   const status = useStatusText();
+  const positionId = useId();
+  const exit = useRef<HTMLButtonElement>(null);
+  const queue = reviewQueue(pages ?? []);
+  const finished = reviewing && pages !== undefined && queue.length === 0;
+  // The last item decided: focus would be left on nothing, so it goes to the way out.
+  useEffect(() => {
+    if (!finished) return;
+    announce(t("ocrPanel.reviewCard.done"));
+    exit.current?.focus();
+  }, [finished, t]);
   if (!reviewing) return null;
   const n = (value: number) => formatNumber(value, locale);
-  const queue = reviewQueue(pages ?? []);
   const word = focus?.at ? wordAt(pages ?? [], focus.at) : undefined;
   const page = pages?.find((entry) => entry.page === focus?.page);
   const position = focus
@@ -282,11 +299,12 @@ function ReviewCard({ documentId }: { documentId: number }) {
     >
       <div className={styles.pageHeader}>
         <h3 className={styles.heading}>{t("ocrPanel.reviewCard.heading")}</h3>
-        <Button onPress={() => void runCommand("ocr.stopReview")}>
+        <Button ref={exit} onPress={() => void runCommand("ocr.stopReview")}>
           {t("ocrPanel.reviewCard.exit")}
         </Button>
       </div>
-      <p className={styles.meta} role="status">
+      {/* The field describes itself with this line; a live region here would repeat it. */}
+      <p className={styles.meta} id={positionId}>
         {queue.length === 0
           ? t("ocrPanel.reviewCard.done")
           : position >= 0
@@ -300,23 +318,47 @@ function ReviewCard({ documentId }: { documentId: number }) {
           page={page}
           word={word}
           statusText={status(word)}
+          positionId={positionId}
         />
       ) : focus && page && focus.word === null ? (
-        <div className={styles.cardBody}>
-          <p className={styles.note}>
-            {t("ocrPanel.reviewCard.truncated", { page: n(page.page + 1) })}
-          </p>
-          <div className={styles.controls}>
-            <Button variant="primary" onPress={() => void runCommand("ocr.reviewCheckPage")}>
-              {t("ocrPanel.reviewCard.checkPage")}
-            </Button>
-            <Button onPress={() => void runCommand("ocr.nextFlag")}>
-              {t("ocrPanel.reviewCard.skip")}
-            </Button>
-          </div>
-        </div>
+        <PageReview key={page.page} page={page.page} positionId={positionId} />
       ) : null}
     </section>
+  );
+}
+
+/** A page whose reading may be cut off (ADR 0037): checked as a whole, keyboard first. */
+function PageReview({ page, positionId }: { page: number; positionId: string }) {
+  const { t } = useTranslation();
+  const locale = useAppStore((state) => state.locale);
+  const noteId = useId();
+  const check = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    check.current?.focus();
+  }, []);
+  return (
+    <div className={styles.cardBody}>
+      <p className={styles.note} id={noteId}>
+        {t("ocrPanel.reviewCard.truncated", { page: formatNumber(page + 1, locale) })}
+      </p>
+      <div className={styles.controls}>
+        <Button
+          ref={check}
+          variant="primary"
+          aria-describedby={`${positionId} ${noteId}`}
+          aria-keyshortcuts={ariaShortcut("ocr.reviewCheckPage")}
+          onPress={() => void runCommand("ocr.reviewCheckPage")}
+        >
+          {t("ocrPanel.reviewCard.checkPage")}
+        </Button>
+        <Button
+          aria-keyshortcuts={ariaShortcut("ocr.nextFlag")}
+          onPress={() => void runCommand("ocr.nextFlag")}
+        >
+          {t("ocrPanel.reviewCard.skip")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -325,12 +367,18 @@ function WordReview({
   page,
   word,
   statusText,
+  positionId,
 }: {
   documentId: number;
   page: OcrReviewPage;
   word: OcrReviewWord;
   statusText: string;
+  /** The card's "N of M left" line, which the field reads out too. */
+  positionId: string;
 }) {
+  const detailsId = useId();
+  const reasonsId = useId();
+  const readOnlyId = useId();
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
   const decision = useDecisionText();
@@ -354,20 +402,21 @@ function WordReview({
   ].filter((reading, i, all) => reading !== word.text && all.indexOf(reading) === i);
   const hint = (id: "ocr.reviewCheck" | "ocr.reviewCheckPage" | "ocr.nextFlag") =>
     shortcutLabel(id) ?? "";
+  const keys = (id: "ocr.reviewCheck" | "ocr.reviewCheckPage" | "ocr.nextFlag") => ariaShortcut(id);
 
   return (
     <div className={styles.cardBody}>
-      <span className={styles.meta}>
+      <span className={styles.meta} id={detailsId}>
         {t("ocrPanel.review.page", { page: n(page.page + 1) })} ·{" "}
         {t("ocrPanel.review.confidence", { value: percent(word.probability) })}
       </span>
       <WordImage documentId={documentId} page={page.page} word={word} />
-      <p className={styles.reasons}>
+      <p className={styles.reasons} id={reasonsId}>
         {statusText}
         {word.review.kind !== "open" ? ` · ${decision(word)}` : ""}
       </p>
       {readOnly ? (
-        <p className={styles.note}>
+        <p className={styles.note} id={readOnlyId}>
           {page.converted ? t("ocrPanel.reviewCard.converted") : t("ocrPanel.reviewCard.stale")}
         </p>
       ) : null}
@@ -388,6 +437,10 @@ function WordReview({
           dir="auto"
           value={text}
           readOnly={readOnly}
+          // Where it is, why it is listed, and how sure the engine was: read with the field.
+          aria-describedby={[positionId, reasonsId, detailsId, readOnly ? readOnlyId : null]
+            .filter(Boolean)
+            .join(" ")}
           spellCheck={false}
           autoComplete="off"
           onChange={(event) => setText(event.target.value)}
@@ -406,19 +459,19 @@ function WordReview({
               : t("ocrPanel.reviewCard.accept")}
           </Button>
           <Button
-            aria-keyshortcuts={hint("ocr.reviewCheck")}
+            aria-keyshortcuts={keys("ocr.reviewCheck")}
             onPress={() => void runCommand("ocr.reviewCheck")}
           >
             {t("ocrPanel.reviewCard.check")}
           </Button>
           <Button
-            aria-keyshortcuts={hint("ocr.reviewCheckPage")}
+            aria-keyshortcuts={keys("ocr.reviewCheckPage")}
             onPress={() => void runCommand("ocr.reviewCheckPage")}
           >
             {t("ocrPanel.reviewCard.checkPage")}
           </Button>
           <Button
-            aria-keyshortcuts={hint("ocr.nextFlag")}
+            aria-keyshortcuts={keys("ocr.nextFlag")}
             onPress={() => void runCommand("ocr.nextFlag")}
           >
             {t("ocrPanel.reviewCard.skip")}
@@ -463,6 +516,7 @@ function WordImage({
   word: OcrReviewWord;
 }) {
   const { t } = useTranslation();
+  const locale = useAppStore((state) => state.locale);
   const box = word.bounds ?? word.line;
   if (!box) return null;
   const height = Math.max(1, box[3] - box[1]);
@@ -482,7 +536,11 @@ function WordImage({
       <img
         className={styles.cropImage}
         src={backend.ocrCropUrl(documentId, page, area, CROP_PIXELS)}
-        alt={t("ocrPanel.reviewCard.image", { text: word.text })}
+        // What the picture is; its pixels are the one thing the text cannot say.
+        alt={t("ocrPanel.reviewCard.image", {
+          text: isolate(word.text),
+          page: formatNumber(page + 1, locale),
+        })}
       />
       {word.bounds ? (
         <span
@@ -515,7 +573,36 @@ function Review({ documentId }: { documentId: number }) {
   );
   const status = useStatusText();
   const decision = useDecisionText();
+  const start = useRef<HTMLButtonElement>(null);
+  // The one word of the list that Tab reaches (the arrows move between them).
+  const [stop, setStop] = useState<[number, number] | null>(null);
+  // Leaving review mode removes the card that had focus: give it to "Start review".
+  const wasReviewing = useRef(reviewing);
+  useEffect(() => {
+    const left = wasReviewing.current && !reviewing;
+    wasReviewing.current = reviewing;
+    if (left && (document.activeElement === document.body || !document.activeElement))
+      start.current?.focus();
+  }, [reviewing]);
   if (!pages || (!finished && pages.length === 0)) return null;
+  const [stopPage, stopWord] = stop ?? focus?.at ?? [0, 0];
+  const tabStop = pages[stopPage]?.words[stopWord] ? [stopPage, stopWord] : [0, 0];
+  const moveAmongWords = (event: KeyboardEvent<HTMLOListElement>) => {
+    const keys: Record<string, number> = {
+      ArrowDown: 1,
+      ArrowUp: -1,
+      Home: -Infinity,
+      End: Infinity,
+    };
+    const step = keys[event.key];
+    if (step === undefined || event.altKey || event.metaKey || event.ctrlKey) return;
+    const words = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-word]")];
+    const at = words.indexOf(document.activeElement as HTMLButtonElement);
+    if (at < 0) return;
+    event.preventDefault();
+    const next = Number.isFinite(step) ? at + step : step < 0 ? 0 : words.length - 1;
+    words[Math.max(0, Math.min(words.length - 1, next))]?.focus();
+  };
   const n = (value: number) => formatNumber(value, locale);
   const percent = (value: number) =>
     formatNumber(value, locale, { style: "percent", maximumFractionDigits: 0 });
@@ -555,7 +642,11 @@ function Review({ documentId }: { documentId: number }) {
         <>
           <div className={styles.controls}>
             {!reviewing ? (
-              <Button variant="primary" onPress={() => void runCommand("ocr.startReview")}>
+              <Button
+                ref={start}
+                variant="primary"
+                onPress={() => void runCommand("ocr.startReview")}
+              >
                 {t("ocrPanel.review.start")}
               </Button>
             ) : null}
@@ -566,7 +657,8 @@ function Review({ documentId }: { documentId: number }) {
               {t("ocrPanel.review.next")}
             </Button>
           </div>
-          <ol className={styles.list}>
+          {/* Arrow keys move between the word buttons inside: one tab stop (WCAG 2.1.1). */}
+          <ol className={styles.list} onKeyDown={moveAmongWords}>
             {pages.map((page, p) => (
               <li key={page.page} className={styles.page}>
                 <div className={styles.pageHeader}>
@@ -581,26 +673,31 @@ function Review({ documentId }: { documentId: number }) {
                 <ul className={styles.words}>
                   {page.words.map((word, w) => {
                     const current = focus?.at?.[0] === p && focus.at[1] === w;
+                    const isStop = tabStop[0] === p && tabStop[1] === w;
                     const decided = decision(word);
                     return (
                       <li key={word.index}>
                         <button
                           type="button"
                           className={styles.word}
+                          data-word=""
+                          tabIndex={isStop ? 0 : -1}
+                          onFocus={() => setStop([p, w])}
                           data-kind={word.status.kind}
                           data-review={word.review.kind}
                           aria-current={current ? "true" : undefined}
-                          aria-label={t("ocrPanel.review.word", {
-                            word: isolate(word.text),
-                            status: decided ? `${status(word)}; ${decided}` : status(word),
-                            confidence: percent(word.probability),
-                          })}
                           onClick={() => void runCommand("ocr.showWord", { reviewAt: [p, w] })}
                         >
+                          {/* Named by what it shows (WCAG 2.5.3), the confidence added unseen. */}
                           <bdi className={styles.wordText}>{word.text}</bdi>
+                          <span className="visually-hidden">{t("a11y.separator")}</span>
                           <span className={styles.meta}>
                             {status(word)}
                             {decided ? ` · ${decided}` : ""}
+                          </span>
+                          <span className="visually-hidden">
+                            {t("a11y.separator")}
+                            {t("ocrPanel.review.confidence", { value: percent(word.probability) })}
                           </span>
                         </button>
                       </li>
@@ -633,9 +730,11 @@ function Region({ documentId }: { documentId: number }) {
       <h3 className={styles.heading}>{t("ocrPanel.region.heading")}</h3>
       {region ? (
         <>
-          <p className={styles.status} role="status">
+          {/* Announced by the command that set it (ocr.setRegion). */}
+          <p className={styles.status}>
             {t("ocrPanel.region.drawn", { page: n(region.page + 1) })}
           </p>
+          {region.size ? <AreaFields region={region} size={region.size} /> : null}
           <ToggleButtonGroup
             className={styles.segments}
             selectionMode="single"
@@ -673,19 +772,96 @@ function Region({ documentId }: { documentId: number }) {
         </>
       ) : (
         <>
-          <Button
-            variant={drawing ? "primary" : "secondary"}
-            onPress={() => void runCommand("ocr.drawRegion")}
-            aria-pressed={drawing}
-          >
-            {t("ocrPanel.region.draw")}
-          </Button>
-          <p className={styles.note} role={drawing ? "status" : undefined}>
+          <div className={styles.controls}>
+            <Button
+              variant={drawing ? "primary" : "secondary"}
+              onPress={() => void runCommand("ocr.drawRegion")}
+              aria-pressed={drawing}
+            >
+              {t("ocrPanel.region.draw")}
+            </Button>
+            {/* Without a pointer (WCAG 2.1.1): the page, narrowed with the fields that follow. */}
+            <Button onPress={() => void runCommand("ocr.regionWholePage")}>
+              {t("ocrPanel.region.wholePage")}
+            </Button>
+          </div>
+          {/* Drawing mode is announced by its command (ocr.drawRegion). */}
+          <p className={styles.note}>
             {drawing ? t("ocrPanel.region.drawing") : t("ocrPanel.region.note")}
           </p>
         </>
       )}
     </section>
+  );
+}
+
+type Edge = "left" | "top" | "width" | "height";
+const EDGES: Edge[] = ["left", "top", "width", "height"];
+
+/**
+ * The area as percentages of its page (left, top, width, height): typed or
+ * stepped with the arrow keys, so an area can be set without a pointer. The
+ * page's own geometry is left to right, whatever the interface's direction.
+ */
+function AreaFields({
+  region,
+  size,
+}: {
+  region: OcrRegion;
+  size: { width: number; height: number };
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const { x, y, width, height } = region.rect;
+  const percent = {
+    left: x / size.width,
+    top: y / size.height,
+    width: width / size.width,
+    height: height / size.height,
+  };
+  const set = (edge: Edge, raw: string) => {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return;
+    const next = { ...percent, [edge]: Math.min(100, Math.max(0, value)) / 100 };
+    // Kept on the page: the position yields to the size being typed.
+    next.width = Math.max(0.01, Math.min(next.width, 1));
+    next.height = Math.max(0.01, Math.min(next.height, 1));
+    next.left = Math.min(next.left, 1 - next.width);
+    next.top = Math.min(next.top, 1 - next.height);
+    void runCommand("ocr.setRegion", {
+      page: region.page,
+      rect: {
+        x: next.left * size.width,
+        y: next.top * size.height,
+        width: next.width * size.width,
+        height: next.height * size.height,
+      },
+    });
+  };
+  return (
+    <fieldset className={styles.area} aria-describedby={`${id}-hint`}>
+      <legend className={styles.fieldLabel}>{t("ocrPanel.region.adjust")}</legend>
+      <div className={styles.areaFields}>
+        {EDGES.map((edge) => (
+          <label key={edge} className={styles.areaField}>
+            <span className={styles.fieldLabel}>{t(`ocrPanel.region.${edge}`)}</span>
+            <input
+              className={styles.field}
+              type="number"
+              min={edge === "width" || edge === "height" ? 1 : 0}
+              max={100}
+              step={1}
+              value={Math.round(percent[edge] * 100)}
+              onChange={(event) => set(edge, event.target.value)}
+              data-testid={`ocr-area-${edge}`}
+            />
+          </label>
+        ))}
+      </div>
+      <p className={styles.note} id={`${id}-hint`}>
+        {t("ocrPanel.region.adjustHint")}
+      </p>
+    </fieldset>
   );
 }
 
@@ -715,7 +891,8 @@ function Layers({ documentId }: { documentId: number }) {
       </Button>
       {checks && checks.length > 0 ? (
         <>
-          <p className={styles.status} role="status">
+          {/* Announced when the check finishes (a11y/ocrAnnouncements). */}
+          <p className={styles.status}>
             {poor.length > 0
               ? t("ocrPanel.layers.found", { poor: n(poor.length), good: n(good) })
               : t("ocrPanel.layers.none", { good: n(good) })}

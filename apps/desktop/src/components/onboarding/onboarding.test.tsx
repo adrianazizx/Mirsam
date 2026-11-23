@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../App";
 import { axeViolations } from "../../a11y/axe";
 import { press } from "../../a11y/keyboard";
+import { backend } from "../../backend";
 import { setMockRecoveries } from "../../backend/mock";
 import { runCommand } from "../../commands/registry";
 import { useAnnouncer } from "../../state/announcer";
@@ -63,6 +64,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setOnboardingAutomatic(false);
+  vi.restoreAllMocks();
 });
 
 async function startApp() {
@@ -78,6 +80,18 @@ async function click(element: HTMLElement) {
 }
 
 describe("the first-run guide", () => {
+  it("is decided only by the startup that opened the launch documents", async () => {
+    // A second startup call (React's StrictMode, in development) can answer
+    // before the launch document is open: an empty list that is not the
+    // window's real start. It must not open the guide over the document that
+    // the first call then shows (the macOS self-test's bold step met it).
+    vi.spyOn(backend, "startup").mockResolvedValue({ documents: [], active: null, first: false });
+    await startApp();
+    expect(useOnboarding.getState().loaded).toBe(true);
+    expect(useOnboarding.getState().guideOpen).toBe(false);
+    expect(screen.queryByRole("dialog", { name: /Welcome to Mirsam/ })).toBeNull();
+  });
+
   it("opens by itself on a first empty launch, walks through by keyboard, and stays done", async () => {
     await startApp();
     const guide = await screen.findByRole("dialog", { name: /Welcome to Mirsam/ });
@@ -222,7 +236,8 @@ describe("the tools' one-time hints", () => {
       // Announced, never focused.
       expect(useAnnouncer.getState().polite.text.startsWith(`${title}.`)).toBe(true);
       expect(hint.contains(document.activeElement)).toBe(false);
-      if (tool !== "ocr") expect(await axeViolations(), tool).toEqual([]);
+      // The OCR panel had its own pass (ADR 0070's amendment), so it is checked too.
+      expect(await axeViolations(), tool).toEqual([]);
       await click(within(hint).getByRole("button", { name: "Got it" }));
       expect(screen.queryByTestId("tool-hint")).toBeNull();
       // Not again: another tool, then back.

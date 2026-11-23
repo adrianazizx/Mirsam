@@ -28,6 +28,7 @@ import { TOOLS, useAppStore } from "../../state/appStore";
 import { GUIDE_STEPS, type GuideStep, useOnboarding } from "../../state/onboarding";
 import { TOOL_ICONS } from "../shell/ToolRail";
 import { Button } from "../ui/Button";
+import { useKeyboardScrollable } from "../ui/useKeyboardScrollable";
 import styles from "./OnboardingGuide.module.css";
 
 /**
@@ -98,12 +99,7 @@ export function OnboardingGuide() {
               <li key={id} className={styles.dot} data-current={index === step ? "" : undefined} />
             ))}
           </ol>
-          <section key={current} className={styles.step} aria-labelledby={stepTitleId}>
-            <h3 id={stepTitleId} className={styles.stepTitle}>
-              {t(`onboarding.steps.${current}.title`)}
-            </h3>
-            <StepBody step={current} />
-          </section>
+          <StepSection key={current} step={current} titleId={stepTitleId} />
           <div className={styles.footer}>
             {last ? null : (
               <Button variant="ghost" onPress={() => void runCommand("onboarding.skip")}>
@@ -137,6 +133,25 @@ export function OnboardingGuide() {
         </Dialog>
       </Modal>
     </ModalOverlay>
+  );
+}
+
+/**
+ * One step. At a large interface size it may scroll, and some steps have no
+ * control inside: it then joins the tab order so the keyboard can scroll it
+ * (WCAG 2.1.1; found by the Chrome check at interface size 2).
+ */
+function StepSection({ step, titleId }: { step: GuideStep; titleId: string }) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLElement>(null);
+  useKeyboardScrollable(ref);
+  return (
+    <section ref={ref} className={styles.step} aria-labelledby={titleId}>
+      <h3 id={titleId} className={styles.stepTitle}>
+        {t(`onboarding.steps.${step}.title`)}
+      </h3>
+      <StepBody step={step} />
+    </section>
   );
 }
 

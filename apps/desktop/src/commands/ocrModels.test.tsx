@@ -129,13 +129,19 @@ describe("OCR models (ADR 0034)", () => {
     ) as HTMLElement;
     failNextMockDownload("model_disk_full", { needed: 6_000_000_000, available: 2_000_000_000 });
     fireEvent.click(within(row).getByRole("button", { name: "Download" }));
-    const alert = await within(row).findByRole("alert");
-    expect(alert.textContent).toBe("Not enough disk space: it needs 6 GB free, and 2 GB is free.");
+    // Shown on the row, and announced with the model's name.
+    const message = "Not enough disk space: it needs 6 GB free, and 2 GB is free.";
+    expect(await within(row).findByText(message)).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId("live-assertive").textContent).toBe(
+        `\u2068Nuqta-Arabic-OCR 4B\u2069: download stopped. ${message}`,
+      ),
+    );
 
     failNextMockDownload("model_download_failed");
     fireEvent.click(within(row).getByRole("button", { name: "Download" }));
     await waitFor(() =>
-      expect(within(row).getByRole("alert").textContent).toContain("Check the internet connection"),
+      expect(within(row).getByText(/Check the internet connection/)).toBeTruthy(),
     );
   });
 

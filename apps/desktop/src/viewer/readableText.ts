@@ -8,7 +8,10 @@ import type { TextLayer } from "../backend";
  * with an English product name in it").
  *
  * Languages are guessed from the script: Arabic script is read as Arabic,
- * Hebrew as Hebrew, Latin as English. The PDF's own `/Lang` is not read yet.
+ * Hebrew as Hebrew, Latin as English, unless the PDF's own `/Lang` names a
+ * language written in that script (French for Latin, Persian or Urdu for
+ * Arabic script), which then wins. The tagged structure's per-span `/Lang`
+ * is not read.
  */
 
 export type ReadableNote = "noText" | "suspect";
@@ -87,11 +90,34 @@ export function languageOf(text: string): Script | null {
   return best;
 }
 
-/** Fills `host` with the page's text as paragraphs, or a note when it has none. */
+/** Languages written in Arabic or Hebrew script, by primary subtag. */
+const ARABIC_SCRIPT = new Set(["ar", "fa", "ur", "ps", "ckb", "ku", "sd", "ug"]);
+const HEBREW_SCRIPT = new Set(["he", "iw", "yi"]);
+/** Languages not usually written in Latin script, whose `/Lang` says nothing of Latin text. */
+const OTHER_SCRIPT = new Set([
+  ..."am be bg bn el gu hi hy ja ka km kn ko lo mk ml mr my ne ru si ta te th uk zh".split(" "),
+]);
+
+/** The language tag for text in `script`, given the document's own `/Lang`. */
+export function languageTag(script: Script, documentLanguage?: string | null): string {
+  const primary = documentLanguage?.split("-")[0]?.toLowerCase();
+  if (!documentLanguage || !primary) return script;
+  if (script === "ar") return ARABIC_SCRIPT.has(primary) ? documentLanguage : script;
+  if (script === "he") return HEBREW_SCRIPT.has(primary) ? documentLanguage : script;
+  const latin =
+    !ARABIC_SCRIPT.has(primary) && !HEBREW_SCRIPT.has(primary) && !OTHER_SCRIPT.has(primary);
+  return latin ? documentLanguage : script;
+}
+
+/**
+ * Fills `host` with the page's text as paragraphs, or a note when it has none.
+ * `documentLanguage` is the PDF's `/Lang`, when it states one.
+ */
 export function fillReadableText(
   host: HTMLElement,
   layer: TextLayer,
   note: (kind: ReadableNote) => string,
+  documentLanguage?: string | null,
 ): void {
   const paragraphs: HTMLElement[] = [];
   const blocks = layer.blocks.filter((block) => block.lines.some((line) => line.text.trim()));
@@ -108,13 +134,13 @@ export function fillReadableText(
     const element = document.createElement("p");
     element.dir = block.direction;
     const lang = languageOf(text);
-    if (lang) element.lang = lang;
+    if (lang) element.lang = languageTag(lang, documentLanguage);
     for (const run of scriptRuns(text)) {
       if (run.lang === null || run.lang === lang) {
         element.append(run.text);
       } else {
         const span = document.createElement("span");
-        span.lang = run.lang;
+        span.lang = languageTag(run.lang, documentLanguage);
         span.textContent = run.text;
         element.append(span);
       }

@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -174,8 +174,19 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **VO+→ into the page area**: each page is "Page N of name, group", its text read in order,
       an English number or name inside an Arabic sentence in the English voice;
     - **Cmd+S** after an edit ("Saved name.pdf"), **Cmd+K**, **Escape**;
-    - **Settings → Display → 200%**, then **Next page** (said once you stop).
-    Anything read wrongly, read twice, or not at all is worth a note.
+    - **Settings → Display → 200%**, then **Next page** (said once you stop);
+    - **Cmd+/** (the shortcuts list): is the table read as rows of command and keys?
+    - **OCR** (Tools → OCR; with the models in, or on a scan in the browser mock): **Recognize
+      this page**, then wait without looking: "Recognition of name: started", later "…: Done.";
+      **Review**: the field should read its word, then "N of M left", why it is listed and how
+      confident; Enter, Cmd+Enter, F8; after the last word, "Nothing left to review." with focus on
+      **Done reviewing**; Escape returns to **Review**. Up/Down through the flagged-word list.
+      **Use the whole page**, then the four area fields with the arrows ("Area on page 1" said once);
+    - **Settings → OCR models**: each Download/Delete button names its model; **Crash reports**:
+      each Copy/Save/Delete names its report;
+    - **Sign with a certificate → Time-stamp** with the address emptied: "invalid" and why.
+    Anything read wrongly, read twice, or not at all is worth a note. Also listen for whether the
+    shortcuts VoiceOver reads from `aria-keyshortcuts` ("Command Return") make sense in Arabic.
 25. ~~Run a crash server?~~ **Decided (2026-11-23): no crash server; reports stay manual** (ADR 0061's
     note). The question as it was (ADR 0061): Crash reports are built without one: they are kept on the
     computer, offered once after a crash, shown exactly as they would be sent, and leave only
@@ -923,9 +934,10 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [~] Accessibility pass (WCAG 2.1 AA, ADR 0070): axe-core over the main screens in jsdom (en/ar)
       and in Chrome with contrast (en/ar × light/dark, reading themes, `scripts/a11y-check.mjs`, CI);
       keyboard tests; F6 between areas; page text for screen readers; live regions; interface size
-      100–200%. **Gaps:** VoiceOver not driven (owner item 24); the OCR UI gets its pass with the
-      session rebuilding it (the search panel had its with find and replace, ADR 0052); the
-      deferred list in the session log
+      100–200%. Second pass (ADR 0070's amendment): the OCR tool, Settings' later sections, the
+      time-stamp field, a keyboard shortcuts list, the PDF's `/Lang`, interface-size shortcuts,
+      hover-state contrast. **Gaps:** VoiceOver not driven (owner item 24); tagged-structure
+      `/Lang` and reading order; Narrator and Orca
 - [ ] Native-speaker Arabic localization review
 - [x] Onboarding (ADR 0071): a four-step first-run guide (open a PDF, the tool rail, Arabic and
       English with the digits setting, OCR on this computer), skippable, never shown again once
@@ -947,6 +959,87 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### M7 accessibility, second pass — 2026-11-23 (branch `pomidor/m7-a11y-followup-e8a31a`; ADR 0070's amendment)
+
+Parallel to M7 onboarding (whose start screen and hints were left alone). The OCR UI, Settings'
+later sections, the certificate dialog's time-stamp field, and the first pass's deferred list.
+
+- **OCR UI:**
+  - **Live regions:** seven `role="status"` spots in the OCR panel (each inserted with its
+    text, or updated at every progress step) are plain text now. `a11y/ocrAnnouncements.ts` says
+    what changed instead: a job started, paused, resumed, done, failed (assertive); a layer
+    check's verdict; a model download installed, paused or stopped (with the disk space a full
+    disk needs); an area set; a page converted; review done.
+  - **Review mode:** the field is described by "N of M left", why the word is listed and the
+    confidence. Escape gives focus to **Review**, the last decision to **Done reviewing**, and a
+    page to check focuses **Check page**. The word image's alt says what it is (the scan of page N
+    around the word read as X, the word outlined).
+  - **The flagged words:** one tab stop, with Up/Down/Home/End. Each word is named by what it
+    shows (Chrome found the old `aria-label` failing WCAG 2.5.3), plus its confidence, unseen.
+  - **An area without a pointer:** **Use the whole page** (`ocr.regionWholePage`), then from the
+    left edge, from the top, width and height, in percent. Checked by eye in Arabic, dark theme:
+    the arrow keys narrow the mark on the page live.
+- **`aria-keyshortcuts` never reached the DOM:** React Aria's buttons filter it out. `Button` and
+  `IconButton` set it by ref (`keyShortcutsRef`), every `CommandButton` carries its command's,
+  and `ariaShortcut()` writes ARIA's syntax ("Meta+Enter", not "⌘↩").
+- **Settings and signing:**
+  - each OCR model's and crash report's buttons are described by the model's name or the
+    report's kind and time;
+  - the model failure line is announced rather than `role="alert"`;
+  - the time-stamp address is `required`, `aria-invalid` while empty, and described by its hint
+    and by why signing is off;
+  - the signing error and "Signing…" are announced.
+- **Deferred items done:**
+  - **`/Lang`:** `safha_core::catalog` reads the PDF's `/Lang` (a well-formed tag, not from
+    encrypted files) and passes it to the page text. It names the language of the script it is
+    written in (French Latin text, Persian Arabic script).
+  - **Interface size shortcuts:** Cmd/Ctrl+Option/Alt+`=`/`-`/`0`, matched by `KeyboardEvent.code`.
+  - **Search rows:** their height follows the interface size.
+  - **Hover contrast:** `--color-border-strong` passes 3:1 on hover and pressed backgrounds; it
+    was 2.55:1 (light) and 2.88:1 (dark). Nine contrast pairs were added.
+  - **Keyboard shortcuts** (Cmd/Ctrl+/, `components/help/ShortcutsDialog`): every shortcut, F6
+    and F8 included.
+- **Checks:**
+  - `src/a11y/ocrScreens.test.tsx` (jsdom axe, 20 tests): the OCR panel, a job and the review
+    list, the review card (a word, nothing left), an area being drawn and set, layer checks, the
+    model prompt, Settings on Linux (Tesseract note, delete being confirmed, a download), crash
+    reports (prompt, kept, shown), the time-stamp field empty, the shortcuts list. English light
+    and Arabic dark in full, the main ones in English dark and Arabic light.
+  - `src/a11y/ocrKeyboard.test.tsx` (9): review focus and descriptions in English and Arabic, the
+    word list's one tab stop, the area from the keyboard, what is announced, the size shortcuts,
+    the shortcuts list.
+  - `scripts/a11y-check.mjs`: the same OCR, Settings and time-stamp screens in all four
+    combinations, the OCR panel at interface size 2, the shortcuts list; text inside
+    `.visually-hidden` no longer counts as clipped.
+    First run: 58 `label-content-name-mismatch` failures (the flagged-word buttons) and a false
+    "clipped" report; after the fixes, 158 screens in 122 s, no violations, nothing clipped.
+- **Tests:** UI tests pass (`pnpm test`; four old assertions moved off `role="alert"` and the old
+  alt text); `tsc` and Biome clean; `cargo clippy -p safha-core -p safha-desktop --all-targets
+  -D warnings` and `cargo fmt` clean; `catalog` unit and integration tests and `cargo test -p
+  safha-desktop` pass.
+- **Still for a human with VoiceOver (owner item 24, now listing the OCR flow, Settings and the
+  shortcuts list):**
+  - whether `aria-describedby` on the review field is read after its value;
+  - whether VoiceOver speaks `aria-keyshortcuts` in Arabic;
+  - whether the number fields' Western digits are read in the Arabic voice;
+  - whether announcements made while focus moves (review done, then "Done reviewing") are both
+    heard.
+- **After merging M7 onboarding (PR #36):** the onboarding jsdom test now runs axe on the OCR
+  tool's hint too (it was skipped while the OCR panel waited for this pass). The Chrome check now
+  also shows the first-run guide at interface size 2. That run found step 2 scrolling with no
+  control in it (`scrollable-region-focusable`), so each step now joins the tab order while it
+  overflows (`useKeyboardScrollable`). 182 screens in 133 s, no violations, nothing clipped.
+- **Fixed (found by the macOS self-test after the merge):** the first-run guide could open over
+  the launch document. React's StrictMode runs the UI's startup twice in development. The second
+  call to the shell's `startup` can return before the first has opened the launch PDF, with an
+  empty list, and the UI then offered the guide to an "empty" window. The guide then held focus,
+  and the self-test's bold step found no selection. Every fresh-profile warm-up run had failed
+  that way since onboarding merged; this branch's English runs failed too. `Startup.first` now
+  says which call did the real start, and only that one may offer the guide (a UI test covers
+  it). The self-test now records focus, selection, and whether the hint or guide was up when bold
+  does not apply.
+- **Not done:** the tagged structure tree's `/Lang` and reading order; Narrator and Orca.
 
 ### M7 onboarding — 2026-11-23 (branch `pomidor/m7-onboarding-306aea`, ADR 0071; parallel to the accessibility follow-up)
 

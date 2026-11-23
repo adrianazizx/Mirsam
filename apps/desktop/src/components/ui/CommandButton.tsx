@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ariaShortcut,
   type CommandId,
   isCommandEnabled,
   runCommand,
@@ -26,6 +27,7 @@ export function CommandButton({ command, label, children, ...props }: CommandBut
       {...props}
       label={label ?? t(`commands.${command}`)}
       shortcut={shortcutLabel(command)}
+      keyShortcuts={ariaShortcut(command)}
       isDisabled={!enabled}
       onPress={() => void runCommand(command)}
     >

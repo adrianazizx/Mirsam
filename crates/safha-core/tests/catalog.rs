@@ -15,11 +15,14 @@ fn reads_the_books_reading_preferences_however_they_are_stored() {
         let fixture =
             manifest.fixtures.iter().find(|f| f.id == id).expect("fixture exists (regenerate the corpus)");
         let bytes = std::fs::read(fixture.file()).expect("reads");
+        let found = catalog_hints(&bytes);
         let expected = CatalogHints {
             direction: Some(ReadingDirection::RightToLeft),
             page_layout: Some(PageLayout::TwoPageRight),
+            // Whatever `/Lang` the generator wrote (the reader's own tests cover it).
+            language: found.language.clone(),
         };
-        assert_eq!(catalog_hints(&bytes), expected, "{id}");
+        assert_eq!(found, expected, "{id}");
         // And through a document, as the app gets it.
         let document = Engine::global(&PdfiumSource::Auto)
             .expect("PDFium is available")

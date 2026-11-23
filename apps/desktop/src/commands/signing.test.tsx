@@ -239,7 +239,11 @@ describe("signing with a certificate (ADR 0048)", () => {
       detail: "down",
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Sign and save" }));
-    expect((await within(dialog).findByRole("alert")).textContent).toContain(
+    // Shown in the dialog, and announced (the paragraph itself is not a live region).
+    expect(
+      await within(dialog).findByText(/The time-stamping server could not be reached/),
+    ).toBeTruthy();
+    expect(screen.getByTestId("live-assertive").textContent).toContain(
       "The time-stamping server could not be reached",
     );
     expect(active()?.signed).toBeUndefined();

@@ -598,6 +598,8 @@ export interface DocumentInfo {
    */
   readingDirection?: "ltr" | "rtl" | null;
   pageLayout?: "single" | "continuous" | "spread" | "book" | null;
+  /** The document's own `/Lang` (a BCP 47 tag), for its text read aloud (ADR 0070). */
+  language?: string | null;
   /** Restored from a recovery file with unsaved changes (ADR 0040). */
   modified?: boolean;
   canUndo?: boolean;
@@ -797,6 +799,12 @@ export interface Startup {
   active: number | null;
   /** Unsaved changes an earlier session left, offered once at the app's start. */
   recoveries?: RecoveryInfo[];
+  /**
+   * This call was the app's start (it opened the session and the launch
+   * documents). False for another window, a reload, or a second call made
+   * while the first was still opening files; those decide no first-run things.
+   */
+  first?: boolean;
 }
 
 export interface RecentFile {

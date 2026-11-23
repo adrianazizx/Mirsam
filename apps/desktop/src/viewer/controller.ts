@@ -386,6 +386,8 @@ export interface ViewerOptions {
   pageLabel(page: number): string;
   /** What screen readers hear for a page with no text, or text that may be wrong. */
   readableNote?(kind: ReadableNote): string;
+  /** The PDF's own `/Lang`, for the page text's languages. */
+  language?: string | null;
   isMac: boolean;
   /** What a press on a page does now (the active tool); "select" if absent. */
   mode?(): ViewerMode;
@@ -551,6 +553,7 @@ export class ViewerController {
   private readonly callbacks: ViewerCallbacks;
   private readonly pageLabel: (page: number) => string;
   private readonly readableNote: (kind: ReadableNote) => string;
+  private readonly language: string | null;
   /** Fills the visible pages' readable text once the view stops moving. */
   private readableTimer: number | null = null;
   private readonly spacing: ViewerSpacing;
@@ -741,6 +744,7 @@ export class ViewerController {
     this.callbacks = options.callbacks;
     this.pageLabel = options.pageLabel;
     this.readableNote = options.readableNote ?? (() => "");
+    this.language = options.language ?? null;
     this.spacing = options.spacing;
     this.isMac = options.isMac;
     this.classNames = options.classNames;
@@ -1352,7 +1356,7 @@ export class ViewerController {
     for (const slot of this.slots.values()) {
       slot.element.setAttribute("aria-label", this.pageLabel(slot.page));
       const layer = slot.readableFrom;
-      if (layer) fillReadableText(slot.readable, layer, this.readableNote);
+      if (layer) fillReadableText(slot.readable, layer, this.readableNote, this.language);
     }
   }
 
@@ -3419,7 +3423,7 @@ export class ViewerController {
 
   private fillReadable(slot: Slot, layer: TextLayer): void {
     slot.readableFrom = layer;
-    fillReadableText(slot.readable, layer, this.readableNote);
+    fillReadableText(slot.readable, layer, this.readableNote, this.language);
   }
 
   private reportCurrentPage(page: number): void {

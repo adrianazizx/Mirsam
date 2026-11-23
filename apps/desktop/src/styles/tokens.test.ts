@@ -67,6 +67,16 @@ const PAIRS: [string, string, number][] = [
   ["color-focus-ring", "color-bg-surface", 3],
   ["color-focus-ring", "color-bg-canvas", 3],
   ["color-border-strong", "color-bg-surface", 3],
+  // Hover-only and pressed states (ADR 0070's second pass, WCAG 1.4.11 and 2.4.7):
+  // a control's edge and its focus ring stay visible while the pointer is over it.
+  ["color-border-strong", "color-bg-app", 3],
+  ["color-border-strong", "color-bg-hover", 3],
+  ["color-border-strong", "color-bg-pressed", 3],
+  ["color-focus-ring", "color-bg-hover", 3],
+  ["color-focus-ring", "color-bg-pressed", 3],
+  ["color-focus-ring", "color-bg-selected", 3],
+  ["color-link-text", "color-bg-hover", 4.5],
+  ["color-danger", "color-bg-hover", 4.5],
   // Signatures are previewed as ink on paper in both themes (ADR 0045).
   ["color-ink", "color-page-paper", 4.5],
   // Link areas are outlined on the page in both themes (ADR 0051).

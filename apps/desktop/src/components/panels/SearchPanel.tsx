@@ -75,7 +75,15 @@ export function SearchPanel({ documentId: id }: { documentId: number }) {
       (state.documents.find((open) => open.id === id)?.replace ?? IDLE_REPLACE).status !== "idle",
   );
   const [draft, setDraft] = useState(search.query);
-  const [rowHeight] = useState(() => tokenPx("--size-search-result", 56));
+  const [rowHeight, setRowHeight] = useState(() => tokenPx("--size-search-result", 56));
+  // The row height follows the interface size (ADR 0070). The root's scale is set
+  // by the app's own effect, which runs after this one: read it on the next frame.
+  const uiScale = useAppStore((state) => state.uiScale);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-read when the interface size changes
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setRowHeight(tokenPx("--size-search-result", 56)));
+    return () => cancelAnimationFrame(frame);
+  }, [uiScale]);
   const timer = useRef<number | null>(null);
 
   useEffect(

@@ -24,6 +24,8 @@ export interface OcrRegion {
   documentId: number;
   page: number;
   rect: ViewRect;
+  /** The page's displayed size in points, when known: the panel's fields are percentages of it. */
+  size?: { width: number; height: number } | null;
 }
 
 /**

@@ -7,6 +7,8 @@
 //!   most Arabic books).
 //! - `/PageLayout`: the layout the author asked for (single, continuous,
 //!   two-page with the cover alone or not).
+//! - `/Lang`: the document's natural language (a BCP 47 tag such as `fr-CA`),
+//!   which screen readers use for its text (ADR 0070).
 //!
 //! It follows the cross-reference chain from the end of the file (classic
 //! tables, cross-reference streams, hybrid files, incremental updates) to the
@@ -16,13 +18,16 @@
 //! streams) yields "no preference" rather than an error. PDFium still renders
 //! such files; they just open left to right.
 
-use crate::pdf::File;
+use crate::pdf::{File, Object};
 
 /// The document's reading preferences, where it states them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CatalogHints {
     pub direction: Option<ReadingDirection>,
     pub page_layout: Option<PageLayout>,
+    /// `/Lang`, when it is a well-formed language tag (and the file is not
+    /// encrypted: its strings would be).
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +79,39 @@ fn read_hints(bytes: &[u8]) -> Option<CatalogHints> {
             _ => return None,
         })
     });
-    Some(CatalogHints { direction, page_layout })
+    let language = if file.trailer.get(b"Encrypt").is_some() {
+        None
+    } else {
+        catalog.get(b"Lang").and_then(|lang| match file.resolve(lang)? {
+            Object::Str(bytes) => language_tag(&bytes),
+            _ => None,
+        })
+    };
+    Some(CatalogHints { direction, page_layout, language })
+}
+
+/// A PDF text string holding a language tag (ISO 32000-1 §14.9.2): ASCII
+/// letters, digits and hyphens, in PDFDocEncoding or UTF-16BE. Anything else
+/// is ignored rather than handed to a screen reader.
+fn language_tag(bytes: &[u8]) -> Option<String> {
+    let text: String = match bytes {
+        [0xFE, 0xFF, rest @ ..] => {
+            let (pairs, _) = rest.as_chunks::<2>();
+            let units: Vec<u16> = pairs.iter().map(|pair| u16::from_be_bytes(*pair)).collect();
+            String::from_utf16(&units).ok()?
+        }
+        _ => bytes.iter().map(|&byte| char::from(byte)).collect(),
+    };
+    let tag = text.trim();
+    let well_formed = !tag.is_empty()
+        && tag.len() <= 35
+        && tag.split('-').all(|part| {
+            !part.is_empty() && part.len() <= 8 && part.chars().all(|c| c.is_ascii_alphanumeric())
+        })
+        && tag.split('-').next().is_some_and(|primary| {
+            (2..=8).contains(&primary.len()) && primary.chars().all(|c| c.is_ascii_alphabetic())
+        });
+    well_formed.then(|| tag.to_string())
 }
 
 #[cfg(test)]
@@ -194,6 +231,7 @@ mod tests {
     const RTL: CatalogHints = CatalogHints {
         direction: Some(ReadingDirection::RightToLeft),
         page_layout: Some(PageLayout::TwoPageRight),
+        language: None,
     };
 
     #[test]
@@ -203,6 +241,26 @@ mod tests {
         let pdf = classic("/ViewerPreferences 4 0 R", &["<< /Direction /L2R >>"]);
         assert_eq!(catalog_hints(&pdf).direction, Some(ReadingDirection::LeftToRight));
         assert_eq!(catalog_hints(&classic("", &[])), CatalogHints::default());
+    }
+
+    #[test]
+    fn reads_the_document_language() {
+        assert_eq!(catalog_hints(&classic("/Lang (fr-CA)", &[])).language.as_deref(), Some("fr-CA"));
+        assert_eq!(catalog_hints(&classic("/Lang 4 0 R", &["(ar)"])).language.as_deref(), Some("ar"));
+        // UTF-16BE, with its byte order mark.
+        assert_eq!(catalog_hints(&classic("/Lang <FEFF00640065>", &[])).language.as_deref(), Some("de"));
+        // Not a language tag: ignored.
+        for odd in [
+            "()",
+            "(  )",
+            "(en US)",
+            "(1en)",
+            "(<script>)",
+            "/en",
+            "(abcdefghijklmnopqrstuvwxyz-abcdefghijk)",
+        ] {
+            assert_eq!(catalog_hints(&classic(&format!("/Lang {odd}"), &[])).language, None, "{odd}");
+        }
     }
 
     #[test]

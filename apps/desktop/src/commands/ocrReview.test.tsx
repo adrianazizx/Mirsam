@@ -68,7 +68,11 @@ describe("OCR review mode (ADR 0037)", () => {
     // The page around the word, with the word marked on it.
     const image = within(card).getByTestId("ocr-review-image");
     expect(image.getAttribute("dir")).toBe("ltr");
-    expect(within(image).getByRole("img", { name: "The page around ١٣٣٤" })).toBeTruthy();
+    expect(
+      within(image).getByRole("img", {
+        name: "Scan of page 1 around the word read as \u2068١٣٣٤\u2069; the word is outlined",
+      }),
+    ).toBeTruthy();
     // The viewer is on the word's page, the word marked.
     expect(jobs().focus).toMatchObject({ page: 0, word: 4 });
 

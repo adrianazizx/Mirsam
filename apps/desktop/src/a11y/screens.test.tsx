@@ -10,8 +10,8 @@ import { axeViolations } from "./axe";
 /**
  * axe-core over the main screens: the empty window, a document in the page
  * view, the side panels, every tool's panel, and the dialogs, in English (LTR)
- * and Arabic (RTL). The OCR tool is left out while other work rebuilds it;
- * it joins this list with it.
+ * and Arabic (RTL). The OCR tool, Settings' later sections, the certificate
+ * dialog's time-stamp field and the shortcuts list are in `ocrScreens.test.tsx`.
  *
  * The theme does not change what jsdom can check (it computes no colours), so
  * every screen runs in English light and Arabic dark, and the main ones in the
