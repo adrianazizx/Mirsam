@@ -484,6 +484,9 @@ pub fn set_setting(
     if let Some(store) = state.store() {
         store.set_setting(&key, &value).map_err(store_error)?;
     }
+    if key == crate::crash::SETTING {
+        crate::crash::set_enabled(&value);
+    }
     let _ = app.emit(SETTINGS_EVENT, SettingChanged { key, value });
     Ok(())
 }
@@ -512,6 +515,8 @@ const SETTINGS: &[&str] = &[
     "search.options",
     crate::editing::COMMENT_AUTHOR,
     crate::signing::TSA_SETTING,
+    // Crash reports (ADR 0061): "ask" (the default) or "off".
+    crate::crash::SETTING,
 ];
 
 /// Opens `path` in a tab of `window`, or switches to it if that window has it

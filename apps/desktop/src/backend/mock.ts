@@ -1,3 +1,4 @@
+import { mockCrashBackend } from "./mockCrash";
 import { mockOcrBackend } from "./mockOcr";
 import { mockOcrJobs } from "./mockOcrJobs";
 import { mockSigningBackend } from "./mockSigning";
@@ -2040,6 +2041,7 @@ export const mockBackend: Backend = {
   shellRssKb: async () => null,
   webviewRssKb: async () => null,
   selftestLog: async () => {},
+  ...mockCrashBackend,
   ...mockOcrBackend,
   ...mockOcrJobs({
     pageCount: (documentId) => pagesOf(documentId).length,

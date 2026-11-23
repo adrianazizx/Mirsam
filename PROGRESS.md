@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before them, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -104,7 +104,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 
     Also, when this Mac is idle, re-run the scroll and zoom benchmark. At M3's exit it ran under
     a load average of 85 (another session's OCR benchmark and builds), and its numbers are not
-    evidence.
+    evidence. At M7 (crash reports and performance) one valid run passed every budget, but the
+    release bundle's window opened hidden in 11 of 18 launches while you were using the Mac, so
+    the frame numbers rest on that one run: re-run it a few times with the window in front
+    (`node scripts/bundle.mjs --features devtools --bundles app && scripts/scroll-benchmark.sh <out> release`).
 
 17. **Code signing and auto-update (M7) need your certificates and accounts:** an Apple Developer ID
     (signing and notarizing the `.app`/`.dmg`), a Windows code-signing certificate (the exe, the
@@ -166,6 +169,22 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **Cmd+S** after an edit ("Saved name.pdf"), **Cmd+K**, **Escape**;
     - **Settings → Display → 200%**, then **Next page** (said once you stop).
     Anything read wrongly, read twice, or not at all is worth a note.
+25. **Run a crash server?** (ADR 0061) Crash reports are built without one: they are kept on the
+    computer, offered once after a crash, shown exactly as they would be sent, and leave only
+    when the user copies one, saves it, or opens a pre-filled issue on `adrianazizx/Mirsam` in
+    their browser. Nothing is sent automatically. A server would let users send with one click
+    (still per report, with consent) and let you see crashes across users. Options, if wanted:
+    - **GlitchTip** (MIT; speaks Sentry's protocol): self-hosted on a small server you run.
+    - **Self-hosted Sentry**: the Functional Source License (FSL-1.1-Apache-2.0: source-available,
+      not OSI open source; each release becomes Apache-2.0 after two years; running it for your own
+      app is allowed), and a heavy install (16 GB RAM recommended).
+    - **Sentry's hosted service** (or another vendor): reports, and the user's IP address, go to a
+      third party; needs a data-processing agreement and a privacy-policy entry.
+    Any of them is a privacy-policy change, needs the reports' retention decided, and turns D4's
+    "no backend" into "one optional backend". Also open: whether reports should be kept locally
+    at all before the user opts in (today they are kept, redacted, so there is something to ask
+    about; "Don't keep crash reports" in Settings stops it). Until decided, the GitHub issue path
+    is the default; `SAFHA_CRASH_DESTINATION=manual` at build time removes it.
 
 Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the stated assumptions.
 
@@ -846,8 +865,15 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       opened and checked, the installed app self-tested in English and Arabic (`bundle.yml`)
 - [ ] Code signing and auto-update (owner item 17: certificates)
 - [x] Fuzzing of the open/parse path (spec §11 testing): `fuzz/`, weekly in `fuzz.yml`
-- [ ] Opt-in crash reporting
-- [ ] Performance hardening
+- [~] Opt-in crash reporting (ADR 0061): Rust panics, native crashes (macOS and Windows, from the
+      system's crash log) and UI errors become redacted reports kept on the computer, offered once
+      after a crash and shown exactly as they would be sent; sent only by the user (copy, save, a
+      pre-filled GitHub issue). Settings → Crash reports. **Open:** a crash server (owner item 25);
+      Linux native crashes; the Windows reader is untested on a real crash
+- [~] Performance hardening: every spec §11 budget measured on a release build (session log
+      below, "M7 crash reports and performance"); the cold-start budget is now checked by the
+      self-test and the 500-page search budget by CI. **Open:** the numbers were taken under heavy
+      load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
 
@@ -901,6 +927,91 @@ text-editing engine.
 - Workspace tests, clippy (with and without `devtools`), `cargo fmt`, Biome, `tsc`, UI tests (305),
   the fuzz crate's build pass. **Not re-run:** the scroll and zoom benchmark (the viewer is not
   touched).
+
+### M7 crash reports and performance — 2026-11-23 (branch `pomidor/m7-crash-perf-dded88`; parallel to M6 find and replace, OCR review mode, M7 accessibility)
+
+**Crash reports (ADR 0061).** Opt-in in the sense of D4: nothing is ever sent by the app.
+- **Captured, on the computer only** (`<app data>/crash-reports/`, at most 20):
+  - Rust panics anywhere in the process: message, source location, thread, stack;
+  - native crashes: a run marker left by a run that did not quit cleanly, matched at the next
+    start with the system's crash log (macOS `.ips`, Windows `Report.wer`): exception, crashed
+    thread, frames as `image + offset symbol`. macOS wrote its log 34–83 s after the crash here,
+    so the app keeps looking for 3 minutes (and at later starts for 2 days) and shows the prompt
+    when it lands;
+  - UI errors nothing handled (window listeners), and a root error boundary that shows "Reload
+    window" instead of a blank window.
+  - Every report: version, build, OS, and the names of the last 30 commands (IPC names in the
+    shell, registry ids in the UI). Never arguments.
+- **Redacted when made** (`safha_core::crash::redact`): the run's document paths, file names and
+  stems, the home folder and account name; quoted text; words with non-ASCII letters, paths,
+  file names, addresses, long tokens. The self-test's panic names
+  `/Users/someone/Secret Contract.pdf` and quotes Arabic; the report says
+  `self-test panic opening <path> <path>: <quoted>`.
+- **Asked once after a crash:** "Send a crash report?" shows each report exactly as it would be
+  sent, with Copy, Save as file…, Report on GitHub (copies the whole report, then opens a
+  pre-filled issue in the browser), Delete; "Not now" keeps them in Settings → Crash reports;
+  "Don't keep crash reports" turns it off. Checked in English/light and Arabic/dark (mock
+  backend, browser) and in the real app in Arabic (`crash-selftest.sh`).
+- **Destination** chosen at build time (`SAFHA_CRASH_DESTINATION`: `github:owner/name`, the
+  default `github:adrianazizx/Mirsam`, or `manual`); a crash server is refused until the owner
+  decides (owner item 25).
+- **Release builds keep function names** (`strip = "debuginfo"` instead of `strip = true`):
+  a release panic's stack was all `__mh_execute_header` before; see the installer size below.
+- **Checks:** 24 `safha-core` unit tests (redaction, frames, store, run marker, the `.ips`
+  reader on a fixture and on a real crash log, WER, issue links); 6 UI tests;
+  `scripts/crash-selftest.sh <out> panic|abort|thread-panic` passes all three on this Mac (debug)
+  and `panic` on the release bundle. CI runs `panic` on macOS, Windows and Linux.
+- **Not done:** a crash server (owner item 25); Linux native crashes; the WER reader on a real
+  Windows crash; symbol files for Windows release builds (their frames print as addresses).
+
+**Performance (spec §11), release builds** on this Mac (M3 Max, 14 cores, macOS 26.5.2). Other
+sessions were working throughout: load average 25–40 while this branch built, 4–10 during the
+measurements below (my own builds stopped). Self-test runs alternated this branch with `main`
+(a23d482, built the same way) so both saw the same load.
+
+| Budget (spec §11) | Target | Measured (this branch, release) | `main` | Checked in CI |
+|---|---|---|---|---|
+| Cold start to a usable window | ≤ 1.5 s | **460–745 ms** from the process's launch to the UI's first frame (4 runs, median 484 ms; the 745 ms one opened hidden); first page on screen 515–745 ms after launch | not measurable (no marks) | new: the self-test reports it, `check-selftest` judges it for a bundled UI (warns on CI's installers) |
+| First page of a 100-page text PDF | ≤ 300 ms | preview **14–22 ms**, sharp **19–31 ms** after opening (`bilingual-100-pages.pdf`, new fixture) | 14–20 / 17–30 ms | new step on macOS (warns) |
+| Scrolling and zooming, 1,000 pages | 60 fps; nothing blank > 100 ms | one valid run: every phase's median 17 ms, p95 ≤ 18 ms in every phase of 40+ frames (22 ms in a 25-frame one), 7 of 1,364 frames over 20 ms, 2 over 25 ms; longest blank 6 ms; jump → preview p95 25 ms | M1–M3 records: the same (pinch-out p95 17–19 ms) | yes (debug, warns) |
+| Typing while editing | ≤ 32 ms | **16–17 ms** median, p95 18–23 ms | 16–17 ms | yes (warns) |
+| Memory, 1,000 pages | app < 500 MB | **315 MB** at the benchmark's end (webview 411 MB, not budgeted) | M1–M3: 321–344 MB | yes (fails the run) |
+| Search, 500 pages | ≤ 1 s after the index | **8.5–10 ms** per search, slowest of 3 (index built once in 560 ms); 1,000 pages 17–18 ms (index 1.1 s) | M2: 17–18 ms on 1,000 | new job, fails the run |
+| Installer without OCR models | ≤ 60 MB | **14.8 MiB** `.dmg` (34.3 MiB `.app`); 14.2 MiB with `strip = true` | 14.2 MiB | yes (`bundle.yml`) |
+
+What the runs turned up:
+- **Typing "took" 300–355 ms in 2 of 10 runs, one of each build.** Both were runs whose window
+  opened hidden: with no animation frames the self-test's `nextFrame()` falls back to a 250 ms
+  timer, which is what it timed. Visible runs: 16–17 ms. The self-test now records
+  `typingWithoutFrames` and the checker does not judge typing then (it warns).
+- **The window opened hidden in 11 of 18 release runs** (launched from a shell while the owner was
+  using the Mac; the release bundle is not activated). Frame and blank-time numbers from those
+  runs are invalid and were not used; the scroll benchmark rejects them itself.
+- **Unexplained:** with the window hidden, this branch's scroll benchmark never got past its last
+  13 s idle (`setTimeout` not firing for 4 minutes; 4 of 4 runs), while `main` finished, slowly
+  (48–163 s, 4 of 4). With a visible window this branch finishes normally (41 s). The shell's
+  commands stop arriving during the wait, so either WebKit suspended the hidden page's timers or
+  the shell's main thread stopped answering; not found in the time available. Harmless for a
+  visible app, but to be understood (follow-up).
+- Nothing over or near a budget otherwise: the nearest is the scroll benchmark's p95 (17–18 ms
+  against 20), which is WKWebView's own frame jitter (ADR 0011).
+
+New checks: `scripts/check-selftest.mjs` judges cold start (bundled UI); `search_bench
+--budget-ms`; CI job "Search budget, 500 pages (Linux)"; the macOS shell self-test opens the
+100-page document; fixtures `bilingual-500-pages.pdf` and `bilingual-100-pages.pdf`.
+
+**Test status:** Rust: every workspace test passes (`safha-core` lib 330 with the 24 new
+crash tests); clippy clean with and without `devtools`; `cargo fmt`, `cargo deny` and the licence
+report clean. UI: 302 tests in 33 files, Biome, `tsc` and the production build clean. End to end
+(debug, this Mac): self-test English/light and Arabic/dark, the 100-page document, and
+`crash-selftest.sh` `panic`, `thread-panic` and `abort`; release bundle: self-tests and
+`crash-selftest.sh panic`.
+
+**Not done / to do next:** the crash server decision (owner item 25); the hidden-window stall
+above; re-run the scroll benchmark several times on an idle Mac with the window visible (owner
+item 16); Windows: a real crash through WER, and `.pdb` files kept per release so its frames can
+be symbolicated; the Arabic strings for crash reports need the native-speaker review (owner
+item 11).
 
 ### M7 accessibility — 2026-11-23 (WCAG 2.1 AA pass; branch `pomidor/m7-accessibility-fb6cd3`, ADR 0070)
 

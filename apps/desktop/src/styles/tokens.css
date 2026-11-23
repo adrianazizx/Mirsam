@@ -71,6 +71,10 @@
   --size-palette-row: calc(36px * var(--ui-scale));
   --size-unlock-panel: calc(400px * var(--ui-scale));
   --size-settings: calc(640px * var(--ui-scale)); /* the settings dialog's width */
+  --size-crash-report: calc(
+    240px *
+    var(--ui-scale)
+  ); /* the tallest a crash report's text shows before it scrolls */
   --size-tooltip: calc(280px * var(--ui-scale)); /* the widest a tooltip grows */
   --size-progress: calc(6px * var(--ui-scale)); /* a progress bar's thickness */
   --size-selection-toolbar-span: calc(480px * var(--ui-scale));
@@ -91,6 +95,8 @@
 
   /* Typography */
   --font-ui: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  /* Technical text shown as it is (a crash report). */
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   /* Typed signatures' previews; the PDF itself is set in the bundled Amiri (ADR 0045). */
   --font-signature-naskh: "Amiri", "Noto Naskh Arabic", "Geeza Pro", serif;
   --font-size-xs: calc(11px * var(--ui-scale));

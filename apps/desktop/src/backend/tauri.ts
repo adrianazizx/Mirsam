@@ -7,6 +7,8 @@ import {
   type BlockEditOutcome,
   type BookmarkPart,
   type CompressReport,
+  type CrashReportInfo,
+  type CrashReports,
   type DesignOutcome,
   type DetectedField,
   type DocumentComment,
@@ -331,6 +333,22 @@ export const tauriBackend: Backend = {
   },
   webviewRssKb: async () =>
     (await hasDevtools()) ? invoke<number | null>("webview_rss_kb") : null,
+  selftestMark: async (name) => {
+    if (await hasDevtools()) await invoke<void>("selftest_mark", { name });
+  },
+  selftestCrash: async (kind) => {
+    if (await hasDevtools()) await invoke<void>("selftest_crash", { kind });
+  },
+  selftestCrashState: async () =>
+    (await hasDevtools()) ? invoke<unknown>("selftest_crash_state") : null,
+  crashReports: () => invoke<CrashReports>("crash_reports"),
+  newCrashReports: () => invoke<CrashReportInfo[]>("new_crash_reports"),
+  onCrashReportsAdded: (listener) => listen<null>("crash-reports-added", () => listener()),
+  deleteCrashReport: (id) => invoke<void>("delete_crash_report", { id }),
+  saveCrashReport: (id) => invoke<boolean>("save_crash_report", { id }),
+  openCrashIssue: (id) => invoke<boolean>("open_crash_issue", { id }),
+  recordUiError: (message, stack, commands) =>
+    invoke<string | null>("record_ui_error", { message, stack, commands }),
   ocrModels: () => invoke<OcrModels>("ocr_models"),
   downloadOcrModel: (id) => invoke<void>("download_ocr_model", { id }),
   cancelOcrModelDownload: (id) => invoke<void>("cancel_ocr_model_download", { id }),

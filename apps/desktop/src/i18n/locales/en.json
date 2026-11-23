@@ -73,7 +73,8 @@
       "uiSmaller": "Smaller interface text",
       "uiDefaultSize": "Default interface text size",
       "nextRegion": "Next area of the window",
-      "previousRegion": "Previous area of the window"
+      "previousRegion": "Previous area of the window",
+      "reloadWindow": "Reload window"
     },
     "tabs": {
       "next": "Next tab",
@@ -365,6 +366,15 @@
       "forget": "Forget this certificate",
       "apply": "Sign",
       "place": "Place the certificate signature"
+    },
+    "crash": {
+      "copy": "Copy crash report",
+      "save": "Save crash report as a file",
+      "openIssue": "Report a crash on GitHub",
+      "delete": "Delete crash report",
+      "dismiss": "Not now",
+      "ask": "Crash reports: ask after a crash",
+      "off": "Crash reports: don't keep them"
     }
   },
   "viewer": {
@@ -994,7 +1004,17 @@
     "uiScale": "Interface size",
     "uiScaleHint": "Text, buttons and panels. Pages have their own zoom.",
     "uiScaleOption": "{{percent}}%",
-    "uiScaleNow": "Interface size {{percent}}%"
+    "uiScaleNow": "Interface size {{percent}}%",
+    "crash": {
+      "heading": "Crash reports",
+      "ask": "Ask me after a crash",
+      "askHint": "Reports are kept on this computer and sent only if you choose to.",
+      "off": "Don't keep crash reports",
+      "offHint": "Reports already kept stay until you delete them.",
+      "kept": "Kept reports",
+      "none": "No crash reports are kept.",
+      "choice": "When Mirsam stops unexpectedly"
+    }
   },
   "ocrModels": {
     "heading": "OCR models",
@@ -1366,5 +1386,38 @@
     "saved": "Saved {{name}}.",
     "noPageText": "This page has no text, only images. OCR can add text to it.",
     "suspectText": "The text of this page may read wrongly; OCR would read it again."
+  },
+  "crash": {
+    "title": "Send a crash report?",
+    "message": "Mirsam stopped working unexpectedly. A report of what went wrong was kept on this computer. It holds the app's version, your system, where the error happened and the names of the last commands you ran. It never holds your documents, file names or paths.",
+    "nothingSent": "Nothing is sent unless you choose to. The report below is exactly what would be sent.",
+    "kind": {
+      "panic": "The app stopped",
+      "native": "The system closed the app",
+      "interface": "An error in the window"
+    },
+    "show": "Show the report",
+    "hide": "Hide the report",
+    "reportText": "Crash report text",
+    "copy": "Copy",
+    "save": "Save as file…",
+    "openIssue": "Report on GitHub",
+    "delete": "Delete",
+    "status": {
+      "copied": "Copied to the clipboard.",
+      "saved": "Saved.",
+      "opened": "Opened in your browser. Review the issue before you submit it.",
+      "openedShortened": "Opened in your browser with a shortened report. The full report is on your clipboard: paste it into the issue.",
+      "failed": "That didn't work. Try copying the report instead."
+    },
+    "notNow": "Not now",
+    "notNowHint": "Reports stay in Settings, under Crash reports, until you send or delete them.",
+    "turnOff": "Don't keep crash reports"
+  },
+  "crashFallback": {
+    "title": "Something went wrong in this window",
+    "message": "Mirsam hit an error it could not recover from. Your open documents are still open: reload the window to continue.",
+    "reported": "A crash report was kept. You will be asked about it after the reload.",
+    "reload": "Reload window"
   }
 }

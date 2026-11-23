@@ -300,6 +300,8 @@ impl AppState {
         let id = self.next_token();
         let document = Arc::new(document);
         let name = display_name(&path);
+        // Its name must never appear in a crash report (ADR 0061).
+        crate::crash::remember_path(&path);
         // Unique across runs: a crashed run's recovery files keep their names.
         let millis = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_millis());
         let file = OpenFile {
@@ -363,6 +365,7 @@ impl AppState {
     /// display name.
     /// The document was saved to `path`: from now on it is that file.
     pub fn set_path(&self, id: u32, path: PathBuf) -> Option<String> {
+        crate::crash::remember_path(&path);
         let mut documents = lock(&self.documents);
         let file = documents.get_mut(&id)?;
         file.name = display_name(&path);
@@ -571,6 +574,7 @@ impl AppState {
     }
 
     pub fn lock_pending(&self, path: PathBuf) -> u32 {
+        crate::crash::remember_path(&path);
         let token = self.next_token();
         lock(&self.locked).insert(token, path);
         token

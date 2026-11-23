@@ -3,20 +3,21 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { backend } from "./backend";
 import { runCommand } from "./commands/registry";
 import { useAppStore } from "./state/appStore";
+import { useCrashReports } from "./state/crashReports";
 import { PAGE_PAINTED_EVENT, type PagePaintedDetail } from "./viewer/events";
 import { getViewer } from "./viewer/registry";
 
 /**
- * Resolves on the next animation frame. A webview whose window is occluded or
- * whose display is asleep gets no animation frames at all, so fall back to a
- * timer rather than hanging the self-test.
+ * Resolves on the next animation frame, with true. A webview whose window is
+ * occluded or whose display is asleep gets no animation frames at all, so fall
+ * back to a timer (resolving with false) rather than hanging the self-test.
  */
-export function nextFrame(): Promise<void> {
+export function nextFrame(): Promise<boolean> {
   return new Promise((resolve) => {
-    const timer = window.setTimeout(resolve, 250);
+    const timer = window.setTimeout(() => resolve(false), 250);
     requestAnimationFrame(() => {
       window.clearTimeout(timer);
-      resolve();
+      resolve(true);
     });
   });
 }
@@ -447,7 +448,14 @@ async function addedTextChecks(documentId: number) {
   const edited = "أضيف هذا النص الجديد إلى الصفحة";
   let blockEdited = false;
   let blockReadBack = false;
-  let bold = { applied: false, saved: false, readBack: false, typingMedianMs: -1, typingP95Ms: -1 };
+  let bold = {
+    applied: false,
+    saved: false,
+    readBack: false,
+    typingMedianMs: -1,
+    typingP95Ms: -1,
+    typingWithoutFrames: false,
+  };
   if (block) {
     await runCommand("text.editBlock", { page: 0, block });
     await runCommand("note.save", { text: edited });
@@ -479,6 +487,7 @@ async function addedTextChecks(documentId: number) {
     boldReadBack: bold.readBack,
     typingMedianMs: bold.typingMedianMs,
     typingP95Ms: bold.typingP95Ms,
+    typingWithoutFrames: bold.typingWithoutFrames,
   };
 }
 
@@ -525,6 +534,9 @@ async function boldFromTheEditor(documentId: number, text: string, word: string)
     readBack: false,
     typingMedianMs: -1,
     typingP95Ms: -1,
+    // The window got no animation frames (hidden or occluded): each keystroke
+    // then "takes" the 250 ms fallback, which says nothing about typing.
+    typingWithoutFrames: false,
   };
   const holds = (candidate: { text: string }) =>
     candidate.text.replace(/\s+/gu, " ").includes(text);
@@ -550,7 +562,7 @@ async function boldFromTheEditor(documentId: number, text: string, word: string)
   for (const char of " تجربة") {
     const started = performance.now();
     document.execCommand("insertText", false, char);
-    await nextFrame();
+    if (!(await nextFrame())) result.typingWithoutFrames = true;
     latencies.push(performance.now() - started);
   }
   for (let i = 0; i < latencies.length; i += 1) document.execCommand("delete");
@@ -694,6 +706,53 @@ async function notesAndInkChecks(documentId: number) {
  * (`scroll:zoom`: its zoom gestures only, three times over, for quick work on
  * zooming; that report is not a budget check).
  */
+/**
+ * The crash report self-test (scripts/crash-selftest.sh, ADR 0061). The first
+ * launch runs a few commands, lets the run marker take them, and fails as
+ * asked (`panic`, `abort`, `thread-panic`); the second launch (`check`, or
+ * `check-late` after an abort) reports what the prompt after the crash offers.
+ */
+async function crashSpike(step: string) {
+  if (step === "check" || step === "check-late") {
+    // A native crash's log may come late (macOS writes it up to minutes
+    // after); the shell then adds the report while running.
+    const wait = step === "check-late" ? 200_000 : 10_000;
+    const offered = await waitFor(() => useCrashReports.getState().prompt.length > 0, wait);
+    const prompt = useCrashReports.getState().prompt;
+    const dialog = document.querySelector('[data-testid="crash-reports"]');
+    await backend.selftestReport(
+      {
+        spike: "crash:check",
+        offered,
+        dialogShown: dialog !== null,
+        dialogDir: document.documentElement.dir,
+        reports: prompt.map(({ kind, text }) => ({ kind, text })),
+        state: await backend.selftestCrashState(),
+      },
+      null,
+    );
+    return;
+  }
+  // Commands that reach the shell, so its last-commands list has them.
+  await runCommand("search.run", { query: "the" });
+  await runCommand("view.zoomIn");
+  await runCommand("app.settings");
+  await runCommand("app.closeSettings");
+  // The marker writes the last commands every 2 seconds.
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+  const before = await backend.selftestCrashState();
+  void backend.selftestLog(`crash state before failing: ${JSON.stringify(before)}`);
+  if (step === "thread-panic") {
+    await backend.selftestCrash("thread-panic");
+    await backend.selftestReport(
+      { spike: "crash:thread-panic", before, after: await backend.selftestCrashState() },
+      null,
+    );
+    return;
+  }
+  await backend.selftestCrash(step === "abort" ? "abort" : "panic");
+}
+
 export async function runSelftestIfRequested(): Promise<void> {
   const config = await backend.selftestConfig();
   if (!config) return;
@@ -705,7 +764,13 @@ export async function runSelftestIfRequested(): Promise<void> {
   store.setTheme(config.theme === "dark" ? "dark" : "light");
 
   void backend.selftestLog(`started (${document.visibilityState})`);
-  const painted = await waitForPagePainted(0, 15_000);
+  // Cold start (spec section 11): the window is usable once the UI has drawn
+  // a frame; then the launch document's first page.
+  const painting = waitForPagePainted(0, 15_000);
+  await nextFrame();
+  void backend.selftestMark("uiReady");
+  const painted = await painting;
+  if (painted) void backend.selftestMark("firstPage");
   void backend.selftestLog(`first page painted: ${JSON.stringify(painted)}`);
   // Let layout settle after the paint (fit-width, fonts).
   await nextFrame();
@@ -730,6 +795,10 @@ export async function runSelftestIfRequested(): Promise<void> {
       },
       null,
     );
+    return;
+  }
+  if (config.spike?.startsWith("crash:")) {
+    await crashSpike(config.spike.slice("crash:".length));
     return;
   }
   if (config.spike === "tile-transport" && painted) {
@@ -784,6 +853,8 @@ export async function runSelftestIfRequested(): Promise<void> {
   const viewerElement = document.querySelector('[data-testid="viewer"]');
 
   const results = {
+    // A bundled UI (the shipped app) or one served by Vite (debug builds).
+    uiOrigin: window.location.origin,
     painted,
     locale: state.locale,
     dir: document.documentElement.dir,
