@@ -107,7 +107,13 @@ fn layer(page: usize, quality: LayerQuality, texts: &[(&str, bool)], document: &
             }
         })
         .collect();
-    PageLayer { page, quality, lines, placement: document.ocr_placement(page).expect("placement") }
+    PageLayer {
+        page,
+        quality,
+        lines,
+        placement: document.ocr_placement(page).expect("placement"),
+        clear: Default::default(),
+    }
 }
 
 /// A blank A4 page.

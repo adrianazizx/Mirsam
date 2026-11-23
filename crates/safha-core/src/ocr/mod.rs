@@ -14,10 +14,15 @@
 //!   reconciling ([`reconcile`]) into words with a status and a review list
 //!   ([`review_list`]) (ADR 0033).
 //!
-//! Word boxes and writing the text layer come in later slices.
+//! - Background jobs, word boxes and the text layer ([`jobs`], ADR 0035).
+//! - Review mode ([`review`], ADR 0037); reading an area again and replacing
+//!   another tool's poor text layer ([`region`], [`check`], ADR 0038); and
+//!   converting a page's recognised text into page text ([`convert`], ADR 0039).
 
 mod boxes;
+pub mod check;
 mod command;
+pub mod convert;
 mod draft;
 mod font;
 mod image;
@@ -28,13 +33,16 @@ mod llama;
 mod order;
 mod pipeline;
 mod reconcile;
+pub mod region;
 mod replay;
+pub mod review;
 mod text;
 
 use std::path::PathBuf;
 use std::time::Duration;
 
 pub use boxes::{BoxedLine, BoxedWord, word_boxes};
+pub use check::{LayerKind, PageCheck, Problem, TextInfo, Verdict, check_page};
 pub use command::CommandEngine;
 pub use draft::{
     DraftLine, DraftPage, DraftReader, DraftWord, PixelBox, TESSERACT_MODELS, TesseractReader, VISION_SOURCE,
@@ -42,9 +50,10 @@ pub use draft::{
 };
 pub use image::{NUQTA_PIXELS, OcrImage, nuqta_size, prepare_nuqta};
 pub use layer::{
-    LAYER_KEY, LayerLine, LayerQuality, LayerWord, ORDER, Order, PageLayer, text_layer_update_with,
+    CONVERTED_KEY, Clear, DIGEST_KEY, LAYER_KEY, LayerLine, LayerQuality, LayerState, LayerWord, ORDER,
+    Order, PageLayer, text_layer_update_with,
 };
-pub(crate) use layer::{layer_qualities, text_layer_update};
+pub(crate) use layer::{layer_qualities, layer_states, text_layer_update};
 pub use layout::{LineBox, PageLayout, analyze, deskew};
 pub use llama::{
     ChatAnswer, Device, LlamaServer, NUQTA_PROMPT, NuqtaEngine, NuqtaModel, NuqtaQuant, NuqtaSize,
@@ -56,6 +65,7 @@ pub use reconcile::{
     OtherReadings, ReviewedWord, WordStatus, is_target, key, reconcile, words_with_confidence,
 };
 pub use replay::{RecordedRead, Recorder, Recording, Replay, fingerprint};
+pub use review::{Action, ReviewFilter, WordReview};
 pub use text::{Token, strip_think, to_text, word_confidences};
 
 /// A recogniser: page (or crop) image in, text in reading order out.

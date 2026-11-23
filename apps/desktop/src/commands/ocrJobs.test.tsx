@@ -63,26 +63,32 @@ describe("background OCR jobs (ADR 0035)", () => {
     expect(jobs().focus).toEqual({
       documentId: 1,
       page: 0,
+      word: 4,
       at: [0, 0],
       rect: { x: 300, y: 120, width: 40, height: 16 },
     });
     expect(unsure.getAttribute("aria-current")).toBe("true");
 
-    // Next and previous step through the flagged words, wrapping around.
+    // Next and previous step through the flagged words (a low-confidence one too), wrapping around.
     expect(isCommandEnabled("ocr.nextFlag")).toBe(true);
     await act(() => runCommand("ocr.nextFlag"));
     expect(jobs().focus?.at).toEqual([0, 1]);
     await act(() => runCommand("ocr.nextFlag"));
+    expect(jobs().focus?.at).toEqual([0, 2]);
+    await act(() => runCommand("ocr.nextFlag"));
     expect(jobs().focus?.at).toEqual([0, 0]);
     await act(() => runCommand("ocr.previousFlag"));
-    expect(jobs().focus?.at).toEqual([0, 1]);
+    expect(jobs().focus?.at).toEqual([0, 2]);
 
     // A finished job can be removed.
     fireEvent.click(within(job).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(screen.queryByTestId("ocr-job")).toBeNull());
   });
 
-  it("pauses, resumes and cancels a job", async () => {
+  // A 240-page job writes an edit every 30 ms while it runs, and each edit
+  // builds the viewer again: on a loaded CI runner (Windows, beside the
+  // accessibility suite) the round trip outlasts vitest's 5 s default.
+  it("pauses, resumes and cancels a job", { timeout: 20_000 }, async () => {
     render(<App />);
     openDocument();
     await act(() => runCommand("ocr.recognize"));
@@ -131,6 +137,7 @@ describe("background OCR jobs (ADR 0035)", () => {
         drafted: 3,
         finished: 1,
         current: null,
+        options: { kind: { kind: "recognize" }, replace: false },
         documentIds: [1],
       }),
     );

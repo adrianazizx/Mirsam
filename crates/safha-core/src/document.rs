@@ -355,16 +355,133 @@ impl Document {
 
     /// This document with OCR text layers written into their pages (ADR 0035),
     /// replacing any layer those pages had, and the update that does it.
+    ///
+    /// A layer that clears (ADR 0038) first removes another tool's invisible
+    /// text from its page, or from its area, by byte range, in the same update.
     pub fn with_text_layers(&self, layers: &[crate::ocr::PageLayer]) -> Result<(Document, Vec<u8>)> {
-        let update = crate::ocr::text_layer_update(&self.bytes, self.password.as_deref(), layers)?;
+        let password = self.password.as_deref();
         let mut bytes = self.bytes.to_vec();
+        let start = bytes.len();
+        for layer in layers {
+            let within = match layer.clear {
+                crate::ocr::Clear::None => continue,
+                crate::ocr::Clear::Page => None,
+                crate::ocr::Clear::Region { rect } => Some(self.page_space(layer.page, rect)?),
+            };
+            if let Some(update) = crate::objects::invisible_text_update(
+                &bytes,
+                password,
+                layer.page,
+                self.page_area(layer.page)?,
+                within,
+            )? {
+                bytes.extend_from_slice(&update);
+            }
+        }
+        let update = crate::ocr::text_layer_update(&bytes, password, layers)?;
         bytes.extend_from_slice(&update);
+        let update = bytes[start..].to_vec();
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
     /// The OCR text layer each page has, if any (`Draft` or `Final`).
     pub fn text_layer_qualities(&self) -> Result<Vec<Option<crate::ocr::LayerQuality>>> {
         crate::ocr::layer_qualities(&self.bytes)
+    }
+
+    /// What each page holds of this app's OCR: its layer with its digest, and
+    /// the digest of a layer its text was converted from (ADR 0037, ADR 0039).
+    pub fn text_layer_states(&self) -> Result<Vec<crate::ocr::LayerState>> {
+        crate::ocr::layer_states(&self.bytes)
+    }
+
+    /// A page's existing text, for checking another tool's text layer (ADR 0038).
+    pub fn text_info(&self, page: usize) -> Result<crate::ocr::TextInfo> {
+        let census =
+            crate::objects::text_census(&self.bytes, self.password.as_deref(), page, self.page_area(page)?)?;
+        let text = self.page_text(page)?;
+        let lines: Vec<&str> =
+            text.blocks.iter().flat_map(|block| block.lines.iter().map(|line| line.text.as_str())).collect();
+        Ok(crate::ocr::TextInfo {
+            text: lines.join("\n"),
+            invisible: census.invisible,
+            visible: census.visible,
+            ours: census.ours,
+            suspect: matches!(text.quality, crate::text::TextQuality::Suspect { .. }),
+        })
+    }
+
+    /// This document with pages' recognised text made into page text (ADR
+    /// 0039): where a page's scan is not kept, its page-sized images are
+    /// removed first; another tool's invisible text goes too. One update.
+    pub fn with_conversion(
+        &self,
+        pages: &[crate::ocr::convert::PageConversion],
+    ) -> Result<(Document, Vec<u8>)> {
+        let password = self.password.as_deref();
+        let mut current = self.clone_revision()?;
+        for conversion in pages {
+            let page = conversion.page;
+            if !conversion.keep_scan {
+                // Page-sized images, top first, one at a time: indices move.
+                loop {
+                    let area = current.page_area(page)?;
+                    let objects = current.page_objects(page)?;
+                    let Some(scan) = objects.iter().rev().find(|o| {
+                        o.kind == crate::objects::ObjectKind::Image
+                            && f64::from(o.rect.width) * f64::from(o.rect.height) >= 0.5 * area
+                    }) else {
+                        break;
+                    };
+                    let change = crate::objects::ObjectChange {
+                        page,
+                        object: crate::objects::ObjectRef {
+                            index: scan.index,
+                            fingerprint: scan.fingerprint,
+                        },
+                        edit: crate::objects::ObjectEdit::Delete,
+                    };
+                    current = current.with_object_edit(&change)?.0;
+                }
+            }
+            let area = current.page_area(page)?;
+            if let Some(update) =
+                crate::objects::invisible_text_update(&current.bytes, password, page, area, None)?
+            {
+                let mut bytes = current.bytes.to_vec();
+                bytes.extend_from_slice(&update);
+                current = current.revision(Arc::from(bytes))?;
+            }
+        }
+        let update = crate::ocr::convert::convert_update(&current.bytes, password, pages)?;
+        let mut bytes = current.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        let update = bytes[self.bytes.len()..].to_vec();
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// This document again, at the same bytes.
+    fn clone_revision(&self) -> Result<Document> {
+        self.revision(Arc::clone(&self.bytes))
+    }
+
+    /// Page `index`'s area in square points.
+    fn page_area(&self, index: usize) -> Result<f64> {
+        let size = self.page_size(index)?;
+        Ok(f64::from(size.width) * f64::from(size.height))
+    }
+
+    /// A box on page `index` as displayed (points, left, top, right, bottom),
+    /// in the page's own space (`[x0, y0, x1, y1]`).
+    fn page_space(&self, index: usize, rect: [f32; 4]) -> Result<[f64; 4]> {
+        let view = self.view_transform(index)?;
+        let corners = [(rect[0], rect[1]), (rect[2], rect[1]), (rect[0], rect[3]), (rect[2], rect[3])]
+            .map(|(x, y)| view.page_point(x, y));
+        let xs = corners.map(|c| f64::from(c.0));
+        let ys = corners.map(|c| f64::from(c.1));
+        let min = |v: [f64; 4]| v.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = |v: [f64; 4]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        Ok([min(xs), min(ys), max(xs), max(ys)])
     }
 
     /// The `cm` matrix from page `index` as displayed (origin top-left, x right,

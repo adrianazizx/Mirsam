@@ -7,6 +7,7 @@ import {
   isCommandEnabled,
   isEditableTarget,
   refreshOcrModels,
+  refreshReview,
   resolvedTheme,
   runCommand,
 } from "./commands/registry";
@@ -187,12 +188,20 @@ export function App() {
       else unlisten();
     };
     const reloadReview = (documentId: number) =>
-      backend
-        .ocrReview(documentId)
-        .then((pages) => useOcrJobs.getState().setReview(documentId, pages))
-        .catch((error: unknown) => console.warn("OCR review list unavailable", error));
+      refreshReview(documentId).catch((error: unknown) =>
+        console.warn("OCR review list unavailable", error),
+      );
     backend
-      .onOcrJob((job) => useOcrJobs.getState().setJob(job))
+      .onOcrJob((job) => {
+        useOcrJobs.getState().setJob(job);
+        // A check's verdicts, as its pages are checked (ADR 0038).
+        if (job.options.kind.kind === "check")
+          for (const documentId of job.documentIds)
+            backend
+              .ocrLayerChecks(documentId)
+              .then((checks) => useOcrJobs.getState().setChecks(documentId, checks))
+              .catch((error: unknown) => console.warn("OCR layer checks unavailable", error));
+      })
       .then(keep)
       .catch((error: unknown) => console.warn("cannot follow OCR jobs", error));
     backend
