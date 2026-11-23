@@ -165,5 +165,46 @@ New crates are all permissive and maintained:
    (Vulkan) `libvulkan`. The `.deb`/`.rpm` dependencies should name them.
 5. **The memory threshold** for falling back to the 0.8B (ADR 0030) can use
    `Hardware::memory` once it is set.
-6. **The draft reader** needs no download on macOS (Apple Vision). Tesseract elsewhere is not
-   packaged yet; `Role::Draft` is there for it.
+6. **The draft reader** needs no download on macOS (Apple Vision). On Windows and Linux the
+   catalog offers **`tesseract-best`** (owner item 23, decided 2026-11-23; amendment below).
+
+## Amendment (2026-11-23): the quick draft on Windows and Linux
+
+The owner decided to offer Tesseract as an optional download where Apple Vision is not there.
+
+- **What is in the catalog:** `tesseract-best` (`Role::Draft`, optional, Windows and Linux
+  only): `tessdata_best`'s `ara.traineddata` (12,603,724 bytes) and `eng.traineddata`
+  (15,400,601 bytes), 28.0 MB in all.
+  - **Pinned to** the repository's last release tag, `4.1.0` (commit `e2aad9b9…`), from
+    `raw.githubusercontent.com`. `ara` and `eng` are unchanged on `main` since.
+  - **Checked:** each file's git blob hash matched GitHub's for the tag before its SHA-256 was
+    taken.
+  - **Licence:** Apache-2.0 (the repository's LICENSE).
+- **How it is used:** with it installed, the job system's draft reader is
+  `find_tesseract(tesseract_programs(), Some(package dir))`. It is the first `tesseract` that
+  lists `ara` and `eng` from `--tessdata-dir` (ADR 0035). Without it, a Tesseract whose own data
+  has both still drafts, as before. macOS keeps Apple Vision.
+- **The program is not in the catalog.** This is a licence stop (spec §10; owner item 26):
+  - **Linux:** Tesseract publishes source only, no Linux builds. The distributions' packages
+    (`tesseract-ocr`, `tesseract`) are the program, found on `PATH`.
+  - **Windows:** the one official build is `tesseract-ocr-w64-setup-5.5.3.20260724.exe`
+    (release 5.5.3; 26,573,224 bytes; SHA-256 `bee9e3434bd94fd65387d9be28cd467a41f61b1275383b55b0f59a1331270ae4`).
+    - **It is an installer.** It is NSIS, not an archive the manager unpacks.
+    - **What it bundles:** `nsis/build.sh` at the tag copies every DLL that its programs and
+      training tools load from MSYS2. Among them, outside spec §10's list:
+      - LGPL: GLib, Pango, Cairo, FriBidi, gettext's libintl, libiconv, libidn2 and
+        libunistring;
+      - GPL-3.0-or-later WITH GCC-exception-3.1: `libstdc++` and `libgcc_s`.
+    - **Until the owner decides,** a `tesseract.exe` the user installed is found on `PATH` or in
+      the installer's folders (`%ProgramFiles%\Tesseract-OCR`, `%LOCALAPPDATA%\Programs\Tesseract-OCR`).
+    - **Within spec §10:** Tesseract (Apache-2.0) and Leptonica (BSD-2-Clause text,
+      `leptonica-license.txt`). A build with only those and permissive libraries would be.
+- **Fixed on the way:** `TesseractReader` passed `--tessdata-dir` after the `tsv` config, where
+  Tesseract takes every argument for another config file. No caller set it until now; the
+  option now comes first.
+- **Tests:**
+  - the catalog entry (pins, role, platforms, order);
+  - a stand-in `tesseract` script that lists English only from `--tessdata-dir` (the reader is
+    found only once both files are installed, and reads with them);
+  - the UI's row in English and Arabic on Windows, and none on macOS.
+  No real download is made.

@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -30,11 +30,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    `app.digitsArabicIndic` and `app.digitsWestern` do the same. It covers the UI's own numbers
    (page counts, zoom, sizes, dates); numbers inside documents keep their per-feature choice
    (spec 6.3). The English UI is unchanged.
-6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
-   `app.mirsam.desktop`. Before the first signed release it should be the reverse of a domain you
-   own; changing it later moves where the app keeps its state (recents, session, positions).
-   **Deferred by the owner (2026-11-23):** kept as is for now; to be settled before code signing
-   (item 17).
+6. ~~Bundle identifier?~~ **Decided (2026-11-23): keep `app.mirsam.desktop` until the owner has
+   a domain; settle it before code signing** (item 17). Before the first signed release it should
+   be the reverse of a domain the owner owns; changing it later moves where the app keeps its state
+   (recents, session, positions).
 7. **Shell PATH.** Homebrew's rustup is keg-only. To use `cargo` in your own terminal:
    `export PATH=/opt/homebrew/opt/rustup/bin:$PATH` (not added to `~/.zshrc` for you).
 8. **More fixture producers and OCR baselines need installs** (none done without asking):
@@ -75,15 +74,16 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 
     Linux uses GTK's print dialog, with each page drawn at the printer's resolution (ADR 0013).
     CI checks it by printing to a file; it has not been tried on a desktop with a real printer.
-14. **IBM Plex in users' PDFs.** Text boxes embed subsets of IBM Plex Sans and IBM Plex Sans
+14. ~~IBM Plex in users' PDFs?~~ **Decided (2026-11-23), both parts.** Text boxes embed subsets of IBM Plex Sans and IBM Plex Sans
     Arabic (ADR 0019). "Plex" is a Reserved Font Name under the OFL. Embedding a subset in a
     document under the font's own name is common practice and is not redistributing a modified
     font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
     and Noto Sans Arabic (OFL, no reserved name) can replace them.
     **Decided (2026-11-23): keep IBM Plex** for subsets embedded under the fonts' own names.
-    Still open: italic runs are embedded under names we made (`IBMPlexSans-Oblique`, ADR 0024);
-    the font program is unchanged, but the name carries the Reserved Font Name, and that case was
-    not part of the question.
+    **Also decided (2026-11-23): italic runs take neutral names.** They are now embedded as
+    `MirsamSans-Oblique`, `MirsamNaskh-Oblique` and so on, with no Reserved Font Name. The font
+    programs and the look are unchanged. Files saved with the old `IBMPlexSans-Oblique`-style names
+    are still recognised when edited again (ADR 0024's amendment, `assets/fonts/README.md`).
 
 15. **A JPEG codec for redaction (M5, ADR 0042).** Redacting an area of a *scan* (a page that is one
     JPEG) currently drops the whole image, because overwriting its pixels needs a JPEG decoder and
@@ -139,9 +139,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
       preferences: that is its trust policy, not a defect.
     - **Sign with a real certificate in the macOS keychain** (a company's or a qualified provider's).
       Listing works on this Mac, which has none for documents; macOS asks for permission the first time.
-    - **Choose a time-stamping authority to suggest**, if any. Today the field is empty until the user
-      fills it in, so nothing is sent anywhere by default. Free public ones exist (e.g. FreeTSA, DigiCert's
-      `http://timestamp.digicert.com`); their terms differ.
+    - ~~Choose a time-stamping authority to suggest?~~ **Decided (2026-11-23): DigiCert's
+      `http://timestamp.digicert.com`.** The dialog fills it in, but the time-stamp stays off until the
+      user turns it on, so nothing is sent by default. The user can change or clear the address, and the
+      on/off choice is remembered (ADR 0048's amendment).
     `cms` and `x509-tsp` are still pinned release candidates (ADR 0044's question); signing is now built
     on them.
 
@@ -151,7 +152,13 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
       "beat the OCR in the leading commercial editors". Apple Vision (Preview's) is beaten.
     Neither is installed here. Everything else in the exit test passed on the synthetic set;
     real scans (item 9) are still what would make the numbers trustworthy.
-23. **A draft reader for Windows and Linux.** On macOS, Apple Vision drafts each page in
+23. ~~A draft reader for Windows and Linux?~~ **Decided (2026-11-23): Tesseract as an optional
+    download.** Done for its models, stopped for the program (item 26). The catalog offers
+    `tesseract-best` on Windows and Linux: `tessdata_best` `ara` + `eng`, tag 4.1.0, 28 MB,
+    Apache-2.0. With it installed, the OCR job's draft pass uses the user's `tesseract` with those
+    models. macOS keeps Apple Vision (ADR 0034's amendment).
+
+    The question as it was: on macOS, Apple Vision drafts each page in
     under a second (ADR 0035). Elsewhere the app uses Tesseract (`ara+eng`) only if the user
     installed it. Bundling it means the `tesseract` program (Apache-2.0, about 15–30 MB with
     Leptonica) and `tessdata_best` `ara` + `eng` (about 25 MB, Apache-2.0) through the model
@@ -169,7 +176,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **Cmd+S** after an edit ("Saved name.pdf"), **Cmd+K**, **Escape**;
     - **Settings → Display → 200%**, then **Next page** (said once you stop).
     Anything read wrongly, read twice, or not at all is worth a note.
-25. **Run a crash server?** (ADR 0061) Crash reports are built without one: they are kept on the
+25. ~~Run a crash server?~~ **Decided (2026-11-23): no crash server; reports stay manual** (ADR 0061's
+    note). The question as it was (ADR 0061): Crash reports are built without one: they are kept on the
     computer, offered once after a crash, shown exactly as they would be sent, and leave only
     when the user copies one, saves it, or opens a pre-filled issue on `adrianazizx/Mirsam` in
     their browser. Nothing is sent automatically. A server would let users send with one click
@@ -185,6 +193,26 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     at all before the user opts in (today they are kept, redacted, so there is something to ask
     about; "Don't keep crash reports" in Settings stops it). Until decided, the GitHub issue path
     is the default; `SAFHA_CRASH_DESTINATION=manual` at build time removes it.
+26. **The `tesseract` program for the quick draft (item 23) is outside spec §10 on Windows, and does
+    not exist as an official build on Linux.** The draft's models are in the catalog. The program is
+    not (ADR 0034's amendment):
+    - **Linux:** Tesseract publishes source only. The draft uses the distribution's `tesseract`
+      (`apt install tesseract-ocr`, `dnf install tesseract`), which the user installs.
+    - **Windows:** the only official build is release 5.5.3's
+      `tesseract-ocr-w64-setup-5.5.3.20260724.exe`. It is an NSIS installer, not an archive. Its
+      build script copies in every DLL its programs and training tools use:
+      - LGPL: GLib, Pango, Cairo, FriBidi, libintl, libiconv, libidn2, libunistring;
+      - GPL-3.0 WITH GCC-exception-3.1: the GCC runtime (`libstdc++`, `libgcc_s`).
+
+      Tesseract (Apache-2.0) and Leptonica (BSD-2-Clause) themselves are fine.
+    - **Options:**
+      - (a) leave it to the user, who runs Tesseract's installer. Today the app finds it in
+        `Program Files` or on `PATH`;
+      - (b) approve the LGPL libraries and the GCC runtime exception, and run the installer
+        silently into the app's data folder;
+      - (c) build our own Windows `tesseract.exe` with only permissive libraries. Tesseract, Leptonica
+        and libpng/zlib/libjpeg-turbo/libtiff/libwebp/giflib/openjpeg are all permissive. The work is
+        a CI job and a pinned archive in the catalog.
 
 Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the stated assumptions.
 
@@ -868,14 +896,44 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [~] Opt-in crash reporting (ADR 0061): Rust panics, native crashes (macOS and Windows, from the
       system's crash log) and UI errors become redacted reports kept on the computer, offered once
       after a crash and shown exactly as they would be sent; sent only by the user (copy, save, a
-      pre-filled GitHub issue). Settings → Crash reports. **Open:** a crash server (owner item 25);
-      Linux native crashes; the Windows reader is untested on a real crash
+      pre-filled GitHub issue). Settings → Crash reports. No crash server (owner's decision,
+      item 25). **Open:** Linux native crashes; the Windows reader is untested on a real crash
 - [~] Performance hardening: every spec §11 budget measured on a release build (session log
       below, "M7 crash reports and performance"); the cold-start budget is now checked by the
       self-test and the 500-page search budget by CI. **Open:** the numbers were taken under heavy
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### Owner decisions 3 — 2026-11-23 (branch `pomidor/owner-decisions-3-69ac27`)
+
+Five owner decisions from 2026-11-23 applied.
+
+- **Item 23, the quick draft on Windows and Linux** (ADR 0034's amendment, ADR 0035):
+  - The catalog's `tesseract-best` package (`models::draft_package`): `tessdata_best` `ara` + `eng`,
+    pinned to tag 4.1.0 by commit, size and SHA-256. It is optional, `Role::Draft`, and offered on
+    Windows and Linux only.
+  - `ocr::find_tesseract` and `tesseract_programs` look for the program in three places:
+    `SAFHA_TESSERACT`, the `PATH`, and the Windows installer's folders. The job system's draft
+    reads with the downloaded models when they are installed.
+  - Fixed: `--tessdata-dir` came after the `tsv` config, where Tesseract reads it as a config file.
+  - The program itself stops at a licence question (new item 26).
+  - Tests use a stand-in `tesseract` script and the mock catalog; nothing real is downloaded.
+- **Item 21, time-stamping:**
+  - DigiCert's `http://timestamp.digicert.com` is suggested in the signing dialog. The time-stamp
+    stays off until the user turns it on.
+  - A new `signing.timestamp` setting remembers on and off. The address is kept as the user left
+    it (ADR 0048's amendment).
+- **Item 14, italic font names:**
+  - Obliques are embedded as `MirsamSans-Oblique`, `MirsamNaskh-Oblique`, … (`fonts::oblique_of`).
+  - `fonts::upright_of_oblique` maps them, and the old Plex names, back to their bundled face.
+  - Fixed: a run in one of our obliques was reused by its codes or embedded program and drawn
+    upright, for example after an edit that only removed a word. It is now set from the bundled
+    face and slanted.
+  - ADR 0024's amendment, `assets/fonts/README.md`.
+- **Items 25 and 6, recorded:**
+  - no crash server, and reports stay manual (ADR 0061's note);
+  - `app.mirsam.desktop` stays until there is a domain, and is settled before code signing.
 
 ### Session M6-c — 2026-11-23 (Milestone 6: find and replace; parallel to OCR review, accessibility, crash reporting)
 

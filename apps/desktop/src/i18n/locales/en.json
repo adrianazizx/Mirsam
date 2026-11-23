@@ -1025,7 +1025,7 @@
       "primary": "Reads the page. Needed for OCR.",
       "ensemble": "A second reader that double-checks numbers and unclear words. Optional.",
       "runtime": "Runs the models on this computer. Needed for OCR.",
-      "draft": "A quick first reading, replaced by the full one."
+      "draft": "A quick first reading, replaced by the full one. Optional; read by the Tesseract program installed on this computer (your system's package, or Tesseract's installer on Windows)."
     },
     "size": "Download: {{size}}",
     "licence": "Licence:",
@@ -1304,7 +1304,7 @@
     "time": "Time",
     "timestamp": "Add a trusted time-stamp (PAdES B-T)",
     "tsaUrl": "Time-stamping server",
-    "tsaHint": "Only a fingerprint of the signature is sent, nothing from the document. Your organisation or certificate provider can give you an address.",
+    "tsaHint": "Suggested: DigiCert's free public server; you can use another, such as one your organisation or certificate provider gives you. Only a fingerprint of the signature is sent to it, nothing from the document.",
     "tsaMissing": "Enter the time-stamping server's address, or turn the time-stamp off.",
     "saveNote": "Signing saves the document. Later changes are added after the signature, which stays valid and shows what changed.",
     "saveNoteEncrypted": "Signing saves the document with its password. Its protection cannot be changed after signing.",

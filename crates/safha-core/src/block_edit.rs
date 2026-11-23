@@ -37,7 +37,9 @@ use unicode_normalization::UnicodeNormalization;
 use crate::blocks::{Atom, Block, BlockAlign, RunStyle, analyze};
 use crate::edit::{Leaf, PageTree, Start, contains_string, set};
 use crate::error::{Error, Result};
-use crate::fonts::{FontFamily, bold_of, candidates, fallbacks, family_of, for_text, oblique_of};
+use crate::fonts::{
+    FontFamily, bold_of, candidates, fallbacks, family_of, for_text, oblique_of, upright_of_oblique,
+};
 use crate::pdf::content::{Matrix, Op, Operand, ShowKind, Shown, interpret, tokenize};
 use crate::pdf::crypt::Crypt;
 use crate::pdf::fontinfo::{FontInfo, stream_data_in};
@@ -249,8 +251,12 @@ fn own_fonts(
         .map(|(range, look)| {
             let run_text = &text[range.clone()];
             let own = info(look.style.font)?;
-            let fits =
-                |f: &FontInfo| f.bold == look.bold && f.italic == look.italic && reusable_for(f, run_text);
+            let fits = |f: &FontInfo| {
+                f.bold == look.bold
+                    && f.italic == look.italic
+                    && !slanted_by_us(f)
+                    && reusable_for(f, run_text)
+            };
             let key = if fits(own) {
                 look.style.font
             } else {
@@ -1147,7 +1153,10 @@ fn box_of(blocks: &[Block], obstacles: &[[f32; 4]], index: usize, page_width: f3
 /// the font's letters that do not join (`typeset::match_font`), so a
 /// substitute keeps the lines where they broke as far as it can.
 fn closest_fonts(font: Option<&FontInfo>, text: &str) -> Result<(Vec<NamedFont>, FontFamily)> {
-    let mut request = FontRequest::from_pdf(font.map_or("", |f| f.name.as_str()), None, None, None, None);
+    // A run we slanted before is matched as the bundled face it was drawn
+    // from: its neutral name (ADR 0024) does not say the family.
+    let name = font.map_or("", |f| f.name.as_str());
+    let mut request = FontRequest::from_pdf(upright_of_oblique(name).unwrap_or(name), None, None, None, None);
     if let Some(font) = font {
         // A set serif flag says something; a clear one, from many producers, does not.
         request.serif = font.serif.then_some(true);
@@ -1170,6 +1179,13 @@ fn closest_fonts(font: Option<&FontInfo>, text: &str) -> Result<(Vec<NamedFont>,
         }
     }
     Ok((fonts, family))
+}
+
+/// A font we embedded for a run drawn slanted (ADR 0024): its program is the
+/// upright face, so its codes or its program would draw the run upright. Such
+/// a run is set again from the bundled face, and slanted again.
+fn slanted_by_us(font: &FontInfo) -> bool {
+    upright_of_oblique(&font.name).is_some()
 }
 
 /// The paragraph's own font can set `text`: Latin characters it has codes for.
@@ -1393,7 +1409,7 @@ fn embedded_programs(
     let mut keys = Vec::with_capacity(looks.len());
     for (_, look) in looks {
         let own = info(look.style.font)?;
-        let styled = |f: &FontInfo| f.bold == look.bold && f.italic == look.italic;
+        let styled = |f: &FontInfo| f.bold == look.bold && f.italic == look.italic && !slanted_by_us(f);
         let key = if styled(own) && face_of(look.style.font).is_some() {
             look.style.font
         } else {
@@ -1585,6 +1601,24 @@ mod tests {
         // Nothing known: still a face that has the text.
         let (fonts, _) = closest_fonts(None, "نص").expect("fonts");
         assert!(fonts[0].face.covers('ن'));
+    }
+
+    #[test]
+    fn a_run_we_slanted_is_matched_as_the_face_it_was_drawn_from() {
+        // The neutral names do not say the family (ADR 0024); the old ones still match.
+        for (name, face) in [
+            ("ABCDEF+MirsamSans-Oblique", "IBMPlexSans"),
+            ("ABCDEF+MirsamNaskh-BoldOblique", "Amiri-Regular"),
+            ("ABCDEF+MirsamNaskhArabic-Oblique", "NotoNaskhArabic-Regular"),
+            ("ABCDEF+MirsamKufi-BoldOblique", "NotoSansArabic-Regular"),
+            ("ABCDEF+MirsamSansArabic-SemiBoldOblique", "IBMPlexSansArabic"),
+            ("ABCDEF+IBMPlexSansArabic-Oblique", "IBMPlexSansArabic"),
+        ] {
+            let mut font = FontInfo::simple_for_test(name, false, &[]);
+            font.italic = true;
+            let text = if face == "IBMPlexSans" { "Pro" } else { "نص" };
+            assert_eq!(closest_fonts(Some(&font), text).expect("fonts").0[0].name, face, "{name}");
+        }
     }
 
     /// Text in two styles: `B` marks bold (font 1) characters of `pattern`.

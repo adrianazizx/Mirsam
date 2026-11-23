@@ -6,7 +6,13 @@ import { MOCK_P12_PASSWORD, resetMockSigning } from "../backend/mockSigning";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
 import { EMPTY_FORM, useCertSign } from "../state/certSign";
 import { ALL_PERMISSIONS } from "../state/security";
-import { isCommandEnabled, runCommand, TSA_SETTING } from "./registry";
+import {
+  isCommandEnabled,
+  runCommand,
+  SUGGESTED_TSA_URL,
+  TIMESTAMP_SETTING,
+  TSA_SETTING,
+} from "./registry";
 
 const active = () => selectActiveDocument(useAppStore.getState());
 const sign = () => useCertSign.getState();
@@ -150,7 +156,28 @@ describe("signing with a certificate (ADR 0048)", () => {
     expect(sign().reports[1]?.list[0]?.view).toMatchObject({ x: 200, y: 364 });
   });
 
-  it("time-stamps from the authority given, which is remembered", async () => {
+  it("suggests DigiCert's server but leaves the time-stamp off until it is turned on", async () => {
+    render(<App />);
+    await act(async () => runCommand("certSign.open"));
+    const dialog = await screen.findByTestId("cert-sign-dialog");
+    await waitFor(() => expect(sign().form.identity).toBe("keychain:AB"));
+    expect(sign().form).toMatchObject({ tsaUrl: SUGGESTED_TSA_URL, timestamp: false });
+    expect(SUGGESTED_TSA_URL).toBe("http://timestamp.digicert.com");
+    // Off, the address is not even shown, and nothing asks a server.
+    expect(within(dialog).queryByLabelText("Time-stamping server")).toBeNull();
+    const signDocument = vi.spyOn(backend, "signDocument");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign and save" }));
+    await waitFor(() => expect(active()?.signed).toBe(true));
+    expect(signDocument.mock.calls[0]?.[1]).toMatchObject({ timestamp: false });
+    expect(sign().reports[1]?.list[0]?.timestamp).toBeNull();
+    expect((await backend.settings())[TIMESTAMP_SETTING]).toBe("off");
+
+    // Opened again: still off, still only suggested.
+    await act(async () => runCommand("certSign.open"));
+    expect(sign().form).toMatchObject({ tsaUrl: SUGGESTED_TSA_URL, timestamp: false });
+  });
+
+  it("time-stamps from the authority given, which is remembered, as is turning it off", async () => {
     render(<App />);
     await act(async () => runCommand("certSign.open"));
     const dialog = await screen.findByTestId("cert-sign-dialog");
@@ -161,10 +188,15 @@ describe("signing with a certificate (ADR 0048)", () => {
     const button = within(dialog).getByRole("button", {
       name: "Sign and save",
     }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(dialog.textContent).toContain("Enter the time-stamping server's address");
     const url = within(dialog).getByLabelText("Time-stamping server") as HTMLInputElement;
     expect(url.getAttribute("dir")).toBe("ltr");
+    // Turned on, the suggestion is filled in; the user can clear or change it.
+    expect(url.value).toBe(SUGGESTED_TSA_URL);
+    expect(dialog.textContent).toContain("Suggested: DigiCert's free public server");
+    expect(button.disabled).toBe(false);
+    fireEvent.change(url, { target: { value: "" } });
+    await waitFor(() => expect(button.disabled).toBe(true));
+    expect(dialog.textContent).toContain("Enter the time-stamping server's address");
     fireEvent.change(url, { target: { value: "http://timestamp.example" } });
     await waitFor(() => expect(button.disabled).toBe(false));
     fireEvent.click(button);
@@ -175,6 +207,26 @@ describe("signing with a certificate (ADR 0048)", () => {
     // Opened again, the authority is filled in and the time-stamp on.
     await act(async () => runCommand("certSign.open"));
     expect(sign().form).toMatchObject({ tsaUrl: "http://timestamp.example", timestamp: true });
+
+    // Turned off and signed: off next time, with the address kept.
+    act(() => sign().updateForm({ timestamp: false }));
+    const signDocument = vi.spyOn(backend, "signDocument");
+    await act(async () => runCommand("certSign.apply"));
+    expect(signDocument.mock.calls[0]?.[1]).toMatchObject({ timestamp: false });
+    await act(async () => runCommand("certSign.open"));
+    expect(sign().form).toMatchObject({ tsaUrl: "http://timestamp.example", timestamp: false });
+  });
+
+  it("keeps a cleared address cleared, and an address saved before the choice was kept on", async () => {
+    await backend.setSetting(TSA_SETTING, "http://tsa.before");
+    render(<App />);
+    await act(async () => runCommand("certSign.open"));
+    expect(sign().form).toMatchObject({ tsaUrl: "http://tsa.before", timestamp: true });
+
+    await backend.setSetting(TSA_SETTING, "");
+    await backend.setSetting(TIMESTAMP_SETTING, "off");
+    await act(async () => runCommand("certSign.open"));
+    expect(sign().form).toMatchObject({ tsaUrl: "", timestamp: false });
   });
 
   it("keeps a failure in the open dialog, and reports one after placing in the banner", async () => {

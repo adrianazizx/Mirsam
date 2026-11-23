@@ -46,7 +46,16 @@ faces' bolds:
 - `IBMPlexSansArabic-SemiBold.ttf`.
 
 All of these are now compiled into the engine. Italic runs are drawn slanted
-from the upright faces and embedded under oblique names (`IBMPlexSans-Oblique`,
-…). The font programs are not changed, but the names are ours, so the Reserved
-Font Name question above applies to them too; that case is still open for the
-project owner (owner item 14).
+from the upright faces. The font programs are not changed.
+
+**Italic runs use neutral names (owner item 14, decided 2026-11-23).** A name we
+make carries no Reserved Font Name, and no family's own name. Each oblique is
+embedded as `Mirsam` plus a style word (ADR 0024's amendment):
+- IBM Plex Sans → `MirsamSans-Oblique` / `-BoldOblique`;
+- IBM Plex Sans Arabic → `MirsamSansArabic-Oblique` / `-SemiBoldOblique`;
+- Amiri → `MirsamNaskh-…`;
+- Noto Naskh Arabic → `MirsamNaskhArabic-…`;
+- Noto Sans Arabic → `MirsamKufi-…`.
+
+Files saved earlier with `IBMPlexSans-Oblique`-style names are still recognised
+when edited again.

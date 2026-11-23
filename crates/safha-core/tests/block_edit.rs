@@ -558,18 +558,57 @@ fn a_substituted_paragraph_keeps_bold_italic_size_and_colour_and_keeps_them_on_t
     assert_eq!(run_with(&after, "due"), ("IBMPlexSans-Bold".into(), true, false, false));
     assert_eq!(run_with(&after, "fifth"), ("IBMPlexSans".into(), false, false, true));
     // No italic face is bundled: the run is slanted, under a name that says so.
-    assert_eq!(run_with(&after, "without delay"), ("IBMPlexSans-Oblique".into(), false, true, false));
+    assert_eq!(run_with(&after, "without delay"), ("MirsamSans-Oblique".into(), false, true, false));
     assert!(page_text(&edited, 0).contains(&normalize(&new)));
+    // The oblique's name is neutral: no Reserved Font Name ("Plex") in a name we made.
+    let written = String::from_utf8_lossy(&edited.bytes()).into_owned();
+    assert!(written.contains("+MirsamSans-Oblique"), "the oblique is embedded under its neutral name");
+    assert!(!written.contains("PlexSans-Oblique"), "no Plex oblique name");
+    let fonts_once = embedded_fonts(&edited);
 
-    // Edited again (by name now, the bundled faces themselves): nothing is lost.
+    // Saved and reopened, then edited again (by name now, the bundled faces
+    // themselves): nothing is lost, and nothing is embedded twice.
+    let reopened = engine().open_bytes(edited.bytes().to_vec(), None).expect("reopens");
+    let after = block_with(&reopened, 0, "The rent is due");
+    assert_eq!(run_with(&after, "without delay"), ("MirsamSans-Oblique".into(), false, true, false));
     let again_text = after.text.replace("transfer", "bank transfer");
-    let (again, ..) = edit_to(&edited, &after, 0, &again_text);
+    let (again, outcome, _) = edit_to(&reopened, &after, 0, &again_text);
+    assert_eq!(outcome.source, FontSource::Bundled, "the bundled faces, not their subsets");
+    assert_eq!(outcome.substituted.as_ref().map(|s| s.font.as_str()), Some("IBMPlexSans"));
     let third = block_with(&again, 0, "The rent is due");
     assert_eq!(normalize(&third.text), normalize(&again_text));
     assert_eq!(run_with(&third, "due"), ("IBMPlexSans-Bold".into(), true, false, false));
     assert_eq!(run_with(&third, "fifth"), ("IBMPlexSans".into(), false, false, true));
-    assert_eq!(run_with(&third, "without delay"), ("IBMPlexSans-Oblique".into(), false, true, false));
+    assert_eq!(run_with(&third, "without delay"), ("MirsamSans-Oblique".into(), false, true, false));
+    assert_eq!(embedded_fonts(&again), fonts_once, "the same faces, each once");
     qpdf_check(&again.bytes(), "styled-substitute.pdf");
+
+    // An edit that needs no new letter (one word removed) could be set in the
+    // page's own subsets, which hold the upright glyphs: the oblique is still
+    // set from the bundled face and slanted again.
+    let shorter = third.text.replace("bank ", "");
+    let (fourth_doc, outcome, _) = edit_to(&again, &third, 0, &shorter);
+    assert_eq!(outcome.source, FontSource::Bundled);
+    let fourth = block_with(&fourth_doc, 0, "The rent is due");
+    assert_eq!(run_with(&fourth, "without delay"), ("MirsamSans-Oblique".into(), false, true, false));
+    assert_eq!(embedded_fonts(&fourth_doc), fonts_once);
+    let content = uncompressed(&fourth_doc.bytes(), "styled-fourth");
+    assert!(content.contains("1 0 0.213 1 "), "the oblique run is drawn slanted again");
+}
+
+/// The document's objects with their streams uncompressed, by qpdf.
+fn uncompressed(bytes: &[u8], name: &str) -> String {
+    let input = scratch(&format!("{name}.pdf"));
+    let output = scratch(&format!("{name}-qdf.pdf"));
+    std::fs::write(&input, bytes).expect("write");
+    let status = Command::new("qpdf")
+        .args(["--qdf", "--object-streams=disable", "--stream-data=uncompress"])
+        .arg(&input)
+        .arg(&output)
+        .status()
+        .expect("qpdf runs (install qpdf)");
+    assert!(matches!(status.code(), Some(0 | 3)), "qpdf failed");
+    String::from_utf8_lossy(&std::fs::read(&output).expect("read")).into_owned()
 }
 
 #[test]

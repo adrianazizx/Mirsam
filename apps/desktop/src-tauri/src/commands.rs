@@ -519,6 +519,7 @@ const SETTINGS: &[&str] = &[
     "search.options",
     crate::editing::COMMENT_AUTHOR,
     crate::signing::TSA_SETTING,
+    crate::signing::TIMESTAMP_SETTING,
     // Crash reports (ADR 0061): "ask" (the default) or "off".
     crate::crash::SETTING,
 ];

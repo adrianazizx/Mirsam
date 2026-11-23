@@ -146,24 +146,63 @@ pub(crate) fn bold_of(font: &NamedFont) -> Result<NamedFont> {
         .map_or_else(|| font.clone(), |(_, bold)| bold.clone()))
 }
 
+/// Each bundled face (by its name) and the name its slanted runs are
+/// embedded under. The names are neutral (owner item 14, 2026-11-23): a
+/// name we make must not carry a Reserved Font Name such as "Plex", so no
+/// oblique name contains a family's own name. Each says its weight and that
+/// it is oblique, so a reader of the page sees bold and italic.
+const OBLIQUE_NAMES: [(&str, &str); 10] = [
+    ("IBMPlexSans", "MirsamSans-Oblique"),
+    ("IBMPlexSans-Bold", "MirsamSans-BoldOblique"),
+    ("IBMPlexSansArabic", "MirsamSansArabic-Oblique"),
+    ("IBMPlexSansArabic-SemiBold", "MirsamSansArabic-SemiBoldOblique"),
+    ("Amiri-Regular", "MirsamNaskh-Oblique"),
+    ("Amiri-Bold", "MirsamNaskh-BoldOblique"),
+    ("NotoNaskhArabic-Regular", "MirsamNaskhArabic-Oblique"),
+    ("NotoNaskhArabic-Bold", "MirsamNaskhArabic-BoldOblique"),
+    ("NotoSansArabic-Regular", "MirsamKufi-Oblique"),
+    ("NotoSansArabic-Bold", "MirsamKufi-BoldOblique"),
+];
+
+/// The oblique names written before the rename (ADR 0024 as first built),
+/// still recognised in files saved then.
+const LEGACY_OBLIQUE_NAMES: [(&str, &str); 10] = [
+    ("IBMPlexSans", "IBMPlexSans-Oblique"),
+    ("IBMPlexSans-Bold", "IBMPlexSans-BoldOblique"),
+    ("IBMPlexSansArabic", "IBMPlexSansArabic-Oblique"),
+    ("IBMPlexSansArabic-SemiBold", "IBMPlexSansArabic-SemiBoldOblique"),
+    ("Amiri-Regular", "Amiri-Oblique"),
+    ("Amiri-Bold", "Amiri-BoldOblique"),
+    ("NotoNaskhArabic-Regular", "NotoNaskhArabic-Oblique"),
+    ("NotoNaskhArabic-Bold", "NotoNaskhArabic-BoldOblique"),
+    ("NotoSansArabic-Regular", "NotoSansArabic-Oblique"),
+    ("NotoSansArabic-Bold", "NotoSansArabic-BoldOblique"),
+];
+
 /// A bundled face under an oblique name, for runs drawn slanted (no italic
 /// face is bundled): the slant is in the drawing, the name tells a reader
 /// of the page that the run is italic, so the next edit slants it again.
 pub(crate) fn oblique_of(font: &NamedFont) -> NamedFont {
-    let name: Cow<'static, str> = match font.name.as_ref() {
-        "IBMPlexSans" => Cow::Borrowed("IBMPlexSans-Oblique"),
-        "IBMPlexSans-Bold" => Cow::Borrowed("IBMPlexSans-BoldOblique"),
-        "IBMPlexSansArabic" => Cow::Borrowed("IBMPlexSansArabic-Oblique"),
-        "IBMPlexSansArabic-SemiBold" => Cow::Borrowed("IBMPlexSansArabic-SemiBoldOblique"),
-        "Amiri-Regular" => Cow::Borrowed("Amiri-Oblique"),
-        "Amiri-Bold" => Cow::Borrowed("Amiri-BoldOblique"),
-        "NotoNaskhArabic-Regular" => Cow::Borrowed("NotoNaskhArabic-Oblique"),
-        "NotoNaskhArabic-Bold" => Cow::Borrowed("NotoNaskhArabic-BoldOblique"),
-        "NotoSansArabic-Regular" => Cow::Borrowed("NotoSansArabic-Oblique"),
-        "NotoSansArabic-Bold" => Cow::Borrowed("NotoSansArabic-BoldOblique"),
-        other => Cow::Owned(format!("{other}-Oblique")),
+    let name: Cow<'static, str> = match OBLIQUE_NAMES.iter().find(|(upright, _)| *upright == font.name) {
+        Some((_, oblique)) => Cow::Borrowed(oblique),
+        None => Cow::Owned(format!("MirsamOblique-{}", font.name)),
     };
     NamedFont { face: font.face.clone(), name }
+}
+
+/// The bundled face a page font is an oblique of, when it is one we wrote
+/// (`MirsamSans-Oblique`, or a name from before the rename): its upright
+/// face's name. The PDF name may carry a subset tag (`ABCDEF+`).
+pub(crate) fn upright_of_oblique(pdf_name: &str) -> Option<&'static str> {
+    let name = match pdf_name.split_once('+') {
+        Some((tag, rest)) if tag.len() == 6 && tag.bytes().all(|b| b.is_ascii_uppercase()) => rest,
+        _ => pdf_name,
+    };
+    OBLIQUE_NAMES
+        .iter()
+        .chain(&LEGACY_OBLIQUE_NAMES)
+        .find(|(_, oblique)| *oblique == name)
+        .map(|(upright, _)| *upright)
 }
 
 /// The family a bundled face belongs with: Naskh for the Naskh faces (and
@@ -190,4 +229,37 @@ pub(crate) fn for_text(family: FontFamily, text: &str) -> Result<Vec<NamedFont>>
         // Amiri covers both scripts; Plex fills any gap.
         FontFamily::Naskh => vec![fonts.amiri.clone(), fonts.plex.clone(), fonts.plex_arabic.clone()],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_bundled_face_and_its_bold_has_a_neutral_oblique_name() {
+        for face in candidates().expect("bundled") {
+            let bold = bold_of(&face).expect("bold");
+            for font in [face, bold] {
+                let oblique = oblique_of(&font).name;
+                assert!(OBLIQUE_NAMES.iter().any(|(_, o)| *o == oblique), "{} has no entry", font.name);
+                assert!(oblique.starts_with("Mirsam") && oblique.ends_with("Oblique"), "{oblique}");
+                // No Reserved Font Name, nor any family's own name, in a name we made.
+                for family in ["Plex", "IBM", "Amiri", "Noto"] {
+                    assert!(!oblique.contains(family), "{oblique}");
+                }
+                assert_eq!(upright_of_oblique(&oblique), Some(font.name.as_ref()));
+                assert_eq!(upright_of_oblique(&format!("QWERTY+{oblique}")), Some(font.name.as_ref()));
+            }
+        }
+    }
+
+    #[test]
+    fn the_names_from_before_the_rename_are_still_ours() {
+        assert_eq!(upright_of_oblique("ABCDEF+IBMPlexSans-BoldOblique"), Some("IBMPlexSans-Bold"));
+        assert_eq!(upright_of_oblique("Amiri-Oblique"), Some("Amiri-Regular"));
+        // Another producer's oblique, and our upright faces, are not.
+        assert_eq!(upright_of_oblique("Helvetica-Oblique"), None);
+        assert_eq!(upright_of_oblique("ABCDEF+IBMPlexSans"), None);
+        assert_eq!(upright_of_oblique("abcdef+MirsamSans-Oblique"), None);
+    }
 }

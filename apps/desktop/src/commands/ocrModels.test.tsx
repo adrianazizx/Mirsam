@@ -170,6 +170,51 @@ describe("OCR models (ADR 0034)", () => {
     expect(within(settings).getByRole("button", { name: "تم" })).toBeTruthy();
   });
 
+  it.each([
+    ["en", "ltr", "A quick first reading", "Download"],
+    ["ar", "rtl", "قراءة أولى سريعة", "تنزيل"],
+  ] as const)(
+    "offers Tesseract's models for the quick draft on Windows and Linux, optional (%s)",
+    async (locale, dir, role, download) => {
+      resetMockOcr({ hardware: { os: "windows", arch: "x86_64" } });
+      render(<App />);
+      act(() => app().setLocale(locale));
+      await act(() => runCommand("app.settings"));
+      const settings = await screen.findByTestId("settings");
+      const row = await within(settings).findByTestId("ocr-model-tesseract-best");
+      expect(row.querySelector("bdi")?.textContent).toBe("Tesseract tessdata_best (ara + eng)");
+      expect(row.textContent).toContain(role);
+      expect(row.textContent).toContain("Tesseract");
+      expect(row.textContent).toContain("Apache-2.0");
+      expect(document.documentElement.dir).toBe(dir);
+      expect(ocr().models?.packages.map((pkg) => pkg.id)).toEqual([
+        "nuqta-4b",
+        "nuqta-0.8b",
+        "tesseract-best",
+        "llama-cpp",
+      ]);
+      // Optional: OCR asks only for what it needs.
+      expect(ocr().models?.packages.find((pkg) => pkg.id === "tesseract-best")?.required).toBe(
+        false,
+      );
+      fireEvent.click(within(row).getByRole("button", { name: download }));
+      await waitFor(() => expect(within(row).getByRole("progressbar")).toBeTruthy());
+      await waitFor(() =>
+        expect(ocr().models?.packages.find((p) => p.id === "tesseract-best")?.state.kind).toBe(
+          "installed",
+        ),
+      );
+    },
+  );
+
+  it("offers no draft models on macOS, where Apple Vision drafts", async () => {
+    render(<App />);
+    await act(() => runCommand("app.settings"));
+    const settings = await screen.findByTestId("settings");
+    await within(settings).findByTestId("ocr-model-nuqta-4b");
+    expect(within(settings).queryByTestId("ocr-model-tesseract-best")).toBeNull();
+  });
+
   it("shows the OCR tool's state in the inspector", async () => {
     render(<App />);
     act(() => app().setActiveTool("ocr"));

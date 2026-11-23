@@ -216,10 +216,13 @@ impl DraftReader for TesseractReader {
     fn read(&mut self, image: &OcrImage) -> Result<DraftPage, OcrError> {
         let path = temp_png(image)?;
         let mut command = Command::new(&self.program);
-        command.arg(&path).arg("stdout").args(["-l", &self.languages, "--dpi", &self.dpi.to_string(), "tsv"]);
+        // Options before the config name: Tesseract reads every argument after
+        // the first config ("tsv") as another config file.
+        command.arg(&path).arg("stdout");
         if let Some(data) = &self.data {
             command.arg("--tessdata-dir").arg(data);
         }
+        command.args(["-l", &self.languages, "--dpi", &self.dpi.to_string(), "tsv"]);
         let output = command.stdin(Stdio::null()).output();
         let _ = std::fs::remove_file(&path);
         let output = output.map_err(|err| match err.kind() {
@@ -233,6 +236,55 @@ impl DraftReader for TesseractReader {
         let text = String::from_utf8(output.stdout).map_err(|_| OcrError::BadResponse("not UTF-8".into()))?;
         Ok(parse_tesseract_tsv(&text))
     }
+}
+
+impl TesseractReader {
+    /// Arabic and English (`ara+eng`) at 200 dpi, from `data` when given.
+    pub fn new(program: PathBuf, data: Option<PathBuf>) -> Self {
+        Self { program, languages: "ara+eng".into(), data, dpi: 200 }
+    }
+}
+
+/// The models a Tesseract draft reads, as the catalog's `tesseract-best`
+/// package installs them (ADR 0034).
+pub const TESSERACT_MODELS: [&str; 2] = ["ara.traineddata", "eng.traineddata"];
+
+/// Where a `tesseract` program may be, the first tried first: `SAFHA_TESSERACT`
+/// alone when it is set; else the `PATH` (Linux distributions' packages), and
+/// on Windows the folders Tesseract's official installer uses, for all users
+/// and for one.
+pub fn tesseract_programs() -> Vec<PathBuf> {
+    if let Some(program) = std::env::var_os("SAFHA_TESSERACT") {
+        return vec![PathBuf::from(program)];
+    }
+    let mut programs = vec![PathBuf::from("tesseract")];
+    if cfg!(windows) {
+        for (variable, folder) in [("ProgramFiles", ""), ("LOCALAPPDATA", "Programs")] {
+            if let Some(base) = std::env::var_os(variable) {
+                programs.push(PathBuf::from(base).join(folder).join("Tesseract-OCR").join("tesseract.exe"));
+            }
+        }
+    }
+    programs
+}
+
+/// The first of `programs` that runs and reads Arabic and English: from
+/// `models` (the downloaded `tessdata_best` models) when that folder holds
+/// both, else from the program's own data when it has both. `None` when no
+/// program can.
+pub fn find_tesseract(programs: &[PathBuf], models: Option<&Path>) -> Option<TesseractReader> {
+    let models = models.filter(|dir| TESSERACT_MODELS.iter().all(|file| dir.join(file).is_file()));
+    programs.iter().find_map(|program| {
+        let mut command = Command::new(program);
+        if let Some(dir) = models {
+            command.arg("--tessdata-dir").arg(dir);
+        }
+        let listed = command.arg("--list-langs").stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+        let listed = String::from_utf8_lossy(&listed.stdout).into_owned();
+        let has = |code: &str| listed.lines().any(|line| line.trim() == code);
+        (has("ara") && has("eng"))
+            .then(|| TesseractReader::new(program.clone(), models.map(Path::to_path_buf)))
+    })
 }
 
 /// Block, paragraph and line number of a Tesseract row.
@@ -307,6 +359,60 @@ mod tests {
         assert_eq!(page.lines[0].bounds, [300.0, 100.0, 400.0, 120.0]);
         assert_eq!(page.lines[0].words[0].bounds, Some([360.0, 100.0, 400.0, 120.0]));
         assert!((page.lines[1].confidence - 0.75).abs() < 1e-6);
+    }
+
+    /// A stand-in `tesseract`: it notes its arguments, lists Arabic only from
+    /// its own data and both languages from a `--tessdata-dir`, and reads every
+    /// page as one Arabic word.
+    #[cfg(unix)]
+    fn fake_tesseract(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt as _;
+        let program = dir.join("tesseract");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n\
+             echo \"$@\" >> \"$0.args\"\n\
+             case \"$*\" in\n\
+             *--list-langs*) echo 'List of available languages (2):'; echo ara;\n\
+               case \"$*\" in *--tessdata-dir*) echo eng;; esac;;\n\
+             *) printf 'level\\tpage_num\\tblock_num\\tpar_num\\tline_num\\tword_num\\tleft\\ttop\\twidth\\theight\\tconf\\ttext\\n';\n\
+                printf '5\\t1\\t1\\t1\\t1\\t1\\t4\\t2\\t10\\t6\\t90\\tمسودة\\n';;\n\
+             esac\n",
+        )
+        .expect("write");
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        program
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tesseract_reads_the_downloaded_models_when_they_are_installed() {
+        let dir = std::env::temp_dir().join(format!("mirsam-fake-tesseract-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let models = dir.join("tesseract-best");
+        std::fs::create_dir_all(&models).expect("dir");
+        let program = fake_tesseract(&dir);
+        let missing = dir.join("no-such-tesseract");
+
+        // Its own data lacks English, and the models are not all there yet: no draft.
+        std::fs::write(models.join("ara.traineddata"), b"model").expect("write");
+        assert!(find_tesseract(&[missing.clone(), program.clone()], Some(&models)).is_none());
+        // Installed: the first program that runs reads them.
+        std::fs::write(models.join("eng.traineddata"), b"model").expect("write");
+        let mut reader = find_tesseract(&[missing, program.clone()], Some(&models)).expect("a reader");
+        assert_eq!(reader.program, program);
+        assert_eq!(reader.data.as_deref(), Some(models.as_path()));
+        assert_eq!(reader.languages, "ara+eng");
+
+        let image = OcrImage::from_rgb(2, 2, vec![255; 12]).expect("valid");
+        let page = reader.read(&image).expect("reads");
+        assert_eq!(page.text(), "مسودة");
+        let args = std::fs::read_to_string(dir.join("tesseract.args")).expect("args");
+        let read = args.lines().last().expect("a page read");
+        // The data folder comes before the config, or Tesseract takes it for one.
+        let expected = format!("stdout --tessdata-dir {} -l ara+eng --dpi 200 tsv", models.display());
+        assert!(read.ends_with(&expected), "{read}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
