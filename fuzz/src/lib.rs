@@ -78,6 +78,12 @@ pub fn exercise(bytes: &[u8]) {
         text: Some("ab".into()),
     }];
     let _ = safha_core::redact::redaction_update(bytes, &marks);
+    // Signatures (ADR 0048): found by the field tree and by scanning for
+    // signature dictionaries, their byte ranges and CMS read from the file.
+    let trust = safha_core::sign::TrustStore::default();
+    for password in [None, Some("safha-test")] {
+        let _ = safha_core::sign::verify(bytes, password, &trust);
+    }
 }
 
 fn edits() -> [PageEdit; 5] {

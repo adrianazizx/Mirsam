@@ -62,6 +62,13 @@ pub enum Error {
     #[error("the text could not be set: {0}")]
     Typeset(&'static str),
 
+    /// Signing or reading a signing identity failed, with the UI's code:
+    /// `certificate_password`, `certificate_unreadable`, `key_unsupported`,
+    /// `certificate_cannot_sign`, `timestamp_failed`, `timestamp_url`,
+    /// `signing_failed`, `signature_too_large`, `keychain_unavailable`.
+    #[error("not signed: {0}")]
+    Signing(&'static str),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

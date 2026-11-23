@@ -836,6 +836,49 @@ impl Document {
         !self.inner.signatures().is_empty()
     }
 
+    /// The document's bytes signed with a certificate (ADR 0048): one
+    /// incremental update after them, so earlier signatures stay valid.
+    ///
+    /// With `rewrite`, an unsigned document is rewritten in full first, as
+    /// saving it would be, so content earlier edits removed is not left in
+    /// the signed file's earlier revisions. A file whose structure the
+    /// update writer cannot read is rewritten too, when it is unsigned.
+    pub fn sign(
+        &self,
+        identity: &crate::sign::Identity,
+        options: &crate::sign::SignOptions,
+        timestamper: Option<&dyn crate::sign::TimeStamper>,
+        rewrite: bool,
+    ) -> Result<Arc<[u8]>> {
+        let signed = self.is_signed();
+        let password = self.password.as_deref();
+        let sign = |base: &[u8]| crate::sign::sign_bytes(base, password, identity, options, timestamper);
+        let bytes = if rewrite && !signed {
+            sign(&self.to_pdf_bytes()?)?
+        } else {
+            match sign(&self.bytes) {
+                Err(Error::EditUnsupported(_)) if !signed => sign(&self.to_pdf_bytes()?)?,
+                other => other?,
+            }
+        };
+        Ok(Arc::from(bytes))
+    }
+
+    /// The document's signatures, checked (ADR 0048), oldest first, each
+    /// visible one with its box on the displayed page.
+    pub fn signatures(&self, store: &crate::sign::TrustStore) -> Vec<crate::sign::SignatureReport> {
+        let mut reports = crate::sign::verify(&self.bytes, self.password.as_deref(), store);
+        for report in &mut reports {
+            if let (Some(page), Some([left, bottom, right, top])) = (report.page, report.rect) {
+                report.view = self
+                    .view_transform(page)
+                    .ok()
+                    .map(|view| view.rect(crate::text::Rect { left, bottom, right, top }));
+            }
+        }
+        reports
+    }
+
     /// The document's own reading preferences: `/ViewerPreferences /Direction`
     /// and `/PageLayout`, where it states them (see [`crate::catalog`]).
     pub fn catalog_hints(&self) -> crate::catalog::CatalogHints {

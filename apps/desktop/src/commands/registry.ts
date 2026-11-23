@@ -1,6 +1,7 @@
 import {
   type BlockMark,
   backend,
+  type CertSignRequest,
   type CompressOptions,
   type EditOutcome,
   FILL_KINDS,
@@ -42,6 +43,7 @@ import {
   selectActiveDocument,
   useAppStore,
 } from "../state/appStore";
+import { useCertSign, VISIBLE_SIZE } from "../state/certSign";
 import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
 import { isOpenable, mapBetween, quarterTurn } from "../state/objects";
@@ -186,6 +188,8 @@ export interface CommandArg {
   values?: string[];
   /** `formDesign.update`: the selected field's new properties (ADR 0047). */
   spec?: FieldSpec;
+  /** `certSign.forget`: a signing identity's id. */
+  identity?: string;
   /** `fill.signature`, `signature.delete`: a kept signature's id. */
   signature?: number;
   /** `signature.saveTyped`: the family it is set in. */
@@ -268,6 +272,17 @@ export type CommandId =
   | "security.open"
   | "security.apply"
   | "security.cancel"
+  | "certSign.open"
+  | "certSign.cancel"
+  | "certSign.importFile"
+  | "certSign.unlockFile"
+  | "certSign.cancelFile"
+  | "certSign.forget"
+  | "certSign.apply"
+  | "certSign.place"
+  | "signatures.check"
+  | "signatures.reveal"
+  | "view.showSignatures"
   | "recovery.restore"
   | "recovery.discard"
   | "recovery.later"
@@ -701,6 +716,77 @@ export function fillDate(locale: AppState["locale"], date = new Date()): string 
   return new Intl.DateTimeFormat(formatTag(locale), { dateStyle: "long" }).format(date);
 }
 
+/** The setting holding the time-stamping authority's address (ADR 0048). */
+export const TSA_SETTING = "signing.tsaUrl";
+
+/** Errors opening a PKCS#12 file that the dialog shows itself. */
+const CERTIFICATE_ERRORS = ["certificate_password", "certificate_unreadable", "key_unsupported"];
+
+/** Errors signing that the dialog shows itself, while it is open. */
+const SIGNING_ERRORS = [
+  "certificate_cannot_sign",
+  "timestamp_failed",
+  "timestamp_url",
+  "signing_failed",
+  "signature_too_large",
+  "keychain_unavailable",
+  "certificate_unreadable",
+  "save_as_required",
+];
+
+/**
+ * Signs `documentId` and shows the signed file and its signatures; false
+ * when the file picker was cancelled. Failures the dialog can show stay in
+ * it (it is open for an invisible signature); others reach the banner.
+ */
+async function signNow(
+  documentId: number,
+  request: CertSignRequest,
+  saveAs: boolean,
+): Promise<boolean> {
+  const sign = useCertSign.getState();
+  sign.setBusy(true);
+  sign.setError(null);
+  try {
+    const outcome = await backend.signDocument(documentId, request, saveAs);
+    if (!outcome) return false;
+    store().applySigned(documentId, outcome);
+    sign.setReports(documentId, { status: "done", list: outcome.signatures });
+    sign.setDialogOpen(false);
+    sign.setPlacing(null);
+    if (store().fillTool === "certificate") store().setFill(null);
+    showPanel("signatures");
+    return true;
+  } catch (error) {
+    if (sign.dialogOpen && isBackendError(error) && SIGNING_ERRORS.includes(error.code)) {
+      sign.setError(error.code);
+      return false;
+    }
+    // A visible signature: placing it again would fail the same way.
+    sign.setPlacing(null);
+    if (store().fillTool === "certificate") store().setFill(null);
+    throw error;
+  } finally {
+    useCertSign.getState().setBusy(false);
+  }
+}
+
+/** Checks a document's signatures and keeps the reports (ADR 0048). */
+async function checkSignatures(documentId: number): Promise<void> {
+  const sign = useCertSign.getState();
+  const previous = sign.reports[documentId]?.list ?? [];
+  sign.setReports(documentId, { status: "loading", list: previous });
+  try {
+    sign.setReports(documentId, {
+      status: "done",
+      list: await backend.documentSignatures(documentId),
+    });
+  } catch (error) {
+    sign.setReports(documentId, { status: "error", list: [] });
+    throw error;
+  }
+}
+
 /** Loads the kept signatures (ADR 0045). */
 async function loadSignatures(): Promise<void> {
   store().setSignatures(await backend.signatures());
@@ -994,6 +1080,16 @@ const KNOWN_ERRORS = [
   "model_disk_full",
   "model_archive_invalid",
   "model_install_failed",
+  "certificate_password",
+  "certificate_unreadable",
+  "key_unsupported",
+  "certificate_cannot_sign",
+  "timestamp_failed",
+  "timestamp_url",
+  "signing_failed",
+  "signature_too_large",
+  "keychain_unavailable",
+  "save_as_required",
   "image_too_large",
   "link_refused",
 ];
@@ -2014,6 +2110,173 @@ const DECLARED: Command[] = [
     run: () => store().setSecurityPrompt(false),
   },
   {
+    // Sign with a certificate (ADR 0048): the dialog, with the identities
+    // available now and the time-stamping authority used last.
+    id: "certSign.open",
+    isEnabled: hasDocument,
+    async run() {
+      const sign = useCertSign.getState();
+      sign.setPlacing(null);
+      sign.setError(null);
+      sign.setDialogOpen(true);
+      const settings = await backend.settings();
+      const tsaUrl = settings[TSA_SETTING] ?? "";
+      sign.updateForm({ tsaUrl, timestamp: tsaUrl.trim() !== "" });
+      sign.setIdentities(await backend.signingIdentities());
+      if (store().signatures === null) await loadSignatures();
+    },
+  },
+  {
+    id: "certSign.cancel",
+    paletteHidden: true,
+    async run() {
+      const sign = useCertSign.getState();
+      if (sign.picked) await backend.cancelCertificate(sign.picked.token);
+      sign.setPicked(null);
+      sign.setPlacing(null);
+      sign.setError(null);
+      sign.setDialogOpen(false);
+      if (store().fillTool === "certificate") store().setFill(null);
+    },
+  },
+  {
+    // A PKCS#12 file, picked through the native dialog; its password comes next.
+    id: "certSign.importFile",
+    paletteHidden: true,
+    async run() {
+      const picked = await backend.pickCertificateFile();
+      if (picked) useCertSign.getState().setPicked(picked);
+    },
+  },
+  {
+    id: "certSign.unlockFile",
+    paletteHidden: true,
+    async run(arg) {
+      const sign = useCertSign.getState();
+      const { picked } = sign;
+      if (!picked || arg?.password === undefined) return;
+      try {
+        const identity = await backend.unlockCertificate(picked.token, arg.password);
+        sign.setPicked(null);
+        sign.setIdentities(await backend.signingIdentities());
+        sign.updateForm({ identity: identity.id });
+      } catch (error) {
+        // A wrong password asks again, in the dialog.
+        if (isBackendError(error) && CERTIFICATE_ERRORS.includes(error.code)) {
+          sign.setPicked(picked, error.code);
+          return;
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    id: "certSign.cancelFile",
+    paletteHidden: true,
+    async run() {
+      const sign = useCertSign.getState();
+      if (sign.picked) await backend.cancelCertificate(sign.picked.token);
+      sign.setPicked(null);
+    },
+  },
+  {
+    id: "certSign.forget",
+    paletteHidden: true,
+    async run(arg) {
+      if (!arg?.identity) return;
+      await backend.forgetIdentity(arg.identity);
+      useCertSign.getState().setIdentities(await backend.signingIdentities());
+    },
+  },
+  {
+    // Signs with what the dialog holds. An invisible signature is made at
+    // once; a visible one waits for a press on a page (certSign.place).
+    id: "certSign.apply",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const sign = useCertSign.getState();
+      const { form } = sign;
+      if (!active || !form.identity || sign.busy) return;
+      const text = (value: string) => (value.trim() === "" ? null : value.trim());
+      const request = {
+        identity: form.identity,
+        reason: text(form.reason),
+        location: text(form.location),
+        contact: text(form.contact),
+        timestamp: form.timestamp,
+      };
+      const saveAs = arg?.saveAs ?? false;
+      if (form.timestamp) await backend.setSetting(TSA_SETTING, form.tsaUrl.trim());
+      if (form.visible) {
+        sign.setPlacing({ documentId: active.id, request, graphic: form.graphic, saveAs });
+        sign.setDialogOpen(false);
+        store().setActiveTool("sign");
+        store().setFill("certificate");
+        return;
+      }
+      await signNow(active.id, { ...request, visible: null }, saveAs);
+    },
+  },
+  {
+    // A press on a page placed the visible signature: centred on it.
+    id: "certSign.place",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const { placing, identities } = useCertSign.getState();
+      if (!active || !placing || placing.documentId !== active.id) return;
+      if (arg?.page === undefined || arg.x === undefined || arg.y === undefined) return;
+      const signer = identities?.find((one) => one.id === placing.request.identity);
+      const { width, height } = VISIBLE_SIZE;
+      const caption = [
+        i18n.t("certSign.captionSigned", { lng: store().locale }),
+        signer?.certificate.name ?? "",
+        fillDate(store().locale),
+      ]
+        .filter((line) => line.trim() !== "")
+        .join("\n");
+      const visible = {
+        page: arg.page,
+        x: Math.max(0, arg.x - width / 2),
+        y: Math.max(0, arg.y - height / 2),
+        width,
+        height,
+        signature: placing.graphic,
+        caption,
+      };
+      await signNow(active.id, { ...placing.request, visible }, placing.saveAs);
+    },
+  },
+  {
+    // Checks the document's signatures again (ADR 0048).
+    id: "signatures.check",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (active) await checkSignatures(active.id);
+    },
+  },
+  {
+    // From the signatures panel: the page a visible signature is on.
+    id: "signatures.reveal",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      if (arg?.page !== undefined) await runCommand("view.goToPage", { page: arg.page });
+    },
+  },
+  {
+    id: "view.showSignatures",
+    async run() {
+      showPanel("signatures");
+      const active = selectActiveDocument(store());
+      if (active && !useCertSign.getState().reports[active.id]) await checkSignatures(active.id);
+    },
+  },
+  {
     id: "recovery.restore",
     paletteHidden: true,
     isEnabled: (state) => state.recoveries.length > 0,
@@ -2317,6 +2580,9 @@ const DECLARED: Command[] = [
           store().applyEdit(active.id, outcome);
           return;
         }
+        case "certificate":
+          await runCommand("certSign.place", { page, x, y });
+          return;
         case "signature": {
           const kept = signatures?.find((signature) => signature.id === fillSignature);
           if (!kept) return;
@@ -3408,6 +3674,10 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "output.exportText": "copy",
   // Form filling and Fill & Sign (ADR 0045).
   "form.setValue": "fillForms",
+  // Signing fills in a signature field (ISO 32000-2, table 22, bit 9).
+  "certSign.open": "fillForms",
+  "certSign.apply": "fillForms",
+  "certSign.place": "fillForms",
   // Making form fields (ADR 0047): ISO 32000-2 asks for "modify" as well as "annotate".
   "formDesign.text": "modify",
   "formDesign.checkbox": "modify",

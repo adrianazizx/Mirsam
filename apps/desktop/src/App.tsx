@@ -20,6 +20,7 @@ import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { AppShell } from "./components/shell/AppShell";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
+import { CertSignDialog } from "./components/signing/CertSignDialog";
 import { applyLocale, formatTagWith, setUiDigits } from "./i18n";
 import {
   type AppState,
@@ -257,6 +258,7 @@ export function App() {
       <RedactDialog />
       <OutputDialog />
       <SecurityDialog />
+      <CertSignDialog />
       <SettingsDialog />
       <OcrModelPrompt />
     </I18nProvider>

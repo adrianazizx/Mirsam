@@ -21,6 +21,7 @@ mod print_linux;
 mod recovery;
 mod redaction;
 mod security;
+mod signing;
 #[cfg(feature = "devtools")]
 mod spike_tiles;
 mod state;
@@ -47,6 +48,13 @@ macro_rules! product_commands {
             redaction::apply_redactions,
             redaction::sanitize_document,
             security::secure_document,
+            signing::signing_identities,
+            signing::pick_certificate_file,
+            signing::unlock_certificate,
+            signing::cancel_certificate,
+            signing::forget_identity,
+            signing::sign_document,
+            signing::document_signatures,
             editing::add_markup,
             editing::add_ink,
             editing::add_note,
@@ -157,6 +165,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new(started, documents))
         .manage(output::OutputState::default())
+        .manage(signing::SigningState::default())
         // Tiles: BMP images fetched by the webview (ADR 0011).
         .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
         .setup(move |app| {

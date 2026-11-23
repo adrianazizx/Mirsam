@@ -123,6 +123,18 @@ impl Update {
         self.bytes.extend_from_slice(b"\nendobj\n");
     }
 
+    /// Writes `n g obj`, `body` as given, and `endobj`; returns where `body`
+    /// starts, counted from the start of the file. For a value whose bytes
+    /// must be found again (a signature's `/ByteRange` and `/Contents`).
+    pub(crate) fn raw_object(&mut self, number: u32, generation: u16, body: &[u8]) -> usize {
+        self.entries.push((number, generation, self.base + self.bytes.len()));
+        let _ = writeln!(self.bytes, "{number} {generation} obj");
+        let at = self.base + self.bytes.len();
+        self.bytes.extend_from_slice(body);
+        self.bytes.extend_from_slice(b"\nendobj\n");
+        at
+    }
+
     /// Writes a stream object: `dict` (whose `/Length` is set here), then
     /// `data` as given (already filtered and, in an encrypted file, encrypted).
     pub(crate) fn stream(&mut self, number: u32, generation: u16, mut dict: Dict, data: &[u8]) {

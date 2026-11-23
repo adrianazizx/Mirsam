@@ -26,6 +26,7 @@ import {
   type PageObject,
   type PageSize,
   type ParagraphBlock,
+  type PickedCertificate,
   type RecentFile,
   type RedactHits,
   type RedactOutcome,
@@ -38,6 +39,9 @@ import {
   type SecureOutcome,
   type SelftestConfig,
   type SignatureInfo,
+  type SignatureReport,
+  type SigningIdentity,
+  type SignOutcome,
   type Startup,
   type TextLayer,
 } from "./types";
@@ -261,6 +265,16 @@ export const tauriBackend: Backend = {
   saveDocumentAs: (documentId) => invoke<SaveOutcome | null>("save_document_as", { documentId }),
   secureDocument: (documentId, change, saveAs) =>
     invoke<SecureOutcome | null>("secure_document", { documentId, change, saveAs }),
+  signingIdentities: () => invoke<SigningIdentity[]>("signing_identities"),
+  pickCertificateFile: () => invoke<PickedCertificate | null>("pick_certificate_file"),
+  unlockCertificate: (token, password) =>
+    invoke<SigningIdentity>("unlock_certificate", { token, password }),
+  cancelCertificate: (token) => invoke<void>("cancel_certificate", { token }),
+  forgetIdentity: (id) => invoke<void>("forget_identity", { id }),
+  signDocument: (documentId, request, saveAs) =>
+    invoke<SignOutcome | null>("sign_document", { documentId, request, saveAs }),
+  documentSignatures: (documentId) =>
+    invoke<SignatureReport[]>("document_signatures", { documentId }),
   moveToNewWindow: (documentId) => invoke<void>("move_to_new_window", { documentId }),
   onSettingChanged: (listener) =>
     listen<{ key: string; value: string }>("settings-changed", (event) =>

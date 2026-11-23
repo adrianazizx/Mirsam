@@ -13,8 +13,9 @@
 //! text for writing ([`typeset`]), and write it into pages ([`text_edit`]) in
 //! the bundled families ([`fonts`]); stamp headers, footers, page numbers and
 //! watermarks ([`stamp`]), export pages as images and text ([`export`]),
-//! compress ([`compress`]), recognise page images ([`ocr`]), and download the
-//! OCR models ([`models`]).
+//! compress ([`compress`]), recognise page images ([`ocr`]), download the
+//! OCR models ([`models`]), and sign with certificates and check signatures
+//! ([`sign`]).
 
 pub mod annotate;
 mod bitmap;
@@ -42,6 +43,7 @@ pub mod render;
 pub mod save;
 pub mod search;
 pub mod security;
+pub mod sign;
 pub mod stamp;
 pub mod store;
 pub mod text;
