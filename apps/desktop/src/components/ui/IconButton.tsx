@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
 import styles from "./IconButton.module.css";
-import { keyShortcutsRef } from "./keyShortcuts";
+import { useKeyShortcutsRef } from "./keyShortcuts";
 import { Tooltip, type TooltipProps } from "./Tooltip";
 
 export interface IconButtonProps extends Omit<AriaButtonProps, "className" | "children"> {
@@ -35,6 +35,7 @@ export function IconButton({
   children,
   ...props
 }: IconButtonProps) {
+  const shortcutsRef = useKeyShortcutsRef<HTMLButtonElement>(keyShortcuts);
   // `aria-label` cannot carry a language; hidden text inside the button can.
   const name = labelLang ? (
     <span lang={labelLang} dir="auto">
@@ -47,7 +48,7 @@ export function IconButton({
     <Tooltip label={name} shortcut={shortcut} placement={tooltipPlacement}>
       <AriaButton
         {...props}
-        ref={keyShortcutsRef(keyShortcuts)}
+        ref={shortcutsRef}
         aria-label={labelLang ? undefined : label}
         className={styles.button}
       >

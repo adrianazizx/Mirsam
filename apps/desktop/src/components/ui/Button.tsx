@@ -1,7 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
 import styles from "./Button.module.css";
-import { keyShortcutsRef } from "./keyShortcuts";
+import { useKeyShortcutsRef } from "./keyShortcuts";
 
 export interface ButtonProps extends Omit<AriaButtonProps, "className" | "children"> {
   variant?: "primary" | "secondary" | "ghost";
@@ -22,12 +22,9 @@ export function Button({
   "aria-keyshortcuts": keys,
   ...props
 }: ButtonProps) {
+  const shortcutsRef = useKeyShortcutsRef(keys, ref);
   return (
-    <AriaButton
-      {...props}
-      ref={keyShortcutsRef(keys, ref)}
-      className={`${styles.button} ${styles[variant]}`}
-    >
+    <AriaButton {...props} ref={shortcutsRef} className={`${styles.button} ${styles[variant]}`}>
       {icon ? (
         <span className={styles.icon} aria-hidden="true">
           {icon}
