@@ -312,8 +312,8 @@ headless: see the M4 exit test (`docs/demos/m4.md`).
   outside the app.
 - **The draft reader on Windows and Linux** is Tesseract with the optional `tesseract-best`
   models (owner item 23, decided 2026-11-23; ADR 0034's amendment). The `tesseract` program
-  itself is the user's: the distribution's package on Linux, or Tesseract's installer on Windows,
-  whose bundled LGPL libraries wait on owner item 26. With no program, the quality pass runs
+  itself is the user's: the distribution's package on Linux, or Tesseract's installer on Windows
+  (owner item 26, decided 2026-11-23: the user installs it). With no program, the quality pass runs
   alone, and boxes come from the page's own line strips with no guide: wider boxes on two-column
   pages.
 - **The Vision helper is built on first use,** and needs Xcode's command-line tools. A

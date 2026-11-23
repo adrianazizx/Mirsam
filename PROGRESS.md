@@ -193,9 +193,12 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     at all before the user opts in (today they are kept, redacted, so there is something to ask
     about; "Don't keep crash reports" in Settings stops it). Until decided, the GitHub issue path
     is the default; `SAFHA_CRASH_DESTINATION=manual` at build time removes it.
-26. **The `tesseract` program for the quick draft (item 23) is outside spec §10 on Windows, and does
-    not exist as an official build on Linux.** The draft's models are in the catalog. The program is
-    not (ADR 0034's amendment):
+26. ~~The `tesseract` program for the quick draft (item 23)?~~ **Decided (2026-11-23): option (a),
+    the user installs Tesseract.** On Windows that means the official installer; on Linux, `apt` or
+    `dnf`. Mirsam neither downloads nor bundles the program, and no LGPL or GCC-runtime approval is
+    given. Settings → OCR models says so on the draft models' row (ADR 0034's amendment). The
+    question as it was: the program is outside spec §10 on Windows, and has no official build on
+    Linux. The draft's models are in the catalog; the program is not:
     - **Linux:** Tesseract publishes source only. The draft uses the distribution's `tesseract`
       (`apt install tesseract-ocr`, `dnf install tesseract`), which the user installs.
     - **Windows:** the only official build is release 5.5.3's
@@ -917,7 +920,8 @@ Five owner decisions from 2026-11-23 applied.
     `SAFHA_TESSERACT`, the `PATH`, and the Windows installer's folders. The job system's draft
     reads with the downloaded models when they are installed.
   - Fixed: `--tessdata-dir` came after the `tsv` config, where Tesseract reads it as a config file.
-  - The program itself stops at a licence question (new item 26).
+  - The program itself stopped at a licence question (item 26). The owner then decided the user
+    installs it, and Settings → OCR models tells them how, in English and Arabic.
   - Tests use a stand-in `tesseract` script and the mock catalog; nothing real is downloaded.
 - **Item 21, time-stamping:**
   - DigiCert's `http://timestamp.digicert.com` is suggested in the signing dialog. The time-stamp

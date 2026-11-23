@@ -278,7 +278,8 @@ const TESSDATA_BEST_COMMIT: &str = "e2aad9b983032bb1beff9133104a67cdbb87ca4d";
 /// read by a `tesseract` program 4.0 or later. macOS drafts with Apple Vision
 /// and is offered none.
 ///
-/// **The `tesseract` program is not in the catalog** (owner item 26):
+/// **The `tesseract` program is not in the catalog:** the user installs it
+/// (owner item 26, decided 2026-11-23). The reasons:
 /// - **Linux:** Tesseract publishes no Linux builds, only source; the
 ///   distributions package it (`tesseract-ocr`, `tesseract`), and the draft
 ///   uses that program.
@@ -287,8 +288,8 @@ const TESSDATA_BEST_COMMIT: &str = "e2aad9b983032bb1beff9133104a67cdbb87ca4d";
 ///   `bee9e343…0ae4`) is an NSIS installer, not an archive, and it installs
 ///   every DLL its tools need: GLib, Pango, Cairo, FriBidi, gettext's libintl,
 ///   libiconv, libidn2 and libunistring are LGPL, and the GCC runtime is
-///   GPL-3.0 with the runtime exception. Spec §10 asks before any of those.
-///   Until the owner decides, the draft uses a `tesseract.exe` the user
+///   GPL-3.0 with the runtime exception. Spec §10 asks before any of those,
+///   and the owner gave no approval. The draft uses a `tesseract.exe` the user
 ///   installed. Tesseract itself (Apache-2.0) and Leptonica (BSD-2-Clause)
 ///   would be fine.
 pub fn draft_package(platform: Platform) -> Option<Package> {

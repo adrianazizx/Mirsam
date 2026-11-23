@@ -195,10 +195,18 @@ The owner decided to offer Tesseract as an optional download where Apple Vision 
       - LGPL: GLib, Pango, Cairo, FriBidi, gettext's libintl, libiconv, libidn2 and
         libunistring;
       - GPL-3.0-or-later WITH GCC-exception-3.1: `libstdc++` and `libgcc_s`.
-    - **Until the owner decides,** a `tesseract.exe` the user installed is found on `PATH` or in
-      the installer's folders (`%ProgramFiles%\Tesseract-OCR`, `%LOCALAPPDATA%\Programs\Tesseract-OCR`).
+    - **The app finds a `tesseract.exe` the user installed,** on `PATH` or in the installer's
+      folders (`%ProgramFiles%\Tesseract-OCR`, `%LOCALAPPDATA%\Programs\Tesseract-OCR`).
     - **Within spec §10:** Tesseract (Apache-2.0) and Leptonica (BSD-2-Clause text,
       `leptonica-license.txt`). A build with only those and permissive libraries would be.
+- **Decided (2026-11-23, owner item 26): the user installs the program.**
+  - **Where it comes from:** on Windows, Tesseract's official installer; on Linux, the
+    distribution's package (`apt install tesseract-ocr`, `dnf install tesseract`).
+  - **Not done:** Mirsam does not download, bundle or run the installer. No approval is given for
+    the LGPL libraries or the GCC runtime.
+  - **Settings → OCR models** says so under the draft models' row, in English and Arabic. It names
+    the Tesseract releases page on GitHub (`github.com/tesseract-ocr/tesseract/releases`) and the
+    package names, as text, not as links.
 - **Fixed on the way:** `TesseractReader` passed `--tessdata-dir` after the `tsv` config, where
   Tesseract takes every argument for another config file. No caller set it until now; the
   option now comes first.

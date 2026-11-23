@@ -1025,8 +1025,9 @@
       "primary": "Reads the page. Needed for OCR.",
       "ensemble": "A second reader that double-checks numbers and unclear words. Optional.",
       "runtime": "Runs the models on this computer. Needed for OCR.",
-      "draft": "A quick first reading, replaced by the full one. Optional; read by the Tesseract program installed on this computer (your system's package, or Tesseract's installer on Windows)."
+      "draft": "A quick first reading, replaced by the full one. Optional."
     },
+    "tesseractNote": "Quick drafts also need the Tesseract program, which you install yourself. On Windows, use the installer from {{releases}}. On Linux, install the {{apt}} package (apt) or {{dnf}} (dnf).",
     "size": "Download: {{size}}",
     "licence": "Licence:",
     "status": {
