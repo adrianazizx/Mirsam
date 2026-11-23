@@ -816,16 +816,39 @@ fn an_edit_of_text_that_changed_is_refused() {
 }
 
 #[test]
-fn encrypted_files_and_unreadable_fonts_are_not_offered_for_editing() {
-    // Encrypted: the content is not read, but where its text is, a press says why.
+fn encrypted_files_are_read_and_edited_in_place() {
+    // AES-256 (qpdf): the content and the fonts' streams are decrypted to be
+    // read. Chrome's Type 3 text is refused for its font, not its encryption.
     let (bytes, password) = fixture_everywhere("qpdf/encrypted");
     let document = engine().open_bytes(bytes, password.as_deref()).expect("opens");
     let blocks = document.text_blocks(0).expect("blocks");
     assert!(!blocks.is_empty(), "the page's text is listed");
-    assert!(blocks.iter().all(|b| !b.editable && b.reason == Some(Refusal::Encrypted)));
-    let edit = BlockEdit { page: 0, index: 0, fingerprint: 0, text: "x".into(), family: None, marks: None };
-    assert!(document.with_block_edit(&edit).is_err());
+    assert!(blocks.iter().all(|b| b.reason != Some(Refusal::Encrypted)), "{blocks:#?}");
+    assert!(blocks.iter().any(|b| b.reason == Some(Refusal::Font)));
 
+    // Text written into the encrypted page, then edited in place: the new
+    // content and fonts are encrypted under their own numbers.
+    let document = add_text(&document, ARABIC, FontFamily::Sans, 260.0, 560.0);
+    let block = block_with(&document, 0, "يستحق السداد");
+    assert!(block.editable && block.rtl, "{block:?}");
+    let new = ARABIC.replace("ثلاثين", "ستين");
+    let (edited, _, update) = edit_to(&document, &block, 0, &new);
+    assert!(!String::from_utf8_lossy(&update).contains("BT"), "no content in the clear");
+    assert_eq!(normalize(&block_with(&edited, 0, "ستين").text), normalize(&new));
+    assert!(page_text(&edited, 0).contains(&normalize(&new)), "{}", page_text(&edited, 0));
+
+    // Saved, it opens with its password only, and edits again.
+    let target = scratch("encrypted-edit.pdf");
+    save(&edited, &target).expect("saves");
+    assert!(engine().open_file(&target, None).is_err(), "still encrypted");
+    let reopened = engine().open_file(&target, password.as_deref()).expect("reopens");
+    let again = block_with(&reopened, 0, "ستين");
+    let (twice, ..) = edit_to(&reopened, &again, 0, &new.replace("ستين", "تسعين"));
+    assert!(page_text(&twice, 0).contains("تسعين"));
+}
+
+#[test]
+fn unreadable_fonts_are_not_offered_for_editing() {
     // Chrome draws these fixtures' variable fonts as Type 3, which is not
     // read: refused as one area per run of text, not one per glyph.
     let (bytes, _) = fixture_everywhere("chrome/en-paragraphs");

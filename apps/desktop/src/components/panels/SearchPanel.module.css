@@ -15,6 +15,15 @@
 
 .field {
   display: flex;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* Find and replace (ADR 0052): the replacement, then replace one and replace all. */
+.replaceRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .input {

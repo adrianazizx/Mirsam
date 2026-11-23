@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (Session M6-c, find and replace, ADR 0052; branch `pomidor/m6-find-replace-7f3816`; after M4's remaining items and exit test, Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -563,8 +563,8 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - direction is decided by the majority of letters.
 - **Fonts:** Type 1 and bare CFF programs are not re-set; installed fonts are not offered as
   substitutes (comes with the font picker).
-- **Not edited:** text in forms, encrypted files, Type 3 and CMap-encoded fonts. Each is refused
-  with its reason.
+- **Not edited:** text in forms, Type 3 and CMap-encoded fonts. Each is refused with its reason.
+  (Encrypted files are edited since session M6-c, ADR 0052.)
 
 ## M4 — OCR (quality-first)
 
@@ -791,9 +791,29 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     join); a link over a selection spanning pages covers its first page.
 - [~] Headers/footers, page numbers (Western or Arabic-Indic digits, start on the right in RTL),
       watermarks (text as outlines, PNG/JPEG images; opacity, rotation, behind or over; page
-      ranges) — ADR 0050. Gap: text that runs vertically in page space (an upright footer on a
-      page turned 90°) extracts letter by letter (extractor work); no "remove stamp" yet
-- [ ] Find and replace
+      ranges) — ADR 0050. Gap: no "remove stamp" yet. (Text that runs vertically in page space,
+      an upright footer on a page turned 90°, now extracts as lines: ADR 0052 §5.)
+- [~] Find and replace (session M6-c, ADR 0052):
+  - **Replace the hit shown or all of them**, with the search panel's options (case, whole word,
+    regular expressions with `$1`/`${name}` groups taken from the document's own text, Arabic
+    normalisation, ة as ه). **Replace all** previews every match with its context and what it
+    becomes, ticked; skipped ones say why. One undo step.
+  - Each paragraph is set again once through the in-place editor: its own fonts by their codes,
+    their embedded programs, or a bundled substitute for the paragraph (reported). After each, the
+    page is read again: a paragraph that does not read back as replaced is left as it was and its
+    matches listed `inexact`.
+  - Skipped and listed: matches running from one paragraph into another, in refused text (shared,
+    needs OCR, Type 3 fonts, rotated, unwritable encryption, unsupported), or that the editor reads
+    differently from search; stale ones after the preview.
+  - Turned pages and encrypted files work; save and reopen round-trip; Arabic and mixed lines
+    read back in logical order in our extractor and PDFium's.
+  - Ctrl+H; ⌥⌘F on macOS (⌘H hides the app). English and Arabic.
+  - Along the way: **in-place editing now works in encrypted files**; search reads text upright on
+    turned pages (each quarter turn in its own frame); a regular expression's Arabic is folded like
+    the text; a wrapped line of digits and punctuation reads in its paragraph's direction.
+  - Gaps: no reflow across paragraphs; every in-place editing limit applies (Chrome's Type 3
+    fixtures replace nothing); case is not carried over; no progress bar or cancel for a long
+    replace-all; the preview can list matches across a line break that search does not.
 - [~] Compression (unused objects, object streams, Flate, images reduced by drawn resolution, size
       preview before saving a copy), image export (PNG, own baseline JPEG encoder, 36–600 dpi),
       text/Markdown export (logical order, RTL blocks marked) — ADR 0050. Gaps: JPEG images are not
@@ -814,6 +834,53 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### Session M6-c — 2026-11-23 (Milestone 6: find and replace; parallel to OCR review, accessibility, crash reporting)
+
+Branch `pomidor/m6-find-replace-7f3816`, from `main` after PR #28. Stayed in search, replace and the
+text-editing engine.
+
+- **ADR 0052** records the design: matches found in the editor's own paragraphs (each character
+  placed on the page), PDFium's search hits that none covers listed with why; each paragraph set
+  again once and read back, dropped if inexact; one update, one undo.
+- **Engine (`safha_core`):**
+  - `replace`: `plan` (preview; on one page or all), `occurrence_at` (a search hit's match by
+    geometry), `apply` (targets → one update and a report: replaced, skipped with reasons,
+    substitutions).
+  - `search`: `Query::matches_in` (capture groups as ranges of the original text) and
+    `Query::expand` (`$1`, `${name}`, `$<name>`, `$0`/`$&`, `$$`); a regular expression's Arabic
+    is now folded as the text is (`أجهزة` in a pattern found nothing with normalisation on).
+  - `block_edit`: **encrypted files read and edited** (content and font streams decrypted, new
+    streams and fonts encrypted; `text_blocks` and `edit_block_update` take the password);
+    `placed_chars` (NFKC a cluster at a time, each character's place); `page_paragraphs`.
+  - `blocks`: each character's place through logical reordering; a line without letters takes its
+    paragraph's direction ("رقم ١٢٣٤." wrapped read back as "رقم .١٢٣٤").
+  - `text` (search's extractor): each glyph's quarter turn from PDFium (its angle turns clockwise),
+    each turn read in its own frame and turned back; space marks carry their text object's turn.
+    Upright text on turned pages now reads as lines (ADR 0050's gap).
+- **Shell (`replace.rs`):** `replace_preview`, `replace_text` (the preview's targets, or the hit
+  shown); one `push_content`, so one undo.
+- **UI:** the search panel's Replace toggle, row (replacement, Replace, Replace all…) and preview
+  (`ReplacePreview`: ticked matches, skipped ones with reasons, each context in its own direction,
+  old and new isolated); 9 commands (`search.replace*`, `search.setReplacement`) gated by `modify`;
+  `Shortcut.alt` (matched by the physical key) and `Command.macShortcut`; tokens
+  `--size-replace-result`, `--color-replace-new-bg/-text` (contrast checked); strings in English and
+  Arabic; the mock backend replaces (and undoes) by hiding hits.
+- **Tests:** `tests/replace.rs` (11: English, crossing paragraphs, Type 3, Arabic, a substitute,
+  mixed with regex groups and Arabic-Indic digits, turned pages, encrypted, save and reopen),
+  `tests/block_edit.rs` (encrypted files edited in place), unit tests in `search`, `replace`,
+  `blocks`, `text::layout`, `text::glyphs`; UI `commands/replace.test.tsx` (7, panel in English
+  and Arabic). The shell self-test gains a replace step (normalised search, preview, confirm, read
+  back, one undo): passes here in English (light) and Arabic (dark); typing 17 ms a keystroke.
+- Checked in the browser preview (mock) in both directions and themes: found and fixed an old
+  number and its replacement running together in right-to-left text, a match cut off by a one-line
+  context, and `<del>`'s own strike-through on skipped matches.
+- **Budgets:** search's index reads one more property per character (its angle): 1,000 pages index
+  in 1.12–1.21 s, then 17–19 ms per search (release, `search_bench`, load average 30; M2: 1.11 s and
+  17–18 ms). Typing in the paragraph field: 17 ms a keystroke (self-test).
+- Workspace tests, clippy (with and without `devtools`), `cargo fmt`, Biome, `tsc`, UI tests (305),
+  the fuzz crate's build pass. **Not re-run:** the scroll and zoom benchmark (the viewer is not
+  touched).
 
 ### M4 close — 2026-11-23 (background jobs, searchable PDF, review list, CI gate, exit test; branch `pomidor/m4-jobs-searchable-fe4973`)
 

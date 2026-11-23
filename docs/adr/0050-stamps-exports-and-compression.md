@@ -103,7 +103,8 @@ dialog. All strings are in English and Arabic; the dialogs use logical CSS prope
 - **Rotated text reads back badly.** The text extractor clusters lines in page space, so text that
   runs vertically in page space (an upright footer on a page turned 90°) extracts letter by letter.
   The stamp is right on screen and in print; making the extractor follow the text matrix is extractor
-  work, not stamp work.
+  work, not stamp work. *Closed by ADR 0052 §5: each quarter turn of text is read in its own
+  frame.*
 - **JPEG images are not downsampled** (nor JPEG 2000, CCITT, JBIG2, 16-bit, masked or colour-keyed
   images): reducing them needs a JPEG decoder, owner item 15. The compress report counts them.
   Scanned documents are mostly JPEG, so this is the biggest gap in compression.

@@ -143,7 +143,16 @@
       "toggleWholeWord": "Whole words only",
       "toggleRegex": "Regular expression",
       "toggleArabic": "Ignore Arabic marks and letter variants",
-      "toggleTaMarbuta": "Treat ة and ه as the same"
+      "toggleTaMarbuta": "Treat ة and ه as the same",
+      "replaceOpen": "Replace…",
+      "replaceClose": "Hide replace",
+      "setReplacement": "Set the replacement text",
+      "replace": "Replace this result",
+      "replaceAll": "Replace all…",
+      "replaceConfirm": "Replace the checked matches",
+      "replaceCancel": "Cancel replacing",
+      "replaceToggle": "Include or leave out a match",
+      "replaceShow": "Show the match on its page"
     },
     "window": {
       "new": "New window",
@@ -393,6 +402,7 @@
     "print_failed": "The document could not be printed. Check the printer and try again.",
     "searchInvalid": "That search cannot be run. Check the regular expression.",
     "searchFailed": "The search could not be completed.",
+    "replaceFailed": "The matches could not be listed for replacing.",
     "edit_unsupported": "This file's structure can't be edited yet. Viewing still works.",
     "invalid_edit": "That change can't be made to this document.",
     "save_failed": "The document could not be saved. The file on disk was not changed.",
@@ -487,6 +497,34 @@
     "results": "Search results",
     "page": "Page {{page}}"
   },
+  "replace": {
+    "label": "Replace with",
+    "placeholder": "Replace with",
+    "placeholderRegex": "Replace with ($1 for a group)",
+    "preview": "Matches to replace",
+    "loading": "Finding matches…",
+    "replacing": "Replacing…",
+    "summary": "To replace: {{ready}}. Can't be replaced: {{skipped}}.",
+    "truncated": "Only the first {{formatted}} matches are listed.",
+    "none": "No matches to replace.",
+    "confirm": "Replace {{count}}",
+    "cancel": "Cancel",
+    "include": "Replace this match",
+    "skipped": "Not replaced: {{reason}}",
+    "page": "Page {{page}}",
+    "skip": {
+      "crossesParagraphs": "Runs from one paragraph into another",
+      "shared": "Drawn together with other text",
+      "unreadable": "Can't be read reliably; run OCR first",
+      "font": "Its font can't be read for editing",
+      "rotated": "Rotated text can't be edited",
+      "encrypted": "This file's encryption can't be written",
+      "unsupported": "Drawn in a way that can't be edited yet",
+      "inexact": "Couldn't be replaced exactly",
+      "changed": "The page changed since the preview",
+      "tooLong": "Its paragraph would be too long"
+    }
+  },
   "palette": {
     "label": "Commands",
     "placeholder": "Type a command…",
@@ -543,13 +581,20 @@
       "unreadable": "This text can't be read reliably, so it can't be edited. Run OCR on it first.",
       "font": "This text's font can't be read for editing yet.",
       "rotated": "Rotated text can't be edited yet.",
-      "encrypted": "Text in encrypted files can't be edited yet.",
+      "encrypted": "This file's encryption can't be written by the editor yet.",
       "unsupported": "This text is drawn in a way that can't be edited yet."
     },
     "exportedImages": "{{count}} image files were written.",
     "exportedText": "The text was saved as {{name}}.",
     "compressedSaved": "The compressed copy was saved as {{name}}.",
-    "fieldsMade": "Fields made: {{n}}."
+    "fieldsMade": "Fields made: {{n}}.",
+    "replaced": "Replaced: {{count}}.",
+    "replacedSkipped": "Replaced: {{count}}. Not replaced: {{skipped}}; they are still in the search results.",
+    "replacedSubstituted": "Replaced: {{count}}. Font substituted: {{from}} → {{to}}.",
+    "replacedSubstitutedUnnamed": "Replaced: {{count}}. Font substituted: set in {{to}}.",
+    "replacedSkippedSubstituted": "Replaced: {{count}}. Not replaced: {{skipped}}; they are still in the search results. Font substituted: {{from}} → {{to}}.",
+    "replacedSkippedSubstitutedUnnamed": "Replaced: {{count}}. Not replaced: {{skipped}}; they are still in the search results. Font substituted: set in {{to}}.",
+    "replaceNone": "Nothing was replaced: {{reason}}."
   },
   "split": {
     "title": "Split into files",

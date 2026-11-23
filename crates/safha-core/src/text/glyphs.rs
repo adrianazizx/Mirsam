@@ -4,7 +4,7 @@ use pdfium_render::prelude::{
     PdfMatrix, PdfPage, PdfPageObject, PdfPageObjectCommon, PdfPageObjectsCommon, PdfPageText, PdfPoints,
 };
 
-use super::layout::{Glyph, SpaceMark};
+use super::layout::{Glyph, SpaceMark, turn_point, unturn_point};
 
 /// Every character on the page, in content-stream order.
 ///
@@ -26,6 +26,7 @@ pub(crate) fn collect_glyphs(text: &PdfPageText<'_>) -> Vec<Glyph> {
         let Ok(bounds) = ch.loose_bounds() else { continue };
         let Ok((origin_x, origin_y)) = ch.origin() else { continue };
         let size = ch.scaled_font_size().value;
+        let turn = ch.angle_radians().map_or(0, quarter_turns);
         glyphs.push(Glyph {
             index,
             ch: c,
@@ -37,9 +38,29 @@ pub(crate) fn collect_glyphs(text: &PdfPageText<'_>) -> Vec<Glyph> {
             origin_y: origin_y.value,
             // Type 3 fonts and some producers report 0 or 1; fall back to the box height.
             size: if size > 1.5 { size } else { (bounds.top().value - bounds.bottom().value).max(1.0) },
+            turn,
         });
     }
     glyphs
+}
+
+/// The quarter turn (0–3, counter-clockwise) a baseline is set along, from
+/// PDFium's angle for it: `FPDFText_GetCharAngle` is `atan2(c, a)` of the
+/// character's matrix, which turns clockwise. 0 for a baseline that is not
+/// near a quarter turn (slanted text is read as it always was).
+fn quarter_turns(angle: f32) -> u8 {
+    quarter_of(-angle)
+}
+
+/// The quarter turn (0–3) nearest to a counter-clockwise `angle` in
+/// radians, or 0 when it is not near one.
+fn quarter_of(angle: f32) -> u8 {
+    let quarters = angle / std::f32::consts::FRAC_PI_2;
+    let nearest = quarters.round();
+    if (quarters - nearest).abs() > 0.2 {
+        return 0;
+    }
+    (nearest as i64).rem_euclid(4) as u8
 }
 
 /// Where space glyphs are actually drawn.
@@ -94,8 +115,10 @@ fn visit(
             (x.value, y.value)
         })
     };
-    let (x0, y0) = to_page(bounds.left().value, bounds.bottom().value);
-    let (x1, y1) = to_page(bounds.right().value, bounds.top().value);
+    // The text's own frame: where its baseline runs left to right.
+    let turn = object.matrix().map_or(0, |m| quarter_of(m.b().atan2(m.a())));
+    let (x0, y0) = turn_point(to_page(bounds.left().value, bounds.bottom().value), turn);
+    let (x1, y1) = turn_point(to_page(bounds.right().value, bounds.top().value), turn);
     // A form's scale enlarges the font as it does the box.
     let scale = forms.iter().fold(1.0, |scale, m| scale * (m.a() * m.d() - m.b() * m.c()).abs().sqrt());
     let size = (text_object.scaled_font_size().value * scale).max(1.0);
@@ -106,5 +129,24 @@ fn visit(
     if !text.for_object(text_object).chars().all(char::is_whitespace) {
         return;
     }
-    marks.push(SpaceMark { x: left, y: y0.min(y1), size });
+    let (x, y) = unturn_point((left, y0.min(y1)), turn);
+    marks.push(SpaceMark { x, y, size, turn });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quarter_turns;
+    use std::f32::consts::{FRAC_PI_2, PI};
+
+    #[test]
+    fn baselines_snap_to_the_nearest_quarter_turn() {
+        // PDFium's angles turn clockwise: a quarter clockwise is three counter-clockwise.
+        assert_eq!(quarter_turns(0.0), 0);
+        assert_eq!(quarter_turns(FRAC_PI_2 + 0.01), 3);
+        assert_eq!(quarter_turns(PI), 2);
+        assert_eq!(quarter_turns(3.0 * FRAC_PI_2 - 0.02), 1);
+        assert_eq!(quarter_turns(2.0 * PI - 0.01), 0);
+        // A watermark at 45° is read as before.
+        assert_eq!(quarter_turns(PI / 4.0), 0);
+    }
 }

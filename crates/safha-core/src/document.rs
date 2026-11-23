@@ -423,12 +423,13 @@ impl Document {
 
     /// The paragraphs of a page's text, rebuilt from its glyphs (ADR 0023),
     /// then where its text cannot be edited and why. When the page's content
-    /// cannot be read at all (an encrypted file, a filter the editor does
-    /// not follow), every block of its text as PDFium reads it is refused.
+    /// cannot be read at all (an encryption this editor cannot write, a
+    /// filter it does not follow), every block of its text as PDFium reads
+    /// it is refused.
     pub fn text_blocks(&self, page: usize) -> Result<Vec<crate::block_edit::TextBlock>> {
         use crate::block_edit::{Refusal, refused_page, text_blocks};
         let view = self.view_transform(page)?;
-        match text_blocks(&self.bytes, &view, page) {
+        match text_blocks(&self.bytes, self.password.as_deref(), &view, page) {
             Err(Error::EditUnsupported(_)) => {
                 let reason = if crate::block_edit::encrypted(&self.bytes)? {
                     Refusal::Encrypted
@@ -456,7 +457,8 @@ impl Document {
     ) -> Result<(Document, Vec<u8>, crate::block_edit::EditedBlock)> {
         let view = self.view_transform(edit.page)?;
         let width = self.page_size(edit.page)?.width;
-        let (update, outcome) = crate::block_edit::edit_block_update(&self.bytes, &view, width, edit)?;
+        let (update, outcome) =
+            crate::block_edit::edit_block_update(&self.bytes, self.password.as_deref(), &view, width, edit)?;
         let mut bytes = self.bytes.to_vec();
         bytes.extend_from_slice(&update);
         Ok((self.revision(Arc::from(bytes))?, update, outcome))

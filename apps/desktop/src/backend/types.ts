@@ -889,6 +889,66 @@ export interface SearchResults {
 }
 
 /**
+ * Why a match is not replaced (ADR 0052): it runs from one paragraph into
+ * another; its paragraph cannot be edited (as `BlockRefusal`); the editor
+ * reads it differently from search, or it did not read back exactly; the
+ * page changed since the preview; the paragraph would be too long.
+ */
+export type ReplaceSkip = "crossesParagraphs" | BlockRefusal | "inexact" | "changed" | "tooLong";
+
+/** Where a replaceable match is: opaque to the UI, sent back to replace it. */
+export interface ReplaceTarget {
+  page: number;
+  block: number;
+  fingerprint: number;
+  start: number;
+  end: number;
+}
+
+/** One match as the replace preview lists it. */
+export interface ReplaceOccurrence {
+  page: number;
+  /** Absent when it is skipped. */
+  target: ReplaceTarget | null;
+  /** Its text's boxes on the displayed page. */
+  rects: ViewRect[];
+  rtl: boolean;
+  context: { before: string; matched: string; after: string };
+  /** What it becomes (a regular expression's groups filled in). */
+  replacement: string;
+  skip: ReplaceSkip | null;
+}
+
+export interface ReplacePlan {
+  occurrences: ReplaceOccurrence[];
+  /** More matches exist than were listed. */
+  truncated: boolean;
+}
+
+/** Which matches to replace: those a preview listed, or the search hit shown. */
+export type ReplaceScope =
+  | { kind: "targets"; targets: ReplaceTarget[] }
+  | { kind: "hit"; page: number; rects: ViewRect[] };
+
+export interface ReplaceReport {
+  replaced: number;
+  /** Paragraphs set again. */
+  paragraphs: number;
+  skipped: { target: ReplaceTarget; reason: ReplaceSkip }[];
+  /** Paragraphs set in a bundled substitute: the original font and the face used, once each. */
+  substituted: { from: string; to: "sans" | "naskh"; font: string }[];
+  substitutedParagraphs: number;
+}
+
+export interface ReplaceOutcome {
+  /** Absent when nothing changed. */
+  edit: EditOutcome | null;
+  report: ReplaceReport;
+  /** Why the search hit shown could not be replaced (a `hit` scope). */
+  hitSkipped: ReplaceSkip | null;
+}
+
+/**
  * Render-queue lane. Each lane has its own viewport generation, so the
  * thumbnail panel and the page view never cancel each other's requests.
  */
@@ -1171,6 +1231,24 @@ export interface Backend {
    * with code `invalid_query` (empty, bad regex) or `cancelled` (closed).
    */
   searchDocument(documentId: number, query: string, options: SearchOptions): Promise<SearchResults>;
+  /**
+   * Every match of a search with what `replacement` makes of it, replaceable
+   * or skipped with why (ADR 0052). Rejects like `searchDocument`.
+   */
+  replacePreview(
+    documentId: number,
+    query: string,
+    options: SearchOptions,
+    replacement: string,
+  ): Promise<ReplacePlan>;
+  /** Replaces matches through the in-place editor: one undo step (ADR 0052). */
+  replaceText(
+    documentId: number,
+    query: string,
+    options: SearchOptions,
+    replacement: string,
+    scope: ReplaceScope,
+  ): Promise<ReplaceOutcome>;
   /**
    * Renders one rectangle of a page through the engine's render queue.
    * Rejects with code `cancelled` (see `isCancelled`) when a later

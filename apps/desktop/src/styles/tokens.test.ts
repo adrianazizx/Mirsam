@@ -51,6 +51,7 @@ const PAIRS: [string, string, number][] = [
   ["color-warning", "color-bg-surface", 4.5],
   ["color-warning", "color-bg-app", 4.5],
   ["color-search-mark-text", "color-search-mark-bg", 4.5],
+  ["color-replace-new-text", "color-replace-new-bg", 4.5],
   ["color-focus-ring", "color-bg-app", 3],
   ["color-focus-ring", "color-bg-surface", 3],
   ["color-focus-ring", "color-bg-canvas", 3],

@@ -113,6 +113,14 @@ if (nav) {
   if (added) {
     check(added.painted, `the added text was not painted (${added.pixels} px, ${added.enough} needed)`);
     check(added.readBack, "the added Arabic text did not read back as page text");
+    // Find and replace (ADR 0052): previewed, replaced through the shell, read back, one undo.
+    const r = added.replace;
+    check(r !== undefined && r !== null, "no find-and-replace results");
+    if (r) {
+      check(r.ready >= 1, `the replace preview listed ${r.ready} replaceable matches`);
+      check(r.readBack, "the replaced Arabic text did not read back as page text");
+      check(r.undone, "one undo did not take the replacement back");
+    }
     check(added.undone, "undo did not take the added text away");
     // In-place editing (ADR 0023): the paragraph is found, edited, and read back.
     check(added.blockFound, "the added paragraph was not found as one right-to-left block in logical order");
@@ -202,6 +210,7 @@ if (nav) {
     const a = nav.addedText;
     console.log(
       `  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}; ` +
+        `replaced: ${a.replace?.ready} ready, read back ${a.replace?.readBack}, undone ${a.replace?.undone}; ` +
         `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}; bold in the field ${a.boldApplied}, read back ${a.boldReadBack}; typing ${a.typingMedianMs} ms (p95 ${a.typingP95Ms})`,
     );
   }

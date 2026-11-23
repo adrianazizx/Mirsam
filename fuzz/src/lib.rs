@@ -26,7 +26,7 @@ pub fn exercise(bytes: &[u8]) {
     let _ = safha_core::catalog::catalog_hints(bytes);
     let view = ViewTransform::unrotated(842.0);
     for page in 0..2 {
-        let _ = safha_core::block_edit::text_blocks(bytes, &view, page);
+        let _ = safha_core::block_edit::text_blocks(bytes, None, &view, page);
         let _ = safha_core::annotate::ink_strokes(bytes, page);
     }
     for edit in edits() {
@@ -34,7 +34,7 @@ pub fn exercise(bytes: &[u8]) {
             // The next edit starts from the edited file, so it must read back.
             let edited = [bytes, &update].concat();
             let _ = safha_core::catalog::catalog_hints(&edited);
-            let _ = safha_core::block_edit::text_blocks(&edited, &view, 0);
+            let _ = safha_core::block_edit::text_blocks(&edited, None, &view, 0);
         }
     }
     // Forms are read with the document's password, if any; the fixtures' is
@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn the_page_template_reads_as_text() {
         let pdf = page_pdf(CONTENT, TO_UNICODE);
-        let blocks = safha_core::block_edit::text_blocks(&pdf, &ViewTransform::unrotated(842.0), 0)
+        let blocks = safha_core::block_edit::text_blocks(&pdf, None, &ViewTransform::unrotated(842.0), 0)
             .expect("the template's page reads");
         let text: String = blocks.iter().map(|block| block.text.as_str()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("Hello, world"), "{text}");
