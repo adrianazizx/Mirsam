@@ -936,10 +936,10 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     files, the UI against the mock.
   - **Real scans with other tools' text layers** (owner item 9).
   - **Acrobat.**
-- **Fuzzing:** the page-count stress fixtures that main gained (`bilingual-100-pages.pdf` and
-  `bilingual-500-pages.pdf`) are left out of the fuzz seeds (`fuzz/seed.mjs`). The 500-page one
-  took 30 s in the `file` target, over libFuzzer's 20 s timeout, and failed the PR's fuzz job on
-  an unmutated seed.
+- **Fuzzing:** fixtures of more than 12 pages no longer seed the whole-file fuzz targets
+  (`fuzz/seed.mjs`). This is the same change as PR #31's commit 511c5ef, taken as is so the two
+  branches merge cleanly. The 500-page fixture that main gained took 30 s in the `file` target,
+  over libFuzzer's 20 s timeout.
 - **For other sessions:**
   - **Schema:** state store schema 6 is taken; a later bump renumbers to 7.
   - **`JobBook`:** `create_job` takes `JobOptions`, and the trait gains `page`, `save_check`

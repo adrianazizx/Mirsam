@@ -22,12 +22,12 @@ const FIXTURES = path.join(FUZZ, "../fixtures/out");
 /** Larger files slow every run down more than they add (the 1,000-page fixture). */
 const MAX_SEED_BYTES = 512 * 1024;
 /**
- * The page-count stress copies (`bilingual-100-pages.pdf`, -500-, -1000-): two
- * fixture pages repeated, nothing their sources do not seed already, and so slow
- * in the `file` target (30 s for 500 pages) that libFuzzer's 20 s timeout fails
- * the run on an unmutated seed.
+ * Nor, for the whole-file targets, files of many pages: `file` reads, edits and
+ * rewrites a whole file, which takes it 17–21 s at 100 or 500 pages (libFuzzer's
+ * limit is 20 s), and their pages repeat other fixtures' (the bilingual-N-pages
+ * fixtures). Their content streams and CMaps still seed the other targets.
  */
-const STRESS_COPY = /(^|[/\\])bilingual-\d+-pages\.pdf$/;
+const MAX_SEED_PAGES = 12;
 
 if (!fs.existsSync(path.join(FIXTURES, "manifest.json"))) {
   console.error("missing fixtures/out: run node fixtures/generate.mjs first");
@@ -44,11 +44,15 @@ const add = (target, bytes) => {
   counts[target] = (counts[target] ?? 0) + 1;
 };
 
-const pdfs = walk(FIXTURES).filter((file) => file.endsWith(".pdf") && !STRESS_COPY.test(file));
+const manifest = JSON.parse(fs.readFileSync(path.join(FIXTURES, "manifest.json"), "utf8"));
+const pagesOf = new Map(manifest.fixtures.map((f) => [path.join(FIXTURES, f.path), f.pages ?? 0]));
+const pdfs = walk(FIXTURES).filter((file) => file.endsWith(".pdf"));
 for (const file of pdfs) {
   const raw = fs.readFileSync(file);
-  add("open", raw);
-  add("file", raw);
+  if ((pagesOf.get(file) ?? 0) <= MAX_SEED_PAGES) {
+    add("open", raw);
+    add("file", raw);
+  }
 
   // Encrypted fixtures have no readable plain objects; qpdf fails on them.
   const qdf = spawnSync("qpdf", ["--qdf", "--object-streams=disable", file, "-"], { maxBuffer: 1 << 28 });
