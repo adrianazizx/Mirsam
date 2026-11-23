@@ -17,6 +17,7 @@ import {
   useAppStore,
 } from "../../state/appStore";
 import { parsePageNumber } from "../../viewer/pageNumber";
+import { SignatureBadge } from "../signing/SignatureBadge";
 import { CommandButton } from "../ui/CommandButton";
 import { CommandSelect } from "../ui/CommandSelect";
 import styles from "./StatusBar.module.css";
@@ -114,6 +115,7 @@ export function StatusBar() {
         <CommandButton command="view.toggleLeftPanel" tooltipPlacement="top" mirrorInRtl>
           <PanelLeft />
         </CommandButton>
+        <SignatureBadge />
       </div>
       {document ? (
         <>

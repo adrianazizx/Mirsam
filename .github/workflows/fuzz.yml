@@ -26,6 +26,7 @@ on:
       - "crates/safha-core/src/engine.rs"
       - "crates/safha-core/src/document.rs"
       - "crates/safha-core/src/text/**"
+      - "crates/safha-core/src/sign/**"
 
 concurrency:
   group: fuzz-${{ github.ref }}

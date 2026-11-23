@@ -399,7 +399,7 @@ impl Signature {
     }
 
     /// The content drawing it in its natural box, in `color` (images keep their own).
-    fn appearance(&self, rect: [f32; 4], rotate: i64, color: [f32; 3]) -> Result<Appearance> {
+    pub(crate) fn appearance(&self, rect: [f32; 4], rotate: i64, color: [f32; 3]) -> Result<Appearance> {
         let size = self.natural_size()?;
         Ok(match self {
             Signature::Drawn(drawn) => {

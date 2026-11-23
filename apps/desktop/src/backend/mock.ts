@@ -1,5 +1,6 @@
 import { mockOcrBackend } from "./mockOcr";
 import { mockOcrJobs } from "./mockOcrJobs";
+import { mockSigningBackend } from "./mockSigning";
 import type {
   AnnotationKind,
   Backend,
@@ -1946,4 +1947,5 @@ export const mockBackend: Backend = {
       });
     },
   }),
+  ...mockSigningBackend,
 };

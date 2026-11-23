@@ -24,11 +24,11 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use comments::threads;
 pub use comments::{Comment, Reply};
-pub(crate) use fill::mark_in;
 pub use fill::{
     DrawnSignature, FillText, MAX_SIGNATURE_IMAGE_BYTES, Mark, MarkKind, Signature, SignaturePoint,
     SignatureStamp, TypedSignature,
 };
+pub(crate) use fill::{mark_in, upright};
 pub use ink::{Ink, InkPoint};
 pub use markup::{Markup, MarkupKind, Quad};
 pub use note::{NOTE_SIZE, Note};
@@ -880,7 +880,7 @@ impl Annots {
     /// Rewrites the array where it was; a page that had none gets one in its
     /// dictionary. Either keeps its object number, so strings already in it
     /// (encrypted under that number) stay valid.
-    fn write(self, update: &mut Update, leaf: &Leaf) {
+    pub(crate) fn write(self, update: &mut Update, leaf: &Leaf) {
         match self.own {
             Some((number, generation)) => update.object(number, generation, &Object::Array(self.items)),
             None => {

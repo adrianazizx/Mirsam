@@ -57,6 +57,8 @@ export function SignPanel({ document }: { document: OpenDocument }) {
   const selected = document.selectedAnnotation;
   // A file opened with its user password may not allow annotating (ADR 0043).
   const permitted = useAppStore((state) => isCommandEnabled("fill.text", state));
+  // Certificate signatures need the right to fill in fields (ADR 0048).
+  const certificatePermitted = useAppStore((state) => isCommandEnabled("certSign.open", state));
   const fillSelected = selected !== null && FILL_KINDS.includes(selected.kind);
 
   useEffect(() => {
@@ -169,6 +171,24 @@ export function SignPanel({ document }: { document: OpenDocument }) {
         chosen={fillTool === "signature" ? fillSignature : null}
       />
       <p className={styles.hint}>{t("sign.keptLocally")}</p>
+
+      <section className={styles.section} aria-labelledby="cert-sign-heading">
+        <h3 id="cert-sign-heading" className={styles.heading}>
+          {t("sign.certificateHeading")}
+        </h3>
+        <p className={styles.hint}>{t("sign.certificateHint")}</p>
+        <div className={styles.row}>
+          <Button
+            isDisabled={!certificatePermitted}
+            onPress={() => void runCommand("certSign.open")}
+          >
+            {t("commands.certSign.open")}
+          </Button>
+          <Button variant="ghost" onPress={() => void runCommand("view.showSignatures")}>
+            {t("commands.view.showSignatures")}
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

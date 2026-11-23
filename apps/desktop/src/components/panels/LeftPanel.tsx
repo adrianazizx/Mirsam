@@ -1,8 +1,16 @@
-import { ListTree, MessageSquare, PanelLeftClose, Search, SquareStack } from "lucide-react";
+import {
+  ListTree,
+  MessageSquare,
+  PanelLeftClose,
+  Search,
+  ShieldCheck,
+  SquareStack,
+} from "lucide-react";
 import { ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { type CommandId, runCommand } from "../../commands/registry";
 import { type LeftPanel as Panel, selectActiveDocument, useAppStore } from "../../state/appStore";
+import { SignaturesPanel } from "../signing/SignaturesPanel";
 import { CommandButton } from "../ui/CommandButton";
 import { Tooltip } from "../ui/Tooltip";
 import { CommentsPanel } from "./CommentsPanel";
@@ -16,11 +24,12 @@ const VIEWS: { panel: Panel; command: CommandId; icon: React.ReactNode }[] = [
   { panel: "outline", command: "view.showOutline", icon: <ListTree /> },
   { panel: "search", command: "search.focus", icon: <Search /> },
   { panel: "comments", command: "view.showComments", icon: <MessageSquare /> },
+  { panel: "signatures", command: "view.showSignatures", icon: <ShieldCheck /> },
 ];
 
 /**
  * The left panel (spec section 4): thumbnails, outline, search results, and
- * comments (ADR 0041) for the active document. "Left" in the spec's English layout; it sits at the
+ * comments (ADR 0041), and digital signatures (ADR 0048) for the active document. "Left" in the spec's English layout; it sits at the
  * inline start, so it is on the right in the Arabic UI.
  */
 export function LeftPanel() {
@@ -68,6 +77,8 @@ export function LeftPanel() {
           <OutlinePanel key={documentId} documentId={documentId} />
         ) : panel === "comments" ? (
           <CommentsPanel key={documentId} documentId={documentId} />
+        ) : panel === "signatures" ? (
+          <SignaturesPanel key={documentId} documentId={documentId} />
         ) : (
           <SearchPanel key={documentId} documentId={documentId} />
         )}
