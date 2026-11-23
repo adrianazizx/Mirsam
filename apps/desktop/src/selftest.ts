@@ -455,6 +455,7 @@ async function addedTextChecks(documentId: number) {
     typingMedianMs: -1,
     typingP95Ms: -1,
     typingWithoutFrames: false,
+    diagnostics: null as Record<string, unknown> | null,
   };
   if (block) {
     await runCommand("text.editBlock", { page: 0, block });
