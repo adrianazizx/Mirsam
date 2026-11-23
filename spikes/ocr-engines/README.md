@@ -14,12 +14,12 @@ most of the rest with few false alarms. Tesseract (34% CER), PP-OCRv5 Arabic (32
 
 ## Setup (once; asks nothing of the repo)
 
-Everything heavy lives in `~/Library/Caches/safha-dev/ocr-bench/` (`SAFHA_OCR_BENCH_CACHE`),
+Everything heavy lives in `~/Library/Caches/mirsam-dev/ocr-bench/` (`MIRSAM_OCR_BENCH_CACHE`),
 outside the repo and outside cloud-synced folders.
 
 ```bash
 brew install tesseract                                   # 5.5.4, Apache-2.0
-B=~/Library/Caches/safha-dev/ocr-bench; mkdir -p $B/tessdata
+B=~/Library/Caches/mirsam-dev/ocr-bench; mkdir -p $B/tessdata
 for f in ara eng; do curl -L -o $B/tessdata/$f.traineddata \
   https://github.com/tesseract-ocr/tessdata_best/raw/main/$f.traineddata; done
 uv venv --python 3.12 $B/venv
@@ -66,7 +66,7 @@ $B/venv/bin/python spikes/ocr-engines/wb_align.py nuqta-4b-q8_0-metal --verbose
 
 Each runner writes `spikes/out/ocr-engines/hyp/<engine>/<sample>.txt` and a `run.json` with
 the settings, seconds per page, peak memory and model size. VLM runners also keep the model's raw
-answer (`<sample>.raw.txt`). `summarize.py` scores every engine with `safha-ocr-eval` and prints
+answer (`<sample>.raw.txt`). `summarize.py` scores every engine with `mirsam-ocr-eval` and prints
 the tables pasted into the ADR.
 
 ## What was built

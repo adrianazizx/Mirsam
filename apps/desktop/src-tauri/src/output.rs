@@ -9,10 +9,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use safha_core::compress::{CompressOptions, CompressReport};
-use safha_core::edit::Change;
-use safha_core::export::{ImageFormat, TextFormat};
-use safha_core::stamp::{Band, Mark, Stamp, StampKind, Watermark};
+use mirsam_core::compress::{CompressOptions, CompressReport};
+use mirsam_core::edit::Change;
+use mirsam_core::export::{ImageFormat, TextFormat};
+use mirsam_core::stamp::{Band, Mark, Stamp, StampKind, Watermark};
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -90,13 +90,13 @@ pub async fn pick_watermark_image(
 ) -> CommandResult<Option<String>> {
     let picked = app.dialog().file().add_filter("PNG, JPEG", &["png", "jpg", "jpeg"]).blocking_pick_file();
     let Some(path) = picked.and_then(|file| file.into_path().ok()) else { return Ok(None) };
-    let size = std::fs::metadata(&path).map_err(safha_core::Error::from)?.len();
+    let size = std::fs::metadata(&path).map_err(mirsam_core::Error::from)?.len();
     if size > MAX_IMAGE_FILE {
         return Err(CommandError::new("image_unreadable", "the image file is over 50 MB"));
     }
-    let bytes = std::fs::read(&path).map_err(safha_core::Error::from)?;
+    let bytes = std::fs::read(&path).map_err(mirsam_core::Error::from)?;
     let png = bytes.starts_with(b"\x89PNG\r\n\x1a\n");
-    if !png && safha_core::jpeg::frame(&bytes).is_none() {
+    if !png && mirsam_core::jpeg::frame(&bytes).is_none() {
         return Err(CommandError::new("image_unreadable", "not a PNG or baseline JPEG file"));
     }
     let name = crate::state::display_name(&path);
@@ -180,7 +180,7 @@ pub async fn export_page_images(
             } else {
                 path.clone()
             };
-            safha_core::save::write_atomically(&path, &bytes)?;
+            mirsam_core::save::write_atomically(&path, &bytes)?;
         }
         Ok(Some(targets.len()))
     })
@@ -215,7 +215,7 @@ pub async fn export_text(
     let path = with_extension(path, extension, &[extension]);
     blocking(move || {
         let text = document.export_text(&pages, format)?;
-        safha_core::save::write_atomically(&path, text.as_bytes())?;
+        mirsam_core::save::write_atomically(&path, text.as_bytes())?;
         Ok(Some(crate::state::display_name(&path)))
     })
     .await
@@ -269,7 +269,7 @@ pub async fn save_compressed(
     let path = with_extension(path, "pdf", &["pdf"]);
     let (_, bytes) = lock(&output.compressed).remove(&document_id).ok_or_else(stale)?;
     // Checked when it was made (it opens, with every page); written atomically.
-    safha_core::save::write_atomically(&path, &bytes)?;
+    mirsam_core::save::write_atomically(&path, &bytes)?;
     Ok(Some(crate::state::display_name(&path)))
 }
 
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn exported_files_never_overwrite() {
-        let dir = std::env::temp_dir().join(format!("safha-output-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mirsam-output-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
         std::fs::write(dir.join("a.png"), b"x").expect("write");
         assert_eq!(free_path(&dir, "a", "png"), dir.join("a 2.png"));

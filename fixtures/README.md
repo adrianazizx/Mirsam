@@ -17,5 +17,5 @@ node fixtures/generate.mjs --only mixed-inline   # one case
 - `out/manifest.json` — what was generated, with checksums, page counts, and expected text.
 
 Adding a case: add a content file covering the situation, regenerate, and look at the result with
-`cargo run -p safha-core --example render_png`. Adding a producer: one entry in `PRODUCERS` in
+`cargo run -p mirsam-core --example render_png`. Adding a producer: one entry in `PRODUCERS` in
 `generate.mjs`. Needs Chrome (or `CHROME_BIN`), qpdf, and — for the CoreText producer — macOS.

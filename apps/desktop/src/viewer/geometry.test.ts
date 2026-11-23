@@ -3,7 +3,7 @@ import { CSS_PX_PER_POINT } from "../state/zoom";
 import { pagePixels, renderScale, TILE_SIZE, tileId, tilesInRegion } from "./geometry";
 
 describe("render geometry", () => {
-  it("computes page pixels in f32 arithmetic, like safha-core", () => {
+  it("computes page pixels in f32 arithmetic, like mirsam-core", () => {
     // 595.276 is not an f32; the engine sees Math.fround(595.276) = 595.2760009765625.
     const width = Math.fround(595.276);
     expect(pagePixels(width, Math.fround(2))).toBe(1191);

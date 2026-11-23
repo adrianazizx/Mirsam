@@ -1,7 +1,7 @@
 # PDF Viewer & Editor — Project Spec
 
 > Name: **Mirsam** (Arabic مرسام), chosen 2026-11-22. The working name was Safha (صفحة); code
-> identifiers still use `safha` until the rename tracked in `PROGRESS.md`.
+> identifiers were renamed to `mirsam` on 2026-11-23.
 > Audience for this file: Claude Code. Read it fully before writing any code.
 
 ---

@@ -1,4 +1,4 @@
-//! Verification child process: render and extract text through `safha-core`, i.e.
+//! Verification child process: render and extract text through `mirsam-core`, i.e.
 //! the product's own PDFium path. It runs in its own process because
 //! pdfium-render allows one library binding per process and the generator
 //! already holds a direct one for the edit API.
@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
-use safha_core::{Bitmap, Engine, PdfiumSource};
+use mirsam_core::{Bitmap, Engine, PdfiumSource};
 
 pub const SCALE: f32 = 3.0;
 

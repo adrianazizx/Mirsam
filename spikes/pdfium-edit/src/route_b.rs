@@ -53,7 +53,7 @@ pub struct Placement<'a> {
 fn add_font(doc: &mut Document, font: &FontInfo, embed: &Embed) -> lopdf::ObjectId {
     let k = |v: i16| Object::Real(font.k(v as f64) as f32);
     // Subset tag: six capitals. A real writer derives it from the glyph set.
-    let base_font = format!("SAFHAB+{}", font.name);
+    let base_font = format!("MIRSAM+{}", font.name);
     let font_file = doc.add_object(Stream::new(
         dictionary! { "Length1" => embed.subset.len() as i64 },
         embed.subset.clone(),

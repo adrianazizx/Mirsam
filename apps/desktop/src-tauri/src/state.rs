@@ -4,12 +4,12 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use safha_core::Document;
-use safha_core::edit::EditHistory;
-use safha_core::recovery::{FileStamp, RecoveryFiles};
-use safha_core::render::{DocumentId, RenderConfig, RenderService};
-use safha_core::search::IndexCache;
-use safha_core::store::Store;
+use mirsam_core::Document;
+use mirsam_core::edit::EditHistory;
+use mirsam_core::recovery::{FileStamp, RecoveryFiles};
+use mirsam_core::render::{DocumentId, RenderConfig, RenderService};
+use mirsam_core::search::IndexCache;
+use mirsam_core::store::Store;
 use serde::Deserialize;
 
 /// The render-queue lane a request belongs to. Each lane is registered with
@@ -391,7 +391,7 @@ impl AppState {
     pub fn documents_of(&self, path: &Path) -> Vec<u32> {
         let mut ids: Vec<u32> = lock(&self.documents)
             .iter()
-            .filter(|(_, file)| safha_core::store::canonical_path(&file.path) == path)
+            .filter(|(_, file)| mirsam_core::store::canonical_path(&file.path) == path)
             .map(|(id, _)| *id)
             .collect();
         ids.sort_unstable();
@@ -554,7 +554,7 @@ impl AppState {
         if let Some(store) = self.store()
             && let Err(err) = store.forget_recovery(&file.recovery_key)
         {
-            eprintln!("safha: could not forget a recovery file: {err}");
+            eprintln!("mirsam: could not forget a recovery file: {err}");
         }
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.close_document(lane.render_id(id));
@@ -629,11 +629,11 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// Render settings. The tile cache size can be overridden with
-/// `SAFHA_TILE_CACHE_MB`.
+/// `MIRSAM_TILE_CACHE_MB`.
 fn render_config() -> RenderConfig {
     let mut config = RenderConfig::default();
     if let Some(megabytes) =
-        std::env::var("SAFHA_TILE_CACHE_MB").ok().and_then(|value| value.parse::<usize>().ok())
+        std::env::var("MIRSAM_TILE_CACHE_MB").ok().and_then(|value| value.parse::<usize>().ok())
     {
         config.cache_bytes = megabytes.saturating_mul(1024 * 1024);
     }

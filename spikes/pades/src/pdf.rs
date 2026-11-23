@@ -3,7 +3,7 @@
 //! a `/ByteRange` and a `/Contents` placeholder, and changes nothing before it.
 //!
 //! The spike reads the file with lopdf and writes the update by hand. The
-//! product would build on `safha-core`'s own `pdf::write::Update`, which
+//! product would build on `mirsam-core`'s own `pdf::write::Update`, which
 //! already writes updates in both cross-reference forms.
 
 use std::fmt::Write as _;

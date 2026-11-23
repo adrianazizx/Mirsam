@@ -36,7 +36,7 @@ cargo run -p spike-pdfium-edit -- shape   # optional: dump the shaper's clusters
 Needs `qpdf` and `swift` on `PATH`. Everything lands in `spikes/out/pdfium-edit/` (git-ignored):
 
 - `<variant>-<font>.pdf`: four pages, one input line per page, 18 pt, RTL lines right-aligned.
-- `<variant>-<font>.png`: the four pages stacked, rendered by PDFium through `safha-core` at 3x.
+- `<variant>-<font>.png`: the four pages stacked, rendered by PDFium through `mirsam-core` at 3x.
 - `compare-<font>-<input>.png`: the same line in the six variants that can render differently,
   top to bottom: `a1-settext`, `a2-charcodes`, `a3-positions`, `a4-cid2`, `b-src`, `b-src-td`.
 - `insert-src-<fixture>.pdf` and `insert-{a,a-inc,b}-<fixture>.pdf`: existing fixtures before and
@@ -47,8 +47,8 @@ Needs `qpdf` and `swift` on `PATH`. Everything lands in `spikes/out/pdfium-edit/
   the ToUnicode gaps, the `/ActualText` probes, the insertion measurements and Chrome's fixtures
   through the same extractors.
 
-The generator binds PDFium directly (the edit API is not exposed by `safha-core`) and runs
-rendering and PDFium text extraction in a child process through `safha-core`, because
+The generator binds PDFium directly (the edit API is not exposed by `mirsam-core`) and runs
+rendering and PDFium text extraction in a child process through `mirsam-core`, because
 pdfium-render allows one binding per process. PDFKit extraction is `scripts/pdfkit_extract.swift`.
 
 ## What was built
@@ -426,7 +426,7 @@ Route A:
 - No operator-level control: no `Ts`, no span inside an object, no choice of `TJ` against `Td`,
   no font descriptor fields, no subset tag.
 - f32 positions leave noise such as `-.00021192763` in the `TJ` arrays.
-- Editing needs the process's single PDFium binding, so `safha-core` would have to expose it.
+- Editing needs the process's single PDFium binding, so `mirsam-core` would have to expose it.
 - `FPDF_INCREMENTAL` does not give a small incremental update (see above).
 
 Route B:

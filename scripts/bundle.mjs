@@ -2,7 +2,7 @@
 // Builds Mirsam's installers for one target with the pinned PDFium inside, then
 // opens every installer it produced and checks it (docs/adr/0060-bundling-pdfium.md):
 //
-// - PDFium is where the engine looks for it (crates/safha-core/src/engine.rs):
+// - PDFium is where the engine looks for it (crates/mirsam-core/src/engine.rs):
 //     macOS    Mirsam.app/Contents/Frameworks/libpdfium.dylib
 //     Windows  pdfium.dll beside the executable
 //     Linux    /usr/lib/<productName>/libpdfium.so (deb, rpm, AppImage)
@@ -65,7 +65,7 @@ const LIBRARY = {
 
 if (process.argv[2] === "--guard") {
   // build.beforeBundleCommand in tauri.conf.json: runs inside `tauri build`.
-  const library = process.env.SAFHA_BUNDLE_PDFIUM;
+  const library = process.env.MIRSAM_BUNDLE_PDFIUM;
   if (!library || !fs.existsSync(library)) {
     console.error(
       "Refusing to bundle without PDFium. Build installers with `node scripts/bundle.mjs` " +
@@ -103,7 +103,7 @@ const platformConfig = readJson(path.join(TAURI_DIR, `tauri.${spec.os}.conf.json
 const productName = tauriConfig.productName;
 if (spec.os === "linux") {
   // The engine looks in /usr/lib/<productName> by a name of its own.
-  const engine = fs.readFileSync(path.join(ROOT, "crates/safha-core/src/engine.rs"), "utf8");
+  const engine = fs.readFileSync(path.join(ROOT, "crates/mirsam-core/src/engine.rs"), "utf8");
   const dir = engine.match(/LINUX_RESOURCE_DIR: &str = "([^"]*)"/)?.[1];
   if (dir !== productName) fail(`LINUX_RESOURCE_DIR in engine.rs is ${dir}; productName is ${productName}`);
 }
@@ -128,13 +128,13 @@ if (build) {
   run(
     process.execPath,
     [cli, "build", ...(explicitTarget ? ["--target", target] : []), "--config", overlayPath, ...tauriArgs],
-    { cwd: APP_DIR, env: { ...process.env, SAFHA_BUNDLE_PDFIUM: library, SAFHA_BUILD_COMMIT: buildCommit() } },
+    { cwd: APP_DIR, env: { ...process.env, MIRSAM_BUNDLE_PDFIUM: library, MIRSAM_BUILD_COMMIT: buildCommit() } },
   );
 }
 
 /** The commit being built, for crash reports (ADR 0061); the environment's when set. */
 function buildCommit() {
-  if (process.env.SAFHA_BUILD_COMMIT) return process.env.SAFHA_BUILD_COMMIT;
+  if (process.env.MIRSAM_BUILD_COMMIT) return process.env.MIRSAM_BUILD_COMMIT;
   const git = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], { cwd: ROOT, encoding: "utf8" });
   return git.status === 0 ? git.stdout.trim() : "";
 }
@@ -344,7 +344,7 @@ function checkRoot(root, libraryPath, resources, bin = null, { sameBuild = false
 
 /** Windows installers: pdfium.dll in the same directory as the app's executable. */
 function checkBesideExe(root) {
-  const exe = walk(root).find((file) => /safha-desktop\.exe$|mirsam\.exe$/i.test(file));
+  const exe = walk(root).find((file) => /mirsam-desktop\.exe$|mirsam\.exe$/i.test(file));
   if (!exe) return { problem: "no application executable inside" };
   const dir = path.dirname(exe);
   return checkRoot(dir, "pdfium.dll", ".");

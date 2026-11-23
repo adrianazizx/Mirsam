@@ -64,14 +64,14 @@ import {
 const TILE_TIMEOUT_MS = 10_000;
 
 let tileUrl: string | null = null;
-/** The shell's review crops: `safha://localhost/ocr-crop` (ADR 0037). */
+/** The shell's review crops: `mirsam://localhost/ocr-crop` (ADR 0037). */
 let cropUrl: string | null = null;
 /**
- * The shell's tile protocol: `safha://localhost/tile` (`http://safha.localhost/tile`
+ * The shell's tile protocol: `mirsam://localhost/tile` (`http://mirsam.localhost/tile`
  * on Windows). Asked of Tauri on first use: the module also loads outside Tauri.
  */
 function tileBase(): string {
-  tileUrl ??= convertFileSrc("tile", "safha");
+  tileUrl ??= convertFileSrc("tile", "mirsam");
   return tileUrl;
 }
 
@@ -247,7 +247,7 @@ export const tauriBackend: Backend = {
   importSignatureImage: (initials) =>
     invoke<SignatureInfo | null>("import_signature_image", { initials }),
   deleteSignature: (id) => invoke<void>("delete_signature", { id }),
-  signatureImageUrl: (id) => `${convertFileSrc("signature", "safha")}?id=${id}`,
+  signatureImageUrl: (id) => `${convertFileSrc("signature", "mirsam")}?id=${id}`,
   // Addressed to one window: listen on this window only.
   onDocumentsArrived: (listener) =>
     getCurrentWebviewWindow().listen<DocumentsArrived>("documents-arrived", (event) =>
@@ -384,7 +384,7 @@ export const tauriBackend: Backend = {
     invoke<EditOutcome>("ocr_convert", { documentId, pages, keepScan, family }),
   ocrCropUrl: (documentId, page, rect, height) => {
     const [x0, y0, x1, y1] = rect.map((v) => v.toFixed(2));
-    cropUrl ??= convertFileSrc("ocr-crop", "safha");
+    cropUrl ??= convertFileSrc("ocr-crop", "mirsam");
     return `${cropUrl}?doc=${documentId}&page=${page}&x0=${x0}&y0=${y0}&x1=${x1}&y1=${y1}&h=${Math.round(height)}`;
   },
   onOcrJob: (listener) => listen<OcrJob>("ocr-job", (event) => listener(event.payload)),

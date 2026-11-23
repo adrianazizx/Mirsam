@@ -34,7 +34,7 @@ import {
 const OUT = path.join(HERE, "out");
 
 /** Password of the encrypted fixture. Test data, not a secret. */
-const ENCRYPTED_PASSWORD = "safha-test";
+const ENCRYPTED_PASSWORD = "mirsam-test";
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -125,7 +125,7 @@ function pageCount(file, password) {
 
 const contents = loadContents().filter((content) => !onlyId || content.id === onlyId);
 
-const workDir = path.join(tmpdir(), `safha-fixtures-${process.pid}`);
+const workDir = path.join(tmpdir(), `mirsam-fixtures-${process.pid}`);
 mkdirSync(workDir, { recursive: true });
 if (!onlyId && !onlyProducer) rmSync(OUT, { recursive: true, force: true });
 

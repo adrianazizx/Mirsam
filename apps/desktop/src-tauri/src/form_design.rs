@@ -1,13 +1,13 @@
-//! Making forms (ADR 0047): thin commands over `safha_core::forms`. Boxes
+//! Making forms (ADR 0047): thin commands over `mirsam_core::forms`. Boxes
 //! come from the UI in displayed-page points and are mapped to page space
 //! here; every change the UI sends at once is one undo step.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use safha_core::edit::Change;
-use safha_core::forms::{DetectedField, FieldDesign, FieldSpec};
-use safha_core::view::ViewRect;
+use mirsam_core::edit::Change;
+use mirsam_core::forms::{DetectedField, FieldDesign, FieldSpec};
+use mirsam_core::view::ViewRect;
 
 use crate::editing::EditOutcome;
 use crate::error::{CommandError, CommandResult};
@@ -36,7 +36,7 @@ pub struct DesignOutcome {
 }
 
 /// A box on displayed page `page`, in page space.
-fn page_rect(document: &safha_core::Document, page: usize, rect: ViewRect) -> safha_core::Result<[f32; 4]> {
+fn page_rect(document: &mirsam_core::Document, page: usize, rect: ViewRect) -> mirsam_core::Result<[f32; 4]> {
     let view = document.view_transform(page)?;
     let corners = [(rect.x, rect.y), (rect.x + rect.width, rect.y + rect.height)];
     let [(x0, y0), (x1, y1)] = corners.map(|(x, y)| view.page_point(x, y));

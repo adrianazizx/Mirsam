@@ -3,7 +3,7 @@
  * than 100 ms, memory bounded under 500 MB on a 1,000-page document).
  *
  * Runs inside the real webview of a `devtools` build: `scripts/scroll-benchmark.sh`
- * launches the app with `SAFHA_SELFTEST_SPIKE=scroll` on the 1,000-page fixture,
+ * launches the app with `MIRSAM_SELFTEST_SPIKE=scroll` on the 1,000-page fixture,
  * and `scripts/check-scroll-benchmark.mjs` asserts the budgets on the report.
  *
  * Scrolling is driven by setting `scrollTop` once per animation frame at a

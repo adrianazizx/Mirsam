@@ -1,6 +1,6 @@
 //! Page edits, undo and redo (ADR 0014), markup (ADR 0017), and saving
-//! (ADR 0015): thin commands over `safha_core::edit`, `safha_core::annotate`
-//! and `safha_core::save`. An edit, undo, or redo leaves the document at a
+//! (ADR 0015): thin commands over `mirsam_core::edit`, `mirsam_core::annotate`
+//! and `mirsam_core::save`. An edit, undo, or redo leaves the document at a
 //! new revision, which replaces the old one everywhere (renders, search
 //! index). The outcome says whether pages changed, so the UI reloads the page
 //! layout, or only paints the pages again.
@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager as _, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::annotate::{
+use mirsam_core::annotate::{
     AnnotationEdit, AnnotationKind, Ink, InkPoint, Markup, MarkupKind, Note, Quad, Reply, TextBox,
 };
-use safha_core::edit::{Change, EditHistory, PageEdit};
-use safha_core::view::ViewRect;
+use mirsam_core::edit::{Change, EditHistory, PageEdit};
+use mirsam_core::view::ViewRect;
 
 use crate::error::{CommandError, CommandResult};
 use crate::state::{AppState, lock};
@@ -99,7 +99,7 @@ pub struct NewTextArg {
     y: f32,
     width: f32,
     text: String,
-    family: safha_core::fonts::FontFamily,
+    family: mirsam_core::fonts::FontFamily,
     size: f32,
     color: [f32; 3],
     align: AlignArg,
@@ -123,9 +123,9 @@ pub enum DirectionArg {
     Rtl,
 }
 
-impl From<NewTextArg> for safha_core::text_edit::NewText {
+impl From<NewTextArg> for mirsam_core::text_edit::NewText {
     fn from(arg: NewTextArg) -> Self {
-        use safha_core::typeset::{Align, BaseDirection};
+        use mirsam_core::typeset::{Align, BaseDirection};
         Self {
             page: arg.page,
             x: arg.x,
@@ -173,7 +173,7 @@ pub async fn page_text_blocks(
     state: State<'_, AppState>,
     document_id: u32,
     page: usize,
-) -> CommandResult<Vec<safha_core::block_edit::TextBlock>> {
+) -> CommandResult<Vec<mirsam_core::block_edit::TextBlock>> {
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     Ok(document.text_blocks(page)?)
 }
@@ -187,7 +187,7 @@ pub struct BlockEditArg {
     fingerprint: u32,
     text: String,
     /// A bundled family for the substitute; absent keeps the paragraph's own font if it can.
-    family: Option<safha_core::fonts::FontFamily>,
+    family: Option<mirsam_core::fonts::FontFamily>,
     /// Bold and italic as the editor set them (ADR 0025); absent keeps each character's own.
     #[serde(default)]
     marks: Option<Vec<MarkArg>>,
@@ -209,10 +209,10 @@ pub struct MarkArg {
 pub struct BlockEditOutcome {
     #[serde(flatten)]
     outcome: EditOutcome,
-    substituted: Option<safha_core::block_edit::Substitution>,
+    substituted: Option<mirsam_core::block_edit::Substitution>,
     lines: usize,
     /// What the new text is set in: the page's fonts, their embedded programs, or bundled faces.
-    source: safha_core::block_edit::FontSource,
+    source: mirsam_core::block_edit::FontSource,
 }
 
 /// Edits a paragraph of a page's text in place (ADR 0023): one undo step.
@@ -225,7 +225,7 @@ pub async fn edit_text_block(
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let edit = safha_core::block_edit::BlockEdit {
+    let edit = mirsam_core::block_edit::BlockEdit {
         page: edit.page,
         index: edit.index,
         fingerprint: edit.fingerprint,
@@ -234,7 +234,7 @@ pub async fn edit_text_block(
         marks: edit.marks.map(|marks| {
             marks
                 .into_iter()
-                .map(|m| safha_core::block_edit::Mark {
+                .map(|m| mirsam_core::block_edit::Mark {
                     start: m.start,
                     end: m.end,
                     bold: m.bold,
@@ -278,7 +278,7 @@ fn author(state: &AppState) -> Option<String> {
 pub(crate) fn edit_annotations(
     state: &AppState,
     document_id: u32,
-    edits: impl FnOnce(&safha_core::Document) -> safha_core::Result<Vec<AnnotationEdit>>,
+    edits: impl FnOnce(&mirsam_core::Document) -> mirsam_core::Result<Vec<AnnotationEdit>>,
 ) -> CommandResult<EditOutcome> {
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
@@ -475,7 +475,7 @@ pub async fn document_comments(
         .map_err(|err| CommandError::new("engine_error", err.to_string()))?
 }
 
-fn comments_of(document: &safha_core::Document) -> CommandResult<Vec<CommentWire>> {
+fn comments_of(document: &mirsam_core::Document) -> CommandResult<Vec<CommentWire>> {
     let mut views = std::collections::HashMap::new();
     let mut out = Vec::new();
     for comment in document.comments()? {
@@ -647,11 +647,11 @@ pub async fn save_document_as(
     if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
         path.as_mut_os_string().push(".pdf");
     }
-    let from = safha_core::store::canonical_path(&current);
+    let from = mirsam_core::store::canonical_path(&current);
     let outcome = save_to(&state, document_id, path.clone())?;
     // Its OCR jobs and review list follow it (ADR 0035).
     if let Some(ocr) = app.try_state::<crate::ocr::OcrState>() {
-        let to = safha_core::store::canonical_path(&path);
+        let to = mirsam_core::store::canonical_path(&path);
         let name = to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         ocr.moved(&from, &to, &name);
     }
@@ -678,18 +678,18 @@ fn save_locked(state: &AppState, document_id: u32, path: PathBuf) -> CommandResu
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let mode = safha_core::save::save(&document, &path)?;
+    let mode = mirsam_core::save::save(&document, &path)?;
     history.mark_saved();
     let name = state.set_path(document_id, path.clone()).unwrap_or_default();
     if let Some(store) = state.store()
         && let Err(err) = store.record_open(&path)
     {
-        eprintln!("safha: could not record a recent file: {err}");
+        eprintln!("mirsam: could not record a recent file: {err}");
     }
     Ok(SaveOutcome {
         name,
         modified: history.is_modified(),
-        incremental: mode == safha_core::save::SaveMode::Incremental,
+        incremental: mode == mirsam_core::save::SaveMode::Incremental,
     })
 }
 
@@ -714,7 +714,7 @@ pub struct PendingInsert {
     document_id: u32,
     at: usize,
     paths: Vec<PathBuf>,
-    opened: Vec<safha_core::Document>,
+    opened: Vec<mirsam_core::Document>,
 }
 
 /// Asks for one or more PDFs and inserts all their pages before page `at`
@@ -757,7 +757,7 @@ fn continue_insert(
     mut pending: PendingInsert,
     password: Option<&str>,
 ) -> CommandResult<InsertOutcome> {
-    let engine = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)?;
+    let engine = mirsam_core::Engine::global(&mirsam_core::PdfiumSource::Auto)?;
     let mut password = password;
     while let Some(path) = pending.paths.get(pending.opened.len()) {
         match engine.open_file(path, password) {
@@ -765,7 +765,7 @@ fn continue_insert(
                 pending.opened.push(document);
                 password = None;
             }
-            Err(safha_core::Error::PasswordRequired) => {
+            Err(mirsam_core::Error::PasswordRequired) => {
                 let name = crate::state::display_name(path);
                 let retry = password.is_some();
                 return Ok(InsertOutcome::NeedsPassword { token: state.hold_insert(pending), name, retry });
@@ -774,7 +774,7 @@ fn continue_insert(
         }
     }
     let document_id = pending.document_id;
-    let others: Vec<&safha_core::Document> = pending.opened.iter().collect();
+    let others: Vec<&mirsam_core::Document> = pending.opened.iter().collect();
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
@@ -891,7 +891,7 @@ pub async fn split_document(
 
 /// The files of a split: each one's name (without `.pdf`), bytes, and page count.
 fn split_parts(
-    document: &safha_core::Document,
+    document: &mirsam_core::Document,
     stem: &str,
     by: &SplitBy,
 ) -> CommandResult<Vec<(String, Vec<u8>, usize)>> {
@@ -955,14 +955,14 @@ fn file_name_part(title: &str) -> String {
 
 /// Validates a new PDF (it opens, with `pages` pages) and writes it atomically.
 fn write_new_pdf(path: &std::path::Path, bytes: &[u8], pages: usize) -> CommandResult<()> {
-    let engine = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)?;
+    let engine = mirsam_core::Engine::global(&mirsam_core::PdfiumSource::Auto)?;
     let reopened = engine
         .open_bytes(bytes.to_vec(), None)
         .map_err(|_| CommandError::new("save_failed", "the new file would not open"))?;
     if reopened.page_count() != pages {
         return Err(CommandError::new("save_failed", "the new file would have the wrong number of pages"));
     }
-    safha_core::save::write_atomically(path, bytes)?;
+    mirsam_core::save::write_atomically(path, bytes)?;
     Ok(())
 }
 
@@ -1004,7 +1004,7 @@ mod tests {
     use std::path::Path;
     use std::time::Instant;
 
-    use safha_core::store::Store;
+    use mirsam_core::store::Store;
 
     use super::*;
     use crate::state::MAIN_WINDOW;
@@ -1031,7 +1031,7 @@ mod tests {
             serde_json::to_value(&outcome).expect("json")["document"]["id"].as_u64().expect("opened") as u32;
         let pages = |state: &AppState| state.document(id).expect("document").page_count();
         let before = pages(&state);
-        let protected_pages = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)
+        let protected_pages = mirsam_core::Engine::global(&mirsam_core::PdfiumSource::Auto)
             .expect("engine")
             .open_file(&protected, Some(&password))
             .expect("opens")
@@ -1076,10 +1076,10 @@ mod tests {
             r#"{"page":0,"x":10,"y":20,"width":200,"text":"نص","family":"naskh","size":14,"color":[0,0,0.5],"align":"justify","direction":"rtl"}"#,
         )
         .expect("parses");
-        let text = safha_core::text_edit::NewText::from(arg);
-        assert_eq!(text.family, safha_core::fonts::FontFamily::Naskh);
-        assert_eq!(text.align, safha_core::typeset::Align::Justify);
-        assert_eq!(text.direction, safha_core::typeset::BaseDirection::Rtl);
+        let text = mirsam_core::text_edit::NewText::from(arg);
+        assert_eq!(text.family, mirsam_core::fonts::FontFamily::Naskh);
+        assert_eq!(text.align, mirsam_core::typeset::Align::Justify);
+        assert_eq!(text.direction, mirsam_core::typeset::BaseDirection::Rtl);
         assert_eq!((text.x, text.y, text.width, text.size), (10.0, 20.0, 200.0, 14.0));
     }
 
@@ -1105,7 +1105,7 @@ mod tests {
 
     #[test]
     fn comments_are_signed_with_the_chosen_name_and_answered() {
-        let dir = std::env::temp_dir().join(format!("safha-comments-shell-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mirsam-comments-shell-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("dir");
         let fixture =

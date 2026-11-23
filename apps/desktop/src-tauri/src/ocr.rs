@@ -1,4 +1,4 @@
-//! Background OCR (ADR 0035): thin commands over `safha_core::ocr::jobs`.
+//! Background OCR (ADR 0035): thin commands over `mirsam_core::ocr::jobs`.
 //!
 //! The job runner lives in the engine; this module is its [`JobHost`]: it finds
 //! a job's document among the open ones (by file), renders its pages, writes
@@ -11,18 +11,18 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use safha_core::edit::Change;
-use safha_core::fonts::FontFamily;
-use safha_core::models::{ModelStore, PRIMARY, RUNTIME};
-use safha_core::ocr::convert::{PageConversion, paragraphs, sample_colors};
-use safha_core::ocr::jobs::{
+use mirsam_core::edit::Change;
+use mirsam_core::fonts::FontFamily;
+use mirsam_core::models::{ModelStore, PRIMARY, RUNTIME};
+use mirsam_core::ocr::convert::{PageConversion, paragraphs, sample_colors};
+use mirsam_core::ocr::jobs::{
     JobEngines, JobHost, JobId, JobKind, JobOptions, JobRunner, JobStatus, Language, LocalEngines, MAX_SIDE,
     RenderedPage, ReviewPage,
 };
-use safha_core::ocr::{
+use mirsam_core::ocr::{
     Action, LayerQuality, LayerState, OcrImage, PageCheck, PageLayer, ReviewFilter, TextInfo,
 };
-use safha_core::{Document, TileRequest};
+use mirsam_core::{Document, TileRequest};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, http};
 
@@ -68,10 +68,10 @@ impl OcrState {
         let (Some(dir), Some(store)) = (state_dir, models.clone()) else {
             return Self { runner: None, models };
         };
-        let book = match safha_core::store::Store::open(&dir.join("state.sqlite3")) {
+        let book = match mirsam_core::store::Store::open(&dir.join("state.sqlite3")) {
             Ok(book) => Arc::new(book),
             Err(err) => {
-                eprintln!("safha: OCR jobs cannot be kept: {err}");
+                eprintln!("mirsam: OCR jobs cannot be kept: {err}");
                 return Self { runner: None, models };
             }
         };
@@ -81,7 +81,7 @@ impl OcrState {
         match JobRunner::start(book, Arc::new(Host { app }), engines) {
             Ok(runner) => Self { runner: Some(runner), models },
             Err(err) => {
-                eprintln!("safha: the OCR job runner did not start: {err}");
+                eprintln!("mirsam: the OCR job runner did not start: {err}");
                 Self { runner: None, models }
             }
         }
@@ -130,7 +130,7 @@ impl Host {
         self.app.state::<AppState>()
     }
 
-    fn document(&self, path: &Path) -> Option<(u32, Arc<safha_core::Document>)> {
+    fn document(&self, path: &Path) -> Option<(u32, Arc<mirsam_core::Document>)> {
         let state = self.state();
         let id = state.documents_of(path).into_iter().next()?;
         Some((id, state.document(id)?))
@@ -195,7 +195,7 @@ impl JobHost for Host {
         if let Some(window) = state.window_of(id)
             && let Err(err) = self.app.emit_to(window.as_str(), APPLIED_EVENT, applied)
         {
-            eprintln!("safha: could not report OCR text: {err}");
+            eprintln!("mirsam: could not report OCR text: {err}");
         }
         Ok(true)
     }
@@ -203,7 +203,7 @@ impl JobHost for Host {
     fn changed(&self, status: &JobStatus) {
         let wire = JobWire { document_ids: self.state().documents_of(&status.path), job: status.clone() };
         if let Err(err) = self.app.emit(JOB_EVENT, wire) {
-            eprintln!("safha: could not report an OCR job: {err}");
+            eprintln!("mirsam: could not report an OCR job: {err}");
         }
     }
 }
@@ -214,7 +214,7 @@ fn wire(state: &AppState, job: JobStatus) -> JobWire {
 
 fn canonical(state: &AppState, document_id: u32) -> CommandResult<PathBuf> {
     let path = state.path_of(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    Ok(safha_core::store::canonical_path(&path))
+    Ok(mirsam_core::store::canonical_path(&path))
 }
 
 /// Queues OCR of `pages` (zero-based; every page when absent) of a document.
@@ -441,7 +441,7 @@ pub async fn ocr_decide(
     .await
 }
 
-/// A review refusal's stable code (`safha_core::ocr::review::DecideError`);
+/// A review refusal's stable code (`mirsam_core::ocr::review::DecideError`);
 /// anything else is the state store failing.
 fn review_code(code: &str) -> &'static str {
     match code {
@@ -561,7 +561,7 @@ pub(crate) fn render_rect(
     page: usize,
     rect: [f32; 4],
     scale: f32,
-) -> safha_core::Result<safha_core::Bitmap> {
+) -> mirsam_core::Result<mirsam_core::Bitmap> {
     let size = document.page_size(page)?;
     let px = |v: f32, max: f32| (v.clamp(0.0, max) * scale).round() as u32;
     let (x0, y0) = (px(rect[0], size.width), px(rect[1], size.height));
@@ -578,7 +578,7 @@ pub(crate) fn render_rect(
     )
 }
 
-/// `safha://localhost/ocr-crop?doc=&page=&x0=&y0=&x1=&y1=&h=`: an area of a
+/// `mirsam://localhost/ocr-crop?doc=&page=&x0=&y0=&x1=&y1=&h=`: an area of a
 /// page (displayed points) as a BMP the review shows beside a word, `h`
 /// pixels tall at most (ADR 0037).
 pub fn crop_response<R: tauri::Runtime>(
@@ -612,7 +612,7 @@ pub fn crop_response<R: tauri::Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use safha_core::ocr::jobs::{JobState, Pass};
+    use mirsam_core::ocr::jobs::{JobState, Pass};
 
     use super::*;
 

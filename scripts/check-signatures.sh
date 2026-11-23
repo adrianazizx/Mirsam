@@ -20,7 +20,7 @@ for tool in pdfsig certutil openssl qpdf python3; do
   command -v "$tool" >/dev/null || { echo "missing: $tool" >&2; exit 2; }
 done
 
-(cd "$root" && cargo run -q -p safha-core --example sign_fixtures -- "$out")
+(cd "$root" && cargo run -q -p mirsam-core --example sign_fixtures -- "$out")
 
 nss="$out/nss"
 rm -rf "$nss" && mkdir -p "$nss"

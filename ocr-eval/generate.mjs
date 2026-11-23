@@ -203,7 +203,7 @@ const ocrContents = readdirSync(path.join(HERE, "content"))
   .sort()
   .map((name) => JSON.parse(readFileSync(path.join(HERE, "content", name), "utf8")));
 const contents = new Map([...loadContents(), ...ocrContents].map((content) => [content.id, content]));
-const workDir = path.join(tmpdir(), `safha-ocr-eval-${process.pid}`);
+const workDir = path.join(tmpdir(), `mirsam-ocr-eval-${process.pid}`);
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(path.join(OUT, "images"), { recursive: true });
 mkdirSync(path.join(OUT, "truth"), { recursive: true });

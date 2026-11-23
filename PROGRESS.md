@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -12,7 +12,7 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
 1. **Move the repo out of OneDrive?** The checkout is in a OneDrive folder. `scripts/dev-setup.sh`
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
-   (e.g. `~/Developer/safha`) with a git remote for backup is safer.
+   (e.g. `~/Developer/mirsam`) with a git remote for backup is safer.
 2. ~~Which licence for the public repository?~~ **Decided (2026-11-23): MIT** (`LICENSE`, spec D2).
    The repository `adrianazizx/Mirsam` is public; the workspace crates and the UI package say
    `MIT`.
@@ -90,7 +90,7 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     encoder. Candidates: `zune-jpeg` (MIT/Apache/Zlib, but 0.5.16 is a release candidate) and
     `jpeg-encoder` (`(MIT OR Apache-2.0) AND IJG`: the IJG licence is permissive but not on the spec's
     list). Which may we add? Until then the summary says how many images were removed whole.
-    **Update (M6-a):** the *encoder* half is solved without a dependency: `safha_core::jpeg` is our
+    **Update (M6-a):** the *encoder* half is solved without a dependency: `mirsam_core::jpeg` is our
     own baseline encoder (ADR 0050), checked against PDFium's decoder. Only a **decoder** is still
     needed — for redacting scans and for downsampling JPEG images when compressing (scans are
     mostly JPEG, so it is compression's biggest gap). `zune-jpeg` (decoder only) is the candidate.
@@ -203,7 +203,7 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     "no backend" into "one optional backend". Also open: whether reports should be kept locally
     at all before the user opts in (today they are kept, redacted, so there is something to ask
     about; "Don't keep crash reports" in Settings stops it). Until decided, the GitHub issue path
-    is the default; `SAFHA_CRASH_DESTINATION=manual` at build time removes it.
+    is the default; `MIRSAM_CRASH_DESTINATION=manual` at build time removes it.
 26. ~~The `tesseract` program for the quick draft (item 23)?~~ **Decided (2026-11-23): option (a),
     the user installs Tesseract.** On Windows that means the official installer; on Linux, `apt` or
     `dnf`. Mirsam neither downloads nor bundles the program, and no LGPL or GCC-runtime approval is
@@ -232,7 +232,7 @@ Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the st
 
 ## M0 — Foundations
 
-- [x] Repo scaffold: Cargo workspace, `safha-core`, `safha-ocr-eval`, Tauri shell, React UI
+- [x] Repo scaffold: Cargo workspace, `mirsam-core`, `mirsam-ocr-eval`, Tauri shell, React UI
 - [x] `CLAUDE.md`, `docs/SPEC.md`, `docs/adr/` (7 records), this file, `docs/demos/m0.md`
 - [x] CI on Windows/macOS/Linux — green on every pull request since PR #1; the shell self-tests
       are required checks (M7 packaging session)
@@ -268,7 +268,7 @@ Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the st
 
 ### Test status at end of session
 
-- Rust: `safha-core` 11 tests (7 engine + 4 corpus), `safha-ocr-eval` 20 tests, `safha-desktop`
+- Rust: `mirsam-core` 11 tests (7 engine + 4 corpus), `mirsam-ocr-eval` 20 tests, `mirsam-desktop`
   1 test (bitmap wire format) — all passing;
   `clippy -D warnings` clean with and without `devtools`; `cargo fmt --check` clean.
 - UI: 58 tests in 7 files passing; `tsc` and Biome clean.
@@ -348,7 +348,7 @@ Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the st
       - Pages with a broken mapping are flagged for OCR (M4).
       - The same holds for the fixtures Chrome makes on Linux (62/63; ADR 0008).
 
-Known extraction gap (floors in `crates/safha-core/tests/text.rs`): `(64-bit)` inside an Arabic
+Known extraction gap (floors in `crates/mirsam-core/tests/text.rs`): `(64-bit)` inside an Arabic
 line comes out `(bit-64)`. The two are drawn identically, and the same file's `INV-2026-00417`
 needs the other reading (ADR 0008, session 6 amendment). Everything else missed is on pages
 flagged for OCR.
@@ -356,7 +356,7 @@ flagged for OCR.
 To re-measure (screen unlocked; the release bundle sometimes opens hidden, and such a run is
 rejected as invalid, so run it again):
 
-- debug: `cargo build -p safha-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
+- debug: `cargo build -p mirsam-desktop --features devtools && scripts/scroll-benchmark.sh <out> debug`
 - release: `node scripts/bundle.mjs --features devtools --bundles app && scripts/scroll-benchmark.sh <out> release`
 
 Test status at the end of session 6:
@@ -533,7 +533,7 @@ Plan, in order:
       - **Decision: PDFium never regenerates existing content. Text is written by our own
         content-stream writer as incremental updates**, fitting M2's ADR 0014. PDFium renders,
         verifies, and does the full rewrite on save.
-- [x] Layout/shaping engine, LTR and RTL together (ADR 0020, `safha_core::typeset`):
+- [x] Layout/shaping engine, LTR and RTL together (ADR 0020, `mirsam_core::typeset`):
       - itemize: bidi, script runs, font fallback per grapheme cluster;
       - shape with `harfrust` 0.16.1;
       - break per UAX #14 (ICU4X);
@@ -541,7 +541,7 @@ Plan, in order:
       Output: lines of glyph runs with positions and glyph↔text clusters, backend-neutral.
       0.24–0.34 ms per 306-character mixed paragraph, release build (noisy machine).
 - [x] Text pipeline → positioned glyph runs. Proven end to end by a test writer: PDFium draws
-      the result, and `safha-core`'s extractor reads back exactly the input, in English, Arabic,
+      the result, and `mirsam-core`'s extractor reads back exactly the input, in English, Arabic,
       mixed, and justified mixed text with fallback.
 - [x] Font matching and subsetting (one gap, below):
       - Subsetting done (`typeset::subset_fonts`, `subsetter` 0.2.6). Variable fonts are
@@ -679,7 +679,7 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     - The detector costs 4–10 s per page on PaddlePaddle's CPU backend (ONNX Runtime not tried).
 - [~] Quality pipeline: assess, preprocess, layout analysis, recognition, re-recognition/ensemble,
       verification with no silent invention. In slices:
-  - [x] **1. Recognition from Rust** (ADR 0032): `safha_core::ocr`.
+  - [x] **1. Recognition from Rust** (ADR 0032): `mirsam_core::ocr`.
     - The `OcrEngine` trait, and `NuqtaEngine` over `llama-server` run as a child process.
     - A Pillow-exact resize, and word confidence from token probabilities.
     - Examples `ocr_eval` and `ocr_page`.
@@ -703,7 +703,7 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - [x] **4. Assembly into the text layer** in logical order (ADR 0035): see searchable-PDF
         output below.
 - [x] Background jobs with draft-then-quality results; survives restart (ADR 0035):
-  - **Runner:** `safha_core::ocr::jobs`, one worker; Apple Vision drafts every page first
+  - **Runner:** `mirsam_core::ocr::jobs`, one worker; Apple Vision drafts every page first
     (0.3 s a page), then the quality pipeline replaces each page.
   - **Controls and restart:** progress, pause, resume, cancel (stops the servers mid-page).
     Jobs and page results are kept in the state store (schema 5). After a restart, what the
@@ -732,7 +732,7 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     - the two-column contract reads paragraph by paragraph (as the born-digital one does);
     - Acrobat is untested (owner item 22).
 - [~] Model download manager; hardware acceleration (ADR 0034, branch `pomidor/m4-model-downloads-ef1050`):
-  - **Engine:** `safha_core::models`. A pinned catalog (Nuqta 4B and 0.8B GGUF by revision, size
+  - **Engine:** `mirsam_core::models`. A pinned catalog (Nuqta 4B and 0.8B GGUF by revision, size
     and SHA-256). Resumable HTTPS downloads with retries, checksum, a disk-space check, cancel,
     atomic install into `<app data>/ocr-models`, delete, and a status query. tar.gz and zip
     runtime archives are unpacked safely.
@@ -959,6 +959,45 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### Identifier rename safha → mirsam — 2026-11-23 (branch `pomidor/rename-safha-to-mirsam-5a225d`)
+
+The rename that "Rename to Mirsam" (2026-11-22) left for after the milestone branches merged. One
+mechanical change, nothing else:
+
+- **Crates and directories:** `crates/mirsam-core`, `crates/mirsam-ocr-eval`, the shell package
+  `mirsam-desktop` (library `mirsam_desktop_lib`, binary `mirsam-desktop`, so the macOS bundle is
+  `Mirsam.app/Contents/MacOS/mirsam-desktop`), the fuzz crate `mirsam-fuzz`; every
+  `safha_core::`/`safha_fuzz::` path.
+- **Environment variables:** `SAFHA_*` → `MIRSAM_*` (`MIRSAM_PDFIUM_DIR`, `MIRSAM_OPEN`,
+  `MIRSAM_SELFTEST_*`, `MIRSAM_CRASH_DESTINATION`, …).
+- **URI scheme:** `mirsam://localhost/…` (`http://mirsam.localhost` on Windows) in the shell, the
+  CSP and the UI; the spike's `mirsam-tile`. ADR 0011 has an amendment saying so.
+- **UI:** the npm package `mirsam-desktop`; localStorage keys `mirsam.preferences` and
+  `mirsam.mock.settings`; the viewer events `mirsam:page-painted` and `mirsam:page-preview`. The
+  old keys are ignored, not migrated (the app is unreleased): a developer's first frame after the
+  rename uses default language and theme until the store answers, once.
+- **Everything around it:** scripts, CI workflows (path filters, `-p` names), the build-output
+  cache `~/Library/Caches/mirsam-dev` (existing checkouts keep their old `target` symlinks, which
+  `dev-setup.sh` leaves alone), the OCR benchmark cache, temp-file and thread names, the fixture
+  password `mirsam-test`, `.claude/launch.json`, CLAUDE.md, README, the spec header, demos, and
+  the living part of this file above the session log.
+- **Kept on purpose** (`git grep -i safha`): ADRs as written (a note in `docs/adr/README.md` maps
+  the old names); this session log; the lines in CLAUDE.md, README and the spec that say Safha was
+  the working name; and the fixture sentence "The Arabic word for page is صفحة (safha)", with the
+  recorded OCR answers, word-box baseline and spike results that quote it. The bundle identifier
+  `app.mirsam.desktop` is unchanged.
+
+Checked on this Mac: `cargo build`, 685 workspace tests, clippy with and without `devtools`, fmt;
+441 UI tests, `tsc`, Biome; `cargo deny` and the licence report (unchanged); the fuzz targets'
+build and `cargo test --lib`, with short `open` and `file` runs; the shell self-test in English
+(LTR, light) and Arabic (RTL, dark), the crash and single-instance self-tests;
+`node scripts/bundle.mjs` (Mirsam.app and the DMG, PDFium inside, binary `mirsam-desktop`); and the
+OCR benchmark gate on the recorded answers: all 5 gates pass, no regression, and the text and
+searchable-layer outputs are byte-identical to `main`'s. The first gate run found the one trap: the
+recorded model answers in `ocr-eval/recordings/set-v2` and the word-box baseline quote the
+fixture sentence's "(safha)" too (as escaped JSON, so a plain search for the Arabic misses them),
+and renaming them broke the replay; they are data and stay as they were.
 
 ### M7 accessibility, second pass — 2026-11-23 (branch `pomidor/m7-a11y-followup-e8a31a`; ADR 0070's amendment)
 

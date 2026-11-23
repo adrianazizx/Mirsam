@@ -1091,7 +1091,7 @@ function updateViewport(lane: Lane, next: number, keep: KeptRequest[]) {
   }
 }
 
-const SETTINGS_KEY = "safha.mock.settings";
+const SETTINGS_KEY = "mirsam.mock.settings";
 function loadSettings(): Record<string, string> {
   try {
     return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Record<string, string>;
