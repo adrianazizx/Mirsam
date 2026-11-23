@@ -3,11 +3,17 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { backend, isBackendError } from "../../backend";
+import { pageFields } from "../../commands/formDesign";
 import { isMac } from "../../commands/platform";
 import { runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
-import { ViewerController, type ViewerMode, type ViewerSpacing } from "../../viewer/controller";
+import {
+  type FieldBox,
+  ViewerController,
+  type ViewerMode,
+  type ViewerSpacing,
+} from "../../viewer/controller";
 import { registerViewer, unregisterViewer } from "../../viewer/registry";
 import { NoteEditor } from "../comments/NoteEditor";
 import styles from "./DocumentView.module.css";
@@ -96,6 +102,14 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
     state.linkDraft?.documentId === id ? state.linkDraft : null,
   );
   const showsLinkTip = useAppStore((state) => state.linkTip?.documentId === id);
+  // The form designer's fields and suggestions (ADR 0047), only while it is open on this document.
+  const formDesign = useAppStore((state) =>
+    state.activeTool === "forms" &&
+    state.formsMode === "design" &&
+    state.formDesign?.documentId === id
+      ? state.formDesign
+      : null,
+  );
 
   const pageLabel = useRef<(page: number) => string>(() => "");
   pageLabel.current = (page) =>
@@ -139,6 +153,10 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         linkHover: styles.linkHover ?? "",
         linkDraft: styles.linkDraft ?? "",
         linkTip: styles.linkTip ?? "",
+        fieldBox: styles.fieldBox ?? "",
+        fieldBoxSelected: styles.fieldBoxSelected ?? "",
+        fieldTab: styles.fieldTab ?? "",
+        fieldDraft: styles.fieldDraft ?? "",
       },
       initial: {
         zoomMode: current.zoomMode,
@@ -152,7 +170,9 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       isMac,
       pageLabel: (page) => pageLabel.current(page),
       mode: (): ViewerMode => {
-        const { activeTool, commentTool, fillTool, editMode } = useAppStore.getState();
+        const { activeTool, commentTool, fillTool, editMode, formsMode, designTool } =
+          useAppStore.getState();
+        if (activeTool === "forms" && formsMode === "design") return designTool ? "draw" : "design";
         if (activeTool === "select" || activeTool === "forms") return "select";
         if (activeTool === "sign") return fillTool ? "place" : "select";
         if (activeTool === "protect") return "redact";
@@ -172,6 +192,11 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
         onMarkArea: (page, rect) => void runCommand("redact.addArea", { page, rect }),
+        onDrawField: (page, rect) => void runCommand("formDesign.draw", { page, rect }),
+        onSelectField: (field, widget) =>
+          void runCommand("formDesign.selectField", { field: field ?? undefined, index: widget }),
+        onMoveField: (field, widget, page, rect) =>
+          void runCommand("formDesign.move", { field, index: widget, page, rect }),
         onPlace: (page, x, y) => void runCommand("fill.place", { page, x, y }),
         onMoveItem: (annotation, rect, page) =>
           void runCommand("fill.move", { annotation, rect, page }),
@@ -302,6 +327,40 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         : null,
     );
   }, [linkDraft, revision]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows them again
+  useEffect(() => {
+    const fields = formDesign?.fields ?? [];
+    const boxes: FieldBox[] = [];
+    const pages = new Set(
+      fields.flatMap((field) =>
+        field.widgets.flatMap((widget) => (widget.page === null ? [] : [widget.page])),
+      ),
+    );
+    // Each widget numbered by its field's place in its page's tab order (a radio group's buttons share one).
+    for (const page of pages) {
+      pageFields(fields, page).forEach((field, order) => {
+        let first = true;
+        field.widgets.forEach((widget, index) => {
+          if (widget.page !== page || !widget.view) return;
+          // The number once per field: on its first widget here.
+          boxes.push({
+            field: field.id,
+            widget: index,
+            page,
+            rect: widget.view,
+            tab: first ? order + 1 : 0,
+          });
+          first = false;
+        });
+      });
+    }
+    const detected = formDesign?.detected;
+    const suggestions = (detected?.fields ?? []).flatMap((field) =>
+      field.include && field.view ? [{ page: detected?.page ?? 0, rect: field.view }] : [],
+    );
+    viewerRef.current?.setFieldBoxes(boxes, formDesign?.selected ?? null, suggestions);
+  }, [formDesign, revision]);
 
   // Page labels follow the UI language.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the label inputs change

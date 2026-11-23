@@ -54,6 +54,9 @@ const PAIRS: [string, string, number][] = [
   ["color-ink", "color-page-paper", 4.5],
   // Link areas are outlined on the page in both themes (ADR 0051).
   ["color-link-outline", "color-page-paper", 3],
+  // The form designer's field outlines and tab numbers, on the page (ADR 0047).
+  ["color-field-outline", "color-page-paper", 3],
+  ["color-field-tab-text", "color-field-tab-bg", 4.5],
 ];
 
 describe.each([

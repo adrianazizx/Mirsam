@@ -7,6 +7,8 @@ import {
   type BlockEditOutcome,
   type BookmarkPart,
   type CompressReport,
+  type DesignOutcome,
+  type DetectedField,
   type DocumentComment,
   type DocumentsArrived,
   type EditOutcome,
@@ -187,6 +189,9 @@ export const tauriBackend: Backend = {
   formFields: (documentId) => invoke<FormInfo>("form_fields", { documentId }),
   setFormField: (documentId, field, values) =>
     invoke<EditOutcome>("set_form_field", { documentId, field, values }),
+  designForm: (documentId, edits) => invoke<DesignOutcome>("design_form", { documentId, edits }),
+  detectFormFields: (documentId, page) =>
+    invoke<DetectedField[]>("detect_form_fields", { documentId, page }),
   addFillText: (documentId, page, x, y, contents, size, color) =>
     invoke<EditOutcome>("add_fill_text", {
       documentId,

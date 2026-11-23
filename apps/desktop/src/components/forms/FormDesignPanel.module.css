@@ -1,0 +1,228 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.section,
+.inspector,
+.field,
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inspector {
+  gap: var(--space-3);
+}
+
+.field {
+  gap: var(--space-1);
+}
+
+.fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.kind {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.kindIcon {
+  display: inline-flex;
+  flex: none;
+}
+
+.kindIcon svg {
+  inline-size: var(--size-icon-sm);
+  block-size: var(--size-icon-sm);
+}
+
+.tools,
+.row,
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.row {
+  gap: var(--space-2);
+}
+
+.checks {
+  flex-direction: column;
+  gap: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.tool svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+.tool[data-hovered] {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.tool[data-selected] {
+  background: var(--color-bg-selected);
+  color: var(--color-text-on-selected);
+}
+
+.tool[data-disabled] {
+  opacity: 0.4;
+}
+
+.tool[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.glyph,
+.mirrored {
+  display: inline-flex;
+}
+
+/* Start and end follow the text's direction: in the Arabic UI the icons mirror. */
+:global([dir="rtl"]) .mirrored {
+  transform: scaleX(-1);
+}
+
+.buttonIcon {
+  inline-size: var(--size-icon-sm);
+  block-size: var(--size-icon-sm);
+  margin-inline-end: var(--space-1);
+}
+
+.order,
+.detected,
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.orderItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--size-hit);
+  padding-inline: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: default;
+}
+
+.orderItem:hover {
+  background: var(--color-bg-hover);
+}
+
+.orderItem[aria-current="true"] {
+  background: var(--color-bg-selected);
+  color: var(--color-text-on-selected);
+}
+
+.orderItem:focus-visible,
+.choiceSelect:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.orderNumber {
+  flex: none;
+  min-inline-size: var(--size-field-tab);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.orderItem[aria-current="true"] .orderNumber {
+  color: inherit;
+}
+
+.orderName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.choices .choice:has(input + input) {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.choiceSelect {
+  min-inline-size: var(--size-field-tab);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.choice[aria-current="true"] .choiceSelect {
+  background: var(--color-bg-selected);
+  color: var(--color-text-on-selected);
+}
+
+.unnamed {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
