@@ -58,6 +58,35 @@ pub(crate) struct Look {
     quadding: i64,
     /// A button's mark, from its `/MK /CA` (ZapfDingbats letters).
     mark: Option<MarkKind>,
+    /// The bundled family text is set in (ADR 0047: `/DA` naming one of ours).
+    family: FontFamily,
+    /// A field made here (ADR 0047): `/Q 2` is the end of the text's own
+    /// direction, not the right.
+    logical: bool,
+}
+
+/// The `/DA` font names of fields made here (ADR 0047), in `/DR` as
+/// standard fonts for viewers that draw a field themselves while it is
+/// edited; our appearances use embedded subsets of the bundled family.
+pub(crate) const SANS_FONT: &[u8] = b"MirsamSans";
+pub(crate) const NASKH_FONT: &[u8] = b"MirsamNaskh";
+
+/// The font resource a `/DA` string names (`/Name size Tf`).
+pub(crate) fn da_font(da: &[u8]) -> Option<Vec<u8>> {
+    let text = String::from_utf8_lossy(da);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let at = words.iter().rposition(|word| *word == "Tf")?;
+    let name = words.get(at.checked_sub(2)?)?.strip_prefix('/')?;
+    Some(name.as_bytes().to_vec())
+}
+
+/// The bundled family a `/DA` font name stands for, when it is one of ours.
+pub(crate) fn family_of(font: &[u8]) -> Option<FontFamily> {
+    match font {
+        SANS_FONT => Some(FontFamily::Sans),
+        NASKH_FONT => Some(FontFamily::Naskh),
+        _ => None,
+    }
 }
 
 /// A colour array (`/MK /BG`, `/MK /BC`): gray, RGB, or CMYK; none when empty.
@@ -73,7 +102,7 @@ fn color(object: Option<&Object>) -> Option<[f32; 3]> {
 }
 
 /// Text size and colour from a `/DA` string; size 0 means "fit".
-fn parse_da(da: &[u8]) -> (f32, [f32; 3]) {
+pub(crate) fn parse_da(da: &[u8]) -> (f32, [f32; 3]) {
     let text = String::from_utf8_lossy(da);
     let words: Vec<&str> = text.split_whitespace().collect();
     let number = |i: Option<usize>| i.and_then(|i| words.get(i)).and_then(|w| w.parse::<f32>().ok());
@@ -133,6 +162,7 @@ impl Look {
             Some(b"U") => Border::Underline,
             _ => Border::Solid,
         };
+        let ours = da_font(da).as_deref().and_then(family_of);
         let mark = caption.and_then(|ca| ca.first()).map(|letter| match letter {
             b'8' => MarkKind::Cross,
             b'l' | b'n' | b'u' => MarkKind::Dot,
@@ -151,6 +181,8 @@ impl Look {
             color: color_rgb,
             quadding: quadding.unwrap_or(0),
             mark,
+            family: ours.unwrap_or(FontFamily::Sans),
+            logical: ours.is_some(),
         }
     }
 
@@ -242,12 +274,33 @@ impl Look {
         comb: Option<usize>,
         password: bool,
     ) -> Result<Appearance> {
+        self.drawn_text(text, multiline, comb, password, true)
+    }
+
+    /// A push button's appearance: its caption centred in its frame (ADR 0047).
+    pub(crate) fn caption(&self, caption: &str) -> Result<Appearance> {
+        let centred = Look { quadding: 1, logical: false, ..self.clone() };
+        centred.drawn_text(caption, false, None, false, false)
+    }
+
+    /// `text` in the frame; `variable` marks it as the field's value (`/Tx BMC`).
+    fn drawn_text(
+        &self,
+        text: &str,
+        multiline: bool,
+        comb: Option<usize>,
+        password: bool,
+        variable: bool,
+    ) -> Result<Appearance> {
         let frame = self.frame(false);
+        let wrap = |frame: String, content: &str| {
+            if variable { self.with_text(frame, content) } else { format!("{frame}{content}") }
+        };
         if text.is_empty() {
-            return Ok(self.appearance(self.with_text(frame, "")));
+            return Ok(self.appearance(wrap(frame, "")));
         }
         let shown: String = if password { "•".repeat(text.chars().count()) } else { text.to_string() };
-        let fonts = for_text(FontFamily::Sans, &shown)?;
+        let fonts = for_text(self.family, &shown)?;
         let faces: Vec<FontFace> = fonts.iter().map(|f| f.face.clone()).collect();
         let pad = self.padding();
         let inner_w = (self.width - 2.0 * pad).max(1.0);
@@ -266,6 +319,7 @@ impl Look {
         let (laid, left, top) = if multiline {
             let align = match self.quadding {
                 1 => Align::Center,
+                2 if self.logical => Align::End,
                 2 => Align::Right,
                 _ => Align::Start,
             };
@@ -308,6 +362,8 @@ impl Look {
                     let wide = laid.width;
                     let offset = match self.quadding {
                         1 => (inner_w - wide) / 2.0,
+                        // The end of the text's own direction (ADR 0047).
+                        2 if self.logical && rtl => 0.0,
                         2 => inner_w - wide,
                         _ if rtl => inner_w - wide,
                         _ => 0.0,
@@ -320,7 +376,7 @@ impl Look {
         };
         let drawing = draw_text(&shown, &laid, &fonts, (left, top), self.color, "F")?;
         let content = String::from_utf8_lossy(&drawing.content).into_owned();
-        let mut appearance = self.appearance(self.with_text(frame, &content));
+        let mut appearance = self.appearance(wrap(frame, &content));
         appearance.fonts = drawing.fonts;
         Ok(appearance)
     }
@@ -342,7 +398,7 @@ impl Look {
             starts.push(at);
             at += line.len() + 1;
         }
-        let fonts = for_text(FontFamily::Sans, &text)?;
+        let fonts = for_text(self.family, &text)?;
         let faces: Vec<FontFace> = fonts.iter().map(|f| f.face.clone()).collect();
         let pad = self.padding();
         let inner_w = (self.width - 2.0 * pad).max(1.0);
