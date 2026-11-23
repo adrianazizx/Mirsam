@@ -19,7 +19,7 @@ export function renderScale(zoom: number, devicePixelRatio: number): number {
 
 /**
  * One side of a page in device pixels at `scale`, computed in f32 exactly as
- * safha-core does (`(side * scale).ceil()` on f32 values), so edge tiles never
+ * mirsam-core does (`(side * scale).ceil()` on f32 values), so edge tiles never
  * overhang the engine's idea of the page.
  */
 export function pagePixels(sidePt: number, scale: number): number {

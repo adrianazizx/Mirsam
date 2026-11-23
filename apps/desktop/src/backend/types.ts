@@ -766,7 +766,7 @@ export interface RestoreOutcome {
   replaced: number | null;
 }
 
-/** A document's remembered position (safha_core::store::ViewState). */
+/** A document's remembered position (mirsam_core::store::ViewState). */
 export interface SavedViewState {
   page: number;
   /** "fit-width" or "custom"; anything else is treated as fit-width. */
@@ -859,7 +859,7 @@ export interface TextBlock {
   lines: TextLine[];
 }
 
-/** A page's text in reading order with character boxes (safha_core::text). */
+/** A page's text in reading order with character boxes (mirsam_core::text). */
 export interface TextLayer {
   direction: Direction;
   /** "suspect": the page's character mapping looks broken (copy will be wrong; OCR would help). */
@@ -982,7 +982,7 @@ export interface TileRequest {
   height: number;
 }
 
-/** Render-queue classes, most urgent first (safha_core::render::Urgency). */
+/** Render-queue classes, most urgent first (mirsam_core::render::Urgency). */
 export type Urgency = "placeholder" | "visible" | "thumbnail" | "prefetch";
 
 export interface Priority {

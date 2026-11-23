@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of crash reports (ADR 0061) on the real desktop shell.
 #
-# 1. Launches the app (scripts/selftest.sh, SAFHA_SELFTEST_SPIKE=crash:<kind>):
+# 1. Launches the app (scripts/selftest.sh, MIRSAM_SELFTEST_SPIKE=crash:<kind>):
 #    it runs a few commands, then fails on purpose:
 #      panic         a Rust panic on the main thread (the panic hook's report);
 #      abort         the process aborts without a panic, as a native crash does
@@ -14,8 +14,8 @@
 #    names a file and quotes Arabic text, which must not appear.
 #
 # Usage: scripts/crash-selftest.sh <out-dir> [panic|abort|thread-panic]
-# Needs: cargo build -p safha-desktop --features devtools (or SAFHA_SELFTEST_APP
-#        and SAFHA_SELFTEST_UI=bundled, as for scripts/selftest.sh).
+# Needs: cargo build -p mirsam-desktop --features devtools (or MIRSAM_SELFTEST_APP
+#        and MIRSAM_SELFTEST_UI=bundled, as for scripts/selftest.sh).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,20 +26,20 @@ PDF="$ROOT/fixtures/out/chrome/en-paragraphs.pdf"
 [[ -f "$PDF" ]] || { echo "missing $PDF: run node fixtures/generate.mjs" >&2; exit 2; }
 case "$KIND" in panic|abort|thread-panic) ;; *) echo "kind must be panic, abort or thread-panic" >&2; exit 2 ;; esac
 
-export SAFHA_SELFTEST_STATE="$OUT/state"
-rm -rf "$SAFHA_SELFTEST_STATE"
+export MIRSAM_SELFTEST_STATE="$OUT/state"
+rm -rf "$MIRSAM_SELFTEST_STATE"
 
 # 1. Fail on purpose. A crash writes no self-test report, so selftest.sh's
 #    "no report" is expected here.
-SAFHA_SELFTEST_SPIKE="crash:$KIND" "$ROOT/scripts/selftest.sh" "$PDF" "$OUT/crash" en light || true
+MIRSAM_SELFTEST_SPIKE="crash:$KIND" "$ROOT/scripts/selftest.sh" "$PDF" "$OUT/crash" en light || true
 
 # 2. Start again: the report is offered. After an abort the system's crash
 #    log can take minutes to appear (macOS writes it late under load); the
 #    app keeps looking for it and offers the report once it is there.
 if [[ "$KIND" == abort ]]; then
-  SAFHA_SELFTEST_TIMEOUT=240 SAFHA_SELFTEST_SPIKE=crash:check-late "$ROOT/scripts/selftest.sh" "$PDF" "$OUT/check" ar dark
+  MIRSAM_SELFTEST_TIMEOUT=240 MIRSAM_SELFTEST_SPIKE=crash:check-late "$ROOT/scripts/selftest.sh" "$PDF" "$OUT/check" ar dark
 else
-  SAFHA_SELFTEST_SPIKE=crash:check "$ROOT/scripts/selftest.sh" "$PDF" "$OUT/check" ar dark
+  MIRSAM_SELFTEST_SPIKE=crash:check "$ROOT/scripts/selftest.sh" "$PDF" "$OUT/check" ar dark
 fi
 
 node - "$OUT" "$KIND" <<'NODE'

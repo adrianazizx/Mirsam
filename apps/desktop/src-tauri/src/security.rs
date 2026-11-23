@@ -1,10 +1,10 @@
 //! Encryption and permissions on save (ADR 0043): a thin command over
-//! `safha_core::save::save_secured`.
+//! `mirsam_core::save::save_secured`.
 
 use std::path::PathBuf;
 
-use safha_core::edit::EditHistory;
-use safha_core::security::{SecurityChange, SecurityInfo};
+use mirsam_core::edit::EditHistory;
+use mirsam_core::security::{SecurityChange, SecurityInfo};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -70,7 +70,7 @@ fn secure_to(
     let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
-    let reopened = safha_core::save::save_secured(&document, &path, change)?;
+    let reopened = mirsam_core::save::save_secured(&document, &path, change)?;
     let security = reopened.security();
     *history = EditHistory::new(reopened.bytes());
     state.replace_revision(document_id, reopened);
@@ -78,7 +78,7 @@ fn secure_to(
     if let Some(store) = state.store()
         && let Err(err) = store.record_open(&path)
     {
-        eprintln!("safha: could not record a recent file: {err}");
+        eprintln!("mirsam: could not record a recent file: {err}");
     }
     // Saved: its recovery file goes (ADR 0040).
     crate::recovery::write_now(state, document_id)?;
@@ -88,7 +88,7 @@ fn secure_to(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use safha_core::security::{Cipher, Permissions, Protection};
+    use mirsam_core::security::{Cipher, Permissions, Protection};
 
     #[test]
     fn the_outcome_names_the_new_protection() {

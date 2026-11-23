@@ -46,7 +46,7 @@ describe("digits in the Arabic interface (owner decision, 2026-11-23)", () => {
     expect(screen.getByTestId("status-bar").textContent).not.toMatch(/[٠-٩]/);
 
     // Kept with the other settings, and back to Arabic-Indic by command.
-    const cached = JSON.parse(localStorage.getItem("safha.preferences") ?? "{}");
+    const cached = JSON.parse(localStorage.getItem("mirsam.preferences") ?? "{}");
     expect(parseSettings(cached).uiDigits).toBe("western");
     await act(() => runCommand("app.digitsArabicIndic"));
     expect(screen.getByTestId("status-bar").textContent).toContain("٢٤٠");

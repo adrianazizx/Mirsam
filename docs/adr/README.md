@@ -4,6 +4,11 @@ One short record per significant decision: context, decision, evidence, conseque
 Records are immutable once accepted; a later decision supersedes an earlier one by
 number and says so.
 
+Code identifiers were renamed from `safha` (the working name) to `mirsam` on 2026-11-23: records
+written before then say `safha-core`, `safha_core::`, `SAFHA_*` and the `safha:` URI scheme, which
+are now `mirsam-core`, `mirsam_core::`, `MIRSAM_*` and `mirsam:`. The records themselves are left
+as written.
+
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-app-shell-tauri.md) | App shell: Tauri 2 | Accepted (assumption D1) |

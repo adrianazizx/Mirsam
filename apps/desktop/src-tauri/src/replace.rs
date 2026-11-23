@@ -1,11 +1,11 @@
-//! Find and replace (ADR 0052): thin commands over `safha_core::replace`.
+//! Find and replace (ADR 0052): thin commands over `mirsam_core::replace`.
 //! The preview reads the document's shared search index and each page's
 //! paragraphs; replacing is one edit, so a single undo takes it back.
 
-use safha_core::edit::Change;
-use safha_core::replace::{self, Plan, Report, SkipReason, Target};
-use safha_core::search::{Query, SearchError, SearchOptions};
-use safha_core::view::ViewRect;
+use mirsam_core::edit::Change;
+use mirsam_core::replace::{self, Plan, Report, SkipReason, Target};
+use mirsam_core::search::{Query, SearchError, SearchOptions};
+use mirsam_core::view::ViewRect;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 

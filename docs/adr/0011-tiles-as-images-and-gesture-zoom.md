@@ -276,3 +276,9 @@ because the machine was loaded; the comparison is between builds under the same 
 Not measured here: Windows (WebView2) and Linux (WebKitGTK). Drawing into a 2D canvas works the
 same there, and CI's shell self-test covers the viewer on both.
 
+
+## Amendment (2026-11-23): the scheme is now `mirsam`
+
+The identifier rename from the working name renamed the scheme: tiles, signature images and OCR
+review crops are served over `mirsam://localhost/…` (`http://mirsam.localhost/…` on Windows), and
+the CSP's `img-src` names `mirsam: http://mirsam.localhost`. Nothing else in this record changed.

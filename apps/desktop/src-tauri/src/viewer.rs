@@ -1,16 +1,16 @@
 //! Viewer commands and the tile protocol, over the core's render service.
 //!
 //! The scheduling itself (priorities, cancellation, cache) lives in
-//! `safha_core::render`; this module only adapts it. Tiles are served by the
-//! `safha` URI scheme as plain BMP images (ADR 0011, superseding the transport
+//! `mirsam_core::render`; this module only adapts it. Tiles are served by the
+//! `mirsam` URI scheme as plain BMP images (ADR 0011, superseding the transport
 //! of ADR 0004): the webview fetches them and decodes them natively, so the
 //! pixels never become JavaScript buffers. That keeps WebKit's memory flat
 //! where raw command responses grew it by hundreds of megabytes.
 
 use std::collections::HashMap;
 
-use safha_core::render::{KeptRequest, Priority, RenderError, RenderOutcome, RenderRequest, Urgency};
-use safha_core::{PageSize, TileRequest};
+use mirsam_core::render::{KeptRequest, Priority, RenderError, RenderOutcome, RenderRequest, Urgency};
+use mirsam_core::{PageSize, TileRequest};
 use serde::Serialize;
 use tauri::{Manager, State, UriSchemeContext, UriSchemeResponder, http};
 
@@ -59,8 +59,8 @@ pub async fn update_viewport(
     Ok(())
 }
 
-/// The tile protocol: `safha://localhost/tile?doc=&lane=&gen=&page=&scale=&x=&y=&w=&h=&u=&d=`
-/// (on Windows `http://safha.localhost/tile?…`).
+/// The tile protocol: `mirsam://localhost/tile?doc=&lane=&gen=&page=&scale=&x=&y=&w=&h=&u=&d=`
+/// (on Windows `http://mirsam.localhost/tile?…`).
 ///
 /// Submits the tile to the render queue exactly as a command would and answers
 /// when it is rendered: `200` with an `image/bmp` body and the headers
@@ -141,7 +141,7 @@ pub fn tile_protocol<R: tauri::Runtime>(
     });
 }
 
-/// `safha://localhost/document?doc=N`: the document as PDF bytes, for a
+/// `mirsam://localhost/document?doc=N`: the document as PDF bytes, for a
 /// window that shows it with the platform's own PDF viewer (printing).
 fn document_response<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -265,7 +265,7 @@ mod tests {
         // As the UI builds them (backend/tauri.ts): an f32 scale's shortest decimal.
         let scale = 2.229_f32;
         let uri: http::Uri =
-            format!("safha://localhost/tile?doc=3&lane=thumbnails&gen=1795000000000000&page=7&scale={scale}&x=512&y=0&w=512&h=300&u=prefetch&d=12.5")
+            format!("mirsam://localhost/tile?doc=3&lane=thumbnails&gen=1795000000000000&page=7&scale={scale}&x=512&y=0&w=512&h=300&u=prefetch&d=12.5")
                 .parse()
                 .expect("uri");
         let request = parse_tile_request(&uri).expect("parses");
@@ -278,8 +278,8 @@ mod tests {
             (512, 0, 512, 300)
         );
         assert_eq!(request.priority, Priority::new(Urgency::Prefetch, 12.5));
-        assert!(parse_tile_request(&"safha://localhost/tile?doc=1".parse().expect("uri")).is_err());
-        assert!(parse_tile_request(&"safha://localhost/other?doc=1".parse().expect("uri")).is_err());
+        assert!(parse_tile_request(&"mirsam://localhost/tile?doc=1".parse().expect("uri")).is_err());
+        assert!(parse_tile_request(&"mirsam://localhost/other?doc=1".parse().expect("uri")).is_err());
     }
 
     /// A one-page PDF with a 3 x 2 pt blank page.
@@ -310,10 +310,10 @@ mod tests {
     #[test]
     fn a_rendered_tile_is_a_bmp_with_its_timing_in_headers() {
         let engine =
-            safha_core::Engine::global(&safha_core::PdfiumSource::Auto).expect("PDFium is available");
+            mirsam_core::Engine::global(&mirsam_core::PdfiumSource::Auto).expect("PDFium is available");
         let bitmap =
             engine.open_bytes(blank_pdf(), None).expect("opens").render_page(0, 1.0).expect("renders");
-        let rendered = safha_core::render::Rendered {
+        let rendered = mirsam_core::render::Rendered {
             bitmap: std::sync::Arc::new(bitmap),
             render_micros: 1234,
             from_cache: true,
@@ -327,9 +327,9 @@ mod tests {
         assert_eq!(header("X-From-Cache").as_deref(), Some("1"));
         let body = response.body();
         assert_eq!(&body[..2], b"BM");
-        assert_eq!(body.len(), safha_core::BMP_HEADER_LEN + 3 * 2 * 4);
+        assert_eq!(body.len(), mirsam_core::BMP_HEADER_LEN + 3 * 2 * 4);
         // A blank page is opaque white.
-        assert!(body[safha_core::BMP_HEADER_LEN..].iter().all(|byte| *byte == 255));
+        assert!(body[mirsam_core::BMP_HEADER_LEN..].iter().all(|byte| *byte == 255));
     }
 
     #[test]

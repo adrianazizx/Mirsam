@@ -1,5 +1,5 @@
 //! Page objects, images and links (ADR 0051): thin commands over
-//! `safha_core::objects` and `safha_core::links`. Images are picked through a
+//! `mirsam_core::objects` and `mirsam_core::links`. Images are picked through a
 //! native dialog here, so the UI never sees a path; a link's web address is
 //! opened here, only after the UI has shown it, and only `http`, `https` and
 //! `mailto`.
@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::edit::Change;
-use safha_core::links::{LinkEdit, LinkInfo, LinkTarget, NamedDestination};
-use safha_core::objects::{
+use mirsam_core::edit::Change;
+use mirsam_core::links::{LinkEdit, LinkInfo, LinkTarget, NamedDestination};
+use mirsam_core::objects::{
     Arrange, MAX_IMAGE_BYTES, NewImage, ObjectChange, ObjectEdit, ObjectRef, PageObject,
 };
-use safha_core::view::ViewRect;
+use mirsam_core::view::ViewRect;
 
 use crate::editing::EditOutcome;
 use crate::error::{CommandError, CommandResult};
@@ -169,7 +169,7 @@ pub async fn insert_image(
     let mut history = lock(&history);
     let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
     let size = document.page_size(page)?;
-    let pixels = safha_core::objects::image_pixels(&data)?;
+    let pixels = mirsam_core::objects::image_pixels(&data)?;
     let rect = image_rect(pixels, (size.width, size.height), at);
     let (revision, update, index) = document.with_new_image(&NewImage { page, rect, data })?;
     history.push_content(update);
@@ -241,7 +241,7 @@ pub async fn edit_link(
 /// after the UI has shown it to the user.
 #[tauri::command]
 pub async fn open_link(url: String) -> CommandResult<()> {
-    let Some(url) = safha_core::links::openable(&url) else {
+    let Some(url) = mirsam_core::links::openable(&url) else {
         return Err(CommandError::new("link_refused", "only web and e-mail addresses are opened"));
     };
     open::that_detached(&url).map_err(|err| CommandError::new("io_error", err.to_string()))
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn only_web_and_mail_addresses_are_opened() {
-        let runtime = |url: &str| safha_core::links::may_open(url);
+        let runtime = |url: &str| mirsam_core::links::may_open(url);
         assert!(runtime("https://example.com/a?b=c&d=e"));
         assert!(!runtime("file:///etc/passwd"));
         assert!(!runtime("https://example.com/\"&calc"));

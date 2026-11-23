@@ -24,7 +24,7 @@ on:
       - "apps/desktop/src-tauri/build.rs"
       - "apps/desktop/src-tauri/icons/**"
       - "apps/desktop/package.json"
-      - "crates/safha-core/src/engine.rs"
+      - "crates/mirsam-core/src/engine.rs"
       - "scripts/bundle.mjs"
       - "scripts/bundle-selftest.sh"
       - "scripts/selftest.sh"
@@ -132,7 +132,7 @@ jobs:
               name="$(basename "$installer")-$arch"
               echo "::group::$name"
               [[ "$arch" == native ]] && arch=""
-              SAFHA_SELFTEST_ARCH="$arch" scripts/bundle-selftest.sh "$installer" "selftest-out/$name"
+              MIRSAM_SELFTEST_ARCH="$arch" scripts/bundle-selftest.sh "$installer" "selftest-out/$name"
               echo "::endgroup::"
             done
           done

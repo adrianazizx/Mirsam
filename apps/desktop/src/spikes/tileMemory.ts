@@ -2,16 +2,16 @@
  * Milestone 1 experiment (throwaway; results in docs/adr/0011): where does the
  * webview's memory go when thousands of tiles arrive? Each run of the app
  * delivers the same 2,000 distinct 512 px tiles one way and records the
- * WebKit processes' resident memory. Variants (SAFHA_SELFTEST_SPIKE=tile-memory:<variant>):
+ * WebKit processes' resident memory. Variants (MIRSAM_SELFTEST_SPIKE=tile-memory:<variant>):
  *
  * - raw-none:   invoke → ArrayBuffer, then dropped (transport alone)
  * - raw-put:    invoke → ArrayBuffer → putImageData into one reused canvas (the
  *               product's path before ADR 0011)
  * - raw-bitmap: invoke → ArrayBuffer → createImageBitmap → drawImage, closed at once
- * - bmp-blob:   fetch(safha-tile://…&format=bmp) → Blob → createImageBitmap → drawImage
+ * - bmp-blob:   fetch(mirsam-tile://…&format=bmp) → Blob → createImageBitmap → drawImage
  * - product:    the product's path after ADR 0011 (backend.renderTile: the
- *               `safha` scheme through the render queue, BMP, ImageBitmap)
- * - bmp-img:    <img src="safha-tile://…&format=bmp"> → decode → drawImage
+ *               `mirsam` scheme through the render queue, BMP, ImageBitmap)
+ * - bmp-img:    <img src="mirsam-tile://…&format=bmp"> → decode → drawImage
  */
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -31,8 +31,8 @@ const TILE = 512;
 
 function tileUrl(documentId: number, page: number, tile: TileRequest, format = "bmp"): string {
   const base = navigator.userAgent.includes("Windows")
-    ? "http://safha-tile.localhost"
-    : "safha-tile://localhost";
+    ? "http://mirsam-tile.localhost"
+    : "mirsam-tile://localhost";
   return `${base}/${documentId}/${page}?scale=${tile.scale}&x=${tile.x}&y=${tile.y}&w=${tile.width}&h=${tile.height}&format=${format}`;
 }
 

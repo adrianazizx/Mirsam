@@ -7,5 +7,5 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    safha_fuzz::exercise(&safha_fuzz::page_pdf(data, safha_fuzz::TO_UNICODE));
+    mirsam_fuzz::exercise(&mirsam_fuzz::page_pdf(data, mirsam_fuzz::TO_UNICODE));
 });

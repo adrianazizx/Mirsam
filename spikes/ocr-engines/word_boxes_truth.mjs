@@ -62,7 +62,7 @@ const ocrContents = readdirSync(path.join(REPO, "ocr-eval/content"))
   .filter((n) => n.endsWith(".json"))
   .map((n) => JSON.parse(readFileSync(path.join(REPO, "ocr-eval/content", n), "utf8")));
 const contents = new Map([...loadContents(), ...ocrContents].map((c) => [c.id, c]));
-const work = path.join(tmpdir(), `safha-wordboxes-${process.pid}`);
+const work = path.join(tmpdir(), `mirsam-wordboxes-${process.pid}`);
 mkdirSync(work, { recursive: true });
 const result = {};
 for (const sample of MANIFEST.samples) {

@@ -13,7 +13,7 @@
 #   .AppImage   unpacks it (--appimage-extract) and runs its AppRun
 #   -setup.exe  installs it silently (NSIS) into <out-dir>/install, then uninstalls
 #   .msi        unpacks it (an administrative install) into <out-dir>/install
-# Env: SAFHA_SELFTEST_ARCH=x86_64|arm64 launches a macOS app as that architecture
+# Env: MIRSAM_SELFTEST_ARCH=x86_64|arm64 launches a macOS app as that architecture
 #      (arch -x86_64: a universal app's Intel slice, or an Intel app, under
 #      Rosetta) and checks that it ran as one.
 set -euo pipefail
@@ -22,7 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 mkdir -p "$2"
 OUT="$(cd "$2" && pwd)"
-ARCH="${SAFHA_SELFTEST_ARCH:-}"
+ARCH="${MIRSAM_SELFTEST_ARCH:-}"
 INSTALL="$OUT/install"
 rm -rf "$INSTALL"
 mkdir -p "$INSTALL"
@@ -96,7 +96,7 @@ if [[ -n "$ARCH" ]]; then
 fi
 
 run() { # <pdf> <name> <locale> <theme> <direction>
-  SAFHA_SELFTEST_APP="$LAUNCH" SAFHA_SELFTEST_UI=bundled \
+  MIRSAM_SELFTEST_APP="$LAUNCH" MIRSAM_SELFTEST_UI=bundled \
     "$ROOT/scripts/selftest.sh" "$ROOT/fixtures/out/$1" "$OUT/$2" "$3" "$4"
   node "$ROOT/scripts/check-selftest.mjs" "$OUT/$2" "$5" --ci
   node - "$OUT/$2/report.json" "$BUNDLE_ROOT" "$ROOT" "$ARCH" <<'EOF'

@@ -8,9 +8,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use safha_core::catalog::{PageLayout, ReadingDirection};
-use safha_core::store::{Session, SessionWindow, ViewState};
-use safha_core::{Document, Engine, PdfiumSource};
+use mirsam_core::catalog::{PageLayout, ReadingDirection};
+use mirsam_core::store::{Session, SessionWindow, ViewState};
+use mirsam_core::{Document, Engine, PdfiumSource};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
@@ -46,7 +46,7 @@ pub struct DocumentInfo {
     can_undo: bool,
     /// How the file is protected, and what the password it was opened with
     /// allows (ADR 0043).
-    security: safha_core::security::SecurityInfo,
+    security: mirsam_core::security::SecurityInfo,
     /// It carries digital signatures (ADR 0048): the UI checks them.
     signed: bool,
 }
@@ -254,13 +254,13 @@ pub fn open_arrivals(app: &AppHandle, documents: Vec<std::path::PathBuf>) {
         match open_path(&state, &path, None, &label) {
             Ok(outcome) => arrived.documents.push(outcome),
             Err(err) => {
-                eprintln!("safha: could not open a document from elsewhere: {}", err.detail);
+                eprintln!("mirsam: could not open a document from elsewhere: {}", err.detail);
                 arrived.error = arrived.error.or(Some(err.code));
             }
         }
     }
     if let Err(err) = app.emit_to(label.as_str(), DOCUMENTS_ARRIVED, arrived) {
-        eprintln!("safha: could not show documents from elsewhere: {err}");
+        eprintln!("mirsam: could not show documents from elsewhere: {err}");
     }
     if let Some(window) = app.get_webview_window(&label) {
         // Best effort: a window manager may refuse to raise it.
@@ -334,7 +334,7 @@ async fn print_with_platform(
     name: String,
 ) -> CommandResult<()> {
     let label = format!("print-{}", state.next_token());
-    let base = if cfg!(windows) { "http://safha.localhost" } else { "safha://localhost" };
+    let base = if cfg!(windows) { "http://mirsam.localhost" } else { "mirsam://localhost" };
     let url = format!("{base}/document?doc={document_id}")
         .parse::<tauri::Url>()
         .map_err(|err| CommandError::new("window_error", err.to_string()))?;
@@ -345,7 +345,7 @@ async fn print_with_platform(
             if payload.event() == tauri::webview::PageLoadEvent::Finished
                 && let Err(err) = window.print()
             {
-                eprintln!("safha: printing failed: {err}");
+                eprintln!("mirsam: printing failed: {err}");
             }
         })
         .build()
@@ -560,7 +560,7 @@ pub fn open_path(
     let engine = Engine::global(&PdfiumSource::Auto)?;
     let document = match engine.open_file(path, password) {
         Ok(document) => document,
-        Err(safha_core::Error::PasswordRequired) => {
+        Err(mirsam_core::Error::PasswordRequired) => {
             return Ok(OpenOutcome::NeedsPassword {
                 token: state.lock_pending(path.to_path_buf()),
                 name: display_name(path),
@@ -574,7 +574,7 @@ pub fn open_path(
     if let Some(store) = state.store()
         && let Err(err) = store.record_open(path)
     {
-        eprintln!("safha: could not record a recent file: {err}");
+        eprintln!("mirsam: could not record a recent file: {err}");
     }
     Ok(OpenOutcome::Opened { document: DocumentInfo::new(id, display_name(path), &document, view_state) })
 }
@@ -590,7 +590,7 @@ fn opened_id(outcome: &OpenOutcome) -> Option<u32> {
     }
 }
 
-fn store_error(err: safha_core::store::StoreError) -> CommandError {
+fn store_error(err: mirsam_core::store::StoreError) -> CommandError {
     CommandError::new("store_error", err.to_string())
 }
 
@@ -606,7 +606,7 @@ mod tests {
 
     fn state_with_store() -> AppState {
         let state = AppState::new(std::time::Instant::now(), None);
-        state.set_store(safha_core::store::Store::in_memory().expect("store"));
+        state.set_store(mirsam_core::store::Store::in_memory().expect("store"));
         state
     }
 
@@ -637,7 +637,7 @@ mod tests {
         let wrong = open_path(&state, &pending, Some("not it"), MAIN_WINDOW).expect("asks again");
         assert!(matches!(wrong, OpenOutcome::NeedsPassword { retry: true, .. }));
         // fixtures/generate.mjs: ENCRYPTED_PASSWORD.
-        let opened = open_path(&state, &pending, Some("safha-test"), MAIN_WINDOW).expect("opens");
+        let opened = open_path(&state, &pending, Some("mirsam-test"), MAIN_WINDOW).expect("opens");
         assert!(matches!(opened, OpenOutcome::Opened { .. }));
     }
 

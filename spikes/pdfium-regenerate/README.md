@@ -52,7 +52,7 @@ saved with `save_to_bytes`, reopened, and compared with that:
 
 - pixels at 2× (a channel difference above 32/255 counts, as in ADR 0005);
 - the object list: type, bounds, and every clip path (segment count and bounding box);
-- PDFium's page text, and `safha-core`'s logical text through the product's own extractor;
+- PDFium's page text, and `mirsam-core`'s logical text through the product's own extractor;
 - the content stream read independently with `lopdf`: operators present, the marked-content
   path of every painting operator, the set of MCIDs, and whether every BDC property-list name
   is still defined in `/Properties`;

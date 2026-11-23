@@ -23,7 +23,7 @@ const CASES: [(&str, &str, Option<&str>); 7] = [
     ("coretext-vocalized", "coretext/ar-vocalized.pdf", None),
     ("linearized", "derived/linearized.pdf", None),
     // Test data from fixtures/generate.mjs, not a secret.
-    ("encrypted", "derived/encrypted.pdf", Some("safha-test")),
+    ("encrypted", "derived/encrypted.pdf", Some("mirsam-test")),
     ("truncated", "derived/truncated.pdf", None),
     ("1000-pages", "derived/bilingual-1000-pages.pdf", None),
 ];
@@ -61,7 +61,7 @@ pub struct Outcome {
     pub objects_after_source: Option<usize>,
     /// `qpdf --requires-password` says the output needs one.
     pub output_encrypted: Option<bool>,
-    /// PDFium (through safha-core) could open the output.
+    /// PDFium (through mirsam-core) could open the output.
     pub pdfium_opens_output: Option<bool>,
     /// PDFium could open the source.
     pub pdfium_opens_source: Option<bool>,
@@ -173,7 +173,7 @@ pub fn run(
                         probe: None,
                     };
                     let place =
-                        Placement { size: FONT_SIZE as f64, x, baseline: BASELINE, resource: "SafhaF1" };
+                        Placement { size: FONT_SIZE as f64, x, baseline: BASELINE, resource: "MirsamF1" };
                     route_b::insert_into(source_ref, password, font, line, options, &place)
                         .map(|bytes| (bytes, 1))
                 }),
