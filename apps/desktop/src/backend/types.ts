@@ -256,7 +256,15 @@ export interface FieldWidget {
   /** Its box on the displayed page, when it is on one. */
   view: ViewRect | null;
   onState: string | null;
+  /** Its position in its page's annotations: the page's tab order (ADR 0047). */
+  annotIndex?: number | null;
 }
+
+/** Where a field's text sits: the start and end of the text's own direction (ADR 0047). */
+export type FieldAlign = "start" | "center" | "end";
+
+/** A bundled family to set a field in. */
+export type FieldFont = "sans" | "naskh";
 
 /** A form field to fill in (ADR 0045). */
 export interface FormField {
@@ -264,7 +272,21 @@ export interface FormField {
   id: number;
   /** Fully qualified, e.g. `applicant.name`. */
   name: string;
+  /** Its own part of the name, what renaming changes (ADR 0047). */
+  partialName?: string;
   kind: FieldKind;
+  /** What a reader is told about it. */
+  tooltip?: string;
+  /** What resetting the form returns it to, as `values`. */
+  defaultValues?: string[];
+  align?: FieldAlign;
+  /** The bundled family it is set in; null when it names a font of its own. */
+  font?: FieldFont | null;
+  /** 0 fits the text to the box. */
+  fontSize?: number;
+  bordered?: boolean;
+  /** A push button's label. */
+  caption?: string;
   /**
    * Its value: one text for a text field or drop-down; the chosen values of
    * a list; the "on" state of a checked box or chosen radio button (empty: off).
@@ -289,6 +311,56 @@ export interface FormInfo {
   xfa: boolean;
   /** It asked viewers to draw its fields; the first fill draws them all. */
   needAppearances: boolean;
+}
+
+/** A field as the form designer sets it (ADR 0047). */
+export interface FieldSpec {
+  kind: FieldKind;
+  /** Its own part of the name: no full stops. */
+  name: string;
+  tooltip: string;
+  required: boolean;
+  readOnly: boolean;
+  multiline: boolean;
+  maxLen: number | null;
+  /** As `FormField.values`: a radio group's by its buttons' states. */
+  defaultValues: string[];
+  align: FieldAlign;
+  /** Null keeps a field's own font. */
+  font: FieldFont | null;
+  fontSize: number;
+  /** Choices; a radio group's buttons in order (label: its export value). */
+  options: FieldOption[];
+  multiSelect: boolean;
+  editable: boolean;
+  bordered: boolean;
+  caption: string;
+}
+
+/** One change to a form (ADR 0047); boxes on the displayed page. */
+export type DesignEdit =
+  | { op: "add"; page: number; rect: ViewRect; spec: FieldSpec }
+  | { op: "addButton"; field: number; page: number; rect: ViewRect; value: string }
+  | { op: "update"; field: number; spec: FieldSpec }
+  | { op: "setRect"; field: number; widget: number; page: number; rect: ViewRect }
+  | { op: "removeButton"; field: number; widget: number }
+  | { op: "remove"; field: number }
+  | { op: "tabOrder"; page: number; fields: number[] };
+
+/** What a form change did, and the field to select after it. */
+export interface DesignOutcome {
+  edit: EditOutcome;
+  field: number | null;
+}
+
+/** A field a flat form seems to ask for (ADR 0047). */
+export interface DetectedField {
+  kind: FieldKind;
+  /** Its box on the displayed page. */
+  view: ViewRect | null;
+  /** From its label; empty when none was found. */
+  name: string;
+  multiline: boolean;
 }
 
 /** A kept signature or initials (ADR 0045). */
@@ -923,7 +995,7 @@ export interface Backend {
   saveViewState(documentId: number, view: SavedViewState): Promise<void>;
   /** The open tabs in order, restored at the next launch. */
   saveSession(documentIds: number[], active: number | null): Promise<void>;
-  /** Stored UI settings (`locale`, `theme`, `readingTheme`, `leftPanel`, `search.options`). */
+  /** Stored UI settings (`locale`, `uiDigits`, `theme`, `readingTheme`, `leftPanel`, `search.options`). */
   settings(): Promise<Record<string, string>>;
   setSetting(key: string, value: string): Promise<void>;
   /** Every page's size, read without loading pages. */
@@ -1073,6 +1145,10 @@ export interface Backend {
   formFields(documentId: number): Promise<FormInfo>;
   /** Fills in a field (values as `FormField.values`): one undo step. */
   setFormField(documentId: number, field: number, values: string[]): Promise<EditOutcome>;
+  /** Changes the form (ADR 0047): `edits` in order, one undo step. */
+  designForm(documentId: number, edits: DesignEdit[]): Promise<DesignOutcome>;
+  /** Fields a flat form seems to ask for on `page`, for review (ADR 0047). */
+  detectFormFields(documentId: number, page: number): Promise<DetectedField[]>;
   /** Places Fill & Sign text, its top-left corner displayed at (`x`, `y`); black unless `color`. */
   addFillText(
     documentId: number,

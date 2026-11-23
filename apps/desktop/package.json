@@ -1,6 +1,7 @@
 {
   "name": "safha-desktop",
   "private": true,
+  "license": "MIT",
   "version": "0.0.1",
   "type": "module",
   "packageManager": "pnpm@9.15.0",

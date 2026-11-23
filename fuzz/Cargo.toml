@@ -3,7 +3,7 @@ name = "safha-fuzz"
 description = "Fuzz targets for Mirsam's open and parse path (cargo-fuzz; see fuzz/README.md)"
 version = "0.0.0"
 edition = "2024"
-license = "LicenseRef-Proprietary"
+license = "MIT"
 publish = false
 
 [package.metadata]
@@ -17,7 +17,8 @@ members = ["."]
 
 [dependencies]
 # libFuzzer's Rust wrapper: (MIT OR Apache-2.0) AND NCSA (LLVM's BSD-style
-# licence). A development tool only; nothing here is in the app.
+# licence, approved by the owner on 2026-11-23). A development tool only;
+# nothing here is in the app.
 libfuzzer-sys = "0.4.13"
 safha-core = { path = "../crates/safha-core" }
 

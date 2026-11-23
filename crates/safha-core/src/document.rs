@@ -226,6 +226,52 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update))
     }
 
+    /// This document with its form changed (ADR 0047): fields added,
+    /// changed, moved, or removed, or their tab order set, in order, and the
+    /// one update that does it (one undo step).
+    pub fn with_form_design(&self, edits: &[crate::forms::FieldDesign]) -> Result<(Document, Vec<u8>)> {
+        if edits.is_empty() {
+            return Err(Error::InvalidEdit("no form edits given"));
+        }
+        if crate::forms::read(&self.bytes, self.password.as_deref())?.xfa {
+            return Err(Error::InvalidEdit("this form is an XFA form, which cannot be changed here"));
+        }
+        let mut bytes = self.bytes.to_vec();
+        let start = bytes.len();
+        for edit in edits {
+            let update = crate::forms::design_update(&bytes, self.password.as_deref(), edit)?;
+            bytes.extend_from_slice(&update);
+        }
+        let update = bytes[start..].to_vec();
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// Fields a flat form seems to ask for on `page` (ADR 0047): blanks it
+    /// draws (lines, boxes, box characters), away from its own fields, each
+    /// named after its label, with its box on the displayed page.
+    pub fn detect_fields(&self, page: usize) -> Result<Vec<crate::forms::DetectedField>> {
+        let pdf_page = self.page(page)?;
+        let shapes = page_shapes(&pdf_page);
+        let text = analyze_page(&pdf_page)?;
+        let existing: Vec<[f32; 4]> = crate::forms::read(&self.bytes, self.password.as_deref())
+            .map(|form| {
+                form.fields
+                    .iter()
+                    .flat_map(|field| &field.widgets)
+                    .filter(|widget| widget.page == Some(page))
+                    .map(|widget| widget.rect)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let view = ViewTransform::of_page(&pdf_page)?;
+        let mut found = crate::forms::detect_fields(&shapes, &text, &existing);
+        for field in &mut found {
+            let [left, bottom, right, top] = field.rect;
+            field.view = Some(view.rect(crate::text::Rect { left, bottom, right, top }));
+        }
+        Ok(found)
+    }
+
     /// This document with `marks` redacted (ADR 0042). The content under
     /// each mark is removed from the file, not covered, and the result is
     /// checked: the text PDFium reads from the new revision must hold nothing
@@ -952,6 +998,116 @@ impl std::fmt::Debug for LoadedPage {
     }
 }
 
+/// Forms nested deeper than this are not looked into for shapes.
+const MAX_SHAPE_DEPTH: usize = 8;
+/// Pages with more path pieces than this are drawings, not forms.
+const MAX_SHAPE_SEGMENTS: usize = 20_000;
+
+/// The straight lines and rectangles a page draws, in page space (ADR 0047).
+fn page_shapes(page: &PdfPage<'_>) -> crate::forms::PageShapes {
+    let mut shapes = crate::forms::PageShapes::default();
+    use pdfium_render::prelude::PdfPageObjectsCommon;
+    let mut budget = MAX_SHAPE_SEGMENTS;
+    for object in page.objects().iter() {
+        collect_shapes(&object, &mut Vec::new(), &mut shapes, &mut budget);
+    }
+    shapes
+}
+
+fn collect_shapes(
+    object: &pdfium_render::prelude::PdfPageObject<'_>,
+    forms: &mut Vec<pdfium_render::prelude::PdfMatrix>,
+    shapes: &mut crate::forms::PageShapes,
+    budget: &mut usize,
+) {
+    use pdfium_render::prelude::{PdfPathSegmentType, PdfPathSegments, PdfPoints};
+    if *budget == 0 {
+        return;
+    }
+    if let Some(form) = object.as_x_object_form_object() {
+        let Ok(matrix) = object.matrix() else { return };
+        if forms.len() >= MAX_SHAPE_DEPTH {
+            return;
+        }
+        forms.push(matrix);
+        for child in form.iter() {
+            collect_shapes(&child, forms, shapes, budget);
+        }
+        forms.pop();
+        return;
+    }
+    let Some(path) = object.as_path_object() else { return };
+    let Ok(matrix) = object.matrix() else { return };
+    let to_page = |x: f32, y: f32| {
+        let (x, y) = {
+            let (x, y) = matrix.apply_to_points(PdfPoints::new(x), PdfPoints::new(y));
+            (x.value, y.value)
+        };
+        forms.iter().rev().fold((x, y), |(x, y), form| {
+            let (x, y) = form.apply_to_points(PdfPoints::new(x), PdfPoints::new(y));
+            (x.value, y.value)
+        })
+    };
+    // Each subpath: its points, and whether all its pieces are straight.
+    let mut subpaths: Vec<(Vec<(f32, f32)>, bool)> = Vec::new();
+    for segment in path.segments().raw().iter() {
+        if *budget == 0 {
+            return;
+        }
+        *budget -= 1;
+        let point = to_page(segment.x().value, segment.y().value);
+        match segment.segment_type() {
+            PdfPathSegmentType::MoveTo => subpaths.push((vec![point], true)),
+            PdfPathSegmentType::LineTo => match subpaths.last_mut() {
+                Some((points, _)) => points.push(point),
+                None => subpaths.push((vec![point], true)),
+            },
+            _ => {
+                if let Some((points, straight)) = subpaths.last_mut() {
+                    points.push(point);
+                    *straight = false;
+                }
+            }
+        }
+        if segment.is_close()
+            && let Some((points, _)) = subpaths.last_mut()
+            && let Some(first) = points.first().copied()
+        {
+            points.push(first);
+        }
+    }
+    for (points, straight) in subpaths {
+        if !straight || points.len() < 2 {
+            continue;
+        }
+        // An axis-aligned rectangle (`re`, or four lines back to the start).
+        let xs: Vec<f32> = points.iter().map(|p| p.0).collect();
+        let ys: Vec<f32> = points.iter().map(|p| p.1).collect();
+        let (l, r) = (
+            xs.iter().copied().fold(f32::INFINITY, f32::min),
+            xs.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+        );
+        let (b, t) = (
+            ys.iter().copied().fold(f32::INFINITY, f32::min),
+            ys.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+        );
+        let on_edge = |&(x, y): &(f32, f32)| {
+            ((x - l).abs() < 0.5 || (x - r).abs() < 0.5) && ((y - b).abs() < 0.5 || (y - t).abs() < 0.5)
+        };
+        let closed = points
+            .first()
+            .zip(points.last())
+            .is_some_and(|(a, z)| (a.0 - z.0).abs() < 0.5 && (a.1 - z.1).abs() < 0.5);
+        if closed && (4..=6).contains(&points.len()) && points.iter().all(on_edge) {
+            shapes.rects.push([l, b, r, t]);
+            continue;
+        }
+        for pair in points.windows(2) {
+            shapes.segments.push(crate::forms::Segment { from: pair[0], to: pair[1] });
+        }
+    }
+}
+
 fn analyze_page(page: &PdfPage<'_>) -> Result<crate::text::PageText> {
     let text = page.text()?;
     let glyphs = crate::text::collect_glyphs(&text);
@@ -1029,4 +1185,152 @@ fn scaled_page_pixels(size: PageSize, scale: f32) -> Result<(u32, u32)> {
 
 fn to_i32(value: u32) -> Result<i32> {
     i32::try_from(value).map_err(|_| Error::InvalidRenderRequest("coordinate is out of range"))
+}
+
+#[cfg(test)]
+mod form_interop_tests {
+    //! Fields made here (ADR 0047) as PDFium, Chrome's engine, reads them:
+    //! each with its kind, name, and value, and filled by PDFium's own
+    //! form API in a way this app reads back.
+
+    use pdfium_render::prelude::{PdfFormFieldCommon, PdfFormFieldType};
+
+    use crate::fonts::FontFamily;
+    use crate::forms::{FieldAlign, FieldDesign, FieldKind, FieldOption, FieldSpec};
+    use crate::{Engine, PdfiumSource};
+
+    fn blank() -> Vec<u8> {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+        ];
+        let mut out = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, object) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(b"xref\n0 4\n0000000000 65535 f\r\n");
+        for offset in offsets {
+            out.extend_from_slice(format!("{offset:010} 00000 n\r\n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+        out
+    }
+
+    fn spec(kind: FieldKind, name: &str) -> FieldSpec {
+        FieldSpec {
+            kind,
+            name: name.into(),
+            tooltip: String::new(),
+            required: false,
+            read_only: false,
+            multiline: false,
+            max_len: None,
+            default_values: Vec::new(),
+            align: FieldAlign::Start,
+            font: Some(FontFamily::Sans),
+            font_size: 0.0,
+            options: Vec::new(),
+            multi_select: false,
+            editable: false,
+            bordered: true,
+            caption: String::new(),
+        }
+    }
+
+    #[test]
+    fn pdfium_reads_and_fills_fields_made_here() {
+        let engine =
+            Engine::global(&PdfiumSource::Auto).expect("PDFium is available (run scripts/fetch-pdfium.sh)");
+        let document = engine.open_bytes(blank(), None).expect("opens");
+        let option = |value: &str, label: &str| FieldOption { value: value.into(), label: label.into() };
+        let add = |rect: [f32; 4], spec: FieldSpec| FieldDesign::Add { page: 0, rect, spec };
+        let (document, _) = document
+            .with_form_design(&[
+                add(
+                    [100.0, 700.0, 400.0, 724.0],
+                    FieldSpec {
+                        default_values: vec!["محمد".into()], ..spec(FieldKind::Text, "الاسم")
+                    },
+                ),
+                add(
+                    [100.0, 660.0, 116.0, 676.0],
+                    FieldSpec { default_values: vec!["Yes".into()], ..spec(FieldKind::Checkbox, "agree") },
+                ),
+                add(
+                    [100.0, 620.0, 116.0, 636.0],
+                    FieldSpec { options: vec![option("0", "نعم")], ..spec(FieldKind::Radio, "answer") },
+                ),
+                add(
+                    [100.0, 580.0, 300.0, 604.0],
+                    FieldSpec {
+                        options: vec![option("ruh", "الرياض"), option("jed", "جدة")],
+                        default_values: vec!["jed".into()],
+                        ..spec(FieldKind::Combo, "city")
+                    },
+                ),
+                add(
+                    [100.0, 500.0, 300.0, 560.0],
+                    FieldSpec {
+                        options: vec![option("a", ""), option("b", "")],
+                        ..spec(FieldKind::List, "list")
+                    },
+                ),
+                add(
+                    [100.0, 450.0, 200.0, 480.0],
+                    FieldSpec { caption: "إرسال".into(), ..spec(FieldKind::PushButton, "send") },
+                ),
+            ])
+            .expect("made");
+
+        let mut page = document.page(0).expect("page");
+        let mut seen = Vec::new();
+        for annotation in page.annotations().iter() {
+            let Some(widget) = annotation.as_widget_annotation() else { continue };
+            let Some(field) = widget.form_field() else { continue };
+            let value = field.as_text_field().and_then(|text| text.value());
+            seen.push((field.name().unwrap_or_default(), field.field_type(), value));
+        }
+        use PdfFormFieldType::*;
+        let kinds: Vec<(&str, PdfFormFieldType)> = seen.iter().map(|(n, t, _)| (n.as_str(), *t)).collect();
+        assert_eq!(
+            kinds,
+            [
+                ("الاسم", Text),
+                ("agree", Checkbox),
+                ("answer", RadioButton),
+                ("city", ComboBox),
+                ("list", ListBox),
+                ("send", PushButton)
+            ]
+        );
+        assert_eq!(seen[0].2.as_deref(), Some("محمد"));
+        let checked = page
+            .annotations()
+            .iter()
+            .filter_map(|a| a.as_widget_annotation()?.form_field()?.as_checkbox_field()?.is_checked().ok())
+            .collect::<Vec<_>>();
+        assert_eq!(checked, [true]);
+
+        // PDFium fills the name in, as Chrome does when a user types; this app reads it.
+        let annotations = page.annotations_mut();
+        let mut first = annotations.get(0).expect("the name's widget");
+        first
+            .as_widget_annotation_mut()
+            .and_then(|widget| widget.form_field_mut())
+            .and_then(|field| field.as_text_field_mut())
+            .expect("a text field")
+            .set_value("سارة")
+            .expect("PDFium sets it");
+        drop(page);
+        let saved = document.inner.save_to_bytes().expect("PDFium saves");
+        let form = crate::forms::read(&saved, None).expect("reads");
+        assert_eq!(form.fields[0].values, ["سارة"]);
+        assert_eq!(form.fields.len(), 6);
+    }
 }

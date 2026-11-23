@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`).
+Last updated: 2026-11-23 (M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -13,11 +13,9 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **The code is on GitHub** as the public repository `adrianazizx/Mirsam` (public since
-   2026-11-22). It has no licence file, so the code is all rights reserved until you choose one
-   (spec D2).
-   - `main` holds Milestones 0 and 1 (PR #1) and the Milestone 3 groundwork (PR #4);
-   - `m2-organize` holds Milestone 2 so far, open as draft PR #2 with Auto-fix on.
+2. ~~Which licence for the public repository?~~ **Decided (2026-11-23): MIT** (`LICENSE`, spec D2).
+   The repository `adrianazizx/Mirsam` is public; the workspace crates and the UI package say
+   `MIT`.
 3. **CI on PR #2** was green on every check (tests and shell self-test on macOS, Linux and
    Windows, and licences) before the markup work and the merge of `main` were pushed.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
@@ -25,12 +23,18 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
    dependency tree (Unicode data, ICU4X), so they cannot be avoided on this stack — but the spec
    says to ask. **`MIT-0`: approved by the owner (2026-11-22)**, with the llama.cpp runtime
-   (item 20).
-5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
-   zoom? Probably a setting; which default? (ADR 0003.)
+   (item 20). **The rest approved (2026-11-23):** `Unicode-3.0`, `CC0-1.0`, `0BSD` and SQLite's
+   public-domain dedication. Spec §10 now lists them.
+5. ~~Digits in the Arabic UI?~~ **Decided (2026-11-23): Arabic-Indic (١٢٣) by default, with a
+   setting.** Settings → Language offers Western digits (123) instead; the commands
+   `app.digitsArabicIndic` and `app.digitsWestern` do the same. It covers the UI's own numbers
+   (page counts, zoom, sizes, dates); numbers inside documents keep their per-feature choice
+   (spec 6.3). The English UI is unchanged.
 6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
    `app.mirsam.desktop`. Before the first signed release it should be the reverse of a domain you
    own; changing it later moves where the app keeps its state (recents, session, positions).
+   **Deferred by the owner (2026-11-23):** kept as is for now; to be settled before code signing
+   (item 17).
 7. **Shell PATH.** Homebrew's rustup is keg-only. To use `cargo` in your own terminal:
    `export PATH=/opt/homebrew/opt/rustup/bin:$PATH` (not added to `~/.zshrc` for you).
 8. **More fixture producers and OCR baselines need installs** (none done without asking):
@@ -53,8 +57,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **`/ActualText` on ligatures:** fixed some of PDFium's words and reversed others; Poppler
       ignored it.
 
-    The decision is still yours: which viewer's convention to follow, or whether to accept
-    this.
+    **Decided (2026-11-23): follow the standard.** Keep writing text the PDF specification's way,
+    which Preview copies exactly; Chrome/Edge's (PDFium's) reversals are their bug, documented and
+    tracked, not worked around. Spec §7's "another viewer" acceptance test is judged against a
+    standard-conforming viewer (Preview, and Acrobat once it can be tried, item 16).
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
 12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
@@ -74,6 +80,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     document under the font's own name is common practice and is not redistributing a modified
     font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
     and Noto Sans Arabic (OFL, no reserved name) can replace them.
+    **Decided (2026-11-23): keep IBM Plex** for subsets embedded under the fonts' own names.
+    Still open: italic runs are embedded under names we made (`IBMPlexSans-Oblique`, ADR 0024);
+    the font program is unchanged, but the name carries the Reserved Font Name, and that case was
+    not part of the question.
 
 15. **A JPEG codec for redaction (M5, ADR 0042).** Redacting an area of a *scan* (a page that is one
     JPEG) currently drops the whole image, because overwriting its pixels needs a JPEG decoder and
@@ -84,6 +94,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     own baseline encoder (ADR 0050), checked against PDFium's decoder. Only a **decoder** is still
     needed — for redacting scans and for downsampling JPEG images when compressing (scans are
     mostly JPEG, so it is compression's biggest gap). `zune-jpeg` (decoder only) is the candidate.
+    **Decided (2026-11-23): no decoder for now.** Redacting part of a JPEG image keeps removing the
+    whole image, and compression leaves JPEG images as they are.
 16. **M3's exit, by hand** (`docs/demos/m3.md`):
     - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
       cannot be driven here);
@@ -101,12 +113,14 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     unsigned (ADR 0060); macOS Gatekeeper and Windows SmartScreen will warn until they are signed.
 18. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
     spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
-    shipped, and not in the licence report. Say if that is not acceptable.
+    shipped, and not in the licence report. **Approved (2026-11-23)** for development tools that
+    never ship (spec §10).
 19. **The Linux AppImage is 85.7 MiB, over the 60 MB installer budget** (spec §11), because it
     carries WebKitGTK and GTK, which every other installer takes from the system. The deb and rpm
     are 11.7 MiB. Ship the AppImage anyway (the budget then reads "excluding a bundled web
     engine"), or ship deb and rpm only (and perhaps a Flatpak later, which shares the GNOME runtime)?
-    Until you decide, `scripts/bundle.mjs` reports it as a known exception instead of failing.
+    **Decided (2026-11-23): ship deb, rpm and the AppImage.** Spec §11's installer budget now
+    excludes a bundled web engine; `scripts/bundle.mjs` keeps reporting the AppImage's size.
 20. ~~May the llama.cpp runtime's builds ship?~~ **Decided (2026-11-22): yes** (ADR 0034).
     - **What was approved:** llama.cpp's own `llama-server` builds (release `b12359`): Metal,
       CPU, and Vulkan with a CPU fallback. Outside spec §10's list, they compile in sheredom
@@ -130,8 +144,7 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     runs, words are boxed on the page's own line strips, and pages become searchable only as
     each quality page finishes. Bundle it, or accept that?
 
-Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
-by anything found so far.
+Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the stated assumptions.
 
 ## M0 — Foundations
 
@@ -714,7 +727,21 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       native shell are untested.
 - [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
       rewritten in full so unlinked objects are gone (ADR 0042)
-- [ ] Form creation
+- [~] Form creation (session M5-d, ADR 0047):
+  - **Done:** text (one line and several), check boxes, radio groups, drop-downs, list boxes, and push
+    buttons (no scripts), drawn on the page by dragging, moved and resized freely, deleted.
+  - **Properties** in the inspector: name, tooltip, required, read-only, default value, longest text,
+    alignment (start, centre, end of the text's own direction), font (Sans or Naskh) and size, border,
+    choices, radio buttons' values, a button's label.
+  - **Tab order:** earlier/later, or by rows from the right or the left; numbers on the page.
+  - **Finding fields** on flat forms (lines, boxes, table cells, underscores, ☐), named after their labels
+    (Arabic labels at the right), reviewed and made in one undo step.
+  - **Drawn by the fill code**, so Arabic defaults are shaped; incremental updates; undo; save and reopen.
+  - **Checked** in PDFium (a unit test), Chrome's PDF viewer (by hand), and macOS PDFKit (a test).
+  - **Gaps:** date formats, calculations and validation (need JavaScript), actions, rich text; comb and
+    password not set from the inspector; a widget cannot move to another page; Arabic typed *in Chrome* is
+    drawn by Chrome, unshaped; Preview drops a radio group's `/Opt` when it saves; not run in the native
+    shell.
 - [~] Certificate signatures (PAdES) — **[SPIKE] done (ADR 0044, `spikes/pades`)**: RustCrypto stack
       recommended; a prototype signs an incremental update that Poppler/NSS and OpenSSL verify. The
       feature itself (`safha_core::sign`, key import, signing UI, revocation) is not built.
@@ -806,6 +833,69 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - State store schema 5 is taken; a later bump renumbers to 6.
   - `EditOutcome` is now `Clone`.
   - `AppState` gains `documents_of` and `window_of`.
+
+### Owner decisions — 2026-11-23 (branch `pomidor/owner-decisions`)
+
+- **Licence:** MIT (`LICENSE`; spec D2; the workspace crates, the fuzz crate and the UI package
+  say `MIT`; README has a Licence section).
+- **Licences approved:** Unicode-3.0, CC0-1.0, 0BSD, SQLite's dedication; NCSA for development
+  tools only (spec §10, `deny.toml` comments).
+- **Arabic UI digits:** Arabic-Indic by default, Western as a setting (Settings → Language, two
+  commands, the shell's `uiDigits` setting; ADR 0003's open point closed). Five tests that
+  expected Western digits in Arabic now expect Arabic-Indic ones; `commands/settings.test.tsx`
+  covers the setting.
+- **Recorded:** Linux ships deb, rpm and AppImage (spec §11's budget excludes a bundled web
+  engine); keep IBM Plex (oblique names still open); no JPEG decoder for now; Arabic copy follows
+  the standard; bundle identifier deferred.
+
+### Session M5-d — 2026-11-23 (Milestone 5: form creation; parallel to M4 jobs, M5 PAdES, M6 objects)
+
+Branch `pomidor/m5-form-creation-8309c6`, from `main` after PR #18. Stayed in AcroForm field creation and its
+UI; signature fields belong to the PAdES session.
+
+- **ADR 0047** records the approach:
+  - standard fields, written by our own writer as incremental updates, and drawn by the fill code;
+  - `/DA` naming `MirsamSans` or `MirsamNaskh` makes `/Q` logical (`/Q 2` is the end of the text's
+    direction); `/DR` maps the names to standard fonts;
+  - radio buttons named by position, with `/Opt` (PDFKit garbles non-ASCII state names);
+  - tab order as `/Annots` order with `/Tabs /W`;
+  - finding fields as an assist, reviewed before anything is made.
+- **Engine:**
+  - `safha_core::forms::design`: `FieldSpec`, `FieldDesign` (add, add button, update, set rect, remove
+    button, remove, tab order), `design_update`; `Document::with_form_design`.
+  - `safha_core::forms::detect`: lines, boxes, grids, underscores, box characters, labels in either direction;
+    `Document::detect_fields` (PDFium paths through nested forms, and the page's text).
+  - The reader gains each field's partial name, tooltip, default value, alignment, font, size, border,
+    caption, and each widget's place in `/Annots`; it takes a radio group's flags from its buttons when
+    PDFKit moved them there.
+  - **Shared fix:** `pdf::Parser::literal_string` reads octal escapes and line continuations (PDFKit writes
+    UTF-16 strings as `\376\377…`).
+- **Shell (`form_design.rs`):** `design_form` (a list of edits, one undo step; returns the field to select)
+  and `detect_form_fields`.
+- **UI:**
+  - The Forms tool switches between Fill in and Design (`FormDesignPanel`): tools, the field inspector, the
+    tab order, and the review of found fields.
+  - The viewer's `design` and `draw` modes: field boxes with tab numbers, drawing, moving, free resizing by
+    corner handles, suggestions as dashed boxes.
+  - 32 commands (`forms.fillMode`, `forms.designMode`, `formDesign.*`), gated by `modify`. A key several
+    commands share now runs the one that is enabled (Delete and the arrows serve Fill & Sign and the
+    designer).
+  - English and Arabic strings; field tokens with contrast pairs. The mock backend designs forms too.
+- **Tests:**
+  - **Rust:** `tests/form_design.rs` (8): every kind on a page without a form; drawn inside their boxes;
+    Arabic read back once flattened; start and end alignment; filled, saved and reopened; moved, resized,
+    renamed, radio buttons relabelled and removed, tab order, removed; a turned page; an encrypted file;
+    found on a flat form and made in one step; PDFKit sees and fills them.
+  - Unit tests: `forms::design`, `forms::detect` (6), the PDFium interop test in `document.rs`, the string
+    parser, the shell's edit decoding.
+  - **UI:** `commands/formDesign.test.tsx` (9, English and Arabic, permissions) and a viewer test for the
+    design mode. 249 UI tests pass, `tsc` and Biome clean; `cargo test --workspace` 537 passed, clippy (with and without `devtools`), fmt and `cargo deny` clean; no dependency changed.
+- **Checked by eye:**
+  - **Browser preview** (mock), in English and Arabic: drawing, selecting, moving, the inspector, an Arabic
+    default value, radio buttons, finding fields.
+  - **Chrome's PDF viewer:** a form made here shows every field as drawn; typing English, ticking and choosing
+    a radio button there work; Arabic typed there comes out poorly joined (Chrome draws it, ADR 0045's limit).
+  - Not run in the native shell; the self-test does not cover forms.
 
 ### M4 side track — 2026-11-22 (OCR model download manager; branch `pomidor/m4-model-downloads-ef1050`)
 

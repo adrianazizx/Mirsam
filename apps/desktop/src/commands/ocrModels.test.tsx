@@ -164,7 +164,8 @@ describe("OCR models (ADR 0034)", () => {
     expect(row.querySelector("bdi")?.textContent).toBe("Nuqta-Arabic-OCR 4B");
     expect(row.textContent).toContain("مطلوب للتعرّف الضوئي");
     expect(row.textContent).toContain("غير مثبّت");
-    expect(row.textContent).not.toMatch(/[٠-٩]/);
+    // Sizes follow the Arabic UI's digits (Arabic-Indic by default); the model name keeps "4B".
+    expect(row.textContent).toMatch(/[٠-٩]/);
     expect(within(row).getByRole("button", { name: "تنزيل" })).toBeTruthy();
     expect(within(settings).getByRole("button", { name: "تم" })).toBeTruthy();
   });

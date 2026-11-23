@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import type {
   CompressReport,
+  DetectedField,
   DocumentInfo,
   EditOutcome,
+  FieldKind,
+  FormField,
   OutlineItem,
   PageSize,
   ParagraphBlock,
@@ -16,7 +19,7 @@ import type {
   SignatureInfo,
   TextStyle,
 } from "../backend";
-import type { Locale } from "../i18n";
+import type { Locale, UiDigits } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import type { DocumentColorId } from "./colors";
@@ -122,6 +125,23 @@ export interface OpenDocument extends DocumentInfo {
 /** The Comment tool's modes (ADR 0018). */
 export type CommentTool = "note" | "textBox" | "pen" | "eraser";
 
+/** Whether the Forms tool fills fields in or makes them (ADR 0047). */
+export type FormsMode = "fill" | "design";
+
+/** What a drag on a page draws in the form designer (ADR 0047). */
+export type DesignTool = Exclude<FieldKind, "signature">;
+
+/** The form designer's state for the active document (ADR 0047). */
+export interface FormDesign {
+  documentId: number;
+  /** The form as last read: what the viewer outlines and the inspector edits. */
+  fields: FormField[];
+  /** The selected field and which of its widgets. */
+  selected: { field: number; widget: number } | null;
+  /** Fields found on a flat page, waiting for review; `include` as ticked. */
+  detected: { page: number; fields: (DetectedField & { include: boolean })[] } | null;
+}
+
 /** What a press on a page places with the Sign tool (ADR 0045); null selects instead. */
 export type FillTool = "text" | "date" | "check" | "cross" | "dot" | "signature";
 
@@ -182,6 +202,8 @@ export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
 
 export interface AppState {
   locale: Locale;
+  /** Digits of the Arabic UI's own numbers (page counts, zoom). */
+  uiDigits: UiDigits;
   theme: ThemePreference;
   readingTheme: ReadingTheme;
   /** The open side panel at the inline start, or null when it is closed. */
@@ -202,6 +224,17 @@ export interface AppState {
   pendingNote: PendingNote | null;
   /** What a press places with the Sign tool; null: it selects (ADR 0045). */
   fillTool: FillTool | null;
+  /** The Forms tool fills fields in, or makes them (ADR 0047). */
+  formsMode: FormsMode;
+  /** What a drag draws in the form designer; null: it selects and moves fields. */
+  designTool: DesignTool | null;
+  formDesign: FormDesign | null;
+  setFormsMode(mode: FormsMode): void;
+  setDesignTool(tool: DesignTool | null): void;
+  /** Changes the designer's state: a patch, or a function of it (null: none). */
+  updateFormDesign(
+    change: Partial<FormDesign> | ((current: FormDesign | null) => FormDesign | null),
+  ): void;
   /** The kept signature `fillTool: "signature"` places. */
   fillSignature: number | null;
   /** The colour new Fill & Sign text, dates and marks are placed in (ADR 0045). */
@@ -229,6 +262,7 @@ export interface AppState {
   paletteOpen: boolean;
 
   setLocale(locale: Locale): void;
+  setUiDigits(digits: UiDigits): void;
   setTheme(theme: ThemePreference): void;
   setReadingTheme(theme: ReadingTheme): void;
   setLeftPanel(panel: LeftPanel | null): void;
@@ -313,11 +347,12 @@ const CACHE_KEY = "safha.preferences";
 
 type Persisted = Pick<
   AppState,
-  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
+  "locale" | "uiDigits" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
 >;
 
 const DEFAULTS: Persisted = {
   locale: "en",
+  uiDigits: "arabicIndic",
   theme: "system",
   readingTheme: "normal",
   leftPanel: null,
@@ -329,6 +364,7 @@ const DEFAULTS: Persisted = {
 export function parseSettings(raw: Record<string, string | undefined>): Partial<Persisted> {
   const out: Partial<Persisted> = {};
   if (raw.locale === "en" || raw.locale === "ar") out.locale = raw.locale;
+  if (raw.uiDigits === "arabicIndic" || raw.uiDigits === "western") out.uiDigits = raw.uiDigits;
   if (raw.theme === "system" || raw.theme === "light" || raw.theme === "dark") {
     out.theme = raw.theme;
   }
@@ -444,6 +480,25 @@ export const useAppStore = create<AppState>((set, get) => {
     fillTool: null,
     fillSignature: null,
     fillColor: "black",
+    formsMode: "fill",
+    designTool: null,
+    formDesign: null,
+    setFormsMode(formsMode) {
+      set({ formsMode, designTool: null, pendingNote: null });
+    },
+    setDesignTool(designTool) {
+      set({ designTool });
+    },
+    updateFormDesign(change) {
+      set((state) => ({
+        formDesign:
+          typeof change === "function"
+            ? change(state.formDesign)
+            : state.formDesign
+              ? { ...state.formDesign, ...change }
+              : null,
+      }));
+    },
     setFillColor(fillColor) {
       set({ fillColor });
     },
@@ -523,6 +578,7 @@ export const useAppStore = create<AppState>((set, get) => {
     paletteOpen: false,
 
     setLocale: (locale) => update("locale", locale),
+    setUiDigits: (uiDigits) => update("uiDigits", uiDigits),
     setTheme: (theme) => update("theme", theme),
     setReadingTheme: (readingTheme) => update("readingTheme", readingTheme),
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),

@@ -65,7 +65,9 @@
       "quitDiscarding": "Quit without saving",
       "cancelClose": "Keep open",
       "settings": "Settings…",
-      "closeSettings": "Close settings"
+      "closeSettings": "Close settings",
+      "digitsArabicIndic": "Arabic interface: Arabic-Indic digits (١٢٣)",
+      "digitsWestern": "Arabic interface: Western digits (123)"
     },
     "tabs": {
       "next": "Next tab",
@@ -188,7 +190,9 @@
       "cancel": "Cancel protection changes"
     },
     "forms": {
-      "openTool": "Fill in form fields"
+      "openTool": "Fill in form fields",
+      "fillMode": "Switch to filling in fields",
+      "designMode": "Design form fields"
     },
     "form": {
       "setValue": "Fill in a field"
@@ -259,6 +263,38 @@
       "download": "Download OCR model",
       "cancel": "Cancel model download",
       "delete": "Delete OCR model"
+    },
+    "formDesign": {
+      "select": "Select and move fields",
+      "text": "Draw a text field",
+      "checkbox": "Draw a check box",
+      "radio": "Draw a radio group",
+      "combo": "Draw a drop-down list",
+      "list": "Draw a list box",
+      "button": "Draw a push button",
+      "draw": "Draw a field",
+      "selectField": "Select a field",
+      "move": "Move a field",
+      "update": "Change a field",
+      "addButton": "Add a radio button",
+      "removeButton": "Remove this radio button",
+      "delete": "Delete the field",
+      "tabEarlier": "Earlier in tab order",
+      "tabLater": "Later in tab order",
+      "tabRowsLeftToRight": "Order by rows, left to right",
+      "tabRowsRightToLeft": "Order by rows, right to left",
+      "detect": "Find fields on this page",
+      "toggleDetected": "Include a found field",
+      "createDetected": "Make the found fields",
+      "cancelDetected": "Discard the found fields",
+      "moveLeft": "Move the field left",
+      "moveRight": "Move the field right",
+      "moveUp": "Move the field up",
+      "moveDown": "Move the field down",
+      "moveLeftMore": "Move the field left 10 points",
+      "moveRightMore": "Move the field right 10 points",
+      "moveUpMore": "Move the field up 10 points",
+      "moveDownMore": "Move the field down 10 points"
     }
   },
   "viewer": {
@@ -443,7 +479,8 @@
     },
     "exportedImages": "{{count}} image files were written.",
     "exportedText": "The text was saved as {{name}}.",
-    "compressedSaved": "The compressed copy was saved as {{name}}."
+    "compressedSaved": "The compressed copy was saved as {{name}}.",
+    "fieldsMade": "Fields made: {{n}}."
   },
   "split": {
     "title": "Split into files",
@@ -681,7 +718,8 @@
     "noPage": "Not on a page",
     "required": "(required)",
     "noChoice": "—",
-    "notPermitted": "This file's permissions do not allow filling in its form. Its owner password lifts that."
+    "notPermitted": "This file's permissions do not allow filling in its form. Its owner password lifts that.",
+    "design": "Make form fields"
   },
   "sign": {
     "fillHeading": "Fill",
@@ -824,7 +862,12 @@
   },
   "settings": {
     "title": "Settings",
-    "done": "Done"
+    "done": "Done",
+    "language": "Language",
+    "digits": "Numbers in the Arabic interface",
+    "digitsHint": "Page numbers, counts and zoom. Numbers inside documents are not changed.",
+    "digitsArabicIndic": "Arabic-Indic (١٢٣)",
+    "digitsWestern": "Western (123)"
   },
   "ocrModels": {
     "heading": "OCR models",
@@ -919,5 +962,97 @@
         "reordered": "Order fixed; read as {{read}}"
       }
     }
+  },
+  "formDesign": {
+    "mode": "Fill in or design",
+    "modes": {
+      "fill": "Fill in",
+      "design": "Design"
+    },
+    "toolsHeading": "Draw fields",
+    "tools": "What dragging on the page draws",
+    "hint": {
+      "select": "Click a field to select it; drag it to move it, or a corner to resize it. Pick a kind of field above to draw one.",
+      "text": "Drag on the page to draw a text field, or click to place one.",
+      "checkbox": "Drag or click on the page to place a check box.",
+      "radio": "Drag or click to place a radio group's first button; add more buttons below.",
+      "combo": "Drag on the page to draw a drop-down list.",
+      "list": "Drag on the page to draw a list box.",
+      "pushButton": "Drag on the page to draw a push button. It runs no scripts."
+    },
+    "notPermitted": "This file's permissions do not allow changing its form. Its owner password lifts that.",
+    "fieldHeading": "Field",
+    "noSelection": "Select a field on the page, or in the tab order below, to change it.",
+    "kinds": {
+      "text": "Text field",
+      "checkbox": "Check box",
+      "radio": "Radio group",
+      "combo": "Drop-down list",
+      "list": "List box",
+      "pushButton": "Push button",
+      "signature": "Signature field"
+    },
+    "name": "Name",
+    "nameHint": "What the field is called when the form is filled in or exported. No full stops.",
+    "tooltip": "Tooltip",
+    "required": "Required",
+    "readOnly": "Read-only",
+    "multiline": "Several lines",
+    "editable": "Allow typed text",
+    "multiSelect": "Allow several choices",
+    "bordered": "Border",
+    "defaultValue": "Default value",
+    "maxLen": "Longest text",
+    "maxLenHint": "Characters; leave empty for no limit.",
+    "checkedByDefault": "Ticked by default",
+    "caption": "Label",
+    "align": "Alignment",
+    "aligns": {
+      "start": "Start",
+      "center": "Centre",
+      "end": "End"
+    },
+    "alignHint": "Start and end follow the text: Arabic starts at the right.",
+    "font": "Font",
+    "fonts": {
+      "own": "The field's own font",
+      "sans": "Sans",
+      "naskh": "Naskh"
+    },
+    "size": "Size",
+    "sizeAuto": "Fit to the box",
+    "choices": "Choices",
+    "choicesHint": "What is shown, and the value stored when it is chosen.",
+    "choiceLabel": "Shown",
+    "choiceValue": "Value",
+    "choiceLabelOf": "Choice {{n}}: what is shown",
+    "choiceValueOf": "Choice {{n}}: its value",
+    "removeChoice": "Remove this choice",
+    "addChoice": "Add a choice",
+    "buttons": "Buttons",
+    "buttonsHint": "The value each button stores when it is chosen.",
+    "selectButton": "Select button {{n}}",
+    "buttonValueOf": "Button {{n}}: its value",
+    "tabsHeading": "Tab order on page {{page}}",
+    "noFieldsOnPage": "No fields on this page.",
+    "detectHeading": "Find fields",
+    "detectHint": "On a printed form, Mirsam can suggest fields where the page has lines and boxes to fill in. You choose which to make.",
+    "detectNone": "No blanks to fill in were found on page {{page}}.",
+    "detectClose": "Close",
+    "detectReview": "Found on page {{page}}: {{n}}. Untick any that are not fields, then make the rest.",
+    "detectCreate": "Make the ticked fields ({{n}})",
+    "detectCancel": "Discard",
+    "unnamed": "No label found",
+    "names": {
+      "text": "Text {{n}}",
+      "checkbox": "Check box {{n}}",
+      "radio": "Choice group {{n}}",
+      "combo": "Drop-down {{n}}",
+      "list": "List {{n}}",
+      "pushButton": "Button {{n}}",
+      "default": "Field {{n}}"
+    },
+    "choice": "Choice {{n}}",
+    "defaultCaption": "Button"
   }
 }

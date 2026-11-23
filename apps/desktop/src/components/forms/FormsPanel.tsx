@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
-import { Checkbox, Radio, RadioGroup } from "react-aria-components";
+import {
+  Checkbox,
+  type Key,
+  Radio,
+  RadioGroup,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { backend, type FormField, type FormInfo } from "../../backend";
 import { isCommandEnabled, runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
+import { FormDesignPanel } from "./FormDesignPanel";
 import styles from "./FormsPanel.module.css";
 
 /** Sets a field's value through the command registry. */
@@ -19,13 +27,49 @@ function pageOf(field: FormField): number | null {
 }
 
 /**
- * The Forms tool (ADR 0045): every field of the document's form, page by
+ * The Forms tool: fill fields in (ADR 0045), or make them (the form
+ * designer, ADR 0047), switched at its top.
+ */
+export function FormsPanel({ documentId }: { documentId: number }) {
+  const { t } = useTranslation();
+  const mode = useAppStore((state) => state.formsMode);
+  return (
+    <div className={styles.panel}>
+      <ToggleButtonGroup
+        aria-label={t("formDesign.mode")}
+        selectionMode="single"
+        disallowEmptySelection
+        selectedKeys={[mode]}
+        className={styles.modes}
+        onSelectionChange={(keys: Set<Key>) => {
+          const [next] = keys;
+          void runCommand(next === "design" ? "forms.designMode" : "forms.fillMode");
+        }}
+      >
+        <ToggleButton id="fill" className={styles.mode}>
+          {t("formDesign.modes.fill")}
+        </ToggleButton>
+        <ToggleButton id="design" className={styles.mode}>
+          {t("formDesign.modes.design")}
+        </ToggleButton>
+      </ToggleButtonGroup>
+      {mode === "design" ? (
+        <FormDesignPanel documentId={documentId} />
+      ) : (
+        <FillPanel documentId={documentId} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Filling in (ADR 0045): every field of the document's form, page by
  * page, filled in here. Each change is one undo step; the engine draws the
  * field's new appearance (shaped Arabic, right to left) on the page. Text
  * fields take their direction from what is typed (`dir="auto"`), so Arabic
  * and English values read correctly in either UI language.
  */
-export function FormsPanel({ documentId }: { documentId: number }) {
+function FillPanel({ documentId }: { documentId: number }) {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
   const revision = useAppStore(
@@ -69,6 +113,9 @@ export function FormsPanel({ documentId }: { documentId: number }) {
         <p className={styles.hint}>{t("forms.none")}</p>
         <Button variant="secondary" onPress={() => void runCommand("sign.openTool")}>
           {t("forms.useFillAndSign")}
+        </Button>
+        <Button variant="secondary" onPress={() => void runCommand("forms.designMode")}>
+          {t("forms.design")}
         </Button>
       </div>
     );

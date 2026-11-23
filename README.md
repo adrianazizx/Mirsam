@@ -19,3 +19,8 @@ for the text engine (Milestone 3) is in.
 Mirsam was called Safha (صفحة) while it had a working name. Code identifiers (the `safha-core`
 crate, `SAFHA_*` environment variables, the `safha:` URI scheme) still carry that name; they will
 be renamed once the milestone branches now in progress have merged.
+
+## Licence
+
+Mirsam is released under the [MIT licence](LICENSE). Third-party components keep their own
+licences, listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

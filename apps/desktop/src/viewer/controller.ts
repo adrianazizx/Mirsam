@@ -120,6 +120,15 @@ export interface ViewerCallbacks {
   onMoveItem?(item: SelectedAnnotation, rect: ViewRect, page: number): void;
   /** A drag marked an area (Protect tool): the box on the displayed page. */
   onMarkArea?(page: number, rect: ViewRect): void;
+  /**
+   * The form designer drew a new field (ADR 0047): its box on the displayed
+   * page; a click without a drag gives an empty box at the press.
+   */
+  onDrawField?(page: number, rect: ViewRect): void;
+  /** A field's widget was pressed in the form designer; null: an empty place. */
+  onSelectField?(field: number | null, widget: number): void;
+  /** A field's widget was dragged, or resized by a handle, to `rect` on its page. */
+  onMoveField?(field: number, widget: number, page: number, rect: ViewRect): void;
   /** The Edit tool placed new page text (ADR 0021): its top-left corner and width. */
   onPlaceText?(page: number, x: number, y: number, width: number): void;
   /** The Edit tool pressed a paragraph of the page's own text (ADR 0023). */
@@ -143,8 +152,9 @@ export interface SelectedAnnotation {
 /**
  * What a press on a page does: select text and annotations; place a note,
  * draw, or erase (the Comment tool); mark an area to redact (the Protect
- * tool, ADR 0042); place Fill & Sign items (the Sign tool, ADR 0045); or
- * nothing (other tools).
+ * tool, ADR 0042); place Fill & Sign items (the Sign tool, ADR 0045);
+ * select and move form fields, or draw new ones (the form designer, ADR
+ * 0047); or nothing (other tools).
  */
 export type ViewerMode =
   | "select"
@@ -155,7 +165,47 @@ export type ViewerMode =
   | "eraser"
   | "redact"
   | "place"
+  | "design"
+  | "draw"
   | "none";
+
+/** A form field's widget as the form designer shows it (ADR 0047). */
+export interface FieldBox {
+  field: number;
+  widget: number;
+  page: number;
+  /** Its box on the displayed page. */
+  rect: ViewRect;
+  /** Its field's place in its page's tab order, from 1; 0 shows no number (a group's other buttons). */
+  tab: number;
+}
+
+/** The smallest a field is made by its handles, in points. */
+const MIN_FIELD_SIDE = 4;
+
+/**
+ * `rect` resized by dragging its `corner` to `point`, about the opposite
+ * corner, freely (a field's appearance is drawn again for its new box), at
+ * least `MIN_FIELD_SIDE` and inside a page of `width` × `height` points.
+ */
+export function freelyResizedRect(
+  rect: ViewRect,
+  corner: Corner,
+  point: { x: number; y: number },
+  width: number,
+  height: number,
+): ViewRect {
+  const anchor = cornerOf(rect, OPPOSITE[corner]);
+  const x = Math.max(0, Math.min(width, point.x));
+  const y = Math.max(0, Math.min(height, point.y));
+  const east = corner === "ne" || corner === "se";
+  const south = corner === "sw" || corner === "se";
+  const left = east ? anchor.x : Math.min(x, anchor.x - MIN_FIELD_SIDE);
+  const right = east ? Math.max(x, anchor.x + MIN_FIELD_SIDE) : anchor.x;
+  const top = south ? anchor.y : Math.min(y, anchor.y - MIN_FIELD_SIDE);
+  const bottom = south ? Math.max(y, anchor.y + MIN_FIELD_SIDE) : anchor.y;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
 
 /** Fill & Sign items, which a press with the Sign tool selects rather than places over. */
 const FILL_ITEMS: readonly string[] = ["fillText", "mark", "signature"];
@@ -166,8 +216,8 @@ const HANDLE_REACH = 7;
 /** The smallest a Fill & Sign item is made by its handles, in points. */
 const MIN_ITEM_SIDE = 6;
 
-/** A corner of a Fill & Sign item's box, on the displayed page. */
-type Corner = "nw" | "ne" | "sw" | "se";
+/** A corner of a Fill & Sign item's or a field's box, on the displayed page. */
+export type Corner = "nw" | "ne" | "sw" | "se";
 const CORNERS: readonly Corner[] = ["nw", "ne", "sw", "se"];
 
 /** Where `corner` of `rect` is. */
@@ -265,6 +315,12 @@ export interface ViewerClassNames {
   fillMoving?: string;
   /** A selected Fill & Sign item's corner handles, which resize it. */
   fillHandle?: string;
+  /** A form field's widget in the form designer, the selected one, and its tab number (ADR 0047). */
+  fieldBox?: string;
+  fieldBoxSelected?: string;
+  fieldTab?: string;
+  /** A field being drawn, moved, or resized. */
+  fieldDraft?: string;
 }
 
 export interface ViewerOptions {
@@ -540,6 +596,26 @@ export class ViewerController {
   private readonly redactMarks = new Map<number, ViewRect[]>();
   /** The OCR word under review (ADR 0035). */
   private reviewMark: { page: number; rect: ViewRect } | null = null;
+  /** Form fields' widgets in the form designer, by page, and the selected one (ADR 0047). */
+  private readonly fieldBoxes = new Map<number, FieldBox[]>();
+  /** Fields found on a flat page, waiting for review, by page. */
+  private readonly fieldSuggestions = new Map<number, ViewRect[]>();
+  private selectedField: { field: number; widget: number } | null = null;
+  /** A field being drawn, moved, or resized in the form designer. */
+  private fieldGesture:
+    | { kind: "draw"; pointerId: number; page: number; from: PagePoint; to: PagePoint }
+    | {
+        kind: "move" | "resize";
+        pointerId: number;
+        box: FieldBox;
+        corner: Corner | null;
+        grab: { x: number; y: number };
+        clientX: number;
+        clientY: number;
+        rect: ViewRect;
+        moved: boolean;
+      }
+    | null = null;
   /** The ink annotations the eraser has touched during this press. */
   private erasing: { pointerId: number; page: number; indices: Set<number> } | null = null;
   /** Where the note editor sits: a new note's icon, or the selected note. */
@@ -873,6 +949,176 @@ export class ViewerController {
     for (const page of new Set([...previous, ...this.redactMarks.keys()])) {
       const slot = this.slots.get(page);
       if (slot) this.paintOverlay(slot);
+    }
+  }
+
+  /**
+   * Shows form fields' widgets for the form designer (ADR 0047), with their
+   * tab order, and which one is selected; none outside it.
+   */
+  setFieldBoxes(
+    boxes: FieldBox[],
+    selected: { field: number; widget: number } | null,
+    suggestions: { page: number; rect: ViewRect }[] = [],
+  ): void {
+    const previous = new Set([...this.fieldBoxes.keys(), ...this.fieldSuggestions.keys()]);
+    this.fieldBoxes.clear();
+    for (const box of boxes) {
+      this.fieldBoxes.set(box.page, [...(this.fieldBoxes.get(box.page) ?? []), box]);
+    }
+    this.fieldSuggestions.clear();
+    for (const { page, rect } of suggestions) {
+      this.fieldSuggestions.set(page, [...(this.fieldSuggestions.get(page) ?? []), rect]);
+    }
+    this.selectedField = selected;
+    const shown = [...this.fieldBoxes.keys(), ...this.fieldSuggestions.keys()];
+    for (const page of new Set([...previous, ...shown])) {
+      const slot = this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+  }
+
+  /** The selected field's widget, where it is shown. */
+  private selectedFieldBox(): FieldBox | null {
+    const selected = this.selectedField;
+    if (!selected) return null;
+    for (const boxes of this.fieldBoxes.values()) {
+      const box = boxes.find((b) => b.field === selected.field && b.widget === selected.widget);
+      if (box) return box;
+    }
+    return null;
+  }
+
+  /** The field widget under `point`: the smallest, so one inside another can be pressed. */
+  private fieldBoxAt(point: PagePoint | null): FieldBox | null {
+    if (!point) return null;
+    const under = (this.fieldBoxes.get(point.page) ?? []).filter(
+      (box) =>
+        point.x >= box.rect.x &&
+        point.x <= box.rect.x + box.rect.width &&
+        point.y >= box.rect.y &&
+        point.y <= box.rect.y + box.rect.height,
+    );
+    under.sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height);
+    return under[0] ?? null;
+  }
+
+  /** The corner handle of the selected field a press at `point` grabs, if any. */
+  private fieldHandleAt(point: PagePoint | null): Corner | null {
+    const box = this.selectedFieldBox();
+    if (!point || !box || box.page !== point.page) return null;
+    const layoutBox = this.layout?.boxes[point.page];
+    const size = this.sizes?.[point.page];
+    if (!layoutBox || !size || layoutBox.width <= 0) return null;
+    const reach = (HANDLE_REACH * size.width) / layoutBox.width;
+    const inward = Math.min(reach, Math.min(box.rect.width, box.rect.height) / 4);
+    const near = (offset: number, outwardSign: number) =>
+      offset * outwardSign >= 0 ? Math.abs(offset) <= reach : Math.abs(offset) <= inward;
+    return (
+      CORNERS.find((corner) => {
+        const at = cornerOf(box.rect, corner);
+        const east = corner === "ne" || corner === "se";
+        const south = corner === "sw" || corner === "se";
+        return near(point.x - at.x, east ? 1 : -1) && near(point.y - at.y, south ? 1 : -1);
+      }) ?? null
+    );
+  }
+
+  /** A press in the form designer: resize, move, select, or draw a field. */
+  private startFieldGesture(event: PointerEvent, point: PagePoint, mode: ViewerMode): void {
+    this.setSelection(null);
+    this.setSelectedAnnotation(null);
+    const corner = this.fieldHandleAt(point);
+    const selected = this.selectedFieldBox();
+    const box = corner && selected ? selected : this.fieldBoxAt(point);
+    if (box) {
+      if (!corner) this.callbacks.onSelectField?.(box.field, box.widget);
+      this.fieldGesture = {
+        kind: corner ? "resize" : "move",
+        pointerId: event.pointerId,
+        box,
+        corner,
+        grab: { x: point.x - box.rect.x, y: point.y - box.rect.y },
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect: box.rect,
+        moved: false,
+      };
+    } else if (mode === "draw") {
+      this.fieldGesture = {
+        kind: "draw",
+        pointerId: event.pointerId,
+        page: point.page,
+        from: point,
+        to: point,
+      };
+    } else {
+      this.callbacks.onSelectField?.(null, 0);
+      return;
+    }
+    this.content.setPointerCapture?.(event.pointerId);
+  }
+
+  /** Follows the pointer while a field is drawn, moved, or resized. */
+  private extendFieldGesture(event: PointerEvent): void {
+    const gesture = this.fieldGesture;
+    if (!gesture) return;
+    const page = gesture.kind === "draw" ? gesture.page : gesture.box.page;
+    const point = this.pointOnPage(page, event.clientX, event.clientY);
+    const size = this.sizes?.[page];
+    if (!point || !size) return;
+    if (gesture.kind === "draw") {
+      gesture.to = {
+        page,
+        x: Math.max(0, Math.min(size.width, point.x)),
+        y: Math.max(0, Math.min(size.height, point.y)),
+      };
+    } else {
+      if (!gesture.moved) {
+        const travelled = Math.hypot(
+          event.clientX - gesture.clientX,
+          event.clientY - gesture.clientY,
+        );
+        if (travelled < MOVE_SLOP) return;
+        gesture.moved = true;
+      }
+      const { rect } = gesture.box;
+      if (gesture.kind === "resize" && gesture.corner) {
+        gesture.rect = freelyResizedRect(rect, gesture.corner, point, size.width, size.height);
+      } else {
+        const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
+        gesture.rect = {
+          x: clamp(point.x - gesture.grab.x, size.width - rect.width),
+          y: clamp(point.y - gesture.grab.y, size.height - rect.height),
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+    }
+    const slot = this.slots.get(page);
+    if (slot) this.paintOverlay(slot);
+  }
+
+  /** Ends a field gesture: the new field, or the widget's new box. */
+  private finishFieldGesture(event: PointerEvent): void {
+    const gesture = this.fieldGesture;
+    if (!gesture) return;
+    this.fieldGesture = null;
+    this.content.releasePointerCapture?.(event.pointerId);
+    const page = gesture.kind === "draw" ? gesture.page : gesture.box.page;
+    const slot = this.slots.get(page);
+    if (slot) this.paintOverlay(slot);
+    if (event.type === "pointercancel") return;
+    if (gesture.kind === "draw") {
+      const { from, to } = gesture;
+      this.callbacks.onDrawField?.(page, {
+        x: Math.min(from.x, to.x),
+        y: Math.min(from.y, to.y),
+        width: Math.abs(to.x - from.x),
+        height: Math.abs(to.y - from.y),
+      });
+    } else if (gesture.moved) {
+      this.callbacks.onMoveField?.(gesture.box.field, gesture.box.widget, page, gesture.rect);
     }
   }
 
@@ -1348,6 +1594,10 @@ export class ViewerController {
       this.content.setPointerCapture?.(event.pointerId);
       return;
     }
+    if (mode === "design" || mode === "draw") {
+      this.startFieldGesture(event, point, mode);
+      return;
+    }
     if (mode === "select" || mode === "place") {
       // A press on a selected item's corner handle resizes it (ADR 0045).
       const corner = this.handleAt(point);
@@ -1450,6 +1700,10 @@ export class ViewerController {
       if (point) this.eraseAt(point);
       return;
     }
+    if (this.fieldGesture && event.pointerId === this.fieldGesture.pointerId) {
+      this.extendFieldGesture(event);
+      return;
+    }
     if (this.marking && event.pointerId === this.marking.pointerId) {
       const point = this.pointOnPage(this.marking.page, event.clientX, event.clientY);
       if (point) {
@@ -1498,6 +1752,10 @@ export class ViewerController {
     }
     if (this.erasing && event.pointerId === this.erasing.pointerId) {
       this.finishErasing(event);
+      return;
+    }
+    if (this.fieldGesture && event.pointerId === this.fieldGesture.pointerId) {
+      this.finishFieldGesture(event);
       return;
     }
     if (this.moving && event.pointerId === this.moving.pointerId) {
@@ -1782,6 +2040,17 @@ export class ViewerController {
   private updateCursor(event: PointerEvent): void {
     const mode = this.mode();
     this.content.dataset.mode = mode;
+    if (mode === "design" || mode === "draw") {
+      delete this.content.dataset.overText;
+      const point = this.pointAt(event.clientX, event.clientY);
+      const corner = this.fieldHandleAt(point);
+      if (corner)
+        this.content.dataset.overHandle = corner === "nw" || corner === "se" ? "nwse" : "nesw";
+      else delete this.content.dataset.overHandle;
+      if (!corner && this.fieldBoxAt(point)) this.content.dataset.overItem = "";
+      else delete this.content.dataset.overItem;
+      return;
+    }
     if (mode !== "select") {
       delete this.content.dataset.overText;
       const point = mode === "none" ? null : this.pointAt(event.clientX, event.clientY);
@@ -1919,6 +2188,7 @@ export class ViewerController {
       place(element, this.reviewMark.rect);
       slot.overlay.append(element);
     }
+    this.paintFieldBoxes(slot, place);
     const reshaped = [
       this.moving && { ...this.moving, page: this.moving.page },
       this.resizing && { ...this.resizing, page: this.resizing.item.page },
@@ -1981,6 +2251,75 @@ export class ViewerController {
           path.classList.add(this.classNames.inkErasing);
           svg.append(path);
         }
+      }
+    }
+  }
+
+  /** The form designer's field boxes, tab numbers, handles, and the field being drawn (ADR 0047). */
+  private paintFieldBoxes(slot: Slot, place: (element: HTMLElement, rect: ViewRect) => void): void {
+    const size = this.sizes?.[slot.page];
+    const names = this.classNames;
+    if (!size || !names.fieldBox) return;
+    const gesture = this.fieldGesture;
+    for (const box of this.fieldBoxes.get(slot.page) ?? []) {
+      const selected =
+        this.selectedField?.field === box.field && this.selectedField.widget === box.widget;
+      const element = document.createElement("div");
+      element.className = selected
+        ? `${names.fieldBox} ${names.fieldBoxSelected ?? ""}`
+        : names.fieldBox;
+      element.dataset.field = String(box.field);
+      place(element, box.rect);
+      if (box.tab > 0) {
+        const tab = document.createElement("span");
+        tab.className = names.fieldTab ?? "";
+        tab.textContent = String(box.tab);
+        element.append(tab);
+      }
+      slot.overlay.append(element);
+    }
+    const moving =
+      gesture && gesture.kind !== "draw" && gesture.moved && gesture.box.page === slot.page
+        ? gesture.rect
+        : null;
+    const drawing =
+      gesture?.kind === "draw" && gesture.page === slot.page
+        ? {
+            x: Math.min(gesture.from.x, gesture.to.x),
+            y: Math.min(gesture.from.y, gesture.to.y),
+            width: Math.abs(gesture.to.x - gesture.from.x),
+            height: Math.abs(gesture.to.y - gesture.from.y),
+          }
+        : null;
+    for (const rect of this.fieldSuggestions.get(slot.page) ?? []) {
+      const element = document.createElement("div");
+      element.className = names.fieldDraft ?? names.fieldBox;
+      element.dataset.suggested = "";
+      place(element, rect);
+      slot.overlay.append(element);
+    }
+    const draft = moving ?? drawing;
+    if (draft) {
+      const element = document.createElement("div");
+      element.className = names.fieldDraft ?? names.fieldBox;
+      place(element, draft);
+      slot.overlay.append(element);
+    }
+    const selected = this.selectedFieldBox();
+    if (
+      selected?.page === slot.page &&
+      names.fillHandle &&
+      !(gesture?.kind === "move" && gesture.moved)
+    ) {
+      const rect = gesture?.kind === "resize" && gesture.moved ? gesture.rect : selected.rect;
+      for (const corner of CORNERS) {
+        const at = cornerOf(rect, corner);
+        const element = document.createElement("div");
+        element.className = names.fillHandle;
+        element.dataset.corner = corner;
+        element.style.insetInlineStart = `${(100 * at.x) / size.width}%`;
+        element.style.insetBlockStart = `${(100 * at.y) / size.height}%`;
+        slot.overlay.append(element);
       }
     }
   }

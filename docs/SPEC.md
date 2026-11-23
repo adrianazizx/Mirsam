@@ -70,7 +70,7 @@ Proceed on the assumption unless the user says otherwise.
 | # | Decision | Assumption | Why it matters |
 |---|---|---|---|
 | D1 | App shell | **Tauri 2** (Rust core + web UI) | Small installer, low memory, native-speed core. Alternative: Electron (heavier, but identical rendering on every OS). |
-| D2 | Licence / business model | **Closed-source or permissive licence** | Rules out AGPL engines such as MuPDF unless a commercial licence is bought (section 10). |
+| D2 | Licence / business model | **Decided (2026-11-23): MIT** ([LICENSE](../LICENSE)) | Permissive, so GPL/AGPL engines such as MuPDF stay ruled out unless a commercial licence is bought (section 10). |
 | D3 | AI features | **Optional, off by default**, bring-your-own key or local model | Privacy promise; no backend to run. |
 | D4 | Cloud / accounts / collaboration | **None in v1** | Keeps the app fully offline. |
 | D5 | E-signature *requests* (send to others, track) | **Out of scope for v1** | Needs a server. Local signing is in scope. |
@@ -482,6 +482,7 @@ The KITAB-Bench benchmark is a useful public reference for Arabic OCR and docume
 ## 10. Licensing rules
 
 - **Allowed without asking:** MIT, BSD, Apache-2.0, ISC, Zlib, MPL-2.0 (dynamic use), OFL (fonts).
+- **Also allowed (approved by the owner, 2026-11-22/23):** MIT-0, Unicode-3.0, CC0-1.0, 0BSD, SQLite's public-domain dedication, Apache-2.0 WITH LLVM-exception; NCSA for development tools that never ship (fuzzing); Unlicense inside the llama.cpp runtime under ADR 0034's conditions.
 - **Ask the user first:** LGPL (linking constraints), any "community" or non-commercial licence, model weights with custom terms.
 - **Do not use** (under assumption D2): AGPL/GPL components. This specifically includes **MuPDF / PyMuPDF** (AGPL or paid commercial licence from Artifex), Ghostscript, Poppler, and iText. If the user decides to open-source under AGPL or buy a commercial licence, MuPDF becomes a strong option for editing and should be re-evaluated.
 - Keep `THIRD_PARTY_LICENSES.md` generated automatically in CI; fail the build on a disallowed licence.
@@ -500,7 +501,7 @@ The KITAB-Bench benchmark is a useful public reference for Arabic OCR and docume
 | Typing latency while editing text | ≤ 32 ms per keystroke |
 | 1,000-page document | Opens without loading all pages; memory stays bounded (the app's own process < 500 MB; the system webview's processes are measured but not budgeted) |
 | In-document search, 500 pages | ≤ 1 s after first index |
-| Installer size (without OCR models) | ≤ 60 MB |
+| Installer size (without OCR models) | ≤ 60 MB, excluding a bundled web engine (the Linux AppImage carries WebKitGTK and GTK; decided 2026-11-23) |
 
 These budgets cover interactive use. **OCR jobs are exempt from speed targets** — they are judged on the accuracy gates in section 8. The only OCR performance rule is that a running job must not degrade UI responsiveness below the budgets above.
 
