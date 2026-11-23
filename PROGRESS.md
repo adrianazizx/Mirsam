@@ -1075,14 +1075,41 @@ What the runs turned up:
   timer, which is what it timed. Visible runs: 16–17 ms. The self-test now records
   `typingWithoutFrames` and the checker does not judge typing then (it warns).
 - **The window opened hidden in 11 of 18 release runs** (launched from a shell while the owner was
-  using the Mac; the release bundle is not activated). Frame and blank-time numbers from those
-  runs are invalid and were not used; the scroll benchmark rejects them itself.
-- **Unexplained:** with the window hidden, this branch's scroll benchmark never got past its last
-  13 s idle (`setTimeout` not firing for 4 minutes; 4 of 4 runs), while `main` finished, slowly
-  (48–163 s, 4 of 4). With a visible window this branch finishes normally (41 s). The shell's
-  commands stop arriving during the wait, so either WebKit suspended the hidden page's timers or
-  the shell's main thread stopped answering; not found in the time available. Harmless for a
-  visible app, but to be understood (follow-up).
+  using the Mac; WindowServer made each launch the front process, but WebKit saw its window as
+  occluded). Frame and blank-time numbers from those runs are invalid and were not used; the
+  scroll benchmark rejects them itself.
+- **Hidden-window stall: WebKit suspends a hidden page, in both builds; not this branch's code**
+  (investigated 2026-11-23; evidence and the probe in the session notes, `m7-hidden-stall.md`).
+  On macOS 14+ a WKWebView's `inactiveSchedulingPolicy` defaults to *suspend* (we leave Tauri's
+  `backgroundThrottling` unset). Once a hidden page has no WebKit activity left (its "Page Load"
+  activity ends 3 s after the load), WebKit lets RunningBoard suspend the WebContent process. No
+  timer fires again until the window's activity state changes. The benchmark's 13 s idle is the
+  first wait long enough to be caught.
+  - WebKit's own log (`log show`, category `ProcessSuspension`) shows all 7 earlier hidden runs
+    suspended 4–8 s after launch (`setThrottleState … type 0`).
+  - The 4 `main` runs were resumed (`ProcessDidResume`, reason `WebPage_SetActivityState`) at 48,
+    87, 108 and 163 s, each within 50 ms of the owner clicking into another app or switching
+    Spaces (WindowServer's front-process changes).
+  - The branch's 3 hidden runs got no such change before the 240 s kill. In two of them the owner's
+    click had already moved focus away 0.85 s after launch, before the suspension. Alternating the
+    runs made this likely: a `main` run ended because the owner clicked, and the next run (the
+    branch's) launched while they were still clicking.
+  - Controlled (window kept hidden and never focused; temporary switches, since removed): `main`
+    stalls at the same step (2 of 2), and so does this branch (2 of 2), including with every
+    crash-report piece switched off (marker thread, IPC wrapper, UI capture, boundary, listener,
+    marks). While stalled, the shell's main thread waits idle in its event loop (`sample`). With
+    the policy set to none, this branch finishes hidden in 19 s.
+  - Harmless for the product. Only hidden windows are suspended, and they resume when shown.
+    Recovery files are written by the shell. The UI's own timers (such as the debounced
+    reading-position save) wait until the window is shown. A hidden self-test run is invalid
+    anyway, but it hung until the harness's timeout.
+  - **Fixed for self-tests:** in `devtools` builds launched by the harness (`SAFHA_SELFTEST_OUT`
+    set), every window keeps running when hidden (Tauri's `backgroundThrottling: disabled`;
+    `diagnostics::selftest_throttling`). This applies to the configured main window and to
+    windows opened later. The product keeps WebKit's default. A hidden scroll benchmark now ends
+    in 17–19 s with the checker's "the window was not on screen" verdict (2 of 2 runs, no
+    suspension in WebKit's log). Visible runs are unaffected: the policy only applies to windows
+    that are not on screen.
 - Nothing over or near a budget otherwise: the nearest is the scroll benchmark's p95 (17–18 ms
   against 20), which is WKWebView's own frame jitter (ADR 0011).
 
@@ -1097,8 +1124,7 @@ report clean. UI: 302 tests in 33 files, Biome, `tsc` and the production build c
 `crash-selftest.sh` `panic`, `thread-panic` and `abort`; release bundle: self-tests and
 `crash-selftest.sh panic`.
 
-**Not done / to do next:** the crash server decision (owner item 25); the hidden-window stall
-above; re-run the scroll benchmark several times on an idle Mac with the window visible (owner
+**Not done / to do next:** the crash server decision (owner item 25); re-run the scroll benchmark several times on an idle Mac with the window visible (owner
 item 16); Windows: a real crash through WER, and `.pdb` files kept per release so its frames can
 be symbolicated; the Arabic strings for crash reports need the native-speaker review (owner
 item 11).

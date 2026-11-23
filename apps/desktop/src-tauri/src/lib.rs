@@ -161,7 +161,15 @@ macro_rules! product_commands {
 
 pub fn run() {
     let started = Instant::now();
-    let context = tauri::generate_context!();
+    #[cfg_attr(not(feature = "devtools"), allow(unused_mut))]
+    let mut context = tauri::generate_context!();
+    // A self-test's windows keep running when hidden (`diagnostics::selftest_throttling`).
+    #[cfg(feature = "devtools")]
+    if let Some(policy) = diagnostics::selftest_throttling() {
+        for window in &mut context.config_mut().app.windows {
+            window.background_throttling = Some(policy.clone());
+        }
+    }
     let documents = launch_documents();
 
     // One running copy per state directory (ADR 0046): a later copy hands

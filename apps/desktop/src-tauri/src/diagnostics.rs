@@ -34,6 +34,17 @@ pub struct SelftestReport {
     canvas_png: Option<String>,
 }
 
+/// How a self-test run's windows behave when they are not on screen: they keep
+/// running. By default WebKit (macOS 14 and later) suspends the page of a
+/// hidden or occluded window once it is idle, and no timer fires until the
+/// window is shown again; a run whose window opened hidden then hangs until
+/// the harness kills it instead of reporting that its window was not on
+/// screen (PROGRESS.md, M7 crash reports and performance). `None` outside a
+/// self-test: the product keeps WebKit's default.
+pub fn selftest_throttling() -> Option<tauri::utils::config::BackgroundThrottlingPolicy> {
+    std::env::var_os("SAFHA_SELFTEST_OUT").map(|_| tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+}
+
 /// During a self-test run, keeps the window above others so it is not
 /// occluded: an occluded WKWebView gets no animation frames, which would
 /// invalidate every frame-time measurement (ADR 0007).
