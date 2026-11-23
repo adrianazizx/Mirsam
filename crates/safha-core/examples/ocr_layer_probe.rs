@@ -34,7 +34,7 @@ fn main() {
     let blank = blank_pdf();
     let document = engine.open_bytes(blank.clone(), None).expect("blank opens");
     let placement = document.ocr_placement(0).expect("placement");
-    let layer = PageLayer { page: 0, quality: LayerQuality::Final, lines: lines(), placement };
+    let layer = PageLayer { page: 0, quality: LayerQuality::Final, lines: lines(), placement, clear: Default::default() };
     let expected: Vec<String> = probe_lines().iter().map(|(text, _)| squash(text)).collect();
 
     for order in [

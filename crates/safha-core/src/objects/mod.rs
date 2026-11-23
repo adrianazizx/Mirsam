@@ -1233,5 +1233,98 @@ pub fn object_with_group(
     }))
 }
 
+/// Which of the page's content streams are this app's OCR layer or text
+/// converted from one (ADR 0035, ADR 0039).
+fn our_streams(read: &PageRead<'_>) -> Vec<bool> {
+    read.content
+        .items
+        .iter()
+        .map(|item| {
+            read.file.resolve(item).and_then(|o| o.as_dict().cloned()).is_some_and(|d| {
+                d.get(crate::ocr::LAYER_KEY).is_some() || d.get(crate::ocr::CONVERTED_KEY).is_some()
+            })
+        })
+        .collect()
+}
+
+/// What text a page draws, for checking another tool's text layer (ADR 0038).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TextCensus {
+    /// Text-showing operators drawn invisibly (render modes 3 and 7), not by us.
+    pub invisible: usize,
+    /// Text-showing operators drawn visibly, not by us.
+    pub visible: usize,
+    /// The page holds a text layer of ours, or text converted from one.
+    pub ours: bool,
+    /// The largest image's share of the page's area (0–1).
+    pub image_share: f64,
+}
+
+/// Counts what text page `page` draws, and how much of it an image covers.
+pub fn text_census(bytes: &[u8], password: Option<&str>, page: usize, page_area: f64) -> Result<TextCensus> {
+    let read = read_page(bytes, password, page, page_area)?;
+    let ours = our_streams(&read);
+    let mut census = TextCensus { ours: ours.iter().any(|&o| o), ..TextCensus::default() };
+    for piece in &read.traced.pieces {
+        match piece.kind {
+            PieceKind::Text if ours.get(piece.stream).copied().unwrap_or(false) => {}
+            PieceKind::Text if piece.text.as_ref().is_some_and(|t| t.invisible) => census.invisible += 1,
+            PieceKind::Text => census.visible += 1,
+            PieceKind::Image | PieceKind::InlineImage => {
+                if let Some(b) = piece.bounds {
+                    census.image_share = census.image_share.max(area(&b) / page_area.max(1.0));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(census)
+}
+
+/// The bytes to append to `bytes` to remove another tool's invisible text
+/// (render modes 3 and 7: an OCR layer) from page `page` by byte range: all of
+/// it, or the operators whose glyphs' centre lies in `within` (page space,
+/// `[x0, y0, x1, y1]`). Each run leaves its advance behind, so text drawn
+/// after it in the same text object stays where it was (ADR 0038). This
+/// app's own layers are left alone: the layer writer replaces them whole.
+/// `None` when there is nothing to remove.
+pub fn invisible_text_update(
+    bytes: &[u8],
+    password: Option<&str>,
+    page: usize,
+    page_area: f64,
+    within: Option<[f64; 4]>,
+) -> Result<Option<Vec<u8>>> {
+    let read = read_page(bytes, password, page, page_area)?;
+    let ours = our_streams(&read);
+    let pieces: Vec<usize> = read
+        .traced
+        .pieces
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            p.kind == PieceKind::Text
+                && p.text.as_ref().is_some_and(|t| t.invisible)
+                && !ours.get(p.stream).copied().unwrap_or(false)
+                && within.is_none_or(|w| {
+                    p.bounds.is_some_and(|b| {
+                        let (x, y) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
+                        x >= w[0] && x <= w[2] && y >= w[1] && y <= w[3]
+                    })
+                })
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if pieces.is_empty() {
+        return Ok(None);
+    }
+    let object = Obj { kind: ObjectKind::Text, pieces, bounds: [0.0; 4] };
+    let mut plan = Plan::default();
+    for unit in &read.units(&object)? {
+        plan.splices.push(read.delete(unit));
+    }
+    Ok(Some(apply(&read, bytes, plan)?))
+}
+
 #[cfg(test)]
 mod tests;

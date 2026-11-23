@@ -89,6 +89,70 @@ pub struct PageLayer {
     /// Taken when the page was rendered for OCR, so a page rotated since still
     /// gets its words where the image has them.
     pub placement: [f32; 6],
+    /// Invisible text of another tool's layer the new layer replaces (ADR 0038):
+    /// removed by byte range in the same edit.
+    #[serde(default)]
+    pub clear: Clear,
+}
+
+/// Invisible text (render modes 3 and 7) written by another tool that a layer
+/// takes the place of. Our own layers are replaced whole, whatever this says.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Clear {
+    /// Nothing: other text stays.
+    #[default]
+    None,
+    /// All of the page's invisible text (replacing a poor text layer).
+    Page,
+    /// The invisible text whose glyphs' centres fall in this box on the
+    /// displayed page, in points (left, top, right, bottom): a region read again.
+    Region { rect: [f32; 4] },
+}
+
+impl PageLayer {
+    /// A fingerprint of what the layer says and where (not of `clear`): written
+    /// into the layer's stream as `/MirsamDigest`, so the review data that
+    /// produced the layer is found again from the document, whichever edits
+    /// were undone since (ADR 0037).
+    pub fn digest(&self) -> u32 {
+        let mut hash: u32 = 0x811c_9dc5;
+        let mut feed = |bytes: &[u8]| {
+            for b in bytes {
+                hash = (hash ^ u32::from(*b)).wrapping_mul(0x0100_0193);
+            }
+        };
+        feed(&[self.quality as u8]);
+        for line in &self.lines {
+            feed(&[0xFE, u8::from(line.rtl)]);
+            for word in &line.words {
+                feed(word.text.as_bytes());
+                feed(&[0xFF]);
+                for v in [word.left, word.top, word.right, word.bottom] {
+                    // Hundredths of a point: what the stream keeps.
+                    feed(&((v * 100.0).round() as i32).to_le_bytes());
+                }
+            }
+        }
+        hash
+    }
+}
+
+/// The key under which a layer's stream records [`PageLayer::digest`].
+pub const DIGEST_KEY: &[u8] = b"MirsamDigest";
+/// The key that marks a stream of page text converted from an OCR layer
+/// (ADR 0039); its value is the digest of the layer it came from.
+pub const CONVERTED_KEY: &[u8] = b"MirsamConverted";
+
+/// What a page holds of this app's OCR: its layer and the text converted from one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayerState {
+    /// The page's OCR layer, if it has one.
+    pub quality: Option<LayerQuality>,
+    /// The layer's digest (`None` for a layer written before digests, or none at all).
+    pub digest: Option<u32>,
+    /// The digest of the layer the page's text was converted from (ADR 0039).
+    pub converted: Option<u32>,
 }
 
 /// How the words of a line go into the content stream. Every variant writes
@@ -174,8 +238,36 @@ pub fn text_layer_update_with(
         update.object(number, 0, &object);
     };
 
-    // The font, once for every page of this update.
-    let font_number = {
+    // The font, once for every page of this update: the one an earlier layer of
+    // ours wrote, when every page here already uses it (a correction).
+    let reused = {
+        let ours: Vec<Option<u32>> = layers
+            .iter()
+            .map(|layer| {
+                let leaf = &tree.leaves[layer.page];
+                let fonts = tree
+                    .attribute(leaf, b"Resources")
+                    .and_then(|value| file.resolve(&value))
+                    .and_then(|value| value.as_dict().cloned())
+                    .and_then(|resources| resources.get(b"Font").and_then(|f| file.resolve(f)))
+                    .and_then(|fonts| fonts.as_dict().cloned())
+                    .unwrap_or_default();
+                fonts.0.iter().find_map(|(key, value)| match value {
+                    Object::Ref(number, 0) if key.starts_with(b"MOCR") && is_our_font(&file, value) => {
+                        Some(*number)
+                    }
+                    _ => None,
+                })
+            })
+            .collect();
+        match ours.first() {
+            Some(Some(first)) if ours.iter().all(|o| *o == Some(*first)) => Some(*first),
+            _ => None,
+        }
+    };
+    let font_number = if let Some(number) = reused {
+        number
+    } else {
         let (program, descriptor, map, to_unicode, cid_font, type0) =
             (take()?, take()?, take()?, take()?, take()?, take()?);
         let name = |n: &str| Object::Name(n.as_bytes().to_vec());
@@ -298,7 +390,10 @@ pub fn text_layer_update_with(
         }
         let number = take()?;
         let content = layer_content(layer, &font_name, order);
-        let marker = Dict(vec![(LAYER_KEY.to_vec(), Object::Name(layer.quality.name().to_vec()))]);
+        let marker = Dict(vec![
+            (LAYER_KEY.to_vec(), Object::Name(layer.quality.name().to_vec())),
+            (DIGEST_KEY.to_vec(), Object::Int(i64::from(layer.digest()))),
+        ]);
         stream(&mut update, number, marker, content.as_bytes());
         contents.push(Object::Ref(number, 0));
 
@@ -326,12 +421,35 @@ fn is_our_font(file: &File<'_>, value: &Object) -> bool {
 
 /// The OCR layer each page of the document has (`None` where it has none), in page order.
 pub(crate) fn layer_qualities(bytes: &[u8]) -> Result<Vec<Option<LayerQuality>>> {
+    Ok(layer_states(bytes)?.into_iter().map(|state| state.quality).collect())
+}
+
+/// What each page holds of this app's OCR (its layer, the text converted from
+/// one), in page order.
+pub(crate) fn layer_states(bytes: &[u8]) -> Result<Vec<LayerState>> {
     let Start { file, .. } = Start::read(bytes)?;
     let tree = PageTree::read(&file)?;
     tree.leaves
         .iter()
         .map(|leaf| {
-            Ok(page_contents(&file, &leaf.dict)?.iter().filter_map(|item| layer_of(&file, item)).max())
+            let mut state = LayerState::default();
+            for item in page_contents(&file, &leaf.dict)? {
+                let Some(dict) = file.resolve(&item).and_then(|o| o.as_dict().cloned()) else { continue };
+                let digest = |key: &[u8]| match dict.get(key) {
+                    Some(Object::Int(n)) => u32::try_from(*n).ok(),
+                    _ => None,
+                };
+                if let Some(quality) = dict.get(LAYER_KEY).and_then(Object::as_name).and_then(LayerQuality::from_name)
+                    && state.quality.is_none_or(|q| quality >= q)
+                {
+                    state.quality = Some(quality);
+                    state.digest = digest(DIGEST_KEY);
+                }
+                if dict.get(CONVERTED_KEY).is_some() {
+                    state.converted = digest(CONVERTED_KEY).or(Some(0));
+                }
+            }
+            Ok(state)
         })
         .collect()
 }

@@ -152,7 +152,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             runner.wake();
             job
         }
-        None => runner.submit(&path, "document", page_count, &(0..page_count).collect::<Vec<_>>())?,
+        None => runner.submit(
+            &path,
+            "document",
+            page_count,
+            &(0..page_count).collect::<Vec<_>>(),
+            safha_core::ocr::jobs::JobOptions::default(),
+        )?,
     };
     loop {
         if quitting.recv_timeout(Duration::from_millis(200)).is_ok() {
@@ -168,7 +174,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let bytes = host.document.lock().map_err(|_| "lock")?.bytes();
     std::fs::write(output, &*bytes)?;
-    let review = runner.review(&path)?;
+    let states = host.document.lock().map_err(|_| "lock")?.text_layer_states()?;
+    let review = runner.review(&path, &states, safha_core::ocr::ReviewFilter::default())?;
     println!("saved {} ({} bytes); {} pages on the review list", output.display(), bytes.len(), review.len());
     for page in review {
         println!(
