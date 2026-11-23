@@ -65,7 +65,9 @@
       "quitDiscarding": "إنهاء دون حفظ",
       "cancelClose": "إبقاء مفتوحًا",
       "settings": "الإعدادات…",
-      "closeSettings": "إغلاق الإعدادات"
+      "closeSettings": "إغلاق الإعدادات",
+      "digitsArabicIndic": "الواجهة العربية: أرقام هندية (١٢٣)",
+      "digitsWestern": "الواجهة العربية: أرقام غربية (123)"
     },
     "tabs": {
       "next": "التبويب التالي",
@@ -804,7 +806,12 @@
   },
   "settings": {
     "title": "الإعدادات",
-    "done": "تم"
+    "done": "تم",
+    "language": "اللغة",
+    "digits": "الأرقام في الواجهة العربية",
+    "digitsHint": "أرقام الصفحات والأعداد ونسبة التكبير. لا تتغير الأرقام داخل المستندات.",
+    "digitsArabicIndic": "هندية (١٢٣)",
+    "digitsWestern": "غربية (123)"
   },
   "ocrModels": {
     "heading": "نماذج التعرّف الضوئي",

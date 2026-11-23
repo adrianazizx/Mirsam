@@ -851,7 +851,7 @@ export interface Backend {
   saveViewState(documentId: number, view: SavedViewState): Promise<void>;
   /** The open tabs in order, restored at the next launch. */
   saveSession(documentIds: number[], active: number | null): Promise<void>;
-  /** Stored UI settings (`locale`, `theme`, `readingTheme`, `leftPanel`, `search.options`). */
+  /** Stored UI settings (`locale`, `uiDigits`, `theme`, `readingTheme`, `leftPanel`, `search.options`). */
   settings(): Promise<Record<string, string>>;
   setSetting(key: string, value: string): Promise<void>;
   /** Every page's size, read without loading pages. */

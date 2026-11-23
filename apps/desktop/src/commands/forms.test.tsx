@@ -292,7 +292,7 @@ describe("Fill & Sign (ADR 0045)", () => {
 describe("the Forms and Sign panels", () => {
   it.each([
     ["en", "Forms", "tenant.name", "Fields: 8"],
-    ["ar", "النماذج", "tenant.name", "الحقول: 8"],
+    ["ar", "النماذج", "tenant.name", "الحقول: ٨"],
   ] as const)("list the fields and fill them in %s", async (locale, heading, name, count) => {
     render(<App />);
     act(() => {

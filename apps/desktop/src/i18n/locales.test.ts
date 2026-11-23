@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { directionOf, formatNumber } from "./index";
+import { directionOf, formatNumber, formatTagWith, setUiDigits } from "./index";
 import ar from "./locales/ar.json";
 import en from "./locales/en.json";
 
@@ -47,7 +47,17 @@ describe("formatting", () => {
     expect(directionOf("ar")).toBe("rtl");
   });
 
-  it("uses Western digits in the Arabic UI chrome", () => {
-    expect(formatNumber(1234, "ar")).toMatch(/^1.?234$/);
+  it("uses Arabic-Indic digits in the Arabic UI chrome, or Western ones if chosen", () => {
+    expect(formatNumber(1234, "ar")).toMatch(/^١.?٢٣٤$/);
+    expect(formatNumber(1234, "en")).toBe("1,234");
+    setUiDigits("western");
+    try {
+      expect(formatNumber(1234, "ar")).toMatch(/^1.?234$/);
+      expect(formatNumber(1234, "en")).toBe("1,234");
+    } finally {
+      setUiDigits("arabicIndic");
+    }
+    expect(formatTagWith("ar", "western")).toBe("ar-u-nu-latn");
+    expect(formatTagWith("ar", "arabicIndic")).toBe("ar-u-nu-arab");
   });
 });

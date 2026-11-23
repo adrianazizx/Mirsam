@@ -38,8 +38,8 @@ const BUDGET_BYTES = 60_000_000;
 /**
  * Installers reported against the budget without failing the build, and why.
  * An AppImage carries WebKitGTK and GTK, which every other installer takes
- * from the system; whether to ship it at that size is the owner's call
- * (PROGRESS.md, "Needs the project owner").
+ * from the system. The owner decided (2026-11-23) to ship it alongside the
+ * deb and rpm; the spec's budget excludes a bundled web engine.
  */
 const BUDGET_EXCEPTIONS = {
   appimage: "carries WebKitGTK and GTK, which the other installers take from the system",

@@ -110,11 +110,12 @@ describe("redaction commands (ADR 0042)", () => {
 
 describe("the Protect panel", () => {
   it.each([
-    ["en", "Redact", "Apply redactions…", "Find"],
-    ["ar", "التنقيح", "تطبيق التنقيح…", "بحث"],
+    ["en", "Redact", "Apply redactions…", "Find", "4"],
+    // The Arabic UI counts in Arabic-Indic digits.
+    ["ar", "التنقيح", "تطبيق التنقيح…", "بحث", "٤"],
   ] as const)(
     "shows its controls and the confirmation in %s",
-    async (locale, heading, apply, find) => {
+    async (locale, heading, apply, find, four) => {
       render(<App />);
       act(() => useAppStore.getState().setLocale(locale));
       // The panel is queried afresh each time: the language change re-renders it.
@@ -127,12 +128,12 @@ describe("the Protect panel", () => {
         await runCommand("redact.find", { query: "4,500" });
         await runCommand("redact.markAllHits");
       });
-      expect((await screen.findByTestId("mark-summary")).textContent).toContain("4");
+      expect((await screen.findByTestId("mark-summary")).textContent).toContain(four);
       const applyButton = panel().getByRole("button", { name: apply });
       expect(applyButton.hasAttribute("disabled")).toBe(false);
       fireEvent.click(applyButton);
       const dialog = await screen.findByTestId("redact-dialog");
-      expect(dialog.textContent).toContain("4");
+      expect(dialog.textContent).toContain(four);
       expect(document.documentElement.dir).toBe(locale === "ar" ? "rtl" : "ltr");
 
       fireEvent.click(within(dialog).getAllByRole("button")[0] as HTMLElement);
