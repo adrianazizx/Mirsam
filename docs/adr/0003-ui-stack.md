@@ -39,9 +39,10 @@ differentiator is Arabic, that is the deciding property. Cost: a larger bundle t
 
 ## Open points
 
-- **Digits in the Arabic UI.** Chrome text (page counts, zoom) currently uses Western digits in
-  Arabic (`ar-u-nu-latn`). Gulf-market software commonly does this; Egyptian usage prefers
-  Arabic-Indic. Needs the owner's call — likely a setting. Document content is unaffected.
+- ~~**Digits in the Arabic UI.**~~ **Decided by the owner (2026-11-23):** chrome text (page
+  counts, zoom, sizes, dates) uses Arabic-Indic digits in Arabic (`ar-u-nu-arab`) by default,
+  and Western digits (`ar-u-nu-latn`) if chosen in Settings (`uiDigits`, i18n `formatTag`).
+  Document content is unaffected.
 - **TypeScript 7** (the native compiler) is new. It typechecks this codebase, but two React Aria
   callbacks needed explicit parameter types that inference should have supplied. If friction
   grows, pin TypeScript 6 (what the official Tauri template still uses).

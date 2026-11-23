@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M6 images, links and page objects, branch `pomidor/m6-objects-ca4940`, merged with `main` after M5-d form creation).
+Last updated: 2026-11-23 (M6 images, links and page objects, branch `pomidor/m6-objects-ca4940`, merged with `main` after the owner decisions and M5-d form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -13,11 +13,9 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/safha`) with a git remote for backup is safer.
-2. **The code is on GitHub** as the public repository `adrianazizx/Mirsam` (public since
-   2026-11-22). It has no licence file, so the code is all rights reserved until you choose one
-   (spec D2).
-   - `main` holds Milestones 0 and 1 (PR #1) and the Milestone 3 groundwork (PR #4);
-   - `m2-organize` holds Milestone 2 so far, open as draft PR #2 with Auto-fix on.
+2. ~~Which licence for the public repository?~~ **Decided (2026-11-23): MIT** (`LICENSE`, spec D2).
+   The repository `adrianazizx/Mirsam` is public; the workspace crates and the UI package say
+   `MIT`.
 3. **CI on PR #2** was green on every check (tests and shell self-test on macOS, Linux and
    Windows, and licences) before the markup work and the merge of `main` were pushed.
 4. **Licence allowlist additions.** Beyond the spec's list, `deny.toml` allows `Unicode-3.0`,
@@ -25,12 +23,18 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    `blessing`) for the local state store. All are permissive and all arrive through Tauri's own
    dependency tree (Unicode data, ICU4X), so they cannot be avoided on this stack — but the spec
    says to ask. **`MIT-0`: approved by the owner (2026-11-22)**, with the llama.cpp runtime
-   (item 20).
-5. **Digits in the Arabic UI**: Western (current default) or Arabic-Indic for page counts and
-   zoom? Probably a setting; which default? (ADR 0003.)
+   (item 20). **The rest approved (2026-11-23):** `Unicode-3.0`, `CC0-1.0`, `0BSD` and SQLite's
+   public-domain dedication. Spec §10 now lists them.
+5. ~~Digits in the Arabic UI?~~ **Decided (2026-11-23): Arabic-Indic (١٢٣) by default, with a
+   setting.** Settings → Language offers Western digits (123) instead; the commands
+   `app.digitsArabicIndic` and `app.digitsWestern` do the same. It covers the UI's own numbers
+   (page counts, zoom, sizes, dates); numbers inside documents keep their per-feature choice
+   (spec 6.3). The English UI is unchanged.
 6. **Bundle identifier.** The product is now **Mirsam** (مرسام) and the identifier
    `app.mirsam.desktop`. Before the first signed release it should be the reverse of a domain you
    own; changing it later moves where the app keeps its state (recents, session, positions).
+   **Deferred by the owner (2026-11-23):** kept as is for now; to be settled before code signing
+   (item 17).
 7. **Shell PATH.** Homebrew's rustup is keg-only. To use `cargo` in your own terminal:
    `export PATH=/opt/homebrew/opt/rustup/bin:$PATH` (not added to `~/.zshrc` for you).
 8. **More fixture producers and OCR baselines need installs** (none done without asking):
@@ -53,8 +57,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **`/ActualText` on ligatures:** fixed some of PDFium's words and reversed others; Poppler
       ignored it.
 
-    The decision is still yours: which viewer's convention to follow, or whether to accept
-    this.
+    **Decided (2026-11-23): follow the standard.** Keep writing text the PDF specification's way,
+    which Preview copies exactly; Chrome/Edge's (PDFium's) reversals are their bug, documented and
+    tracked, not worked around. Spec §7's "another viewer" acceptance test is judged against a
+    standard-conforming viewer (Preview, and Acrobat once it can be tried, item 16).
 11. **Arabic UI strings** were written by the assistant, not a native-speaker reviewer (the spec
     schedules that review for M7; earlier is better).
 12. ~~Does the 500 MB memory budget include WebKit?~~ **Decided (session 6): the app's own
@@ -74,6 +80,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     document under the font's own name is common practice and is not redistributing a modified
     font, but `assets/fonts/README.md` asked for this to be confirmed. If in doubt, Noto Sans
     and Noto Sans Arabic (OFL, no reserved name) can replace them.
+    **Decided (2026-11-23): keep IBM Plex** for subsets embedded under the fonts' own names.
+    Still open: italic runs are embedded under names we made (`IBMPlexSans-Oblique`, ADR 0024);
+    the font program is unchanged, but the name carries the Reserved Font Name, and that case was
+    not part of the question.
 
 15. **A JPEG codec for redaction (M5, ADR 0042).** Redacting an area of a *scan* (a page that is one
     JPEG) currently drops the whole image, because overwriting its pixels needs a JPEG decoder and
@@ -84,6 +94,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     own baseline encoder (ADR 0050), checked against PDFium's decoder. Only a **decoder** is still
     needed — for redacting scans and for downsampling JPEG images when compressing (scans are
     mostly JPEG, so it is compression's biggest gap). `zune-jpeg` (decoder only) is the candidate.
+    **Decided (2026-11-23): no decoder for now.** Redacting part of a JPEG image keeps removing the
+    whole image, and compression leaves JPEG images as they are.
 16. **M3's exit, by hand** (`docs/demos/m3.md`):
     - open an edited file in **Acrobat Reader** (spec §7's first acceptance test names it; it
       cannot be driven here);
@@ -101,12 +113,14 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     unsigned (ADR 0060); macOS Gatekeeper and Windows SmartScreen will warn until they are signed.
 18. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
     spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
-    shipped, and not in the licence report. Say if that is not acceptable.
+    shipped, and not in the licence report. **Approved (2026-11-23)** for development tools that
+    never ship (spec §10).
 19. **The Linux AppImage is 85.7 MiB, over the 60 MB installer budget** (spec §11), because it
     carries WebKitGTK and GTK, which every other installer takes from the system. The deb and rpm
     are 11.7 MiB. Ship the AppImage anyway (the budget then reads "excluding a bundled web
     engine"), or ship deb and rpm only (and perhaps a Flatpak later, which shares the GNOME runtime)?
-    Until you decide, `scripts/bundle.mjs` reports it as a known exception instead of failing.
+    **Decided (2026-11-23): ship deb, rpm and the AppImage.** Spec §11's installer budget now
+    excludes a bundled web engine; `scripts/bundle.mjs` keeps reporting the AppImage's size.
 20. ~~May the llama.cpp runtime's builds ship?~~ **Decided (2026-11-22): yes** (ADR 0034).
     - **What was approved:** llama.cpp's own `llama-server` builds (release `b12359`): Metal,
       CPU, and Vulkan with a CPU fallback. Outside spec §10's list, they compile in sheredom
@@ -116,8 +130,7 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
       CUDA runtime licence).
     - **Now:** the runtime is in the download catalog.
 
-Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
-by anything found so far.
+Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the stated assumptions.
 
 ## M0 — Foundations
 
@@ -718,7 +731,7 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ### Session M6-b — 2026-11-23 (Milestone 6: images, links, page objects; parallel to M4 jobs, M5 PAdES and form creation)
 
-Branch `pomidor/m6-objects-ca4940` (PR #27), from `main` after PR #18; `main` merged in after PR #25 (M5-d form creation). Stayed out of OCR, signing and form-field code.
+Branch `pomidor/m6-objects-ca4940` (PR #27), from `main` after PR #18; `main` merged in after PR #25 (M5-d form creation) and PR #29 (owner decisions). Stayed out of OCR, signing and form-field code.
 
 - **ADR 0051** records the approach: objects traced to their bytes with a *recipe* of the state they
   were drawn in; edits are splices of the content streams (a `/MirsamObj <</G n>> BDC q cm … Q EMC`
@@ -762,6 +775,20 @@ Branch `pomidor/m6-objects-ca4940` (PR #27), from `main` after PR #18; `main` me
   `cargo deny` and the licence report pass. **Not re-run:** the scroll and zoom benchmark (the
   machine is shared with other sessions' builds; only hover in the Select tool touches the viewer's
   scrolling path, reading a page's links once).
+
+### Owner decisions — 2026-11-23 (branch `pomidor/owner-decisions`)
+
+- **Licence:** MIT (`LICENSE`; spec D2; the workspace crates, the fuzz crate and the UI package
+  say `MIT`; README has a Licence section).
+- **Licences approved:** Unicode-3.0, CC0-1.0, 0BSD, SQLite's dedication; NCSA for development
+  tools only (spec §10, `deny.toml` comments).
+- **Arabic UI digits:** Arabic-Indic by default, Western as a setting (Settings → Language, two
+  commands, the shell's `uiDigits` setting; ADR 0003's open point closed). Five tests that
+  expected Western digits in Arabic now expect Arabic-Indic ones; `commands/settings.test.tsx`
+  covers the setting.
+- **Recorded:** Linux ships deb, rpm and AppImage (spec §11's budget excludes a bundled web
+  engine); keep IBM Plex (oblique names still open); no JPEG decoder for now; Arabic copy follows
+  the standard; bundle identifier deferred.
 
 ### Session M5-d — 2026-11-23 (Milestone 5: form creation; parallel to M4 jobs, M5 PAdES, M6 objects)
 

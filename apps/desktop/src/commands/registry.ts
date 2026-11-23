@@ -407,6 +407,8 @@ export type CommandId =
   | "view.readingNormal"
   | "view.readingSepia"
   | "view.readingNight"
+  | "app.digitsArabicIndic"
+  | "app.digitsWestern"
   | "search.focus"
   | "search.run"
   | "search.next"
@@ -2869,6 +2871,9 @@ const DECLARED: Command[] = [
   { id: "view.readingNormal", run: () => setReadingTheme("normal") },
   { id: "view.readingSepia", run: () => setReadingTheme("sepia") },
   { id: "view.readingNight", run: () => setReadingTheme("night") },
+  // Digits of the Arabic UI's own numbers (owner decision, 2026-11-23).
+  { id: "app.digitsArabicIndic", run: () => store().setUiDigits("arabicIndic") },
+  { id: "app.digitsWestern", run: () => store().setUiDigits("western") },
   {
     id: "search.focus",
     shortcut: { key: "f", mod: true },

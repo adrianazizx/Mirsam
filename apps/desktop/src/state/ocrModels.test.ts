@@ -56,14 +56,14 @@ describe("OCR model helpers", () => {
     expect(receivedOf(pkg("i", { state: { kind: "installed" } }))).toBe(1000);
   });
 
-  it("formats sizes in both languages with Western digits", () => {
+  it("formats sizes in both languages, in the Arabic UI's digits", () => {
     expect(formatBytes(5_511_442_432, "en")).toBe("5.5 GB");
     expect(formatBytes(204_986_688, "en")).toBe("205 MB");
     expect(formatBytes(1_500_000, "en")).toBe("1.5 MB");
     expect(formatMemory(36 * 2 ** 30, "en")).toBe("36 GB");
     const arabic = formatBytes(5_511_442_432, "ar");
-    expect(arabic).toContain("5.5");
-    expect(arabic).not.toMatch(/[٠-٩]/);
+    expect(arabic).toContain("٥٫٥");
+    expect(arabic).not.toMatch(/[0-9]/);
     expect(isolate("Nuqta 4B")).toBe("⁨Nuqta 4B⁩");
   });
 });
