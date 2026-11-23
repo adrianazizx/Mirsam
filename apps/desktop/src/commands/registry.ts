@@ -47,6 +47,7 @@ import { useCertSign, VISIBLE_SIZE } from "../state/certSign";
 import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
 import { isOpenable, mapBetween, quarterTurn } from "../state/objects";
+import { flaggedWords, useOcrJobs, wordAt, wordRect } from "../state/ocrJobs";
 import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
 import {
   addMark,
@@ -198,6 +199,10 @@ export interface CommandArg {
   colorId?: string;
   /** `ocrModels.download`, `.cancel`, `.delete`: the OCR package (ADR 0034). */
   modelId?: string;
+  /** `ocr.pauseJob`, `.resumeJob`, `.cancelJob`, `.removeJob`: the job (ADR 0035). */
+  jobId?: number;
+  /** `ocr.showWord`: a flagged word of the review list, `[page index, word index]`. */
+  reviewAt?: [number, number];
   /** `object.select`, `object.reshape`: a page object (ADR 0051) (`page`, and `rect` its new box). */
   object?: PageObject | null;
   /** `link.select`, `link.reshape`, `link.follow`, `link.hover`: a link (`page`, `rect`). */
@@ -441,6 +446,15 @@ export type CommandId =
   | "app.settings"
   | "app.closeSettings"
   | "ocr.recognize"
+  | "ocr.recognizePage"
+  | "ocr.pauseJob"
+  | "ocr.resumeJob"
+  | "ocr.cancelJob"
+  | "ocr.removeJob"
+  | "ocr.review"
+  | "ocr.showWord"
+  | "ocr.nextFlag"
+  | "ocr.previousFlag"
   | "ocrModels.downloadRequired"
   | "ocrModels.dismissPrompt"
   | "ocrModels.download"
@@ -1092,6 +1106,23 @@ const KNOWN_ERRORS = [
   "save_as_required",
   "image_too_large",
   "link_refused",
+  "ocr_unavailable",
+  "ocr_model_missing",
+  "ocr_signed_document",
+  "ocr_job_running",
+  "ocr_unknown_job",
+];
+
+/** Why an OCR job stopped (`OcrJob.error`): codes with their own message under `errors.`. */
+export const OCR_JOB_ERRORS = [
+  "ocr_engine_missing",
+  "ocr_model_missing",
+  "ocr_engine_failed",
+  "ocr_engine_stopped",
+  "ocr_timeout",
+  "ocr_bad_response",
+  "ocr_image_invalid",
+  "ocr_document_changed",
 ];
 
 function reportError(error: unknown) {
@@ -1332,6 +1363,83 @@ function markHits(active: OpenDocument, indices: number[]) {
 }
 
 const ocr = () => useOcrModels.getState();
+const ocrJobs = () => useOcrJobs.getState();
+
+/** Loads a document's OCR jobs and review list from the shell (ADR 0035). */
+export async function refreshOcrJobs(documentId: number): Promise<void> {
+  const [jobs, review] = await Promise.all([
+    backend.ocrJobs(documentId),
+    backend.ocrReview(documentId),
+  ]);
+  ocrJobs().setJobs(jobs);
+  ocrJobs().setReview(documentId, review);
+}
+
+/** Starts OCR of the active document's `pages` (all when absent), once its models are in. */
+async function recognize(pages?: number[]): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  if (!ocr().models) await refreshOcrModels();
+  const { models } = ocr();
+  if (!models?.available) {
+    store().setError("model_unavailable");
+    return;
+  }
+  if (!ocrReady(models)) {
+    ocr().setPrompt(true);
+    return;
+  }
+  ocrJobs().setJob(await backend.startOcr(active.id, pages));
+  // The OCR panel shows the job's progress and, as pages finish, what to review.
+  store().setActiveTool("ocr");
+}
+
+async function controlJob(arg: CommandArg | undefined, action: "pause" | "resume" | "cancel") {
+  if (arg?.jobId === undefined) return;
+  ocrJobs().setJob(await backend.controlOcrJob(arg.jobId, action));
+}
+
+/** Shows a flagged word of the active document's review list: its page, its box marked. */
+function showFlag(at: [number, number]) {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  const pages = ocrJobs().review[active.id] ?? [];
+  const word = wordAt(pages, at);
+  const page = pages[at[0]];
+  if (!word || !page) return;
+  const rect = wordRect(word);
+  ocrJobs().setFocus({ documentId: active.id, page: page.page, at, rect });
+  const viewer = getViewer(active.id);
+  store().updateDocument(active.id, { page: page.page });
+  if (viewer && rect) viewer.revealHit({ page: page.page, rects: [rect] });
+  else viewer?.goToPage(page.page);
+}
+
+/** The next or previous flagged word after the one shown. */
+function stepFlag(direction: 1 | -1) {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  const flags = flaggedWords(ocrJobs().review[active.id] ?? []);
+  if (flags.length === 0) return;
+  const focus = ocrJobs().focus;
+  const current =
+    focus?.documentId === active.id
+      ? flags.findIndex(([p, w]) => p === focus.at[0] && w === focus.at[1])
+      : -1;
+  const next =
+    current < 0
+      ? direction === 1
+        ? 0
+        : flags.length - 1
+      : (current + direction + flags.length) % flags.length;
+  const at = flags[next];
+  if (at) showFlag(at);
+}
+
+const hasFlags = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  return active !== null && flaggedWords(useOcrJobs.getState().review[active.id] ?? []).length > 0;
+};
 
 /** Loads the OCR models' listing from the shell (ADR 0034). */
 export async function refreshOcrModels(): Promise<void> {
@@ -3233,23 +3341,73 @@ const DECLARED: Command[] = [
     run: () => store().setSettingsOpen(false),
   },
   {
-    // The first use of OCR without its model asks to download it (spec §8).
+    // The first use of OCR without its model asks to download it (spec §8);
+    // with it, the whole document is read in the background (ADR 0035).
     id: "ocr.recognize",
     isEnabled: hasDocument,
+    run: () => recognize(),
+  },
+  {
+    id: "ocr.recognizePage",
+    isEnabled: hasDocument,
     async run() {
-      if (!ocr().models) await refreshOcrModels();
-      const { models } = ocr();
-      if (!models?.available) {
-        store().setError("model_unavailable");
-        return;
-      }
-      if (!ocrReady(models)) {
-        ocr().setPrompt(true);
-        return;
-      }
-      // Recognising pages arrives with the M4 pipeline's commands.
-      store().setNotice({ key: "ocrNotYet" });
+      const active = selectActiveDocument(store());
+      if (active) await recognize([active.page]);
     },
+  },
+  {
+    id: "ocr.pauseJob",
+    paletteHidden: true,
+    run: (arg) => controlJob(arg, "pause"),
+  },
+  {
+    id: "ocr.resumeJob",
+    paletteHidden: true,
+    run: (arg) => controlJob(arg, "resume"),
+  },
+  {
+    id: "ocr.cancelJob",
+    paletteHidden: true,
+    run: (arg) => controlJob(arg, "cancel"),
+  },
+  {
+    id: "ocr.removeJob",
+    paletteHidden: true,
+    async run(arg) {
+      if (arg?.jobId === undefined) return;
+      await backend.removeOcrJob(arg.jobId);
+      ocrJobs().forgetJob(arg.jobId);
+      const active = selectActiveDocument(store());
+      if (active) ocrJobs().setReview(active.id, await backend.ocrReview(active.id));
+    },
+  },
+  {
+    // The pages-needing-review list (spec §5.8), in the OCR panel.
+    id: "ocr.review",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      store().setActiveTool("ocr");
+      await refreshOcrJobs(active.id);
+    },
+  },
+  {
+    id: "ocr.showWord",
+    paletteHidden: true,
+    run(arg) {
+      if (arg?.reviewAt) showFlag(arg.reviewAt);
+    },
+  },
+  {
+    id: "ocr.nextFlag",
+    isEnabled: hasFlags,
+    run: () => stepFlag(1),
+  },
+  {
+    id: "ocr.previousFlag",
+    isEnabled: hasFlags,
+    run: () => stepFlag(-1),
   },
   {
     // The first-use prompt's answer: whatever OCR still needs, shown downloading in Settings.

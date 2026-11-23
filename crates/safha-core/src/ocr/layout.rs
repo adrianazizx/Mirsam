@@ -99,6 +99,12 @@ pub fn deskew(image: &OcrImage, degrees: f32) -> OcrImage {
 }
 
 /// Pillow's `convert("L")`.
+/// The page's ink after speck removal, row by row (`width * height`).
+pub(super) fn ink(image: &OcrImage) -> Vec<bool> {
+    let gray = luma(image);
+    ink_mask(&gray, image.width() as usize, image.height() as usize).1
+}
+
 fn luma(image: &OcrImage) -> Vec<u8> {
     image
         .rgb()

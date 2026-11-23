@@ -322,6 +322,8 @@ export interface ViewerClassNames {
   overlay: string;
   searchHit: string;
   searchHitActive: string;
+  /** The OCR word under review. */
+  reviewMark?: string;
   selection: string;
   /** Outline of a selected annotation. */
   markupSelected: string;
@@ -636,6 +638,8 @@ export class ViewerController {
     null;
   /** Areas marked for redaction, by page, shown until they are applied or removed. */
   private readonly redactMarks = new Map<number, ViewRect[]>();
+  /** The OCR word under review (ADR 0035). */
+  private reviewMark: { page: number; rect: ViewRect } | null = null;
   /** Form fields' widgets in the form designer, by page, and the selected one (ADR 0047). */
   private readonly fieldBoxes = new Map<number, FieldBox[]>();
   /** Fields found on a flat page, waiting for review, by page. */
@@ -1358,6 +1362,16 @@ export class ViewerController {
     }
   }
 
+  /** Marks a word the OCR review list points at (ADR 0035), or nothing. */
+  setReviewMark(mark: { page: number; rect: ViewRect } | null): void {
+    const previous = this.reviewMark?.page;
+    this.reviewMark = mark;
+    for (const page of new Set([previous, mark?.page])) {
+      const slot = page === undefined ? undefined : this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+  }
+
   /** Shows the areas marked for redaction (ADR 0042). */
   setRedactionMarks(marks: { page: number; rects: ViewRect[] }[]): void {
     const previous = new Set(this.redactMarks.keys());
@@ -1542,7 +1556,7 @@ export class ViewerController {
   }
 
   /** Scrolls the hit into view (about a third of the way down) unless it already is. */
-  revealHit(hit: SearchHit): void {
+  revealHit(hit: Pick<SearchHit, "page" | "rects">): void {
     if (!this.sizes || !this.layout) return;
     this.settleGesture();
     if (this.view.viewMode === "single" && this.currentPage !== hit.page) {
@@ -2667,6 +2681,13 @@ export class ViewerController {
       const element = document.createElement("div");
       element.className = this.classNames.redactMark ?? "";
       place(element, rect);
+      slot.overlay.append(element);
+    }
+    if (this.reviewMark?.page === slot.page) {
+      const element = document.createElement("div");
+      element.className = this.classNames.reviewMark ?? "";
+      element.dataset.testid = "ocr-review-mark";
+      place(element, this.reviewMark.rect);
       slot.overlay.append(element);
     }
     this.paintFieldBoxes(slot, place);

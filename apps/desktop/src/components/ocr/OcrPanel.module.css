@@ -16,3 +16,144 @@
   align-items: stretch;
   gap: var(--space-2);
 }
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block-start: var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job,
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Drafted pages under the finished ones: both grow from the inline start. */
+.track {
+  position: relative;
+  display: block;
+  block-size: var(--size-progress);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-pressed);
+  overflow: hidden;
+}
+
+.draft,
+.fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: var(--radius-full);
+  transition: inline-size var(--motion-base) var(--motion-ease);
+}
+
+.draft {
+  background: var(--color-accent);
+  opacity: 0.35;
+}
+
+.fill {
+  background: var(--color-accent);
+}
+
+.meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.pageName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.word {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  inline-size: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.word:hover {
+  background: var(--color-bg-hover);
+}
+
+.word:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--focus-ring-width);
+}
+
+.word[aria-current="true"] {
+  border-color: var(--color-search-hit-active);
+}
+
+/* An unsure word needs a decision: it stands out from corrections. */
+.word[data-kind="uncertain"] {
+  border-inline-start-width: var(--border-width-thick);
+  border-inline-start-color: var(--color-search-hit-active);
+}
+
+.wordText {
+  font-size: var(--font-size-md);
+}

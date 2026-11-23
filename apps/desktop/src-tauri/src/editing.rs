@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State, WebviewWindow};
+use tauri::{AppHandle, Manager as _, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use safha_core::annotate::{
@@ -44,7 +44,7 @@ impl From<PageEditArg> for PageEdit {
 }
 
 /// The document after an edit, an undo, or a redo.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EditOutcome {
     page_count: usize,
@@ -647,7 +647,15 @@ pub async fn save_document_as(
     if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
         path.as_mut_os_string().push(".pdf");
     }
-    save_to(&state, document_id, path).map(Some)
+    let from = safha_core::store::canonical_path(&current);
+    let outcome = save_to(&state, document_id, path.clone())?;
+    // Its OCR jobs and review list follow it (ADR 0035).
+    if let Some(ocr) = app.try_state::<crate::ocr::OcrState>() {
+        let to = safha_core::store::canonical_path(&path);
+        let name = to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        ocr.moved(&from, &to, &name);
+    }
+    Ok(Some(outcome))
 }
 
 fn save_to(state: &AppState, document_id: u32, path: PathBuf) -> CommandResult<SaveOutcome> {

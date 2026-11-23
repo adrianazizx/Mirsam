@@ -29,7 +29,8 @@ use unicode_normalization::UnicodeNormalization;
 use super::WordConfidence;
 
 /// What happened to a word.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum WordStatus {
     /// Not checked again: confident, and no digits.
     Unchecked,
@@ -41,6 +42,16 @@ pub enum WordStatus {
     Uncertain { alternatives: Vec<String> },
     /// A number–unit compound turned into logical order ("bit-64" → "64-bit").
     Reordered { read: String },
+}
+
+impl WordStatus {
+    /// Whether a word with this status belongs on the review list.
+    pub fn needs_review(&self) -> bool {
+        matches!(
+            self,
+            WordStatus::Uncertain { .. } | WordStatus::Corrected { .. } | WordStatus::Reordered { .. }
+        )
+    }
 }
 
 /// A word of the page's text with its confidence and what reconciling did.
@@ -57,10 +68,7 @@ pub struct ReviewedWord {
 impl ReviewedWord {
     /// Whether the word belongs on the review list.
     pub fn needs_review(&self) -> bool {
-        matches!(
-            self.status,
-            WordStatus::Uncertain { .. } | WordStatus::Corrected { .. } | WordStatus::Reordered { .. }
-        )
+        self.status.needs_review()
     }
 }
 

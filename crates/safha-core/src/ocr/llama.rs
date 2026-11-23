@@ -284,6 +284,18 @@ impl LlamaServer {
         }
     }
 
+    /// Stops the server now, from any thread: a request in flight fails
+    /// (`ocr_engine_stopped`). Used to cancel an OCR job mid-page.
+    pub fn stop(&self) {
+        let mut child = self.child.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = child.kill();
+    }
+
+    /// Whether the server is still running.
+    pub fn is_running(&self) -> bool {
+        self.exited().is_none()
+    }
+
     /// `Some(reason)` once the process has stopped.
     fn exited(&self) -> Option<String> {
         let mut child = self.child.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -426,6 +438,16 @@ impl NuqtaEngine {
     /// Starts `llama-server` for `model` (the paths in `config` must be its files).
     pub fn start(config: &ServerConfig, model: NuqtaModel) -> Result<Self, OcrError> {
         Ok(Self { server: LlamaServer::start(config)?, name: model.name() })
+    }
+
+    /// Stops its server now (see [`LlamaServer::stop`]).
+    pub fn stop(&self) {
+        self.server.stop();
+    }
+
+    /// Whether its server is still running.
+    pub fn is_running(&self) -> bool {
+        self.server.is_running()
     }
 
     /// The request for one image, as the model card prescribes.

@@ -28,6 +28,7 @@ import {
   setSettingsWriter,
   useAppStore,
 } from "./state/appStore";
+import { useOcrJobs } from "./state/ocrJobs";
 import { useOcrModels } from "./state/ocrModels";
 import { getViewer } from "./viewer/registry";
 
@@ -143,6 +144,38 @@ export function App() {
     return () => {
       live = false;
       stop();
+    };
+  }, []);
+
+  // Background OCR (ADR 0035): every window follows the jobs; a document shown
+  // here that received OCR text is painted again and its review list reloaded.
+  useEffect(() => {
+    const stops: (() => void)[] = [];
+    let live = true;
+    const keep = (unlisten: () => void) => {
+      if (live) stops.push(unlisten);
+      else unlisten();
+    };
+    const reloadReview = (documentId: number) =>
+      backend
+        .ocrReview(documentId)
+        .then((pages) => useOcrJobs.getState().setReview(documentId, pages))
+        .catch((error: unknown) => console.warn("OCR review list unavailable", error));
+    backend
+      .onOcrJob((job) => useOcrJobs.getState().setJob(job))
+      .then(keep)
+      .catch((error: unknown) => console.warn("cannot follow OCR jobs", error));
+    backend
+      .onOcrApplied((applied) => {
+        useAppStore.getState().applyEdit(applied.documentId, applied.outcome);
+        if (applied.pages.some(([, quality]) => quality === "final"))
+          reloadReview(applied.documentId);
+      })
+      .then(keep)
+      .catch((error: unknown) => console.warn("cannot follow OCR text", error));
+    return () => {
+      live = false;
+      for (const stop of stops) stop();
     };
   }, []);
 

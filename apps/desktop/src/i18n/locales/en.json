@@ -252,7 +252,16 @@
       "cancel": "Close dialog"
     },
     "ocr": {
-      "recognize": "Recognize text (OCR)…"
+      "recognize": "Recognize text (OCR)…",
+      "recognizePage": "Recognize text on this page (OCR)",
+      "pauseJob": "Pause OCR",
+      "resumeJob": "Resume OCR",
+      "cancelJob": "Cancel OCR",
+      "removeJob": "Remove OCR job",
+      "review": "Pages needing review (OCR)",
+      "showWord": "Show flagged word",
+      "nextFlag": "Next flagged OCR word",
+      "previousFlag": "Previous flagged OCR word"
     },
     "ocrModels": {
       "downloadRequired": "Download the OCR model",
@@ -405,6 +414,18 @@
     "model_disk_full": "There is not enough free disk space for the OCR model.",
     "model_archive_invalid": "The OCR engine could not be unpacked. Try again.",
     "model_install_failed": "The OCR model could not be installed. Check that there is free disk space and try again.",
+    "ocr_unavailable": "Recognition is not available: the app has no folder to keep its work in.",
+    "ocr_model_missing": "The OCR model is not installed. Download it in Settings.",
+    "ocr_signed_document": "This document is signed. Adding recognized text would show as a change after signing.",
+    "ocr_job_running": "That recognition is still running. Cancel it first.",
+    "ocr_unknown_job": "That recognition no longer exists.",
+    "ocr_engine_missing": "The OCR runtime is not installed. Download it in Settings.",
+    "ocr_engine_failed": "The OCR engine could not start.",
+    "ocr_engine_stopped": "The OCR engine stopped, perhaps for lack of memory.",
+    "ocr_timeout": "The OCR engine did not answer in time.",
+    "ocr_bad_response": "The OCR engine gave an answer that could not be read.",
+    "ocr_image_invalid": "A page could not be prepared for recognition.",
+    "ocr_document_changed": "The document's pages changed since recognition started. Start it again.",
     "image_too_large": "That image file is too large: 64 MB at most.",
     "link_refused": "Only web and e-mail links are opened.",
     "certificate_password": "That password does not open this certificate file. Try again.",
@@ -528,7 +549,6 @@
     "exportedImages": "{{count}} image files were written.",
     "exportedText": "The text was saved as {{name}}.",
     "compressedSaved": "The compressed copy was saved as {{name}}.",
-    "ocrNotYet": "The OCR model is installed. Recognizing pages arrives in a coming update.",
     "fieldsMade": "Fields made: {{n}}."
   },
   "split": {
@@ -974,8 +994,46 @@
   "ocrPanel": {
     "ready": "The OCR model is installed.",
     "missing": "The OCR model is not installed yet. It is a {{size}} download.",
-    "recognize": "Recognize text",
-    "manage": "Manage OCR models…"
+    "recognize": "Recognize text in the document",
+    "manage": "Manage OCR models…",
+    "recognizePage": "Recognize this page",
+    "jobs": "Recognition",
+    "job": {
+      "label": "Recognition of {{name}}",
+      "progress": "{{finished}} of {{pages}} pages read in quality mode; {{drafted}} searchable",
+      "queued": "Waiting: it runs while the document is open.",
+      "running": "Starting…",
+      "draft": "Quick draft of page {{page}}…",
+      "quality": "Reading page {{page}} in quality mode…",
+      "paused": "Paused.",
+      "done": "Done.",
+      "cancelled": "Cancelled. The text already added stays; Undo removes it.",
+      "failed": "Stopped: {{reason}}",
+      "pause": "Pause",
+      "resume": "Resume",
+      "cancel": "Cancel",
+      "remove": "Remove"
+    },
+    "draftNote": "Pages show a quick draft until the quality reading replaces it.",
+    "review": {
+      "heading": "Pages needing review",
+      "empty": "No page needs review.",
+      "page": "Page {{page}}",
+      "confidence": "{{value}} confident",
+      "uncertain": "Unsure: {{count}}",
+      "corrected": "Corrected: {{count}}",
+      "reordered": "Order fixed: {{count}}",
+      "truncated": "Text may be cut off",
+      "next": "Next",
+      "previous": "Previous",
+      "word": "{{word}}: {{status}}, {{confidence}} confident",
+      "status": {
+        "uncertain": "Unsure; also read as {{alternatives}}",
+        "uncertainNone": "Unsure",
+        "corrected": "Corrected; first read as {{read}}",
+        "reordered": "Order fixed; read as {{read}}"
+      }
+    }
   },
   "formDesign": {
     "mode": "Fill in or design",

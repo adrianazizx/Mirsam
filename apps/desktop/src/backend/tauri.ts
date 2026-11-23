@@ -18,8 +18,11 @@ import {
   type LinkInfo,
   type NamedDestination,
   type ObjectEditOutcome,
+  type OcrApplied,
+  type OcrJob,
   type OcrModelEvent,
   type OcrModels,
+  type OcrReviewPage,
   type OpenOutcome,
   type OutlineItem,
   type PageAnnotation,
@@ -329,4 +332,14 @@ export const tauriBackend: Backend = {
   // Sent to every window: a download started in one shows in all.
   onOcrModelProgress: (listener) =>
     listen<OcrModelEvent>("ocr-model-progress", (event) => listener(event.payload)),
+  startOcr: (documentId, pages) =>
+    invoke<OcrJob>("start_ocr", { documentId, pages: pages ?? null }),
+  ocrJobs: (documentId) => invoke<OcrJob[]>("ocr_jobs", { documentId }),
+  controlOcrJob: (jobId, action) => invoke<OcrJob>("control_ocr_job", { jobId, action }),
+  removeOcrJob: (jobId) => invoke<void>("remove_ocr_job", { jobId }),
+  ocrReview: (documentId) => invoke<OcrReviewPage[]>("ocr_review", { documentId }),
+  onOcrJob: (listener) => listen<OcrJob>("ocr-job", (event) => listener(event.payload)),
+  // Addressed to one window: listen on this window only.
+  onOcrApplied: (listener) =>
+    getCurrentWebviewWindow().listen<OcrApplied>("ocr-applied", (event) => listener(event.payload)),
 };

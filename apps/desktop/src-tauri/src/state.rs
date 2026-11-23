@@ -317,6 +317,7 @@ impl AppState {
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.open_document(lane.render_id(id), document.clone());
         }
+        self.documents_changed();
         (id, document)
     }
 
@@ -380,6 +381,23 @@ impl AppState {
             .filter(|(_, file)| file.window == window)
             .find(|(_, file)| std::fs::canonicalize(&file.path).ok().as_ref() == Some(&wanted))
             .map(|(id, _)| *id)
+    }
+
+    /// The open documents showing the file at `path` (canonical, as the state
+    /// store names files), oldest first.
+    pub fn documents_of(&self, path: &Path) -> Vec<u32> {
+        let mut ids: Vec<u32> = lock(&self.documents)
+            .iter()
+            .filter(|(_, file)| safha_core::store::canonical_path(&file.path) == path)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// The label of the window whose tab shows document `id`.
+    pub fn window_of(&self, id: u32) -> Option<String> {
+        lock(&self.documents).get(&id).map(|file| file.window.clone())
     }
 
     /// (id, name) of the documents in `window`, in its tab order where known,
@@ -538,7 +556,18 @@ impl AppState {
         for lane in [Lane::Main, Lane::Thumbnails] {
             self.render.close_document(lane.render_id(id));
         }
+        self.documents_changed();
         true
+    }
+
+    /// A document opened or closed: an OCR job waiting for it may run (ADR 0035).
+    fn documents_changed(&self) {
+        use tauri::Manager as _;
+        if let Some(app) = self.app.get()
+            && let Some(ocr) = app.try_state::<crate::ocr::OcrState>()
+        {
+            ocr.wake();
+        }
     }
 
     pub fn lock_pending(&self, path: PathBuf) -> u32 {

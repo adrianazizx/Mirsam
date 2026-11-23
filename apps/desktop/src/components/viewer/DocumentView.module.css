@@ -81,6 +81,14 @@
   outline: var(--focus-ring-width) solid var(--color-search-hit-active);
 }
 
+/* The OCR word under review: a word whose reading is uncertain or was changed. */
+.reviewMark {
+  position: absolute;
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring-width) solid var(--color-search-hit-active);
+  outline-offset: var(--focus-ring-width);
+}
+
 .selection {
   background: var(--color-text-selection);
 }

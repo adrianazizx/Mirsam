@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { failNextMockDownload, resetMockOcr } from "../backend/mockOcr";
+import { resetMockOcrJobs } from "../backend/mockOcrJobs";
 import { useAppStore } from "../state/appStore";
 import { useOcrModels } from "../state/ocrModels";
 import { getCommand, isCommandEnabled, runCommand, shortcutLabel } from "./registry";
@@ -12,6 +13,7 @@ const app = () => useAppStore.getState();
 beforeEach(() => {
   localStorage.clear();
   resetMockOcr();
+  resetMockOcrJobs();
   useOcrModels.setState({ models: null, jobs: {}, failures: {}, prompt: false });
   useAppStore.setState({
     locale: "en",
@@ -64,10 +66,11 @@ describe("OCR models (ADR 0034)", () => {
     ]);
     expect(ocr().jobs).toEqual({});
 
-    // With the model there, OCR no longer asks.
+    // With the model there, OCR no longer asks: it starts, and its panel shows.
     await act(() => runCommand("ocr.recognize"));
     expect(ocr().prompt).toBe(false);
-    expect(app().notice?.key).toBe("ocrNotYet");
+    expect(app().activeTool).toBe("ocr");
+    await act(() => runCommand("ocr.cancelJob", { jobId: 1 }));
   });
 
   it("warns that OCR is slow without a usable GPU, and can be put off", async () => {
@@ -176,7 +179,7 @@ describe("OCR models (ADR 0034)", () => {
         "The OCR model is not installed yet. It is a 5.5 GB download.",
       ),
     );
-    const recognize = within(panel).getByRole("button", { name: "Recognize text" });
+    const recognize = within(panel).getByRole("button", { name: "Recognize text in the document" });
     expect(recognize.hasAttribute("disabled")).toBe(true);
     fireEvent.click(within(panel).getByRole("button", { name: "Manage OCR models…" }));
     expect(await screen.findByTestId("settings")).toBeTruthy();
