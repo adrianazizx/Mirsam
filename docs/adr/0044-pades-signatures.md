@@ -1,7 +1,7 @@
 # 0044 — Certificate signatures (PAdES): library choice and prototype
 
 Status: Accepted ([SPIKE], Milestone 5; prototype in `spikes/pades/`). Date: 2026-11-22. The feature is
-built on it in ADR 0047 (2026-11-23).
+built on it in ADR 0048 (2026-11-23).
 
 ## Context
 

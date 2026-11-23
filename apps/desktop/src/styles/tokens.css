@@ -62,6 +62,7 @@
   --size-signature-text: 32px; /* a typed signature's preview text */
   --size-signature-choice: 120px; /* a kept signature offered for a certificate signature's look */
   --size-fill-handle: 10px; /* a selected Fill & Sign item's corner handle */
+  --size-field-tab: 16px; /* a form field's tab-order number in the form designer */
   --border-width: 1px;
   --border-width-thick: 2px; /* a quotation's rule */
   --focus-ring-width: 2px;
@@ -123,7 +124,7 @@
   --color-on-accent: #ffffff;
 
   --color-danger: #b42318;
-  /* A signature's verdict (ADR 0047): valid, and signer not vouched for. */
+  /* A signature's verdict (ADR 0048): valid, and signer not vouched for. */
   --color-success: #1a7f37;
   --color-warning: #8a5d00;
   --color-focus-ring: #0e7490;
@@ -138,6 +139,11 @@
   /* On the white page in either theme: an area marked for redaction. */
   --color-redact-outline: #b42318;
   --color-redact-fill: rgb(180 35 24 / 0.28);
+  /* On the white page in either theme: a form field in the form designer (ADR 0047). */
+  --color-field-outline: #6d28d9;
+  --color-field-fill: rgb(109 40 217 / 0.08);
+  --color-field-tab-bg: #6d28d9;
+  --color-field-tab-text: #ffffff;
   /* On the white page in either theme: the pen's ink and a note's icon, as the engine draws them. */
   --color-ink: #0d3899;
   --color-note: #ffdb00;
@@ -186,6 +192,10 @@
   --color-text-selection: rgb(77 196 220 / 0.35);
   --color-redact-outline: #b42318;
   --color-redact-fill: rgb(180 35 24 / 0.28);
+  --color-field-outline: #6d28d9;
+  --color-field-fill: rgb(109 40 217 / 0.08);
+  --color-field-tab-bg: #6d28d9;
+  --color-field-tab-text: #ffffff;
   --color-ink: #0d3899;
   --color-note: #ffdb00;
   --color-search-mark-bg: #854d0e;

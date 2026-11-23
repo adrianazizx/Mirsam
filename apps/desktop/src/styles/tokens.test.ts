@@ -45,7 +45,7 @@ const PAIRS: [string, string, number][] = [
   ["color-on-accent", "color-accent-pressed", 4.5],
   ["color-tooltip-text", "color-tooltip-bg", 4.5],
   ["color-danger", "color-bg-surface", 4.5],
-  // Signature verdicts (ADR 0047) in the signatures panel.
+  // Signature verdicts (ADR 0048) in the signatures panel.
   ["color-success", "color-bg-surface", 4.5],
   ["color-success", "color-bg-app", 4.5],
   ["color-warning", "color-bg-surface", 4.5],
@@ -57,6 +57,9 @@ const PAIRS: [string, string, number][] = [
   ["color-border-strong", "color-bg-surface", 3],
   // Signatures are previewed as ink on paper in both themes (ADR 0045).
   ["color-ink", "color-page-paper", 4.5],
+  // The form designer's field outlines and tab numbers, on the page (ADR 0047).
+  ["color-field-outline", "color-page-paper", 3],
+  ["color-field-tab-text", "color-field-tab-bg", 4.5],
 ];
 
 describe.each([

@@ -188,6 +188,52 @@
   outline-style: dashed;
 }
 
+/* A form field's widget in the form designer (ADR 0047): outlined, tinted, numbered by tab order. */
+.fieldBox,
+.fieldDraft {
+  position: absolute;
+  box-sizing: border-box;
+  outline: var(--border-width) solid var(--color-field-outline);
+  background: var(--color-field-fill);
+}
+
+.fieldBoxSelected {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--focus-ring-width);
+}
+
+/* A field being drawn, moved, or resized, and a suggestion waiting for review. */
+.fieldDraft {
+  outline-style: dashed;
+  outline-width: var(--focus-ring-width);
+}
+
+/*
+ * Its tab-order number, just outside its top-left corner, clear of the
+ * corner handle (the page area is laid out left to right in either UI language).
+ */
+.fieldTab {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  translate: calc(-100% - var(--space-1)) -50%;
+  min-inline-size: var(--size-field-tab);
+  block-size: var(--size-field-tab);
+  padding-inline: var(--space-1);
+  box-sizing: border-box;
+  border-radius: var(--radius-full);
+  background: var(--color-field-tab-bg);
+  color: var(--color-field-tab-text);
+  font-size: var(--font-size-xs);
+  line-height: var(--size-field-tab);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-viewer-content][data-mode="draw"] {
+  cursor: crosshair;
+}
+
 /* An annotation selected by clicking it. */
 .markupSelected {
   position: absolute;

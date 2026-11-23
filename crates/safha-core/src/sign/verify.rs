@@ -1,4 +1,4 @@
-//! Checking a document's signatures (ADR 0047): for each, whether the bytes
+//! Checking a document's signatures (ADR 0048): for each, whether the bytes
 //! it covers are as signed, who signed and whether a trusted authority
 //! vouches for them, when (a time-stamp, or the signer's own claim), and what
 //! the file changed after it.

@@ -57,7 +57,7 @@ export function SignPanel({ document }: { document: OpenDocument }) {
   const selected = document.selectedAnnotation;
   // A file opened with its user password may not allow annotating (ADR 0043).
   const permitted = useAppStore((state) => isCommandEnabled("fill.text", state));
-  // Certificate signatures need the right to fill in fields (ADR 0047).
+  // Certificate signatures need the right to fill in fields (ADR 0048).
   const certificatePermitted = useAppStore((state) => isCommandEnabled("certSign.open", state));
   const fillSelected = selected !== null && FILL_KINDS.includes(selected.kind);
 

@@ -1,4 +1,4 @@
-//! A throwaway public-key infrastructure for signing tests (ADR 0047), made
+//! A throwaway public-key infrastructure for signing tests (ADR 0048), made
 //! fresh on every run so no key is ever committed: a root CA, signers (a
 //! P-256 key with a Latin name, one with an Arabic name, an RSA key), and a
 //! time-stamping authority that answers RFC 3161 requests in process.

@@ -1,4 +1,4 @@
-# 0047 — Certificate signatures (PAdES): signing, checking, keys
+# 0048 — Certificate signatures (PAdES): signing, checking, keys
 
 Status: Accepted (Milestone 5). Date: 2026-11-23. Builds on ADR 0044 (the spike and its library choice),
 ADR 0014 (edits as incremental updates), ADR 0043 (encryption) and ADR 0045 (kept signatures).

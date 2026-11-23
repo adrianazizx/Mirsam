@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks the app's certificate signatures with validators that are not ours
-# (ADR 0047). Signs fixtures with a throwaway PKI (examples/sign_fixtures.rs),
+# (ADR 0048). Signs fixtures with a throwaway PKI (examples/sign_fixtures.rs),
 # then for every signed PDF:
 #   - Poppler `pdfsig` (NSS), trusting only the test root: every signature
 #     "Valid" and its certificate "Trusted";

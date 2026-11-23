@@ -16,7 +16,7 @@ const ICONS = {
 } as const;
 
 /**
- * A signed document's verdict in the status bar (ADR 0047). Its signatures
+ * A signed document's verdict in the status bar (ADR 0048). Its signatures
  * are checked as soon as it is the active document, so a reader sees at once
  * whether they hold, without opening the panel; pressing it opens the panel.
  */

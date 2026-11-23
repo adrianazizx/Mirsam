@@ -21,7 +21,7 @@ import { IconButton } from "../ui/IconButton";
 import styles from "./CertSignDialog.module.css";
 
 /**
- * Sign with a certificate (ADR 0047): who signs (a PKCS#12 file read this
+ * Sign with a certificate (ADR 0048): who signs (a PKCS#12 file read this
  * run, or the macOS keychain), what the signature says, whether it shows on
  * a page (a kept signature and a caption, placed by a press afterwards) or
  * not, and whether a time-stamping authority vouches for its time. Signing

@@ -19,12 +19,19 @@
 //! (`pdf::File` does not decrypt those) and are not listed.
 
 mod appearance;
+mod design;
+mod detect;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::annotate::{Annots, Writer, rect_of, resolve_dict, text_string};
+pub use design::{FieldDesign, FieldSpec, MAX_FIELD_NAME, design_update};
+pub use detect::{DetectedField, PageShapes, Segment, detect_fields, unique_name};
+
+use crate::fonts::FontFamily;
+
+use crate::annotate::{Annots, Appearance, Writer, rect_of, resolve_dict, text_string};
 use crate::edit::{PageTree, Start, set};
 use crate::error::{Error, Result};
 use crate::pdf::crypt::Crypt;
@@ -34,7 +41,7 @@ use crate::view::ViewRect;
 use appearance::{ButtonStyle, Look};
 
 /// What kind of field it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldKind {
     Text,
@@ -48,8 +55,39 @@ pub enum FieldKind {
     Signature,
 }
 
+/// Where a field's text sits (`/Q`). In a field made here (ADR 0047) the
+/// start and end are those of the text's own direction: the start of Arabic
+/// is the right. In a field from elsewhere, `/Q 0` starts where the text's
+/// direction starts and `/Q 2` is the right (ADR 0045).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FieldAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+impl FieldAlign {
+    fn quadding(self) -> i64 {
+        match self {
+            FieldAlign::Start => 0,
+            FieldAlign::Center => 1,
+            FieldAlign::End => 2,
+        }
+    }
+
+    fn of_quadding(q: i64) -> Self {
+        match q {
+            1 => FieldAlign::Center,
+            2 => FieldAlign::End,
+            _ => FieldAlign::Start,
+        }
+    }
+}
+
 /// A choice: what is stored (`/V`), and what is shown.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldOption {
     pub value: String,
     pub label: String,
@@ -67,6 +105,9 @@ pub struct FieldWidget {
     pub view: Option<ViewRect>,
     /// A check box's or radio button's "on" state.
     pub on_state: Option<String>,
+    /// Its position in its page's `/Annots`: the tab order, where the page
+    /// takes it from there (ADR 0047).
+    pub annot_index: Option<usize>,
 }
 
 /// A field to fill in.
@@ -77,7 +118,23 @@ pub struct FormField {
     pub id: u32,
     /// The fully qualified name (`parent.child`).
     pub name: String,
+    /// Its own part of the name (`/T`), what renaming changes (ADR 0047).
+    pub partial_name: String,
     pub kind: FieldKind,
+    /// What a reader is told about it (`/TU`).
+    pub tooltip: String,
+    /// What resetting the form returns it to (`/DV`), as [`FormField::values`].
+    pub default_values: Vec<String>,
+    pub align: FieldAlign,
+    /// The bundled family it is set in, when it was made here (ADR 0047);
+    /// none when `/DA` names a font of its own (then the Sans family draws it).
+    pub font: Option<FontFamily>,
+    /// Its text size; 0 fits the text to the box.
+    pub font_size: f32,
+    /// Its widgets have a border colour (`/MK /BC`).
+    pub bordered: bool,
+    /// A push button's label (`/MK /CA`).
+    pub caption: String,
     /// Its value: the text of a text field or drop-down; the selected
     /// choices of a list; the "on" state of a checked box or the chosen
     /// radio button (empty when off).
@@ -126,6 +183,7 @@ const READ_ONLY: i64 = 1;
 const REQUIRED: i64 = 1 << 1;
 const MULTILINE: i64 = 1 << 12;
 const PASSWORD: i64 = 1 << 13;
+const NO_TOGGLE_TO_OFF: i64 = 1 << 14;
 const RADIO: i64 = 1 << 15;
 const PUSH_BUTTON: i64 = 1 << 16;
 const COMBO: i64 = 1 << 17;
@@ -261,14 +319,7 @@ impl Looks<'_, '_, '_> {
     fn of(&self, field: &Field, widget: &Widget) -> Option<Look> {
         let reader = self.reader;
         let rect = rect_of(reader.file, &widget.node.dict)?;
-        let da = reader
-            .inherited(&field.chain, b"DA")
-            .and_then(|(value, owner)| reader.string(&value, owner))
-            .or_else(|| {
-                let value = self.form.acro.dict.get(b"DA")?;
-                reader.string(&reader.file.resolve(value)?, self.form.acro.owner)
-            })
-            .unwrap_or_else(|| b"/Helv 0 Tf 0 g".to_vec());
+        let da = reader.da(&field.chain, &self.form.acro);
         let quadding = reader
             .inherited(&field.chain, b"Q")
             .and_then(|(value, _)| value.as_int())
@@ -413,47 +464,55 @@ fn draw_widgets(
     writer: &mut Writer<'_, '_>,
     changed: &mut Changed,
 ) -> Result<()> {
+    let top = field.chain[0]
+        .dict
+        .get(b"TI")
+        .and_then(Object::as_int)
+        .and_then(|top| usize::try_from(top).ok())
+        .unwrap_or(0);
     for widget in &field.widgets {
         let Some(look) = looks.of(field, widget) else { continue };
-        let appearance = match filled.kind {
-            FieldKind::Text => {
-                let text = filled.values.first().map(String::as_str).unwrap_or("");
-                let comb = filled.comb.then_some(filled.max_len).flatten().filter(|n| *n > 0);
-                look.text(text, filled.multiline, comb, filled.password)?
-            }
-            FieldKind::Combo => {
-                let value = filled.values.first().map(String::as_str).unwrap_or("");
-                let label = filled
-                    .options
-                    .iter()
-                    .find(|option| option.value == value)
-                    .map_or(value, |option| option.label.as_str());
-                look.text(label, false, None, false)?
-            }
-            FieldKind::List => {
-                let labels: Vec<&str> = filled.options.iter().map(|option| option.label.as_str()).collect();
-                let selected: Vec<usize> = filled
-                    .options
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, option)| filled.values.contains(&option.value))
-                    .map(|(i, _)| i)
-                    .collect();
-                let top = field.chain[0]
-                    .dict
-                    .get(b"TI")
-                    .and_then(Object::as_int)
-                    .and_then(|top| usize::try_from(top).ok())
-                    .unwrap_or(0);
-                look.list(&labels, &selected, top)?
-            }
-            _ => continue,
-        };
+        let Some(appearance) = value_appearance(&look, filled, top)? else { continue };
         let stream = writer.write_appearance(&appearance)?;
         let dict = changed.entry(&widget.node)?;
         set(dict, b"AP", Object::Dict(Dict(vec![(b"N".to_vec(), Object::Ref(stream, 0))])));
     }
     Ok(())
+}
+
+/// The appearance of a text, choice, or push button widget drawn as `look`
+/// showing `filled`'s value (a push button: its caption). `top`: a list's
+/// first row shown. None for buttons with states, which have two.
+fn value_appearance(look: &Look, filled: &FormField, top: usize) -> Result<Option<Appearance>> {
+    Ok(Some(match filled.kind {
+        FieldKind::Text => {
+            let text = filled.values.first().map(String::as_str).unwrap_or("");
+            let comb = filled.comb.then_some(filled.max_len).flatten().filter(|n| *n > 0);
+            look.text(text, filled.multiline, comb, filled.password)?
+        }
+        FieldKind::Combo => {
+            let value = filled.values.first().map(String::as_str).unwrap_or("");
+            let label = filled
+                .options
+                .iter()
+                .find(|option| option.value == value)
+                .map_or(value, |option| option.label.as_str());
+            look.text(label, false, None, false)?
+        }
+        FieldKind::List => {
+            let labels: Vec<&str> = filled.options.iter().map(|option| option.label.as_str()).collect();
+            let selected: Vec<usize> = filled
+                .options
+                .iter()
+                .enumerate()
+                .filter(|(_, option)| filled.values.contains(&option.value))
+                .map(|(i, _)| i)
+                .collect();
+            look.list(&labels, &selected, top)?
+        }
+        FieldKind::PushButton => look.caption(&filled.caption)?,
+        FieldKind::Checkbox | FieldKind::Radio | FieldKind::Signature => return Ok(None),
+    }))
 }
 
 /// Draws a check box's or radio button's on and off appearances.
@@ -561,13 +620,13 @@ impl Reader<'_, '_> {
         );
         let xfa = acro.dict.get(b"XFA").is_some();
 
-        // Which page each annotation is on.
+        // Which page each annotation is on, and where in its `/Annots`.
         let mut pages = HashMap::new();
         for (index, leaf) in tree.leaves.iter().enumerate() {
             if let Ok(annots) = Annots::read(self.file, leaf) {
-                for item in &annots.items {
+                for (position, item) in annots.items.iter().enumerate() {
                     if let Object::Ref(number, _) = item {
-                        pages.entry(*number).or_insert(index);
+                        pages.entry(*number).or_insert((index, position));
                     }
                 }
             }
@@ -577,7 +636,7 @@ impl Reader<'_, '_> {
         let mut seen = HashSet::new();
         if let Some(Object::Array(items)) = acro.dict.get(b"Fields").and_then(|f| self.file.resolve(f)) {
             for item in &items {
-                self.walk(item, acro.owner, &[], 0, &pages, &mut seen, &mut fields);
+                self.walk(&acro, item, acro.owner, &[], 0, &pages, &mut seen, &mut fields);
             }
         }
         Some(Form { acro, catalog, fields, need_appearances, xfa })
@@ -586,11 +645,12 @@ impl Reader<'_, '_> {
     #[allow(clippy::too_many_arguments)]
     fn walk(
         &self,
+        acro: &Node,
         item: &Object,
         owner: Option<(u32, u16)>,
         parents: &[Node],
         depth: usize,
-        pages: &HashMap<u32, usize>,
+        pages: &HashMap<u32, (usize, usize)>,
         seen: &mut HashSet<u32>,
         out: &mut Vec<Field>,
     ) {
@@ -622,7 +682,7 @@ impl Reader<'_, '_> {
                 || (kid_dict.get(b"Kids").is_some()
                     && kid_dict.get(b"Subtype").and_then(Object::as_name) != Some(b"Widget"));
             if is_field {
-                self.walk(kid, node.owner, &chain, depth + 1, pages, seen, out);
+                self.walk(acro, kid, node.owner, &chain, depth + 1, pages, seen, out);
             } else {
                 let kid_id = match kid {
                     Object::Ref(number, generation) if seen.insert(*number) => Some((*number, *generation)),
@@ -641,15 +701,30 @@ impl Reader<'_, '_> {
         if widgets.is_empty() {
             return;
         }
-        if let Some(field) = self.field(chain, widgets, pages) {
+        if let Some(field) = self.field(chain, widgets, pages, acro) {
             out.push(field);
         }
     }
 
-    fn field(&self, chain: Vec<Node>, widget_nodes: Vec<Node>, pages: &HashMap<u32, usize>) -> Option<Field> {
+    fn field(
+        &self,
+        chain: Vec<Node>,
+        widget_nodes: Vec<Node>,
+        pages: &HashMap<u32, (usize, usize)>,
+        acro: &Node,
+    ) -> Option<Field> {
         let id = chain[0].id?.0;
         let ft = self.inherited(&chain, b"FT")?.0;
-        let flags = self.inherited(&chain, b"Ff").and_then(|(v, _)| v.as_int()).unwrap_or(0);
+        // macOS PDFKit, writing a radio group again, moves its flags to the
+        // buttons: a field without any takes its first widget's.
+        let flags = self
+            .inherited(&chain, b"Ff")
+            .or_else(|| {
+                let own = widget_nodes.first().filter(|w| w.id != chain[0].id)?.dict.get(b"Ff")?;
+                Some((self.file.resolve(own)?, None))
+            })
+            .and_then(|(v, _)| v.as_int())
+            .unwrap_or(0);
         let kind = match ft.as_name()? {
             b"Tx" => FieldKind::Text,
             b"Ch" if flags & COMBO != 0 => FieldKind::Combo,
@@ -759,11 +834,54 @@ impl Reader<'_, '_> {
             .inherited(&chain, b"MaxLen")
             .and_then(|(v, _)| v.as_int())
             .and_then(|n| usize::try_from(n).ok());
+        let default_values: Vec<String> = match self.inherited(&chain, b"DV") {
+            Some((Object::Array(items), owner)) => {
+                items.iter().filter_map(|item| self.text(item, owner)).collect()
+            }
+            Some((Object::Name(name), _)) if name != b"Off" => {
+                vec![String::from_utf8_lossy(&name).into_owned()]
+            }
+            Some((other @ Object::Str(_), owner)) => {
+                self.string(&other, owner).map(|b| decode_text(&b)).into_iter().collect()
+            }
+            _ => Vec::new(),
+        };
+        let da = self.da(&chain, acro);
+        let (font_size, _) = appearance::parse_da(&da);
+        let font = appearance::da_font(&da).as_deref().and_then(appearance::family_of);
+        let quadding = self
+            .inherited(&chain, b"Q")
+            .and_then(|(value, _)| value.as_int())
+            .or_else(|| acro.dict.get(b"Q").and_then(|q| self.file.resolve(q)?.as_int()))
+            .unwrap_or(0);
+        let first_mk = widgets.first().and_then(|w| w.node.dict.get(b"MK")).and_then(|mk| self.dict(mk));
+        let bordered = first_mk
+            .as_ref()
+            .and_then(|mk| mk.get(b"BC"))
+            .and_then(|bc| self.file.resolve(bc))
+            .is_some_and(|bc| bc.as_array().is_some_and(|a| !a.is_empty()));
+        let caption = match (kind, first_mk.as_ref().and_then(|mk| mk.get(b"CA")), widgets.first()) {
+            (FieldKind::PushButton, Some(ca), Some(widget)) => {
+                self.text(ca, widget.node.owner).unwrap_or_default()
+            }
+            _ => String::new(),
+        };
+        let own = &chain[0];
+        let partial_name = own.dict.get(b"T").and_then(|t| self.text(t, own.owner)).unwrap_or_default();
+        let tooltip = own.dict.get(b"TU").and_then(|t| self.text(t, own.owner)).unwrap_or_default();
 
         let info = FormField {
             id,
             name,
+            partial_name,
             kind,
+            tooltip,
+            default_values,
+            align: FieldAlign::of_quadding(quadding),
+            font,
+            font_size,
+            bordered,
+            caption,
             values,
             options,
             read_only: flags & READ_ONLY != 0,
@@ -776,15 +894,31 @@ impl Reader<'_, '_> {
             editable: kind == FieldKind::Combo && flags & EDIT != 0,
             widgets: widgets
                 .iter()
-                .map(|widget| FieldWidget {
-                    page: widget.node.id.and_then(|(number, _)| pages.get(&number).copied()),
-                    rect: rect_of(self.file, &widget.node.dict).unwrap_or_default(),
-                    view: None,
-                    on_state: widget.on.as_ref().map(|on| String::from_utf8_lossy(on).into_owned()),
+                .map(|widget| {
+                    let at = widget.node.id.and_then(|(number, _)| pages.get(&number).copied());
+                    FieldWidget {
+                        page: at.map(|(page, _)| page),
+                        rect: rect_of(self.file, &widget.node.dict).unwrap_or_default(),
+                        view: None,
+                        on_state: widget.on.as_ref().map(|on| String::from_utf8_lossy(on).into_owned()),
+                        annot_index: at.map(|(_, position)| position),
+                    }
                 })
                 .collect(),
         };
         Some(Field { info, chain, widgets })
+    }
+
+    /// A field's default appearance string: its own or an ancestor's, else
+    /// the form's.
+    fn da(&self, chain: &[Node], acro: &Node) -> Vec<u8> {
+        self.inherited(chain, b"DA")
+            .and_then(|(value, owner)| self.string(&value, owner))
+            .or_else(|| {
+                let value = acro.dict.get(b"DA")?;
+                self.string(&self.file.resolve(value)?, acro.owner)
+            })
+            .unwrap_or_else(|| b"/Helv 0 Tf 0 g".to_vec())
     }
 
     /// A button widget's "on" state: the name of its normal appearance

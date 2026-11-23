@@ -1,5 +1,5 @@
 //! Lists the signing identities the app would offer from the macOS keychain
-//! (ADR 0047). Listing asks nothing of the user; only signing does.
+//! (ADR 0048). Listing asks nothing of the user; only signing does.
 //!
 //! ```text
 //! cargo run -p safha-core --example keychain_identities

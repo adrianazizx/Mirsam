@@ -13,7 +13,7 @@ import styles from "./SignaturesPanel.module.css";
 const ICONS = { valid: ShieldCheck, unknown: ShieldAlert, invalid: ShieldX } as const;
 
 /**
- * A document's digital signatures (ADR 0047), checked when the panel shows:
+ * A document's digital signatures (ADR 0048), checked when the panel shows:
  * for each, the verdict and why, who signed (names in `<bdi>`: they may be
  * Arabic), when (a trusted time-stamp, or the signer's own clock), and what
  * the file changed after it. Revocation is not checked yet, and every

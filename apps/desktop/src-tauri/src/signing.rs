@@ -1,4 +1,4 @@
-//! Certificate signatures (ADR 0047): thin commands over `safha_core::sign`.
+//! Certificate signatures (ADR 0048): thin commands over `safha_core::sign`.
 //!
 //! - **Identities.** A PKCS#12 file is picked through a native dialog (the
 //!   UI gets its name, never its path), its password asked for, and the

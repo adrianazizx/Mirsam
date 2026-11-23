@@ -1,5 +1,5 @@
 //! Signs fixtures with a throwaway PKI and writes everything an external
-//! validator needs (ADR 0047): `scripts/check-signatures.sh` runs Poppler's
+//! validator needs (ADR 0048): `scripts/check-signatures.sh` runs Poppler's
 //! `pdfsig`, OpenSSL and qpdf over the output.
 //!
 //! ```text

@@ -44,7 +44,7 @@ pub struct DocumentInfo {
     /// How the file is protected, and what the password it was opened with
     /// allows (ADR 0043).
     security: safha_core::security::SecurityInfo,
-    /// It carries digital signatures (ADR 0047): the UI checks them.
+    /// It carries digital signatures (ADR 0048): the UI checks them.
     signed: bool,
 }
 

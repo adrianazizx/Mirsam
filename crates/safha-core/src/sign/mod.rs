@@ -1,4 +1,4 @@
-//! Certificate signatures (PAdES; ADRs 0044 and 0047): signing a document
+//! Certificate signatures (PAdES; ADRs 0044 and 0048): signing a document
 //! with a certificate, and checking the signatures a document carries.
 //!
 //! **Signing** appends one incremental update to the file ([`pdf`]): a

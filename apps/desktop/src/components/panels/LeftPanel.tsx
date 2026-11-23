@@ -29,7 +29,7 @@ const VIEWS: { panel: Panel; command: CommandId; icon: React.ReactNode }[] = [
 
 /**
  * The left panel (spec section 4): thumbnails, outline, search results, and
- * comments (ADR 0041), and digital signatures (ADR 0047) for the active document. "Left" in the spec's English layout; it sits at the
+ * comments (ADR 0041), and digital signatures (ADR 0048) for the active document. "Left" in the spec's English layout; it sits at the
  * inline start, so it is on the right in the Arabic UI.
  */
 export function LeftPanel() {

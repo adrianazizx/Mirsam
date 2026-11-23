@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M5 certificate signatures, branch `pomidor/m5-pades-c887cc`).
+Last updated: 2026-11-23 (Session M5-e: certificate signatures, branch `pomidor/m5-pades-c887cc`, merged with `main` after form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -115,7 +115,7 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **Conditions:** the server always runs with `--no-webui`, and no CUDA build ships (NVIDIA's
       CUDA runtime licence).
     - **Now:** the runtime is in the download catalog.
-21. **Certificate signatures need three things only a person can do** (ADR 0047):
+21. **Certificate signatures need three things only a person can do** (ADR 0048):
     - **Open signed files in Adobe Acrobat or Reader** (and ideally Foxit and Preview).
       `scripts/check-signatures.sh <dir>` writes test files and the test root (`ca.pem`); Poppler and
       OpenSSL accept them all. Acrobat will call the signer unknown until `ca.pem` is trusted in its
@@ -665,8 +665,22 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       native shell are untested.
 - [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
       rewritten in full so unlinked objects are gone (ADR 0042)
-- [ ] Form creation
-- [~] Certificate signatures (PAdES; spike ADR 0044, feature ADR 0047):
+- [~] Form creation (session M5-d, ADR 0047):
+  - **Done:** text (one line and several), check boxes, radio groups, drop-downs, list boxes, and push
+    buttons (no scripts), drawn on the page by dragging, moved and resized freely, deleted.
+  - **Properties** in the inspector: name, tooltip, required, read-only, default value, longest text,
+    alignment (start, centre, end of the text's own direction), font (Sans or Naskh) and size, border,
+    choices, radio buttons' values, a button's label.
+  - **Tab order:** earlier/later, or by rows from the right or the left; numbers on the page.
+  - **Finding fields** on flat forms (lines, boxes, table cells, underscores, ☐), named after their labels
+    (Arabic labels at the right), reviewed and made in one undo step.
+  - **Drawn by the fill code**, so Arabic defaults are shaped; incremental updates; undo; save and reopen.
+  - **Checked** in PDFium (a unit test), Chrome's PDF viewer (by hand), and macOS PDFKit (a test).
+  - **Gaps:** date formats, calculations and validation (need JavaScript), actions, rich text; comb and
+    password not set from the inspector; a widget cannot move to another page; Arabic typed *in Chrome* is
+    drawn by Chrome, unshaped; Preview drops a radio group's `/Opt` when it saves; not run in the native
+    shell.
+- [~] Certificate signatures (PAdES; spike ADR 0044, feature ADR 0048):
   - **Signing:** PAdES B-B, and B-T with an RFC 3161 authority the user sets; one incremental update, so
     earlier signatures stay valid; encrypted files too (`/Contents` left clear). Invisible, or visible:
     a kept Fill & Sign signature above a shaped caption (Arabic name joined, RTL), placed by a press,
@@ -712,12 +726,13 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ## Session log
 
-### Session M5-d — 2026-11-23 (Milestone 5: certificate signatures; branch `pomidor/m5-pades-c887cc`)
+### Session M5-e — 2026-11-23 (Milestone 5: certificate signatures; branch `pomidor/m5-pades-c887cc`)
 
 From `main` after PR #18; parallel to M4 OCR jobs, M5 form creation and M6 objects. Stayed in signing
 code and its UI. Claims and merge notes: `m5-pades-claims.md` in the session notes folder.
 
-- **ADR 0047** (0044 now Accepted, built on).
+- **ADR 0048** (0044 now Accepted, built on). Form creation took 0047 and session M5-d first; renumbered
+  when `main` was merged in.
 - **Engine (`safha_core::sign`):** `identity` (PKCS#12, external keys, certificate summaries),
   `keychain` (macOS), `cms` (build B-B/B-T, check), `tsa` (RFC 3161 over HTTP(S)), `trust` (OS roots,
   path check), `pdf` (the update; finding signatures; changes after a revision), `appearance` (visible),
@@ -739,13 +754,62 @@ code and its UI. Claims and merge notes: `m5-pades-claims.md` in the session not
   signatures and later edits listed, encrypted, edited-then-signed, PKCS#12 incl. legacy 3DES, external
   and refusing keys); unit tests in every `sign` module; `commands/signing.test.tsx` (12, English and
   Arabic). The fuzz harness also runs `sign::verify`.
-- **External validation:** `scripts/check-signatures.sh` (pdfsig, OpenSSL, qpdf): all pass (ADR 0047's
+- **External validation:** `scripts/check-signatures.sh` (pdfsig, OpenSSL, qpdf): all pass (ADR 0048's
   table). New examples: `sign_fixtures`, `keychain_identities`.
 - **Checked by eye** in the browser preview against the mock, English and Arabic, dark theme: the Sign
   panel's new section, the dialog (wrong then right PKCS#12 password, visible choice), placing, the
   Signatures panel. Rendered a visible signature on a 90° page with PDFium (upright, Naskh name, Arabic
   caption).
 - **Not done here:** the native-shell click-through (file dialogs), a real keychain key, Acrobat.
+
+### Session M5-d — 2026-11-23 (Milestone 5: form creation; parallel to M4 jobs, M5 PAdES, M6 objects)
+
+Branch `pomidor/m5-form-creation-8309c6`, from `main` after PR #18. Stayed in AcroForm field creation and its
+UI; signature fields belong to the PAdES session.
+
+- **ADR 0047** records the approach:
+  - standard fields, written by our own writer as incremental updates, and drawn by the fill code;
+  - `/DA` naming `MirsamSans` or `MirsamNaskh` makes `/Q` logical (`/Q 2` is the end of the text's
+    direction); `/DR` maps the names to standard fonts;
+  - radio buttons named by position, with `/Opt` (PDFKit garbles non-ASCII state names);
+  - tab order as `/Annots` order with `/Tabs /W`;
+  - finding fields as an assist, reviewed before anything is made.
+- **Engine:**
+  - `safha_core::forms::design`: `FieldSpec`, `FieldDesign` (add, add button, update, set rect, remove
+    button, remove, tab order), `design_update`; `Document::with_form_design`.
+  - `safha_core::forms::detect`: lines, boxes, grids, underscores, box characters, labels in either direction;
+    `Document::detect_fields` (PDFium paths through nested forms, and the page's text).
+  - The reader gains each field's partial name, tooltip, default value, alignment, font, size, border,
+    caption, and each widget's place in `/Annots`; it takes a radio group's flags from its buttons when
+    PDFKit moved them there.
+  - **Shared fix:** `pdf::Parser::literal_string` reads octal escapes and line continuations (PDFKit writes
+    UTF-16 strings as `\376\377…`).
+- **Shell (`form_design.rs`):** `design_form` (a list of edits, one undo step; returns the field to select)
+  and `detect_form_fields`.
+- **UI:**
+  - The Forms tool switches between Fill in and Design (`FormDesignPanel`): tools, the field inspector, the
+    tab order, and the review of found fields.
+  - The viewer's `design` and `draw` modes: field boxes with tab numbers, drawing, moving, free resizing by
+    corner handles, suggestions as dashed boxes.
+  - 32 commands (`forms.fillMode`, `forms.designMode`, `formDesign.*`), gated by `modify`. A key several
+    commands share now runs the one that is enabled (Delete and the arrows serve Fill & Sign and the
+    designer).
+  - English and Arabic strings; field tokens with contrast pairs. The mock backend designs forms too.
+- **Tests:**
+  - **Rust:** `tests/form_design.rs` (8): every kind on a page without a form; drawn inside their boxes;
+    Arabic read back once flattened; start and end alignment; filled, saved and reopened; moved, resized,
+    renamed, radio buttons relabelled and removed, tab order, removed; a turned page; an encrypted file;
+    found on a flat form and made in one step; PDFKit sees and fills them.
+  - Unit tests: `forms::design`, `forms::detect` (6), the PDFium interop test in `document.rs`, the string
+    parser, the shell's edit decoding.
+  - **UI:** `commands/formDesign.test.tsx` (9, English and Arabic, permissions) and a viewer test for the
+    design mode. 249 UI tests pass, `tsc` and Biome clean; `cargo test --workspace` 537 passed, clippy (with and without `devtools`), fmt and `cargo deny` clean; no dependency changed.
+- **Checked by eye:**
+  - **Browser preview** (mock), in English and Arabic: drawing, selecting, moving, the inspector, an Arabic
+    default value, radio buttons, finding fields.
+  - **Chrome's PDF viewer:** a form made here shows every field as drawn; typing English, ticking and choosing
+    a radio button there work; Arabic typed there comes out poorly joined (Chrome draws it, ADR 0045's limit).
+  - Not run in the native shell; the self-test does not cover forms.
 
 ### M4 side track — 2026-11-22 (OCR model download manager; branch `pomidor/m4-model-downloads-ef1050`)
 

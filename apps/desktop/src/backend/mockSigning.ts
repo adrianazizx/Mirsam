@@ -7,7 +7,7 @@ import type {
 } from "./types";
 
 /**
- * Certificate signatures for the in-browser mock (ADR 0047): one keychain
+ * Certificate signatures for the in-browser mock (ADR 0048): one keychain
  * identity with an Arabic name, a PKCS#12 file whose password is "1234",
  * and signatures kept per document so the panel has something to check.
  */

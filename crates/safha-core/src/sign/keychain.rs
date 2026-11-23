@@ -1,4 +1,4 @@
-//! Signing identities in the macOS keychain (ADR 0047): certificates with a
+//! Signing identities in the macOS keychain (ADR 0048): certificates with a
 //! private key, such as one a company issued or a `.p12` the user imported
 //! with Keychain Access. The key never leaves the keychain: it signs there,
 //! and macOS asks the user to allow it the first time.

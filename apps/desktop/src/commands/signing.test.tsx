@@ -44,7 +44,7 @@ beforeEach(async () => {
   useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 240 });
 });
 
-describe("signing with a certificate (ADR 0047)", () => {
+describe("signing with a certificate (ADR 0048)", () => {
   it("adds a certificate from a file, asking again after a wrong password", async () => {
     render(<App />);
     await act(async () => runCommand("certSign.open"));

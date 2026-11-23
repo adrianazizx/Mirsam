@@ -1,4 +1,4 @@
-//! Whom to trust, and whether a certificate leads there (ADR 0047).
+//! Whom to trust, and whether a certificate leads there (ADR 0048).
 //!
 //! Trust anchors are the operating system's trusted roots (as
 //! `rustls-native-certs` reads them: the macOS keychains' trust settings,

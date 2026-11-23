@@ -1,4 +1,4 @@
-//! Certificate signatures (PAdES, ADR 0047): signing the fixture corpus as
+//! Certificate signatures (PAdES, ADR 0048): signing the fixture corpus as
 //! incremental updates, invisible and visible, B-B and B-T, plain and
 //! encrypted, classic and stream cross-references; and checking signatures:
 //! intact, changed bytes, untrusted and expired signers, later revisions.

@@ -7,7 +7,7 @@ import type {
 } from "../backend";
 
 /**
- * Certificate signatures in the UI (ADR 0047): the signing dialog's form,
+ * Certificate signatures in the UI (ADR 0048): the signing dialog's form,
  * the identities to sign with, a PKCS#12 file waiting for its password, a
  * visible signature waiting to be placed, and each document's checked
  * signatures. Kept apart from the app store: nothing here is a setting, and

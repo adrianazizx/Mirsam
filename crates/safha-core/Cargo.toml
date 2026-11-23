@@ -54,7 +54,7 @@ flate2 = "1.1.11"
 tar = { version = "0.4.46", default-features = false }
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 serde_json = { workspace = true }
-# Certificate signatures (PAdES, ADRs 0044 and 0047): RustCrypto's CMS, X.509,
+# Certificate signatures (PAdES, ADRs 0044 and 0048): RustCrypto's CMS, X.509,
 # RFC 3161 and key crates, all MIT OR Apache-2.0. `cms` and `x509-tsp` are
 # release candidates, pinned: the stable cms 0.2 line needs rsa 0.9, whose
 # private-key operations leak timing (RUSTSEC-2023-0071); rsa 0.10 does not.
@@ -79,7 +79,7 @@ p384 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8
 # Windows and older macOS exports still use; the MAC tells a wrong password.
 p12-keystore = "0.4.1"
 
-# The macOS keychain's signing identities (ADR 0047): the key stays in the
+# The macOS keychain's signing identities (ADR 0048): the key stays in the
 # keychain, which signs. Already in the tree through rustls-native-certs.
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3.7"

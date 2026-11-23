@@ -1,4 +1,4 @@
-//! What a visible certificate signature shows (ADR 0047): one of the
+//! What a visible certificate signature shows (ADR 0048): one of the
 //! user's kept signatures (drawn, typed or an image, as Fill & Sign places
 //! them, ADR 0045) above a caption, both inside the box the user chose. The
 //! caption (the signer's name and the date, worded and with digits as the UI

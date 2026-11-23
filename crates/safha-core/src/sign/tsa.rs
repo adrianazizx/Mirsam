@@ -1,7 +1,7 @@
 //! Time-stamping authorities (RFC 3161 over HTTP, RFC 3161 section 3.4):
 //! a request goes out as `application/timestamp-query`, the token comes back
 //! as `application/timestamp-reply`. The authority is a setting the user
-//! fills in; nothing is sent anywhere unless they do (ADR 0047).
+//! fills in; nothing is sent anywhere unless they do (ADR 0048).
 //!
 //! What goes out is a hash of the signature value and a random nonce: no
 //! part of the document, nor who signed it.

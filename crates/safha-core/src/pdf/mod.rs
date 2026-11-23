@@ -244,14 +244,37 @@ impl<'a> Parser<'a> {
                 b'\\' => {
                     let escaped = self.peek()?;
                     self.pos += 1;
-                    out.push(match escaped {
-                        b'n' => b'\n',
-                        b'r' => b'\r',
-                        b't' => b'\t',
-                        b'b' => 8,
-                        b'f' => 12,
-                        other => other,
-                    });
+                    match escaped {
+                        // Up to three octal digits (ISO 32000-2, 7.3.4.2).
+                        b'0'..=b'7' => {
+                            let mut value = u32::from(escaped - b'0');
+                            for _ in 0..2 {
+                                match self.peek() {
+                                    Some(digit @ b'0'..=b'7') => {
+                                        self.pos += 1;
+                                        value = value * 8 + u32::from(digit - b'0');
+                                    }
+                                    _ => break,
+                                }
+                            }
+                            out.push((value & 0xFF) as u8);
+                        }
+                        // A backslash at the end of a line continues the string on the next.
+                        b'\r' => {
+                            if self.peek() == Some(b'\n') {
+                                self.pos += 1;
+                            }
+                        }
+                        b'\n' => {}
+                        other => out.push(match other {
+                            b'n' => b'\n',
+                            b'r' => b'\r',
+                            b't' => b'\t',
+                            b'b' => 8,
+                            b'f' => 12,
+                            other => other,
+                        }),
+                    }
                 }
                 b'(' => {
                     depth += 1;
@@ -636,6 +659,10 @@ mod tests {
             parser.object(0),
             Some(Object::Array(vec![Object::Int(1), Object::Ref(2, 0), Object::Real(3.5)]))
         );
+        // Octal escapes (how macOS PDFKit writes UTF-16), and a line continued.
+        let mut parser = Parser::new(b"(\\376\\377\\006'\\6D\\0a) (one \\\ntwo\\\r\nthree)", 0);
+        assert_eq!(parser.object(0), Some(Object::Str(vec![0xFE, 0xFF, 0x06, b'\'', 0x06, b'D', 0, b'a'])));
+        assert_eq!(parser.object(0), Some(Object::Str(b"one twothree".to_vec())));
     }
 
     /// Objects 1, 2, … with a correct cross-reference table and `trailer`

@@ -1,5 +1,5 @@
 //! Signing identities: a certificate, the chain that issued it, and the key
-//! that signs with it (ADR 0047).
+//! that signs with it (ADR 0048).
 //!
 //! The key is either held in memory (read from a PKCS#12 file, `.p12` or
 //! `.pfx`, with its password) or stays where it lives and is asked to sign
