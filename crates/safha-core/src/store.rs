@@ -90,7 +90,7 @@ pub struct StoredSignature {
 }
 
 /// Bumped whenever `migrate` gains a step.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 const MAX_RECENTS: i64 = 200;
 /// The most signatures kept; saving another forgets the oldest.
 pub const MAX_SIGNATURES: i64 = 24;
@@ -516,17 +516,35 @@ fn migrate(db: &Connection) -> StoreResult<()> {
              COMMIT;",
         )?;
     }
+    if version < 6 {
+        // What a job does (ADR 0038): JSON; NULL is recognizing its pages.
+        // Check jobs keep their verdicts in ocr_pages with quality 'check'.
+        db.execute_batch(
+            "BEGIN;
+             ALTER TABLE ocr_jobs ADD COLUMN options TEXT;
+             PRAGMA user_version = 6;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
 impl crate::ocr::jobs::JobBook for Store {
-    fn create_job(&self, path: &Path, name: &str, page_count: usize, pages: &[usize]) -> Result<i64, String> {
+    fn create_job(
+        &self,
+        path: &Path,
+        name: &str,
+        page_count: usize,
+        pages: &[usize],
+        options: &crate::ocr::jobs::JobOptions,
+    ) -> Result<i64, String> {
         let pages = serde_json::to_string(pages).map_err(|err| err.to_string())?;
+        let options = serde_json::to_string(options).map_err(|err| err.to_string())?;
         self.with(|db| {
             db.execute(
-                "INSERT INTO ocr_jobs (path, name, page_count, pages, state, created, updated)
-                 VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?5)",
-                params![key_of(path), name, page_count as i64, pages, now()],
+                "INSERT INTO ocr_jobs (path, name, page_count, pages, state, created, updated, options)
+                 VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?5, ?6)",
+                params![key_of(path), name, page_count as i64, pages, now(), options],
             )?;
             Ok(db.last_insert_rowid())
         })
@@ -538,7 +556,7 @@ impl crate::ocr::jobs::JobBook for Store {
         let rows = self
             .with(|db| {
                 let mut statement = db.prepare(
-                    "SELECT id, path, name, page_count, pages, state, error FROM ocr_jobs ORDER BY id",
+                    "SELECT id, path, name, page_count, pages, state, error, options FROM ocr_jobs ORDER BY id",
                 )?;
                 let rows = statement.query_map([], |row| {
                     Ok((
@@ -549,6 +567,7 @@ impl crate::ocr::jobs::JobBook for Store {
                         row.get::<_, String>(4)?,
                         row.get::<_, String>(5)?,
                         row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
                     ))
                 })?;
                 rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -556,7 +575,7 @@ impl crate::ocr::jobs::JobBook for Store {
             .map_err(|err| err.to_string())?;
         Ok(rows
             .into_iter()
-            .filter_map(|(id, path, name, page_count, pages, state, error)| {
+            .filter_map(|(id, path, name, page_count, pages, state, error, options)| {
                 Some(JobRecord {
                     id,
                     path: PathBuf::from(path),
@@ -565,6 +584,11 @@ impl crate::ocr::jobs::JobBook for Store {
                     pages: serde_json::from_str(&pages).ok()?,
                     state: JobState::from_name(&state)?,
                     error,
+                    // A job this version cannot read is not run.
+                    options: match options {
+                        Some(options) => serde_json::from_str(&options).ok()?,
+                        None => Default::default(),
+                    },
                 })
             })
             .collect())
@@ -618,13 +642,55 @@ impl crate::ocr::jobs::JobBook for Store {
     fn pages(&self, id: i64) -> Result<Vec<crate::ocr::jobs::PageOcr>, String> {
         let rows = self
             .with(|db| {
-                let mut statement =
-                    db.prepare("SELECT result FROM ocr_pages WHERE job = ?1 ORDER BY page")?;
+                let mut statement = db.prepare(
+                    "SELECT result FROM ocr_pages WHERE job = ?1 AND quality != 'check' ORDER BY page",
+                )?;
                 let rows = statement.query_map(params![id], |row| row.get::<_, String>(0))?;
                 rows.collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(|err| err.to_string())?;
         // A result this version cannot read is read again rather than failing the job.
+        Ok(rows.iter().filter_map(|row| serde_json::from_str(row).ok()).collect())
+    }
+
+    fn page(&self, id: i64, page: usize) -> Result<Option<crate::ocr::jobs::PageOcr>, String> {
+        let row = self
+            .with(|db| {
+                db.query_row(
+                    "SELECT result FROM ocr_pages WHERE job = ?1 AND page = ?2 AND quality != 'check'",
+                    params![id, page as i64],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+            })
+            .map_err(|err| err.to_string())?;
+        Ok(row.and_then(|row| serde_json::from_str(&row).ok()))
+    }
+
+    fn save_check(&self, id: i64, check: &crate::ocr::PageCheck) -> Result<(), String> {
+        let result = serde_json::to_string(check).map_err(|err| err.to_string())?;
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO ocr_pages (job, page, quality, result) VALUES (?1, ?2, 'check', ?3)
+                 ON CONFLICT(job, page) DO UPDATE SET quality = excluded.quality, result = excluded.result",
+                params![id, check.page as i64, result],
+            )?;
+            db.execute("UPDATE ocr_jobs SET updated = ?2 WHERE id = ?1", params![id, now()])
+        })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+    }
+
+    fn checks(&self, id: i64) -> Result<Vec<crate::ocr::PageCheck>, String> {
+        let rows = self
+            .with(|db| {
+                let mut statement = db.prepare(
+                    "SELECT result FROM ocr_pages WHERE job = ?1 AND quality = 'check' ORDER BY page",
+                )?;
+                let rows = statement.query_map(params![id], |row| row.get::<_, String>(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(|err| err.to_string())?;
         Ok(rows.iter().filter_map(|row| serde_json::from_str(row).ok()).collect())
     }
 

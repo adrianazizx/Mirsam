@@ -136,6 +136,8 @@ export interface ViewerCallbacks {
   onMoveItem?(item: SelectedAnnotation, rect: ViewRect, page: number): void;
   /** A drag marked an area (Protect tool): the box on the displayed page. */
   onMarkArea?(page: number, rect: ViewRect): void;
+  /** A drag marked an area to read again (OCR tool, ADR 0038): the box on the displayed page. */
+  onRegion?(page: number, rect: ViewRect): void;
   /**
    * The form designer drew a new field (ADR 0047): its box on the displayed
    * page; a click without a drag gives an empty box at the press.
@@ -196,6 +198,7 @@ export type ViewerMode =
   | "pen"
   | "eraser"
   | "redact"
+  | "region"
   | "place"
   | "objects"
   | "links"
@@ -325,6 +328,8 @@ export interface ViewerClassNames {
   searchHitActive: string;
   /** The OCR word under review. */
   reviewMark?: string;
+  /** The area drawn to be read again (ADR 0038). */
+  regionMark?: string;
   selection: string;
   /** Outline of a selected annotation. */
   markupSelected: string;
@@ -647,12 +652,20 @@ export class ViewerController {
     rect: ViewRect;
     moved: boolean;
   } | null = null;
-  private marking: { pointerId: number; page: number; from: PagePoint; to: PagePoint } | null =
-    null;
+  private marking: {
+    pointerId: number;
+    page: number;
+    from: PagePoint;
+    to: PagePoint;
+    /** Redaction (Protect tool) or an area to read again (OCR tool). */
+    mode: "redact" | "region";
+  } | null = null;
   /** Areas marked for redaction, by page, shown until they are applied or removed. */
   private readonly redactMarks = new Map<number, ViewRect[]>();
   /** The OCR word under review (ADR 0035). */
   private reviewMark: { page: number; rect: ViewRect } | null = null;
+  /** The area drawn to be read again (ADR 0038). */
+  private regionMark: { page: number; rect: ViewRect } | null = null;
   /** Form fields' widgets in the form designer, by page, and the selected one (ADR 0047). */
   private readonly fieldBoxes = new Map<number, FieldBox[]>();
   /** Fields found on a flat page, waiting for review, by page. */
@@ -1381,6 +1394,16 @@ export class ViewerController {
     }
   }
 
+  /** Shows the area drawn to be read again (ADR 0038), or nothing. */
+  setRegionMark(mark: { page: number; rect: ViewRect } | null): void {
+    const previous = this.regionMark?.page;
+    this.regionMark = mark;
+    for (const page of new Set([previous, mark?.page])) {
+      const slot = page === undefined ? undefined : this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+  }
+
   /** Marks a word the OCR review list points at (ADR 0035), or nothing. */
   setReviewMark(mark: { page: number; rect: ViewRect } | null): void {
     const previous = this.reviewMark?.page;
@@ -2042,10 +2065,10 @@ export class ViewerController {
       this.startErasing(event, point);
       return;
     }
-    if (mode === "redact") {
+    if (mode === "redact" || mode === "region") {
       this.setSelection(null);
       this.setSelectedAnnotation(null);
-      this.marking = { pointerId: event.pointerId, page: point.page, from: point, to: point };
+      this.marking = { pointerId: event.pointerId, page: point.page, from: point, to: point, mode };
       this.content.setPointerCapture?.(event.pointerId);
       return;
     }
@@ -2258,18 +2281,20 @@ export class ViewerController {
       return;
     }
     if (this.marking && event.pointerId === this.marking.pointerId) {
-      const { page, from, to } = this.marking;
+      const { page, from, to, mode } = this.marking;
       this.marking = null;
       this.content.releasePointerCapture?.(event.pointerId);
       const slot = this.slots.get(page);
       if (slot) this.paintOverlay(slot);
       if (event.type !== "pointercancel") {
-        this.callbacks.onMarkArea?.(page, {
+        const rect = {
           x: Math.min(from.x, to.x),
           y: Math.min(from.y, to.y),
           width: Math.abs(to.x - from.x),
           height: Math.abs(to.y - from.y),
-        });
+        };
+        if (mode === "region") this.callbacks.onRegion?.(page, rect);
+        else this.callbacks.onMarkArea?.(page, rect);
       }
       return;
     }
@@ -2711,6 +2736,13 @@ export class ViewerController {
       place(element, this.reviewMark.rect);
       slot.overlay.append(element);
     }
+    if (this.regionMark?.page === slot.page) {
+      const element = document.createElement("div");
+      element.className = this.classNames.regionMark ?? "";
+      element.dataset.testid = "ocr-region-mark";
+      place(element, this.regionMark.rect);
+      slot.overlay.append(element);
+    }
     this.paintFieldBoxes(slot, place);
     const reshaped = [
       this.moving && { ...this.moving, page: this.moving.page },
@@ -2743,9 +2775,10 @@ export class ViewerController {
     }
     this.paintObjectsAndLinks(slot, place);
     if (this.marking?.page === slot.page) {
-      const { from, to } = this.marking;
+      const { from, to, mode } = this.marking;
       const element = document.createElement("div");
-      element.className = this.classNames.redactPreview ?? "";
+      element.className =
+        (mode === "region" ? this.classNames.regionMark : this.classNames.redactPreview) ?? "";
       place(element, {
         x: Math.min(from.x, to.x),
         y: Math.min(from.y, to.y),

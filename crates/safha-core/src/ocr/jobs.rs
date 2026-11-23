@@ -34,13 +34,21 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use super::boxes::{visual_order, word_boxes};
+use super::check::{PageCheck, TextInfo, check_page};
 use super::draft::{
     DraftPage, DraftReader, PixelBox, TesseractReader, VisionReader, first_strong_rtl, vision_helper,
 };
-use super::layer::{LayerLine, LayerQuality, LayerWord, PageLayer};
+use super::layer::{Clear, LayerLine, LayerQuality, LayerState, LayerWord, PageLayer};
 use super::llama::{Device, NuqtaEngine, NuqtaModel, ServerConfig};
 use super::pipeline::{PageResult, QualityReader, Settings};
 use super::reconcile::WordStatus;
+pub use super::region::Language;
+use super::region::{Constraint, constrain, merge_region, region_scale, shift_page};
+use super::review::{
+    Action, DecideError, Decision, PageView, ReviewFilter, WordReview, decide, resolve, review_page,
+    sort_review,
+};
+pub use super::review::{ReviewPage, ReviewWord};
 use super::{OcrEngine, OcrError, OcrImage};
 use crate::models::{ENSEMBLE, Hardware, ModelStore, PRIMARY, RUNTIME};
 use crate::store::canonical_path;
@@ -102,6 +110,40 @@ impl JobState {
     }
 }
 
+/// What a job does (ADR 0038).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum JobKind {
+    /// Draft, then the quality pass, over its pages.
+    #[default]
+    Recognize,
+    /// One area of one page read again with the quality pipeline; the result
+    /// replaces that area's text. `rect`: displayed page points (left, top,
+    /// right, bottom).
+    Region {
+        rect: [f32; 4],
+        #[serde(default)]
+        language: Language,
+        /// Only numbers are expected there.
+        #[serde(default)]
+        numbers: bool,
+    },
+    /// The pages' existing text layers compared with a quick draft (ADR 0038).
+    Check,
+}
+
+/// A job's kind and settings, as the state store keeps them.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobOptions {
+    #[serde(default)]
+    pub kind: JobKind,
+    /// The layers written take the place of another tool's invisible text
+    /// (a poor text layer), which is removed by byte range.
+    #[serde(default)]
+    pub replace: bool,
+}
+
 /// A job as the state store keeps it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobRecord {
@@ -116,6 +158,7 @@ pub struct JobRecord {
     pub pages: Vec<usize>,
     pub state: JobState,
     pub error: Option<String>,
+    pub options: JobOptions,
 }
 
 /// A word of a quality result, kept for the review list.
@@ -130,6 +173,12 @@ pub struct OcrWord {
     pub bounds: Option<[f32; 4]>,
     /// The box came from widths, not from the guide (ADR 0031): it may be off.
     pub placed_by_width: bool,
+    /// Where it is in the page's layer: line, and place in the line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[u32; 2]>,
+    /// What a person decided about it in review (ADR 0037).
+    #[serde(default, skip_serializing_if = "WordReview::is_open")]
+    pub review: WordReview,
 }
 
 /// One page's OCR result as kept: its text layer, and for the quality pass its words.
@@ -145,6 +194,15 @@ pub struct PageOcr {
     /// The engines that read it.
     pub engine: String,
     pub seconds: f32,
+    /// A person checked the page as a whole (ADR 0037).
+    #[serde(default)]
+    pub checked: bool,
+    /// Decisions taken in review, each after its parent (ADR 0037).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<Decision>,
+    /// The digest of `layer` as written.
+    #[serde(default)]
+    pub digest: Option<u32>,
 }
 
 impl PageOcr {
@@ -159,6 +217,8 @@ impl PageOcr {
 pub enum Pass {
     Draft,
     Quality,
+    /// Comparing a page's existing text layer with a draft (ADR 0038).
+    Check,
 }
 
 /// A job as the UI sees it.
@@ -178,6 +238,55 @@ pub struct JobStatus {
     pub finished: usize,
     /// The page being read now, and by which pass.
     pub current: Option<(usize, Pass)>,
+    pub options: JobOptions,
+}
+
+/// A page as the document shows it, from its kept result (ADR 0037).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageState {
+    pub view: PageView,
+    /// Converted to page text (ADR 0039).
+    pub converted: bool,
+    /// The document's layer is not one the review knows.
+    pub stale: bool,
+}
+
+/// What a review decision did.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Decided {
+    /// The page after it.
+    pub view: PageView,
+    /// The layer to write into the document (the word's text changed).
+    pub layer: Option<PageLayer>,
+}
+
+/// The final results kept for the document from `path` (only page `only`'s
+/// when given), by page, each with its job, oldest job first.
+fn final_rows(
+    shared: &Shared,
+    path: &Path,
+    only: Option<usize>,
+) -> Result<BTreeMap<usize, Vec<(JobId, PageOcr)>>, String> {
+    let path = canonical_path(path);
+    let ids: Vec<JobId> = shared
+        .jobs()
+        .values()
+        .filter(|j| j.record.path == path && j.record.options.kind != JobKind::Check)
+        .map(|j| j.record.id)
+        .collect();
+    let mut rows: BTreeMap<usize, Vec<(JobId, PageOcr)>> = BTreeMap::new();
+    for id in ids {
+        let pages = match only {
+            Some(page) => shared.book.page(id, page)?.into_iter().collect(),
+            None => shared.book.pages(id)?,
+        };
+        for page in pages {
+            if page.quality() == LayerQuality::Final {
+                rows.entry(page.page).or_default().push((id, page));
+            }
+        }
+    }
+    Ok(rows)
 }
 
 /// The app's state store, for jobs and their page results.
@@ -188,13 +297,21 @@ pub trait JobBook: Send + Sync {
         name: &str,
         page_count: usize,
         pages: &[usize],
+        options: &JobOptions,
     ) -> Result<JobId, String>;
     fn jobs(&self) -> Result<Vec<JobRecord>, String>;
     fn set_job_state(&self, id: JobId, state: JobState, error: Option<&str>) -> Result<(), String>;
     fn set_job_path(&self, id: JobId, path: &Path, name: &str) -> Result<(), String>;
     fn save_page(&self, id: JobId, page: &PageOcr) -> Result<(), String>;
     fn pages(&self, id: JobId) -> Result<Vec<PageOcr>, String>;
+    /// One page's result of a job.
+    fn page(&self, id: JobId, page: usize) -> Result<Option<PageOcr>, String> {
+        Ok(self.pages(id)?.into_iter().find(|p| p.page == page))
+    }
     fn delete_job(&self, id: JobId) -> Result<(), String>;
+    /// Keeps a check job's verdict on a page (ADR 0038).
+    fn save_check(&self, id: JobId, check: &PageCheck) -> Result<(), String>;
+    fn checks(&self, id: JobId) -> Result<Vec<PageCheck>, String>;
 }
 
 /// A page rendered for OCR.
@@ -214,6 +331,37 @@ pub trait JobHost: Send + Sync {
     fn render(&self, path: &Path, page: usize, scale: f32) -> Result<RenderedPage, String>;
     /// The OCR layer each page of the open document has.
     fn layers(&self, path: &Path) -> Option<Vec<Option<LayerQuality>>>;
+    /// What each page of the open document holds of our OCR, with digests (ADR 0037).
+    fn states(&self, path: &Path) -> Option<Vec<LayerState>> {
+        Some(
+            self.layers(path)?
+                .into_iter()
+                .map(|quality| LayerState { quality, digest: None, converted: None })
+                .collect(),
+        )
+    }
+    /// Renders an area of `page` (`rect`: displayed points, left, top, right,
+    /// bottom) at `scale`: the image is the area alone.
+    fn render_area(
+        &self,
+        path: &Path,
+        page: usize,
+        rect: [f32; 4],
+        scale: f32,
+    ) -> Result<RenderedPage, String> {
+        let full = self.render(path, page, scale)?;
+        let s = full.scale;
+        let px = |v: f32| (v * s).round().max(0.0) as u32;
+        let image = full
+            .image
+            .crop(px(rect[0]), px(rect[1]), px(rect[2]), px(rect[3]))
+            .map_err(|err| err.to_string())?;
+        Ok(RenderedPage { image, scale: s, placement: full.placement })
+    }
+    /// The page's existing text, for checking it (ADR 0038).
+    fn text_info(&self, _path: &Path, _page: usize) -> Result<TextInfo, String> {
+        Err("not supported".into())
+    }
     /// Writes `layers` into the open document as one edit. `Ok(false)`: it is not open.
     fn apply(&self, path: &Path, layers: &[PageLayer]) -> Result<bool, String>;
     /// A job moved on.
@@ -262,6 +410,7 @@ impl Job {
             drafted: self.drafted.len(),
             finished: self.finished.len(),
             current: self.current,
+            options: self.record.options.clone(),
         }
     }
 }
@@ -273,6 +422,8 @@ struct Shared {
     jobs: Mutex<BTreeMap<JobId, Job>>,
     signal: Mutex<Signal>,
     wake: Condvar,
+    /// Decisions on a page are read, changed and kept one at a time.
+    deciding: Mutex<()>,
 }
 
 #[derive(Default)]
@@ -348,10 +499,16 @@ impl JobRunner {
             if record.state == JobState::Running {
                 record.state = JobState::Queued;
             }
-            let pages = book.pages(record.id)?;
-            let drafted = pages.iter().map(|p| p.page).collect();
-            let finished =
-                pages.iter().filter(|p| p.quality() == LayerQuality::Final).map(|p| p.page).collect();
+            let (drafted, finished) = if record.options.kind == JobKind::Check {
+                let checked: HashSet<usize> = book.checks(record.id)?.iter().map(|c| c.page).collect();
+                (checked.clone(), checked)
+            } else {
+                let pages = book.pages(record.id)?;
+                (
+                    pages.iter().map(|p| p.page).collect(),
+                    pages.iter().filter(|p| p.quality() == LayerQuality::Final).map(|p| p.page).collect(),
+                )
+            };
             jobs.insert(record.id, Job { record, drafted, finished, current: None, interrupt: None });
         }
         let shared = Arc::new(Shared {
@@ -361,6 +518,7 @@ impl JobRunner {
             jobs: Mutex::new(jobs),
             signal: Mutex::new(Signal::default()),
             wake: Condvar::new(),
+            deciding: Mutex::new(()),
         });
         let worker = {
             let shared = Arc::clone(&shared);
@@ -379,6 +537,7 @@ impl JobRunner {
         name: &str,
         page_count: usize,
         pages: &[usize],
+        options: JobOptions,
     ) -> Result<JobStatus, String> {
         let path = &canonical_path(path);
         let mut seen = HashSet::new();
@@ -386,7 +545,13 @@ impl JobRunner {
         if pages.is_empty() {
             return Err("no pages".into());
         }
-        let id = self.shared.book.create_job(path, name, page_count, &pages)?;
+        if let JobKind::Region { rect, .. } = &options.kind
+            && (pages.len() != 1
+                || !(rect.iter().all(|v| v.is_finite()) && rect[2] > rect[0] && rect[3] > rect[1]))
+        {
+            return Err("an area of one page".into());
+        }
+        let id = self.shared.book.create_job(path, name, page_count, &pages, &options)?;
         let record = JobRecord {
             id,
             path: path.to_owned(),
@@ -395,6 +560,7 @@ impl JobRunner {
             pages,
             state: JobState::Queued,
             error: None,
+            options,
         };
         let job =
             Job { record, drafted: HashSet::new(), finished: HashSet::new(), current: None, interrupt: None };
@@ -482,21 +648,99 @@ impl JobRunner {
         self.shared.jobs().get(&id).map(Job::status)
     }
 
-    /// The pages-needing-review list for the document from `path`: each page's
-    /// latest quality result, pages needing a decision first (spec §5.8).
-    pub fn review(&self, path: &Path) -> Result<Vec<ReviewPage>, String> {
+    /// The pages-needing-review list for the document from `path`, whose
+    /// pages hold `states` (spec §5.8, ADR 0037): each page's result and
+    /// decisions as the document shows them, pages needing a decision first.
+    pub fn review(
+        &self,
+        path: &Path,
+        states: &[LayerState],
+        filter: ReviewFilter,
+    ) -> Result<Vec<ReviewPage>, String> {
+        let rows = final_rows(&self.shared, path, None)?;
+        let mut list: Vec<ReviewPage> = rows
+            .iter()
+            .filter_map(|(page, rows)| {
+                let rows: Vec<(JobId, &PageOcr)> = rows.iter().map(|(id, row)| (*id, row)).collect();
+                let resolved = resolve(&rows, states.get(*page).copied().unwrap_or_default())?;
+                review_page(&resolved, filter)
+            })
+            .collect();
+        sort_review(&mut list);
+        Ok(list)
+    }
+
+    /// Page `page` as the document from `path` shows it (`states`): its result
+    /// with the decisions on its branch applied, and whether it was converted
+    /// to page text. `None` when the page has no result of ours.
+    pub fn page_view(
+        &self,
+        path: &Path,
+        states: &[LayerState],
+        page: usize,
+    ) -> Result<Option<PageState>, String> {
+        let rows = final_rows(&self.shared, path, Some(page))?;
+        let Some(rows) = rows.get(&page) else { return Ok(None) };
+        let rows: Vec<(JobId, &PageOcr)> = rows.iter().map(|(id, row)| (*id, row)).collect();
+        Ok(resolve(&rows, states.get(page).copied().unwrap_or_default()).map(|r| PageState {
+            view: r.view,
+            converted: r.converted,
+            stale: r.stale,
+        }))
+    }
+
+    /// Takes a review decision on `word` (`None`: the page) of page `page` of
+    /// the document from `path` (`states`), and keeps it. Returns the layer to
+    /// write when the word's text changed (ADR 0037).
+    pub fn decide(
+        &self,
+        path: &Path,
+        states: &[LayerState],
+        page: usize,
+        word: Option<usize>,
+        action: Action,
+    ) -> Result<Decided, String> {
+        let _one_at_a_time = self.shared.deciding.lock().unwrap_or_else(PoisonError::into_inner);
+        let rows = final_rows(&self.shared, path, Some(page))?;
+        let rows = rows.get(&page).ok_or_else(|| DecideError::NoWord.code().to_owned())?;
+        let refs: Vec<(JobId, &PageOcr)> = rows.iter().map(|(id, row)| (*id, row)).collect();
+        let resolved = resolve(&refs, states.get(page).copied().unwrap_or_default())
+            .ok_or_else(|| DecideError::NoWord.code().to_owned())?;
+        let edits = matches!(action, Action::Edit { .. });
+        if edits && resolved.converted {
+            return Err(DecideError::Converted.code().into());
+        }
+        if edits && resolved.stale {
+            return Err(DecideError::Stale.code().into());
+        }
+        let (_, row) = rows
+            .iter()
+            .find(|(id, _)| *id == resolved.job)
+            .ok_or_else(|| DecideError::NoWord.code().to_owned())?;
+        let mut row = row.clone();
+        let (view, layer) =
+            decide(&mut row, resolved.node, word, action).map_err(|err| err.code().to_owned())?;
+        self.shared.book.save_page(resolved.job, &row)?;
+        Ok(Decided { view, layer })
+    }
+
+    /// The latest verdict of a check job on each page of the document from `path` (ADR 0038).
+    pub fn checks(&self, path: &Path) -> Result<Vec<PageCheck>, String> {
         let path = canonical_path(path);
-        let ids: Vec<JobId> =
-            self.shared.jobs().values().filter(|j| j.record.path == path).map(|j| j.record.id).collect();
-        let mut latest: BTreeMap<usize, PageOcr> = BTreeMap::new();
+        let ids: Vec<JobId> = self
+            .shared
+            .jobs()
+            .values()
+            .filter(|j| j.record.path == path && j.record.options.kind == JobKind::Check)
+            .map(|j| j.record.id)
+            .collect();
+        let mut latest: BTreeMap<usize, PageCheck> = BTreeMap::new();
         for id in ids {
-            for page in self.shared.book.pages(id)? {
-                if page.quality() == LayerQuality::Final {
-                    latest.insert(page.page, page);
-                }
+            for check in self.shared.book.checks(id)? {
+                latest.insert(check.page, check);
             }
         }
-        Ok(review(latest.values()))
+        Ok(latest.into_values().collect())
     }
 
     /// The document was saved under another name: its jobs follow it.
@@ -613,6 +857,27 @@ fn set_current(shared: &Shared, id: JobId, current: Option<(usize, Pass)>) {
 }
 
 fn run(shared: &Shared, engines: &mut dyn JobEngines, id: JobId, path: &Path) -> Result<Finish, String> {
+    let options = match shared.jobs().get(&id) {
+        Some(job) => job.record.options.clone(),
+        None => return Ok(Finish::Done),
+    };
+    match options.kind {
+        JobKind::Recognize => run_recognize(shared, engines, id, path, options.replace),
+        JobKind::Region { rect, language, numbers } => {
+            run_region(shared, engines, id, path, rect, Constraint { language, numbers })
+        }
+        JobKind::Check => run_check(shared, engines, id, path),
+    }
+}
+
+fn run_recognize(
+    shared: &Shared,
+    engines: &mut dyn JobEngines,
+    id: JobId,
+    path: &Path,
+    replace: bool,
+) -> Result<Finish, String> {
+    let clear = if replace { Clear::Page } else { Clear::None };
     let pages = match shared.jobs().get(&id) {
         Some(job) => job.record.pages.clone(),
         None => return Ok(Finish::Done),
@@ -673,7 +938,8 @@ fn run(shared: &Shared, engines: &mut dyn JobEngines, id: JobId, path: &Path) ->
                 break;
             }
         };
-        let result = draft_page(page, &draft, &rendered, reader.name(), started.elapsed());
+        let mut result = draft_page(page, &draft, &rendered, reader.name(), started.elapsed());
+        result.layer.clear = clear;
         shared.book.save_page(id, &result)?;
         batch.push(result.layer);
         if let Some(job) = shared.jobs().get_mut(&id) {
@@ -729,7 +995,8 @@ fn run(shared: &Shared, engines: &mut dyn JobEngines, id: JobId, path: &Path) ->
             Some(partner) => format!("{}+{}", primary.name(), partner.name()),
             None => primary.name().to_owned(),
         };
-        let result = final_page(page, &result, &rendered, guide.as_ref(), &name, started.elapsed());
+        let mut result = final_page(page, &result, &rendered, guide.as_ref(), &name, started.elapsed());
+        result.layer.clear = clear;
         shared.book.save_page(id, &result)?;
         if let Some(job) = shared.jobs().get_mut(&id) {
             job.drafted.insert(page);
@@ -737,6 +1004,144 @@ fn run(shared: &Shared, engines: &mut dyn JobEngines, id: JobId, path: &Path) ->
         }
         if !shared.host.apply(path, std::slice::from_ref(&result.layer))? {
             return Ok(Finish::Closed);
+        }
+        shared.notify(id);
+    }
+    Ok(Finish::Done)
+}
+
+/// Reads one area of a page again with the quality pipeline, every word of it
+/// re-read, and puts the result in the place of the area's text (ADR 0038).
+fn run_region(
+    shared: &Shared,
+    engines: &mut dyn JobEngines,
+    id: JobId,
+    path: &Path,
+    rect: [f32; 4],
+    constraint: Constraint,
+) -> Result<Finish, String> {
+    let Some(page) = shared.jobs().get(&id).and_then(|job| job.record.pages.first().copied()) else {
+        return Ok(Finish::Done);
+    };
+    if shared.jobs().get(&id).is_some_and(|job| job.finished.contains(&page)) {
+        return Ok(Finish::Done);
+    }
+    if stop_requested(shared, id) {
+        return Ok(Finish::Stopped);
+    }
+    // What the area's result is merged into: the page as the document shows it.
+    let Some(states) = shared.host.states(path) else { return Ok(Finish::Closed) };
+    let state = states.get(page).copied().unwrap_or_default();
+    let rows = final_rows(shared, path, Some(page))?;
+    let base = match rows.get(&page) {
+        Some(rows) => {
+            let refs: Vec<(JobId, &PageOcr)> = rows.iter().map(|(id, row)| (*id, row)).collect();
+            resolve(&refs, state)
+        }
+        None => None,
+    };
+    if state.quality.is_none() && state.converted.is_some() {
+        return Err("ocr_region_converted".into());
+    }
+    // A draft has no words to merge with: the page is still being read.
+    if state.quality == Some(LayerQuality::Draft) {
+        return Err("ocr_region_draft".into());
+    }
+    match (&base, state.quality) {
+        // A layer of ours with no record of its words: merging would lose them.
+        (None, Some(_)) => return Err("ocr_region_unknown_layer".into()),
+        (Some(base), Some(_)) if base.stale => return Err("ocr_region_unknown_layer".into()),
+        _ => {}
+    }
+
+    set_current(shared, id, Some((page, Pass::Quality)));
+    let (primary, partner) = engines.quality().map_err(|err| err.code().to_owned())?;
+    let scale = region_scale(rect);
+    let rendered = match shared.host.render_area(path, page, rect, scale) {
+        Ok(rendered) => rendered,
+        Err(_) if shared.host.page_count(path).is_none() => return Ok(Finish::Closed),
+        Err(err) => {
+            eprintln!("safha: an area of page {} could not be rendered for OCR: {err}", page + 1);
+            return Err("ocr_image_invalid".into());
+        }
+    };
+    let started = Instant::now();
+    let guide = engines.draft().and_then(|reader| reader.read(&rendered.image).ok());
+    // An area is small: every word of it is checked again (accuracy first).
+    let reader = QualityReader {
+        primary: &*primary,
+        partner: partner.as_deref().map(|p| p as &dyn OcrEngine),
+        third: None,
+        settings: Settings { low_confidence: 1.01, reread_all_strips: true },
+    };
+    let mut result = match reader.read_page(&rendered.image) {
+        Ok(result) => result,
+        Err(_) if stop_requested(shared, id) => return Ok(Finish::Stopped),
+        Err(err) => return Err(err.code().to_owned()),
+    };
+    constrain(&mut result.words, constraint);
+    let name = match &partner {
+        Some(partner) => format!("{}+{}", primary.name(), partner.name()),
+        None => primary.name().to_owned(),
+    };
+    let mut area = final_page(page, &result, &rendered, guide.as_ref(), &name, started.elapsed());
+    shift_page(&mut area, rect[0], rect[1], constraint.language);
+    let merged = merge_region(base.as_ref().map(|b| &b.view), area, rect);
+    shared.book.save_page(id, &merged)?;
+    if let Some(job) = shared.jobs().get_mut(&id) {
+        job.drafted.insert(page);
+        job.finished.insert(page);
+    }
+    if !shared.host.apply(path, std::slice::from_ref(&merged.layer))? {
+        return Ok(Finish::Closed);
+    }
+    Ok(Finish::Done)
+}
+
+/// Compares each page's existing text layer with a quick draft of its image,
+/// and keeps a verdict per page (ADR 0038). Nothing is written.
+fn run_check(
+    shared: &Shared,
+    engines: &mut dyn JobEngines,
+    id: JobId,
+    path: &Path,
+) -> Result<Finish, String> {
+    let waiting: Vec<usize> = match shared.jobs().get(&id) {
+        Some(job) => job.record.pages.iter().copied().filter(|p| !job.finished.contains(p)).collect(),
+        None => return Ok(Finish::Done),
+    };
+    let page_count = shared.jobs().get(&id).map_or(0, |j| j.record.page_count);
+    for page in waiting {
+        if stop_requested(shared, id) {
+            return Ok(Finish::Stopped);
+        }
+        match shared.host.page_count(path) {
+            None => return Ok(Finish::Closed),
+            Some(count) if count != page_count => return Err("ocr_document_changed".into()),
+            Some(_) => {}
+        }
+        set_current(shared, id, Some((page, Pass::Check)));
+        let info = match shared.host.text_info(path, page) {
+            Ok(info) => info,
+            Err(_) if shared.host.page_count(path).is_none() => return Ok(Finish::Closed),
+            Err(err) => {
+                eprintln!("safha: the text of page {} could not be read: {err}", page + 1);
+                return Err("ocr_image_invalid".into());
+            }
+        };
+        let draft = if info.needs_draft() {
+            match render(shared, path, page, DRAFT_SCALE)? {
+                Some(rendered) => engines.draft().and_then(|reader| reader.read(&rendered.image).ok()),
+                None => return Ok(Finish::Closed),
+            }
+        } else {
+            None
+        };
+        let check = check_page(page, &info, draft.as_ref().map(DraftPage::text).as_deref());
+        shared.book.save_check(id, &check)?;
+        if let Some(job) = shared.jobs().get_mut(&id) {
+            job.drafted.insert(page);
+            job.finished.insert(page);
         }
         shared.notify(id);
     }
@@ -803,11 +1208,20 @@ pub fn draft_page(
         .collect();
     PageOcr {
         page,
-        layer: PageLayer { page, quality: LayerQuality::Draft, lines, placement: rendered.placement },
+        layer: PageLayer {
+            page,
+            quality: LayerQuality::Draft,
+            lines,
+            placement: rendered.placement,
+            clear: Clear::None,
+        },
         words: Vec::new(),
         truncated: false,
         engine: engine.to_owned(),
         seconds: took.as_secs_f32(),
+        checked: false,
+        decisions: Vec::new(),
+        digest: None,
     }
 }
 
@@ -842,17 +1256,21 @@ pub fn final_page(
     let lines = word_boxes(&rendered.image, &texts, &paragraphs, guide);
     let mut bounds: Vec<Option<[f32; 4]>> = vec![None; texts.len()];
     let mut by_width = vec![false; texts.len()];
+    let mut at: Vec<Option<[u32; 2]>> = vec![None; texts.len()];
     let layer_lines = lines
         .iter()
-        .map(|line| LayerLine {
+        .enumerate()
+        .map(|(l, line)| LayerLine {
             rtl: line.rtl,
             words: line
                 .words
                 .iter()
-                .map(|w| {
+                .enumerate()
+                .map(|(p, w)| {
                     let b = to_points(w.bounds, rendered.scale);
                     bounds[w.word] = Some(b);
                     by_width[w.word] = !w.anchored;
+                    at[w.word] = Some([l as u32, p as u32]);
                     LayerWord {
                         text: texts[w.word].clone(),
                         left: b[0],
@@ -864,14 +1282,17 @@ pub fn final_page(
                 .collect(),
         })
         .collect();
+    let layer = PageLayer {
+        page,
+        quality: LayerQuality::Final,
+        lines: layer_lines,
+        placement: rendered.placement,
+        clear: Clear::None,
+    };
     PageOcr {
         page,
-        layer: PageLayer {
-            page,
-            quality: LayerQuality::Final,
-            lines: layer_lines,
-            placement: rendered.placement,
-        },
+        digest: Some(layer.digest()),
+        layer,
         words: result
             .words
             .iter()
@@ -882,101 +1303,16 @@ pub fn final_page(
                 status: w.status.clone(),
                 bounds: bounds[i],
                 placed_by_width: by_width[i],
+                at: at[i],
+                review: WordReview::Open,
             })
             .collect(),
         truncated: result.truncated,
         engine: engine.to_owned(),
         seconds: took.as_secs_f32(),
+        checked: false,
+        decisions: Vec::new(),
     }
-}
-
-// ---------- the review list ----------
-
-/// A page on the pages-needing-review list.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewPage {
-    pub page: usize,
-    /// Words the readers disagree on (the page read was kept).
-    pub uncertain: usize,
-    /// Words replaced because re-reads agreed on something else.
-    pub corrected: usize,
-    /// Number–unit compounds turned into logical order.
-    pub reordered: usize,
-    /// The answer was cut off: part of the page may be missing.
-    pub truncated: bool,
-    /// The page's mean and lowest word probability (0–1).
-    pub confidence: f32,
-    pub lowest: f32,
-    /// The words to look at, in reading order.
-    pub words: Vec<ReviewWord>,
-}
-
-/// A word on the review list.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewWord {
-    /// Its place among the page's words.
-    pub index: usize,
-    pub text: String,
-    pub probability: f32,
-    pub status: WordStatus,
-    pub bounds: Option<[f32; 4]>,
-}
-
-impl ReviewPage {
-    /// An uncertain word or a cut-off answer: a person must decide.
-    pub fn needs_decision(&self) -> bool {
-        self.truncated || self.uncertain > 0
-    }
-}
-
-/// The review list from pages' quality results: every page with something to
-/// look at, pages needing a decision first, the most uncertain words first among
-/// them, then by page (as `pipeline::review_list`).
-pub fn review<'a>(pages: impl IntoIterator<Item = &'a PageOcr>) -> Vec<ReviewPage> {
-    let mut list: Vec<ReviewPage> = pages
-        .into_iter()
-        .map(|page| {
-            let count = |f: fn(&WordStatus) -> bool| page.words.iter().filter(|w| f(&w.status)).count();
-            let probabilities: Vec<f32> = page.words.iter().map(|w| w.probability).collect();
-            ReviewPage {
-                page: page.page,
-                uncertain: count(|s| matches!(s, WordStatus::Uncertain { .. })),
-                corrected: count(|s| matches!(s, WordStatus::Corrected { .. })),
-                reordered: count(|s| matches!(s, WordStatus::Reordered { .. })),
-                truncated: page.truncated,
-                confidence: if probabilities.is_empty() {
-                    1.0
-                } else {
-                    probabilities.iter().sum::<f32>() / probabilities.len() as f32
-                },
-                lowest: probabilities.iter().copied().fold(1.0, f32::min),
-                words: page
-                    .words
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, w)| w.status.needs_review())
-                    .map(|(index, w)| ReviewWord {
-                        index,
-                        text: w.text.clone(),
-                        probability: w.probability,
-                        status: w.status.clone(),
-                        bounds: w.bounds,
-                    })
-                    .collect(),
-            }
-        })
-        .filter(|r| !r.words.is_empty() || r.truncated)
-        .collect();
-    list.sort_by(|a, b| {
-        (!a.needs_decision(), std::cmp::Reverse(a.uncertain), a.page).cmp(&(
-            !b.needs_decision(),
-            std::cmp::Reverse(b.uncertain),
-            b.page,
-        ))
-    });
-    list
 }
 
 // ---------- the engines on this machine ----------
