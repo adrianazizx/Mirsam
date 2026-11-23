@@ -190,6 +190,10 @@ fn replace_all_in_english_sets_each_paragraph_again_in_its_own_font_as_one_updat
     assert_eq!(&bytes[..document.bytes().len()], &document.bytes()[..]);
     assert_eq!(bytes.len(), document.bytes().len() + update.len());
     assert!(!String::from_utf8_lossy(&update).contains("/FontFile"));
+    // In a file that is not encrypted, every new stream is there to inflate (the
+    // check the encrypted test relies on sees streams in the clear).
+    let (streams, clear) = common::streams_in_the_clear(&update);
+    assert!(streams > 0 && clear == streams, "{clear} of {streams}");
 
     let page0 = page_text(&edited, 0);
     assert!(page0.contains("The Supplier shall deliver the goods"), "{page0}");
@@ -400,7 +404,8 @@ fn encrypted_files_are_replaced_in_and_reopen_with_their_password() {
     let contractor = query("contractor", SearchOptions::default());
     let (_, edited, update, report) = replace_all(&document, &contractor, "Supplier");
     assert_eq!(report.replaced, 1, "{report:?}");
-    assert!(!String::from_utf8_lossy(&update).contains("Supplier"), "no text in the clear");
+    let (streams, clear) = common::streams_in_the_clear(&update);
+    assert!(streams > 0 && clear == 0, "{clear} of {streams} streams written in the clear");
     assert!(page_text(&edited, 0).contains("The Supplier shall deliver the goods to the Client."));
     qpdf_check(&edited.bytes(), "encrypted.pdf", password.as_deref());
 

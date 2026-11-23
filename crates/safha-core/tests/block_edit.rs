@@ -833,7 +833,8 @@ fn encrypted_files_are_read_and_edited_in_place() {
     assert!(block.editable && block.rtl, "{block:?}");
     let new = ARABIC.replace("ثلاثين", "ستين");
     let (edited, _, update) = edit_to(&document, &block, 0, &new);
-    assert!(!String::from_utf8_lossy(&update).contains("BT"), "no content in the clear");
+    let (streams, clear) = common::streams_in_the_clear(&update);
+    assert!(streams > 0 && clear == 0, "{clear} of {streams} streams written in the clear");
     assert_eq!(normalize(&block_with(&edited, 0, "ستين").text), normalize(&new));
     assert!(page_text(&edited, 0).contains(&normalize(&new)), "{}", page_text(&edited, 0));
 
