@@ -38,6 +38,7 @@
 }
 
 .item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -68,6 +69,38 @@
 
 .item[data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--color-focus-ring);
+}
+
+/* The drag handle (keyboard and screen readers drag with it), at the item's inline-start corner. */
+.drag {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: var(--space-1);
+  z-index: var(--layer-page-overlay);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--size-hit);
+  block-size: var(--size-hit);
+  padding: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+
+.drag svg {
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+}
+
+.item[data-hovered] .drag,
+.item[data-focus-visible] .drag,
+.drag[data-focus-visible] {
+  opacity: 1;
 }
 
 .item[data-dragging] {

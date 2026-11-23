@@ -18,6 +18,7 @@ import { RedactDialog } from "./components/protect/RedactDialog";
 import { SecurityDialog } from "./components/protect/SecurityDialog";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { AppShell } from "./components/shell/AppShell";
+import { LiveRegions } from "./components/shell/LiveRegions";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
 import { CertSignDialog } from "./components/signing/CertSignDialog";
@@ -66,6 +67,7 @@ export function App() {
   const uiDigits = useAppStore((state) => state.uiDigits);
   const theme = useAppStore((state) => state.theme);
   const readingTheme = useAppStore((state) => state.readingTheme);
+  const uiScale = useAppStore((state) => state.uiScale);
 
   // Language and direction live on the root element so every component, portal
   // (tooltips), and CSS logical property follows them. Applying the locale again
@@ -91,6 +93,11 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.readingTheme = readingTheme;
   }, [readingTheme]);
+
+  // The interface size scales the chrome's tokens (tokens.css), not the pages.
+  useEffect(() => {
+    document.documentElement.dataset.uiScale = String(uiScale);
+  }, [uiScale]);
 
   // Global keyboard shortcuts run registry commands. A disabled command leaves
   // the key alone, so Cmd+C still copies in a text field.
@@ -284,6 +291,7 @@ export function App() {
   return (
     <I18nProvider locale={formatTagWith(locale, uiDigits)}>
       <AppShell />
+      <LiveRegions />
       <UnsavedChangesDialog />
       <RecoveryDialog />
       <SplitDialog />

@@ -30,7 +30,8 @@ import {
   type ViewRect,
 } from "../backend";
 import { marksOfRuns, sameMarks } from "../components/comments/richText";
-import { formatNumber, formatTag, i18n } from "../i18n";
+import { formatNumber, formatTag, i18n, isolate } from "../i18n";
+import { announce } from "../state/announcer";
 import {
   type AppState,
   type CommentTool,
@@ -41,6 +42,7 @@ import {
   type OutputDialog,
   type ReadingTheme,
   selectActiveDocument,
+  UI_SCALES,
   useAppStore,
 } from "../state/appStore";
 import { useCertSign, VISIBLE_SIZE } from "../state/certSign";
@@ -77,6 +79,7 @@ import {
   selectedField,
 } from "./formDesign";
 import { isMac } from "./platform";
+import { moveToRegion } from "./regions";
 
 /**
  * Command registry: every user action is a command (docs/SPEC.md section 9).
@@ -429,6 +432,11 @@ export type CommandId =
   | "view.readingNight"
   | "app.digitsArabicIndic"
   | "app.digitsWestern"
+  | "app.uiLarger"
+  | "app.nextRegion"
+  | "app.previousRegion"
+  | "app.uiSmaller"
+  | "app.uiDefaultSize"
   | "search.focus"
   | "search.run"
   | "search.next"
@@ -1157,13 +1165,36 @@ function acceptRestore(restored: RestoreOutcome) {
 async function saveDocument(id: number): Promise<boolean> {
   try {
     store().applySave(id, await backend.saveDocument(id));
+    announceSaved(id);
     return true;
   } catch (error) {
     if (!isBackendError(error) || error.code !== "save_as_required") throw error;
     const outcome = await backend.saveDocumentAs(id);
-    if (outcome) store().applySave(id, outcome);
+    if (outcome) {
+      store().applySave(id, outcome);
+      announceSaved(id);
+    }
     return outcome !== null;
   }
+}
+
+/** The next interface size up or down, said aloud (the change is otherwise only seen). */
+function stepUiScale(step: 1 | -1) {
+  const index = UI_SCALES.indexOf(store().uiScale) + step;
+  const next = UI_SCALES[Math.max(0, Math.min(UI_SCALES.length - 1, index))] ?? 1;
+  store().setUiScale(next);
+  announce(
+    i18n.t("settings.uiScaleNow", {
+      percent: formatNumber(next * 100, store().locale),
+      lng: store().locale,
+    }),
+  );
+}
+
+/** A save leaves nothing to see but a tab's dot going away: screen readers are told. */
+function announceSaved(id: number) {
+  const name = store().documents.find((open) => open.id === id)?.name;
+  if (name) announce(i18n.t("a11y.saved", { name, lng: store().locale }));
 }
 
 /** Pages inserted from files: the new revision, with the inserted pages selected. */
@@ -1534,7 +1565,10 @@ const DECLARED: Command[] = [
       const active = selectActiveDocument(store());
       if (!active) return;
       const outcome = await backend.saveDocumentAs(active.id);
-      if (outcome) store().applySave(active.id, outcome);
+      if (outcome) {
+        store().applySave(active.id, outcome);
+        announceSaved(active.id);
+      }
     },
   },
   {
@@ -1673,7 +1707,8 @@ const DECLARED: Command[] = [
       const active = selectActiveDocument(store());
       if (!active) return;
       const name = await backend.extractPages(active.id, targetPages());
-      if (name) store().setNotice({ key: "extracted", values: { name } });
+      // A file name of either direction, isolated inside the sentence (as `<bdi>` would).
+      if (name) store().setNotice({ key: "extracted", values: { name: isolate(name) } });
     },
   },
   {
@@ -1761,7 +1796,7 @@ const DECLARED: Command[] = [
       const name = await backend.exportText(active.id, arg.pages, arg.textFormat);
       if (name === null) return;
       store().setOutputDialog(null);
-      store().setNotice({ key: "exportedText", values: { name } });
+      store().setNotice({ key: "exportedText", values: { name: isolate(name) } });
     },
   },
   {
@@ -1788,7 +1823,7 @@ const DECLARED: Command[] = [
       const name = await backend.saveCompressed(active.id);
       if (name === null) return;
       store().setOutputDialog(null);
-      store().setNotice({ key: "compressedSaved", values: { name } });
+      store().setNotice({ key: "compressedSaved", values: { name: isolate(name) } });
     },
   },
   {
@@ -3248,6 +3283,36 @@ const DECLARED: Command[] = [
   // Digits of the Arabic UI's own numbers (owner decision, 2026-11-23).
   { id: "app.digitsArabicIndic", run: () => store().setUiDigits("arabicIndic") },
   { id: "app.digitsWestern", run: () => store().setUiDigits("western") },
+  // Between the window's areas in visual order (commands/regions.ts). Kept out of
+  // the palette: closing it hands focus back, which would race the move.
+  {
+    id: "app.nextRegion",
+    shortcut: { key: "F6" },
+    paletteHidden: true,
+    run: () => void moveToRegion(1),
+  },
+  {
+    id: "app.previousRegion",
+    shortcut: { key: "F6", shift: true },
+    paletteHidden: true,
+    run: () => void moveToRegion(-1),
+  },
+  // The interface's size (WCAG 1.4.4): text and controls, not the pages.
+  {
+    id: "app.uiLarger",
+    isEnabled: (state) => state.uiScale < Math.max(...UI_SCALES),
+    run: () => stepUiScale(1),
+  },
+  {
+    id: "app.uiSmaller",
+    isEnabled: (state) => state.uiScale > Math.min(...UI_SCALES),
+    run: () => stepUiScale(-1),
+  },
+  {
+    id: "app.uiDefaultSize",
+    isEnabled: (state) => state.uiScale !== 1,
+    run: () => store().setUiScale(1),
+  },
   {
     id: "search.focus",
     shortcut: { key: "f", mod: true },

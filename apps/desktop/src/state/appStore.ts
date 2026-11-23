@@ -62,6 +62,13 @@ export type ToolId = (typeof TOOLS)[number];
 export type ThemePreference = "system" | "light" | "dark";
 /** How pages themselves are tinted, independent of the UI theme (spec section 4). */
 export type ReadingTheme = "normal" | "sepia" | "night";
+
+/**
+ * The interface's size (Settings → Display): text and the controls around it
+ * grow by this factor, the pages keep their own zoom (WCAG 1.4.4).
+ */
+export const UI_SCALES = [1, 1.25, 1.5, 1.75, 2] as const;
+export type UiScale = (typeof UI_SCALES)[number];
 export type LeftPanel = "thumbnails" | "outline" | "search" | "comments" | "signatures";
 
 export interface SearchState {
@@ -213,6 +220,7 @@ export interface AppState {
   uiDigits: UiDigits;
   theme: ThemePreference;
   readingTheme: ReadingTheme;
+  uiScale: UiScale;
   /** The open side panel at the inline start, or null when it is closed. */
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
@@ -290,6 +298,7 @@ export interface AppState {
   setUiDigits(digits: UiDigits): void;
   setTheme(theme: ThemePreference): void;
   setReadingTheme(theme: ReadingTheme): void;
+  setUiScale(scale: UiScale): void;
   setLeftPanel(panel: LeftPanel | null): void;
   setSearchOptions(options: SearchOptions): void;
   setCommentAuthor(name: string): void;
@@ -374,7 +383,14 @@ const CACHE_KEY = "safha.preferences";
 
 type Persisted = Pick<
   AppState,
-  "locale" | "uiDigits" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
+  | "locale"
+  | "uiDigits"
+  | "theme"
+  | "readingTheme"
+  | "uiScale"
+  | "leftPanel"
+  | "searchOptions"
+  | "commentAuthor"
 >;
 
 const DEFAULTS: Persisted = {
@@ -382,6 +398,7 @@ const DEFAULTS: Persisted = {
   uiDigits: "arabicIndic",
   theme: "system",
   readingTheme: "normal",
+  uiScale: 1,
   leftPanel: null,
   searchOptions: DEFAULT_SEARCH_OPTIONS,
   commentAuthor: "",
@@ -402,6 +419,8 @@ export function parseSettings(raw: Record<string, string | undefined>): Partial<
   ) {
     out.readingTheme = raw.readingTheme;
   }
+  const scale = UI_SCALES.find((candidate) => String(candidate) === raw.uiScale);
+  if (scale !== undefined) out.uiScale = scale;
   if (
     raw.leftPanel === "thumbnails" ||
     raw.leftPanel === "outline" ||
@@ -624,6 +643,7 @@ export const useAppStore = create<AppState>((set, get) => {
     setUiDigits: (uiDigits) => update("uiDigits", uiDigits),
     setTheme: (theme) => update("theme", theme),
     setReadingTheme: (readingTheme) => update("readingTheme", readingTheme),
+    setUiScale: (uiScale) => update("uiScale", uiScale),
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),
     setSearchOptions: (searchOptions) => update("searchOptions", searchOptions),
     setActiveTool(activeTool) {

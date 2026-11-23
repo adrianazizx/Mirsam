@@ -118,3 +118,8 @@
 .row {
   display: flex;
 }
+
+/* Focusable while it scrolls (useKeyboardScrollable): the ring sits inside its edges. */
+.panel:focus-visible {
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}

@@ -251,6 +251,22 @@ afterEach(() => {
 });
 
 describe("viewer controller", () => {
+  it("names each page and, once the view rests, gives the pages on screen their text", async () => {
+    const { container } = setup();
+    await settle();
+    const page = container.querySelector<HTMLElement>('[data-page="0"]');
+    // A group (an image's content would be hidden), named, its pictures hidden.
+    expect(page?.getAttribute("role")).toBe("group");
+    expect(page?.getAttribute("aria-label")).toBe("Page 1");
+    expect(page?.querySelector(".tiles")?.getAttribute("aria-hidden")).toBe("true");
+    const readable = page?.querySelector("[data-readable]");
+    expect(readable?.childElementCount).toBe(0);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await settle();
+    // The mock page has no text: the note says so (one paragraph).
+    expect(readable?.childElementCount).toBe(1);
+  });
+
   it("mounts only the pages near the viewport and asks for their previews first", async () => {
     const { viewer, calls, mounted } = setup();
     await settle();

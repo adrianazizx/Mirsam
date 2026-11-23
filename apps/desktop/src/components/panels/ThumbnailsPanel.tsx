@@ -4,13 +4,9 @@ import { backend } from "../../backend";
 import { runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
+import { tokenPx } from "../../styles/tokens";
 import { ThumbnailStrip } from "../../viewer/thumbnails";
 import styles from "./ThumbnailsPanel.module.css";
-
-function readPx(element: HTMLElement, name: string, fallback: number): number {
-  const value = Number.parseFloat(getComputedStyle(element).getPropertyValue(name));
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
 
 /** Page thumbnails; the current page is marked and kept in view. */
 export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
@@ -44,7 +40,9 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
     };
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new revision rebuilds the strip
+  // A new revision, or another interface size, rebuilds the strip.
+  const uiScale = useAppStore((state) => state.uiScale);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new revision or interface size rebuilds the strip
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -52,8 +50,9 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
       backend,
       documentId: id,
       container,
-      width: readPx(container, "--size-thumbnail", 128),
-      chrome: readPx(container, "--space-8", 32) + readPx(container, "--space-2", 8),
+      width: tokenPx("--size-thumbnail", 128, container),
+      // The label under each image grows with the interface size.
+      chrome: tokenPx("--space-8", 32, container) + tokenPx("--space-2", 8, container),
       classNames: {
         list: styles.list ?? "",
         item: styles.item ?? "",
@@ -70,7 +69,7 @@ export function ThumbnailsPanel({ documentId: id }: { documentId: number }) {
       strip.destroy();
       stripRef.current = null;
     };
-  }, [id, revision]);
+  }, [id, revision, uiScale]);
 
   useEffect(() => {
     stripRef.current?.setCurrent(page);
