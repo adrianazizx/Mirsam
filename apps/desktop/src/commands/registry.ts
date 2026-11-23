@@ -4,6 +4,7 @@ import {
   type CompressOptions,
   type EditOutcome,
   FILL_KINDS,
+  type FieldSpec,
   type ImageFormat,
   isBackendError,
   type MarkupKind,
@@ -24,10 +25,11 @@ import {
   type ViewRect,
 } from "../backend";
 import { marksOfRuns, sameMarks } from "../components/comments/richText";
-import { formatTag } from "../i18n";
+import { formatNumber, formatTag, i18n } from "../i18n";
 import {
   type AppState,
   type CommentTool,
+  type DesignTool,
   type FillTool,
   type LeftPanel,
   type OpenDocument,
@@ -51,6 +53,21 @@ import { stepZoom } from "../state/zoom";
 import { NOTE_SIZE, type SelectedAnnotation, TEXT_BOX_WIDTH } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import { getViewer } from "../viewer/registry";
+import {
+  applyDesign,
+  defaultSpec,
+  designOf,
+  detectedEdits,
+  drawnRect,
+  firstWidget,
+  loadFormDesign,
+  moved,
+  newFieldName,
+  nextButtonRect,
+  pageFields,
+  rowOrder,
+  selectedField,
+} from "./formDesign";
 import { isMac } from "./platform";
 
 /**
@@ -162,6 +179,8 @@ export interface CommandArg {
   /** `form.setValue`: the field (its id) and its new value (as `FormField.values`). */
   field?: number;
   values?: string[];
+  /** `formDesign.update`: the selected field's new properties (ADR 0047). */
+  spec?: FieldSpec;
   /** `fill.signature`, `signature.delete`: a kept signature's id. */
   signature?: number;
   /** `signature.saveTyped`: the family it is set in. */
@@ -243,6 +262,38 @@ export type CommandId =
   | "recovery.later"
   | "forms.openTool"
   | "form.setValue"
+  | "forms.fillMode"
+  | "forms.designMode"
+  | "formDesign.select"
+  | "formDesign.text"
+  | "formDesign.checkbox"
+  | "formDesign.radio"
+  | "formDesign.combo"
+  | "formDesign.list"
+  | "formDesign.button"
+  | "formDesign.draw"
+  | "formDesign.selectField"
+  | "formDesign.move"
+  | "formDesign.update"
+  | "formDesign.addButton"
+  | "formDesign.removeButton"
+  | "formDesign.delete"
+  | "formDesign.tabEarlier"
+  | "formDesign.tabLater"
+  | "formDesign.tabRowsLeftToRight"
+  | "formDesign.tabRowsRightToLeft"
+  | "formDesign.detect"
+  | "formDesign.toggleDetected"
+  | "formDesign.createDetected"
+  | "formDesign.cancelDetected"
+  | "formDesign.moveLeft"
+  | "formDesign.moveRight"
+  | "formDesign.moveUp"
+  | "formDesign.moveDown"
+  | "formDesign.moveLeftMore"
+  | "formDesign.moveRightMore"
+  | "formDesign.moveUpMore"
+  | "formDesign.moveDownMore"
   | "sign.openTool"
   | "fill.select"
   | "fill.text"
@@ -378,6 +429,100 @@ const isUnencrypted = (state: AppState) => {
   return active !== null && !active.security?.encrypted;
 };
 const hasSelection = (state: AppState) => selectActiveDocument(state)?.hasSelection ?? false;
+/** The Forms tool is making fields for the active document (ADR 0047). */
+const designing = (state: AppState) =>
+  hasDocument(state) && state.activeTool === "forms" && state.formsMode === "design";
+/** A field is selected in the form designer. */
+const fieldSelected = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  return (
+    designing(state) &&
+    active !== null &&
+    state.formDesign?.documentId === active.id &&
+    state.formDesign.selected !== null
+  );
+};
+
+/** Opens the Forms tool to fill fields in or to make them (ADR 0047). */
+async function openForms(mode: "fill" | "design"): Promise<void> {
+  store().setActiveTool("forms");
+  if (store().formsMode !== mode) store().setFormsMode(mode);
+  const active = selectActiveDocument(store());
+  if (mode === "design" && active) await loadFormDesign(active.id);
+}
+
+/** Arms the form designer to draw `tool` (null: select). */
+async function chooseDesignTool(tool: DesignTool | null): Promise<void> {
+  if (!designing(store())) await openForms("design");
+  store().setDesignTool(tool);
+}
+
+/** The selected field in the active document, with its document. */
+function selection() {
+  const active = selectActiveDocument(store());
+  const design = active ? designOf(active.id) : null;
+  const field = selectedField(design);
+  if (!active || !design?.selected || !field) return null;
+  return { active, design, field, widget: design.selected.widget };
+}
+
+/** Moves the selected field `step` places in its page's tab order. */
+async function stepTabOrder(step: number): Promise<void> {
+  const chosen = selection();
+  const on = chosen ? firstWidget(chosen.field) : null;
+  if (!chosen || !on) return;
+  const ids = pageFields(chosen.design.fields, on.page).map((field) => field.id);
+  const index = ids.indexOf(chosen.field.id);
+  if (index === -1) return;
+  await applyDesign(chosen.active.id, [
+    { op: "tabOrder", page: on.page, fields: moved(ids, index, step) },
+  ]);
+  store().updateFormDesign({ selected: { field: chosen.field.id, widget: chosen.widget } });
+}
+
+/** Orders the current page's fields by rows (ADR 0047). */
+async function tabByRows(rtl: boolean): Promise<void> {
+  const active = selectActiveDocument(store());
+  const design = active ? designOf(active.id) : null;
+  if (!active || !design) return;
+  const page = active.page;
+  const fields = rowOrder(design.fields, page, rtl);
+  if (fields.length === 0) return;
+  const selected = design.selected;
+  await applyDesign(active.id, [{ op: "tabOrder", page, fields }]);
+  store().updateFormDesign({ selected });
+}
+
+/** Moves the selected field's widget by (`dx`, `dy`) points, on its page. */
+async function nudgeField(dx: number, dy: number): Promise<void> {
+  const chosen = selection();
+  const widget = chosen?.field.widgets[chosen.widget];
+  if (!chosen || !widget?.view || widget.page === null) return;
+  const size = chosen.active.pageSize;
+  const { x, y, width, height } = widget.view;
+  const rect = {
+    x: Math.max(0, Math.min((size?.width ?? Number.POSITIVE_INFINITY) - width, x + dx)),
+    y: Math.max(0, Math.min((size?.height ?? Number.POSITIVE_INFINITY) - height, y + dy)),
+    width,
+    height,
+  };
+  await applyDesign(
+    chosen.active.id,
+    [{ op: "setRect", field: chosen.field.id, widget: chosen.widget, page: widget.page, rect }],
+    chosen.widget,
+  );
+}
+
+/** The form designer's tools, and the command that arms each. */
+const DESIGN_TOOLS: [CommandId, DesignTool | null][] = [
+  ["formDesign.select", null],
+  ["formDesign.text", "text"],
+  ["formDesign.checkbox", "checkbox"],
+  ["formDesign.radio", "radio"],
+  ["formDesign.combo", "combo"],
+  ["formDesign.list", "list"],
+  ["formDesign.button", "pushButton"],
+];
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
 const hasAnnotationSelected = (state: AppState) =>
   Boolean(selectActiveDocument(state)?.selectedAnnotation);
@@ -1753,6 +1898,201 @@ const DECLARED: Command[] = [
       store().applyEdit(active.id, outcome);
     },
   },
+  { id: "forms.fillMode", isEnabled: hasDocument, run: () => openForms("fill") },
+  { id: "forms.designMode", isEnabled: hasDocument, run: () => openForms("design") },
+  ...DESIGN_TOOLS.map(
+    ([id, tool]): Command => ({ id, isEnabled: hasDocument, run: () => chooseDesignTool(tool) }),
+  ),
+  {
+    // A drag (or a click) with a field tool makes a field there (ADR 0047).
+    id: "formDesign.draw",
+    paletteHidden: true,
+    isEnabled: designing,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const tool = store().designTool;
+      if (!active || !tool || arg?.page === undefined || !arg.rect) return;
+      const fields = designOf(active.id)?.fields ?? [];
+      const rect = drawnRect(tool, arg.rect, active.pageSize);
+      const spec = defaultSpec(tool, newFieldName(tool, fields));
+      await applyDesign(active.id, [{ op: "add", page: arg.page, rect, spec }]);
+    },
+  },
+  {
+    // A press on a field's widget selects it; elsewhere, nothing is selected.
+    id: "formDesign.selectField",
+    paletteHidden: true,
+    isEnabled: designing,
+    run(arg) {
+      const field = arg?.field;
+      store().updateFormDesign({
+        selected: field === undefined ? null : { field, widget: arg?.index ?? 0 },
+      });
+    },
+  },
+  {
+    // A widget dragged or resized on its page (ADR 0047).
+    id: "formDesign.move",
+    paletteHidden: true,
+    isEnabled: designing,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.field === undefined || arg.page === undefined || !arg.rect) return;
+      const widget = arg.index ?? 0;
+      await applyDesign(
+        active.id,
+        [{ op: "setRect", field: arg.field, widget, page: arg.page, rect: arg.rect }],
+        widget,
+      );
+    },
+  },
+  {
+    // The inspector's changes to the selected field: one undo step each.
+    id: "formDesign.update",
+    paletteHidden: true,
+    isEnabled: fieldSelected,
+    async run(arg) {
+      const chosen = selection();
+      if (!chosen || !arg?.spec) return;
+      await applyDesign(
+        chosen.active.id,
+        [{ op: "update", field: chosen.field.id, spec: arg.spec }],
+        chosen.widget,
+      );
+    },
+  },
+  {
+    id: "formDesign.addButton",
+    isEnabled: (state) => fieldSelected(state) && selection()?.field.kind === "radio",
+    async run() {
+      const chosen = selection();
+      if (chosen?.field.kind !== "radio") return;
+      const place = nextButtonRect(chosen.field, chosen.active.pageSize);
+      if (!place) return;
+      const exports = new Set(chosen.field.options.map((option) => option.label));
+      let n = chosen.field.widgets.length + 1;
+      let value = i18n.t("formDesign.choice", { n });
+      while (exports.has(value)) {
+        n += 1;
+        value = i18n.t("formDesign.choice", { n });
+      }
+      await applyDesign(
+        chosen.active.id,
+        [{ op: "addButton", field: chosen.field.id, page: place.page, rect: place.rect, value }],
+        "last",
+      );
+    },
+  },
+  {
+    id: "formDesign.removeButton",
+    paletteHidden: true,
+    isEnabled: (state) =>
+      fieldSelected(state) &&
+      selection()?.field.kind === "radio" &&
+      (selection()?.field.widgets.length ?? 0) > 1,
+    async run(arg) {
+      const chosen = selection();
+      if (!chosen) return;
+      const widget = arg?.index ?? chosen.widget;
+      await applyDesign(chosen.active.id, [{ op: "removeButton", field: chosen.field.id, widget }]);
+    },
+  },
+  {
+    id: "formDesign.delete",
+    shortcut: { key: "Delete", alternate: "Backspace", notInFields: true },
+    isEnabled: fieldSelected,
+    async run() {
+      const chosen = selection();
+      if (!chosen) return;
+      await applyDesign(chosen.active.id, [{ op: "remove", field: chosen.field.id }]);
+    },
+  },
+  { id: "formDesign.tabEarlier", isEnabled: fieldSelected, run: () => stepTabOrder(-1) },
+  { id: "formDesign.tabLater", isEnabled: fieldSelected, run: () => stepTabOrder(1) },
+  { id: "formDesign.tabRowsLeftToRight", isEnabled: designing, run: () => tabByRows(false) },
+  { id: "formDesign.tabRowsRightToLeft", isEnabled: designing, run: () => tabByRows(true) },
+  {
+    // Fields the current page seems to ask for, for review before any is made.
+    id: "formDesign.detect",
+    isEnabled: hasDocument,
+    async run() {
+      if (!designing(store())) await openForms("design");
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const page = active.page;
+      const found = await backend.detectFormFields(active.id, page);
+      if (!designOf(active.id)) await loadFormDesign(active.id);
+      store().updateFormDesign({
+        detected: { page, fields: found.map((field) => ({ ...field, include: true })) },
+      });
+    },
+  },
+  {
+    id: "formDesign.toggleDetected",
+    paletteHidden: true,
+    isEnabled: (state) => state.formDesign?.detected != null,
+    run(arg) {
+      const index = arg?.index;
+      if (index === undefined) return;
+      store().updateFormDesign((current) =>
+        current?.detected
+          ? {
+              ...current,
+              detected: {
+                ...current.detected,
+                fields: current.detected.fields.map((field, i) =>
+                  i === index ? { ...field, include: !field.include } : field,
+                ),
+              },
+            }
+          : current,
+      );
+    },
+  },
+  {
+    id: "formDesign.createDetected",
+    isEnabled: (state) =>
+      state.formDesign?.detected?.fields.some((field) => field.include) ?? false,
+    async run() {
+      const active = selectActiveDocument(store());
+      const design = active ? designOf(active.id) : null;
+      if (!active || !design) return;
+      const edits = detectedEdits(design);
+      if (edits.length === 0) return;
+      await applyDesign(active.id, edits);
+      store().updateFormDesign({ detected: null });
+      store().setNotice({
+        key: "fieldsMade",
+        values: { n: formatNumber(edits.length, store().locale) },
+      });
+    },
+  },
+  {
+    id: "formDesign.cancelDetected",
+    isEnabled: (state) => state.formDesign?.detected != null,
+    run: () => store().updateFormDesign({ detected: null }),
+  },
+  ...(
+    [
+      ["formDesign.moveLeft", "ArrowLeft", -1, 0],
+      ["formDesign.moveRight", "ArrowRight", 1, 0],
+      ["formDesign.moveUp", "ArrowUp", 0, -1],
+      ["formDesign.moveDown", "ArrowDown", 0, 1],
+    ] as const
+  ).flatMap(([id, key, dx, dy]): Command[] => [
+    {
+      id,
+      shortcut: { key, notInFields: true },
+      isEnabled: fieldSelected,
+      run: () => nudgeField(dx * NUDGE, dy * NUDGE),
+    },
+    {
+      id: `${id}More` as CommandId,
+      shortcut: { key, shift: true, notInFields: true },
+      isEnabled: fieldSelected,
+      run: () => nudgeField(dx * NUDGE_MORE, dy * NUDGE_MORE),
+    },
+  ]),
   { id: "sign.openTool", isEnabled: hasDocument, run: () => chooseFill(null) },
   { id: "fill.select", isEnabled: hasDocument, run: () => chooseFill(null) },
   { id: "fill.text", isEnabled: hasDocument, run: () => chooseFill("text") },
@@ -2571,6 +2911,32 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "output.exportText": "copy",
   // Form filling and Fill & Sign (ADR 0045).
   "form.setValue": "fillForms",
+  // Making form fields (ADR 0047): ISO 32000-2 asks for "modify" as well as "annotate".
+  "formDesign.text": "modify",
+  "formDesign.checkbox": "modify",
+  "formDesign.radio": "modify",
+  "formDesign.combo": "modify",
+  "formDesign.list": "modify",
+  "formDesign.button": "modify",
+  "formDesign.draw": "modify",
+  "formDesign.move": "modify",
+  "formDesign.update": "modify",
+  "formDesign.addButton": "modify",
+  "formDesign.removeButton": "modify",
+  "formDesign.delete": "modify",
+  "formDesign.tabEarlier": "modify",
+  "formDesign.tabLater": "modify",
+  "formDesign.tabRowsLeftToRight": "modify",
+  "formDesign.tabRowsRightToLeft": "modify",
+  "formDesign.createDetected": "modify",
+  "formDesign.moveLeft": "modify",
+  "formDesign.moveRight": "modify",
+  "formDesign.moveUp": "modify",
+  "formDesign.moveDown": "modify",
+  "formDesign.moveLeftMore": "modify",
+  "formDesign.moveRightMore": "modify",
+  "formDesign.moveUpMore": "modify",
+  "formDesign.moveDownMore": "modify",
   "fill.text": "annotate",
   "fill.date": "annotate",
   "fill.check": "annotate",
@@ -2662,12 +3028,14 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 /** The command bound to this key event, if any. */
 export function commandForEvent(event: KeyboardEvent, mac = isMac): Command | undefined {
   const inField = isEditableTarget(event.target);
-  return COMMANDS.find(
+  const matching = COMMANDS.filter(
     (command) =>
       command.shortcut &&
       !(inField && command.shortcut.notInFields) &&
       matchesShortcut(command.shortcut, event, mac),
   );
+  // A key several commands share (Delete, the arrows) runs the one that applies now.
+  return matching.find((command) => isCommandEnabled(command.id)) ?? matching[0];
 }
 
 /** Human-readable shortcut, e.g. "⌘O" on macOS and "Ctrl+O" elsewhere. */

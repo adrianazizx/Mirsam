@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backend, KeptRequest, Priority, RenderedPage, TileRequest } from "../backend";
-import { resizedRect, ViewerController, type ViewerMode, type ViewState } from "./controller";
+import {
+  freelyResizedRect,
+  resizedRect,
+  ViewerController,
+  type ViewerMode,
+  type ViewState,
+} from "./controller";
 
 /**
  * The controller against a fake backend and a stubbed 1000 x 800 viewport
@@ -116,6 +122,9 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onPlaceText: vi.fn(),
     onEditBlock: vi.fn(),
     onBlockRefused: vi.fn(),
+    onDrawField: vi.fn(),
+    onSelectField: vi.fn(),
+    onMoveField: vi.fn(),
   };
   const viewer = new ViewerController({
     backend,
@@ -140,6 +149,10 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       gesture: "gesture",
       fillMoving: "fill-moving",
       fillHandle: "fill-handle",
+      fieldBox: "field-box",
+      fieldBoxSelected: "field-selected",
+      fieldTab: "field-tab",
+      fieldDraft: "field-draft",
     },
     initial: {
       zoomMode: "custom",
@@ -623,6 +636,82 @@ describe("viewer controller", () => {
     viewer.destroy();
   });
 
+  it("draws, selects, moves, and resizes form fields in the form designer (ADR 0047)", async () => {
+    mode = "draw";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    const box = {
+      field: 7,
+      widget: 0,
+      page: 0,
+      rect: { x: 50, y: 100, width: 100, height: 20 },
+      tab: 1,
+    };
+    viewer.setFieldBoxes(
+      [box, { ...box, widget: 1, rect: { x: 50, y: 50, width: 14, height: 14 }, tab: 0 }],
+      null,
+      [{ page: 0, rect: { x: 10, y: 380, width: 40, height: 10 } }],
+    );
+    expect(container.querySelectorAll(".field-box")).toHaveLength(2);
+    expect([...container.querySelectorAll(".field-tab")].map((tab) => tab.textContent)).toEqual([
+      "1",
+    ]);
+    expect(container.querySelectorAll(".field-draft")).toHaveLength(1);
+
+    // A drag on an empty place draws a field, shown while it is drawn.
+    at("pointerdown", 50, 200);
+    at("pointermove", 120, 210);
+    expect(container.querySelectorAll(".field-draft")).toHaveLength(2);
+    at("pointermove", 150, 224);
+    at("pointerup", 150, 224);
+    expect(callbacks.onDrawField).toHaveBeenCalledWith(0, {
+      x: 50,
+      y: 200,
+      width: 100,
+      height: 24,
+    });
+
+    // A press on a field selects it; a drag moves it, kept on its page.
+    at("pointerdown", 60, 105);
+    expect(callbacks.onSelectField).toHaveBeenLastCalledWith(7, 0);
+    at("pointermove", 80, 115);
+    at("pointerup", 80, 115);
+    expect(callbacks.onMoveField).toHaveBeenLastCalledWith(7, 0, 0, {
+      x: 70,
+      y: 110,
+      width: 100,
+      height: 20,
+    });
+
+    // Selected, it has four handles; the bottom-right one resizes it freely.
+    viewer.setFieldBoxes([box], { field: 7, widget: 0 });
+    expect(container.querySelectorAll(".field-selected")).toHaveLength(1);
+    expect(container.querySelectorAll(".fill-handle")).toHaveLength(4);
+    at("pointerdown", 150, 120);
+    at("pointermove", 170, 150);
+    at("pointermove", 200, 160);
+    at("pointerup", 200, 160);
+    expect(callbacks.onMoveField).toHaveBeenLastCalledWith(7, 0, 0, {
+      x: 50,
+      y: 100,
+      width: 150,
+      height: 60,
+    });
+
+    // Without a tool, a press on an empty place selects nothing and draws nothing.
+    mode = "design";
+    at("pointerdown", 250, 300);
+    at("pointerup", 250, 300);
+    expect(callbacks.onSelectField).toHaveBeenLastCalledWith(null, 0);
+    expect(callbacks.onDrawField).toHaveBeenCalledTimes(1);
+    viewer.destroy();
+  });
+
   it("edits the page's text where pressed, says why where it cannot, and places new text elsewhere", async () => {
     mode = "text";
     const { viewer, container, callbacks } = setup();
@@ -660,6 +749,39 @@ describe("viewer controller", () => {
     expect(container.children).toHaveLength(0);
     // Nothing was in flight before the page sizes arrived, so nothing to cancel.
     expect(updates).toEqual([]);
+  });
+});
+
+describe("resizing a form field (ADR 0047)", () => {
+  const rect = { x: 100, y: 100, width: 100, height: 20 };
+  it("keeps the opposite corner, not the proportions", () => {
+    expect(freelyResizedRect(rect, "se", { x: 250, y: 160 }, 600, 800)).toEqual({
+      x: 100,
+      y: 100,
+      width: 150,
+      height: 60,
+    });
+    expect(freelyResizedRect(rect, "nw", { x: 80, y: 90 }, 600, 800)).toEqual({
+      x: 80,
+      y: 90,
+      width: 120,
+      height: 30,
+    });
+  });
+
+  it("stays at least 4 points, and on the page", () => {
+    expect(freelyResizedRect(rect, "se", { x: 0, y: 0 }, 600, 800)).toEqual({
+      x: 100,
+      y: 100,
+      width: 4,
+      height: 4,
+    });
+    expect(freelyResizedRect(rect, "se", { x: 900, y: 900 }, 600, 800)).toEqual({
+      x: 100,
+      y: 100,
+      width: 500,
+      height: 700,
+    });
   });
 });
 

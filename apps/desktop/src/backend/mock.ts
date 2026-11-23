@@ -3,9 +3,12 @@ import type {
   AnnotationKind,
   Backend,
   CommentReply,
+  DesignEdit,
+  DetectedField,
   DocumentComment,
   DocumentInfo,
   EditOutcome,
+  FieldSpec,
   FormField,
   FormInfo,
   KeptRequest,
@@ -231,6 +234,8 @@ interface MockState {
   change: "pages" | "annotations";
   /** Form field values by field id (ADR 0045); carried into later states. */
   form?: Map<number, string[]>;
+  /** The form's fields once the form designer changed them (ADR 0047), in tab order. */
+  fields?: FormField[];
 }
 
 /** The sample document's form, on its first page (ADR 0045). */
@@ -363,6 +368,181 @@ function stateOf(documentId: number): MockState {
   );
 }
 
+/** The form's fields at the current revision (the sample's form, until the designer changed it). */
+function mockFields(documentId: number): FormField[] {
+  return stateOf(documentId).fields ?? (documentId === SAMPLE.id ? MOCK_FIELDS : []);
+}
+
+/** Each widget's position among its page's widgets: their tab order (the list's order). */
+function withTabOrder(fields: FormField[]): FormField[] {
+  const seen = new Map<number, number>();
+  return fields.map((field) => ({
+    ...field,
+    widgets: field.widgets.map((widget) => {
+      if (widget.page === null) return { ...widget, annotIndex: null };
+      const at = seen.get(widget.page) ?? 0;
+      seen.set(widget.page, at + 1);
+      return { ...widget, annotIndex: at };
+    }),
+  }));
+}
+
+function overlap(a: ViewRect, b: ViewRect | null): boolean {
+  if (!b) return false;
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+let mockFieldId = 1000;
+
+/** One form designer change (ADR 0047), as the engine makes it, on a copy of the fields. */
+function applyDesign(
+  fields: FormField[],
+  values: Map<number, string[]>,
+  edit: DesignEdit,
+  selected: number | null,
+): [FormField[], number | null] {
+  const refuse = (detail: string) => {
+    throw { code: "invalid_edit", detail };
+  };
+  const find = (id: number) =>
+    fields.find((field) => field.id === id) ?? refuse("no such form field");
+  const named = (name: string, except?: number) =>
+    fields.some((field) => field.id !== except && field.name === name);
+  const fromSpec = (spec: FieldSpec, base: FormField): FormField => ({
+    ...base,
+    name: spec.name.trim(),
+    partialName: spec.name.trim(),
+    tooltip: spec.tooltip,
+    required: spec.required,
+    readOnly: spec.readOnly,
+    multiline: spec.kind === "text" && spec.multiline,
+    maxLen: spec.kind === "text" ? spec.maxLen : null,
+    defaultValues: spec.defaultValues,
+    align: spec.align,
+    font: spec.font,
+    fontSize: spec.fontSize,
+    multiSelect: spec.kind === "list" && spec.multiSelect,
+    editable: spec.kind === "combo" && spec.editable,
+    bordered: spec.bordered,
+    caption: spec.caption,
+  });
+  const check = (spec: FieldSpec) => {
+    if (spec.name.trim() === "") refuse("a field needs a name");
+    if (spec.name.includes(".")) refuse("a field's name has no full stops");
+  };
+  switch (edit.op) {
+    case "add": {
+      check(edit.spec);
+      if (named(edit.spec.name.trim())) refuse("a field with this name exists already");
+      mockFieldId += 1;
+      const id = mockFieldId;
+      const radio = edit.spec.kind === "radio";
+      const first = edit.spec.options[0];
+      const options = radio
+        ? [{ value: "0", label: first?.label || first?.value || "1" }]
+        : edit.spec.kind === "checkbox"
+          ? [{ value: "Yes", label: "Yes" }]
+          : edit.spec.options.map((o) => ({ value: o.value, label: o.label || o.value }));
+      const onState = radio ? "0" : edit.spec.kind === "checkbox" ? "Yes" : null;
+      const base: FormField = {
+        id,
+        name: "",
+        kind: edit.spec.kind,
+        values: [],
+        options,
+        readOnly: false,
+        required: false,
+        multiline: false,
+        password: false,
+        comb: false,
+        maxLen: null,
+        multiSelect: false,
+        editable: false,
+        widgets: [{ page: edit.page, view: edit.rect, onState }],
+      };
+      const field = fromSpec(edit.spec, base);
+      const chosen = radio && edit.spec.defaultValues.length > 0 ? ["0"] : edit.spec.defaultValues;
+      field.defaultValues = chosen;
+      values.set(id, chosen);
+      return [[...fields, field], id];
+    }
+    case "addButton": {
+      const field = find(edit.field);
+      if (field.kind !== "radio") refuse("buttons are added to radio groups");
+      const state = String(field.widgets.length);
+      const next: FormField = {
+        ...field,
+        options: [...field.options, { value: state, label: edit.value }],
+        widgets: [...field.widgets, { page: edit.page, view: edit.rect, onState: state }],
+      };
+      return [fields.map((f) => (f.id === field.id ? next : f)), field.id];
+    }
+    case "update": {
+      const field = find(edit.field);
+      check(edit.spec);
+      if (edit.spec.kind !== field.kind) refuse("a field's kind cannot be changed");
+      if (named(edit.spec.name.trim(), field.id)) refuse("a field with this name exists already");
+      const next = fromSpec(edit.spec, field);
+      if (field.kind === "combo" || field.kind === "list") {
+        next.options = edit.spec.options.map((o) => ({
+          value: o.value,
+          label: o.label || o.value,
+        }));
+      } else if (field.kind === "radio") {
+        next.options = edit.spec.options.map((o, i) => ({
+          value: String(i),
+          label: o.label || o.value,
+        }));
+      }
+      if (JSON.stringify(edit.spec.defaultValues) !== JSON.stringify(field.defaultValues ?? [])) {
+        values.set(field.id, edit.spec.defaultValues);
+      }
+      return [fields.map((f) => (f.id === field.id ? next : f)), field.id];
+    }
+    case "setRect": {
+      const field = find(edit.field);
+      const widgets = field.widgets.map((widget, i) =>
+        i === edit.widget ? { ...widget, page: edit.page, view: edit.rect } : widget,
+      );
+      return [fields.map((f) => (f.id === field.id ? { ...field, widgets } : f)), field.id];
+    }
+    case "removeButton": {
+      const field = find(edit.field);
+      if (field.kind !== "radio" || field.widgets.length < 2) {
+        refuse("a radio group keeps one button at least");
+      }
+      const widgets = field.widgets
+        .filter((_, i) => i !== edit.widget)
+        .map((widget, i) => ({ ...widget, onState: String(i) }));
+      const options = field.options
+        .filter((_, i) => i !== edit.widget)
+        .map((option, i) => ({ ...option, value: String(i) }));
+      values.set(field.id, []);
+      return [
+        fields.map((f) => (f.id === field.id ? { ...field, widgets, options } : f)),
+        field.id,
+      ];
+    }
+    case "remove":
+      find(edit.field);
+      values.delete(edit.field);
+      return [fields.filter((f) => f.id !== edit.field), null];
+    case "tabOrder": {
+      const rank = (field: FormField) => {
+        const at = edit.fields.indexOf(field.id);
+        return at === -1 ? Number.MAX_SAFE_INTEGER : at;
+      };
+      const onPage = fields.filter((field) => field.widgets.some((w) => w.page === edit.page));
+      const sorted = [...onPage].sort((a, b) => rank(a) - rank(b));
+      let next = 0;
+      return [
+        fields.map((field) => (onPage.includes(field) ? (sorted[next++] ?? field) : field)),
+        selected,
+      ];
+    }
+  }
+}
+
 /** Records the next revision; undone revisions are forgotten. */
 const MOCK_BLOCK_TEXT = "The mock page has one paragraph of text that the Edit tool can change.";
 const mockBlockTexts = new Map<number, string>();
@@ -374,6 +554,7 @@ const mockCompressed = new Set<number>();
 
 function pushState(documentId: number, next: MockState): EditOutcome {
   next.form ??= stateOf(documentId).form;
+  next.fields ??= stateOf(documentId).fields;
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
   history.at += 1;
@@ -1007,16 +1188,56 @@ export const mockBackend: Backend = {
     return pushState(documentId, next);
   },
   formFields: async (documentId) => {
-    if (documentId !== SAMPLE.id) return { fields: [], xfa: false, needAppearances: false };
     const values = stateOf(documentId).form;
-    const fields = MOCK_FIELDS.map((field) => ({
+    const fields = mockFields(documentId).map((field) => ({
       ...field,
       values: values?.get(field.id) ?? field.values,
     }));
-    return { fields, xfa: false, needAppearances: false } satisfies FormInfo;
+    return { fields: withTabOrder(fields), xfa: false, needAppearances: false } satisfies FormInfo;
+  },
+  designForm: async (documentId, designEdits) => {
+    let fields = mockFields(documentId).map((field) => ({ ...field, widgets: [...field.widgets] }));
+    const values = new Map(stateOf(documentId).form);
+    let selected: number | null = null;
+    for (const edit of designEdits) {
+      [fields, selected] = applyDesign(fields, values, edit, selected);
+    }
+    const state = stateOf(documentId);
+    const edit = pushState(documentId, { ...state, fields, form: values, change: "annotations" });
+    return { edit, field: selected };
+  },
+  detectFormFields: async (documentId, page) => {
+    // The sample's first page "draws" two lines and a box (ADR 0047).
+    if (page !== 0) return [];
+    const taken = mockFields(documentId).flatMap((field) =>
+      field.widgets.filter((widget) => widget.page === page).map((widget) => widget.view),
+    );
+    const found: DetectedField[] = [
+      {
+        kind: "text",
+        view: { x: 72, y: 560, width: 200, height: 16 },
+        name: "الاسم",
+        multiline: false,
+      },
+      {
+        kind: "text",
+        view: { x: 72, y: 600, width: 200, height: 16 },
+        name: "Date",
+        multiline: false,
+      },
+      {
+        kind: "checkbox",
+        view: { x: 72, y: 640, width: 12, height: 12 },
+        name: "",
+        multiline: false,
+      },
+    ];
+    return found.filter(
+      (candidate) => !taken.some((rect) => rect && overlap(rect, candidate.view)),
+    );
   },
   setFormField: async (documentId, id, values) => {
-    const field = documentId === SAMPLE.id ? MOCK_FIELDS.find((f) => f.id === id) : undefined;
+    const field = mockFields(documentId).find((f) => f.id === id);
     if (!field) throw { code: "invalid_edit", detail: "no such form field" };
     if (field.readOnly) throw { code: "invalid_edit", detail: "this field is read-only" };
     const choices = field.options.map((option) => option.value);
