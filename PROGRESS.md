@@ -940,7 +940,14 @@ What the runs turned up:
   - Harmless for the product. Only hidden windows are suspended, and they resume when shown.
     Recovery files are written by the shell. The UI's own timers (such as the debounced
     reading-position save) wait until the window is shown. A hidden self-test run is invalid
-    anyway; it just hangs until the timeout instead of ending with its "not on screen" verdict.
+    anyway, but it hung until the harness's timeout.
+  - **Fixed for self-tests:** in `devtools` builds launched by the harness (`SAFHA_SELFTEST_OUT`
+    set), every window keeps running when hidden (Tauri's `backgroundThrottling: disabled`;
+    `diagnostics::selftest_throttling`). This applies to the configured main window and to
+    windows opened later. The product keeps WebKit's default. A hidden scroll benchmark now ends
+    in 17–19 s with the checker's "the window was not on screen" verdict (2 of 2 runs, no
+    suspension in WebKit's log). Visible runs are unaffected: the policy only applies to windows
+    that are not on screen.
 - Nothing over or near a budget otherwise: the nearest is the scroll benchmark's p95 (17–18 ms
   against 20), which is WKWebView's own frame jitter (ADR 0011).
 
@@ -955,9 +962,7 @@ report clean. UI: 302 tests in 33 files, Biome, `tsc` and the production build c
 `crash-selftest.sh` `panic`, `thread-panic` and `abort`; release bundle: self-tests and
 `crash-selftest.sh panic`.
 
-**Not done / to do next:** the crash server decision (owner item 25); optionally, end hidden
-self-test runs quickly by disabling background throttling in self-test runs only (`devtools`
-builds); re-run the scroll benchmark several times on an idle Mac with the window visible (owner
+**Not done / to do next:** the crash server decision (owner item 25); re-run the scroll benchmark several times on an idle Mac with the window visible (owner
 item 16); Windows: a real crash through WER, and `.pdb` files kept per release so its frames can
 be symbolicated; the Arabic strings for crash reports need the native-speaker review (owner
 item 11).
