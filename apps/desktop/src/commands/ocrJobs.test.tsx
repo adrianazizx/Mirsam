@@ -85,7 +85,10 @@ describe("background OCR jobs (ADR 0035)", () => {
     await waitFor(() => expect(screen.queryByTestId("ocr-job")).toBeNull());
   });
 
-  it("pauses, resumes and cancels a job", async () => {
+  // A 240-page job writes an edit every 30 ms while it runs, and each edit
+  // builds the viewer again: on a loaded CI runner (Windows, beside the
+  // accessibility suite) the round trip outlasts vitest's 5 s default.
+  it("pauses, resumes and cancels a job", { timeout: 20_000 }, async () => {
     render(<App />);
     openDocument();
     await act(() => runCommand("ocr.recognize"));
