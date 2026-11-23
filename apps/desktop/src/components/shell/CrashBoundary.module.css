@@ -1,0 +1,25 @@
+.fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-3);
+  block-size: 100vh;
+  max-inline-size: var(--size-palette);
+  margin-inline: auto;
+  padding: var(--space-6);
+  box-sizing: border-box;
+  background: var(--color-bg-app);
+  color: var(--color-text);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+}
+
+.message {
+  margin: 0;
+  color: var(--color-text-muted);
+}

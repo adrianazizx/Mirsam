@@ -128,8 +128,15 @@ if (build) {
   run(
     process.execPath,
     [cli, "build", ...(explicitTarget ? ["--target", target] : []), "--config", overlayPath, ...tauriArgs],
-    { cwd: APP_DIR, env: { ...process.env, SAFHA_BUNDLE_PDFIUM: library } },
+    { cwd: APP_DIR, env: { ...process.env, SAFHA_BUNDLE_PDFIUM: library, SAFHA_BUILD_COMMIT: buildCommit() } },
   );
+}
+
+/** The commit being built, for crash reports (ADR 0061); the environment's when set. */
+function buildCommit() {
+  if (process.env.SAFHA_BUILD_COMMIT) return process.env.SAFHA_BUILD_COMMIT;
+  const git = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], { cwd: ROOT, encoding: "utf8" });
+  return git.status === 0 ? git.stdout.trim() : "";
 }
 
 /** The configuration `tauri build` merges over tauri.conf.json (JSON merge patch). */

@@ -409,14 +409,21 @@ export async function runScrollBenchmark(first: PagePaintedDetail, { zoomOnly = 
     await idle("fit width", 500);
   }
 
+  const progress = (step: string) =>
+    void backend.selftestLog(
+      `${step} at ${Math.round(performance.now() - startedAt)} ms (${document.visibilityState})`,
+    );
+  progress("measuring memory at the end");
   const memoryAtEnd = await memory();
   await sleep(2000);
   const memoryAfterIdle = await memory();
+  progress("idle for 13 s");
   // WebKit frees garbage and returns memory to the system lazily; a longer
   // idle separates retained memory from not-yet-reclaimed memory.
   if (!zoomOnly) await sleep(13_000);
   const memoryAfterIdle15s = await memory();
   const statsAfter = await backend.renderStats();
+  progress("reporting");
   const snapshot = viewer.snapshot();
 
   const scrollPhases = phases.filter((p) => !p.name.startsWith("jump"));

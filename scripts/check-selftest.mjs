@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Asserts on a scripts/selftest.sh report: page 1 reached the screen as sharp
 // tiles, the layout is mirrored the right way (and the page area is not), and
-// the first page appeared inside its budget.
+// the window and the first page appeared inside their budgets.
 //
 // --ci: on hosted CI runners (virtual machines, a debug build, Vite serving
 // the UI) the first-page time budget only warns; the behaviour checks still
@@ -50,6 +50,24 @@ const budget = (ok, message) => {
 };
 budget(preview === null || preview < 300, `first page preview took ${preview} ms`);
 budget(results.painted?.sinceOpenMs < 300, `first page took ${results.painted?.sinceOpenMs} ms to be sharp`);
+
+// Spec budget: cold start to a usable window, 1.5 s: from the harness's launch
+// of the process (selftest.sh) to the UI's first drawn frame. It applies to the
+// shipped app, whose UI is bundled; a UI served by Vite (debug builds) loads
+// hundreds of unbundled modules, so its figure is printed, not judged.
+const startup = report.startup ?? {};
+const uiReadyMs = startup.sinceRunMs?.uiReady;
+const coldStartMs =
+  startup.launchToRunMs != null && uiReadyMs != null ? startup.launchToRunMs + uiReadyMs : null;
+const firstPageMs =
+  startup.launchToRunMs != null && startup.sinceRunMs?.firstPage != null
+    ? startup.launchToRunMs + startup.sinceRunMs.firstPage
+    : null;
+const devServer = /^http:\/\/localhost:\d+$/.test(results.uiOrigin ?? "");
+check(coldStartMs !== null, "cold start was not measured (no launch time or UI mark)");
+if (!devServer && coldStartMs !== null) {
+  budget(coldStartMs <= 1500, `cold start took ${coldStartMs} ms to a usable window (budget 1,500 ms)`);
+}
 
 // Milestone 1 navigation (selftest.ts, navigationChecks): selecting page 1
 // copies exactly its text layer, a search finds a word of it and marks it on
@@ -123,11 +141,17 @@ if (nav) {
     // Spec section 11: typing in the paragraph field, 32 ms a keystroke (the
     // median). It must have been measured; the budget is a time budget, so on
     // hosted runners (software rendering under Xvfb) it warns.
+    // A window that got no animation frames (opened hidden or occluded) times
+    // the self-test's 250 ms frame fallback instead: not judged, but said.
     check(added.typingMedianMs >= 0, "typing in the paragraph field was not measured");
-    budget(
-      added.typingMedianMs <= 32,
-      `typing in the paragraph field took ${added.typingMedianMs} ms a keystroke (median; budget 32 ms)`,
-    );
+    if (added.typingWithoutFrames) {
+      warnings.push("typing latency not judged: the window got no animation frames (hidden or occluded)");
+    } else {
+      budget(
+        added.typingMedianMs <= 32,
+        `typing in the paragraph field took ${added.typingMedianMs} ms a keystroke (median; budget 32 ms)`,
+      );
+    }
   }
   // Page objects and links (ADR 0051): through the real shell's commands.
   const objects = nav.objectsAndLinks;
@@ -164,7 +188,7 @@ if (nav) {
 
 for (const warning of warnings) {
   // A GitHub Actions annotation: shown on the run and the pull request.
-  console.log(`::warning title=Self-test (CI runner)::${warning}`);
+  console.log(`::warning title=Self-test::${warning}`);
 }
 if (failures.length > 0) {
   console.error(`self-test (${direction}) FAILED:\n  ${failures.join("\n  ")}`);
@@ -175,6 +199,10 @@ console.log(
   `self-test (${direction}) ok: ${painted.width}x${painted.height} px in ${painted.tiles} tiles, ` +
     `render ${(painted.renderMicros / 1000).toFixed(1)} ms, preview after ${painted.previewSinceOpenMs?.toFixed(0)} ms, ` +
     `sharp after ${painted.sinceOpenMs.toFixed(0)} ms, reported after ${report.reportedAfterMs} ms`,
+);
+console.log(
+  `  cold start: window usable ${coldStartMs} ms after launch, first page ${firstPageMs} ms` +
+    (devServer ? " (UI from a dev server: not judged)" : " (budget 1,500 ms)"),
 );
 if (nav) {
   console.log(
@@ -202,7 +230,7 @@ if (nav) {
     const a = nav.addedText;
     console.log(
       `  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}; ` +
-        `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}; bold in the field ${a.boldApplied}, read back ${a.boldReadBack}; typing ${a.typingMedianMs} ms (p95 ${a.typingP95Ms})`,
+        `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}; bold in the field ${a.boldApplied}, read back ${a.boldReadBack}; typing ${a.typingMedianMs} ms (p95 ${a.typingP95Ms})${a.typingWithoutFrames ? ", without animation frames: not judged" : ""}`,
     );
   }
   if (nav.objectsAndLinks) {

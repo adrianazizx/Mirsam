@@ -31,6 +31,7 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | UI tests / types / lint | `cd apps/desktop && pnpm test` · `pnpm typecheck` · `pnpm lint` (`pnpm format` fixes) |
 | End-to-end shell check | `cargo build -p safha-desktop --features devtools && scripts/selftest.sh <pdf> <out> [en\|ar] [light\|dark]` then `node scripts/check-selftest.mjs <out> <ltr\|rtl>` |
 | Installers (PDFium inside, checked) | `node scripts/bundle.mjs [--target <triple>] [--features devtools]` (never bare `tauri build`; ADR 0060) |
+| Crash reports end to end (ADR 0061) | `scripts/crash-selftest.sh <out> [panic\|abort\|thread-panic]` (debug devtools build, or `SAFHA_SELFTEST_APP` + `SAFHA_SELFTEST_UI=bundled`) |
 | Self-test an installer | `scripts/bundle-selftest.sh <dmg\|deb\|rpm\|AppImage\|setup.exe\|msi> <out>` (bundle built with `--features devtools`) |
 | Fuzz the open/parse path | `node fuzz/seed.mjs && cp Cargo.lock fuzz/ && cd fuzz && cargo fuzz run <open\|file\|objects\|content\|cmap>` (fuzz/README.md) |
 | Licence check | `cargo deny check licenses bans sources` · `node scripts/third-party-licenses.mjs [--check]` |
@@ -39,7 +40,7 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | Release-mode tests | set `SAFHA_PDFIUM_DIR=$PWD/third_party/pdfium/<platform>/lib` (release builds don't search `third_party/`) |
 | Render a page to PNG | `cargo run -p safha-core --example render_png -- in.pdf out.png [page] [scale]` |
 | Text-extraction baseline | `cargo run -p safha-core --example fixture_report` |
-| Search index cost (release) | `SAFHA_PDFIUM_DIR=… cargo run --release -p safha-core --example search_bench -- f.pdf [query…]` |
+| Search index cost (release) | `SAFHA_PDFIUM_DIR=… cargo run --release -p safha-core --example search_bench -- f.pdf [--budget-ms 1000] [query…]` |
 | OCR eval set + score | `node ocr-eval/generate.mjs` · `cargo run -p safha-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir> --engine <name> --targets ocr-eval/targets.json` |
 | OCR benchmark (CI gate, ADR 0036) | `cargo run --release -p safha-core --example ocr_bench -- --out <dir> --replay ocr-eval/recordings/set-v2` (`--record … --model-dir <dir>` with the models) |
 | OCR a whole PDF headless (ADR 0035) | `cargo run --release -p safha-core --example ocr_document -- in.pdf out.pdf --models <store> --state <dir>` · `ocr_smoke --models <store> …` installs models |

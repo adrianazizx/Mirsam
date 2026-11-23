@@ -13,12 +13,13 @@ import { useTranslation } from "react-i18next";
 import { runCommand } from "../../commands/registry";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
+import { CrashReportsSection } from "./CrashReportsSection";
 import { OcrModelsSection } from "./OcrModelsSection";
 import styles from "./SettingsDialog.module.css";
 
 /**
- * Settings (Cmd/Ctrl+,): the Arabic interface's digits, and the OCR models
- * (ADR 0034). Language and theme stay on their own commands.
+ * Settings (Cmd/Ctrl+,): the Arabic interface's digits, the OCR models
+ * (ADR 0034), and crash reports (ADR 0061). Language and theme stay on their own commands.
  */
 export function SettingsDialog() {
   const { t } = useTranslation();
@@ -26,6 +27,7 @@ export function SettingsDialog() {
   const uiDigits = useAppStore((state) => state.uiDigits);
   const languageHeading = useId();
   const ocrHeading = useId();
+  const crashHeading = useId();
   if (!open) return null;
   const close = () => void runCommand("app.closeSettings");
 
@@ -76,6 +78,12 @@ export function SettingsDialog() {
                 {t("ocrModels.heading")}
               </h3>
               <OcrModelsSection />
+            </section>
+            <section className={styles.section} aria-labelledby={crashHeading}>
+              <h3 id={crashHeading} className={styles.sectionTitle}>
+                {t("settings.crash.heading")}
+              </h3>
+              <CrashReportsSection />
             </section>
           </div>
           <div className={styles.footer}>

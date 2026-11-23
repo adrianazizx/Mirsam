@@ -46,6 +46,13 @@ import {
 import { useCertSign, VISIBLE_SIZE } from "../state/certSign";
 import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
+import {
+  CRASH_SETTING,
+  crashReportText,
+  recordCommand,
+  refreshCrashReports,
+  useCrashReports,
+} from "../state/crashReports";
 import { isOpenable, mapBetween, quarterTurn } from "../state/objects";
 import { flaggedWords, useOcrJobs, wordAt, wordRect } from "../state/ocrJobs";
 import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
@@ -147,6 +154,8 @@ export interface CommandArg {
   /** `ink.erase`: the ink annotations touched, by index. */
   indices?: number[];
   /** `recovery.restore`, `recovery.discard`: the recovery file's token (`token` above). */
+  /** `crash.copy`, `crash.save`, `crash.openIssue`, `crash.delete`: the crash report (ADR 0061). */
+  reportId?: string;
   /** `comment.show`: the annotation to scroll to and select (`page`, `index` as for replies). */
   annotation?: SelectedAnnotation;
   /** `comment.resolve`: resolved (true) or open again (false). */
@@ -445,6 +454,14 @@ export type CommandId =
   | "app.commandPalette"
   | "app.settings"
   | "app.closeSettings"
+  | "app.reloadWindow"
+  | "crash.copy"
+  | "crash.save"
+  | "crash.openIssue"
+  | "crash.delete"
+  | "crash.dismiss"
+  | "crash.ask"
+  | "crash.off"
   | "ocr.recognize"
   | "ocr.recognizePage"
   | "ocr.pauseJob"
@@ -1216,6 +1233,14 @@ function shiftTab(direction: 1 | -1) {
   const index = documents.findIndex((open) => open.id === activeDocumentId);
   if (index >= 0 && activeDocumentId !== null)
     store().moveDocument(activeDocumentId, index + direction);
+}
+
+async function setCrashSetting(value: "ask" | "off") {
+  const crash = useCrashReports.getState();
+  crash.applySetting(value);
+  if (value === "off") crash.setPrompt([]);
+  await backend.setSetting(CRASH_SETTING, value);
+  await refreshCrashReports();
 }
 
 /** Copies text: through a `copy` event first (works inside the key press), then the async API. */
@@ -3341,6 +3366,75 @@ const DECLARED: Command[] = [
     run: () => store().setSettingsOpen(false),
   },
   {
+    // After an error the window could not recover from (ADR 0061). The
+    // shell keeps the documents; the reloaded window shows them again.
+    id: "app.reloadWindow",
+    paletteHidden: true,
+    run: () => window.location.reload(),
+  },
+  // Crash reports (ADR 0061). Nothing is sent by the app: the user copies a
+  // report, saves it, or opens a pre-filled issue in their browser.
+  {
+    id: "crash.copy",
+    paletteHidden: true,
+    async run(arg) {
+      const text = arg?.reportId ? crashReportText(arg.reportId) : undefined;
+      if (!arg?.reportId || text === undefined) return;
+      await writeClipboard(text);
+      useCrashReports.getState().setStatus(arg.reportId, "copied");
+    },
+  },
+  {
+    id: "crash.save",
+    paletteHidden: true,
+    async run(arg) {
+      if (!arg?.reportId) return;
+      if (await backend.saveCrashReport(arg.reportId)) {
+        useCrashReports.getState().setStatus(arg.reportId, "saved");
+      }
+    },
+  },
+  {
+    // The whole report goes to the clipboard first: a long one is shortened
+    // to fit the link, and the user can paste the rest.
+    id: "crash.openIssue",
+    paletteHidden: true,
+    async run(arg) {
+      const text = arg?.reportId ? crashReportText(arg.reportId) : undefined;
+      if (!arg?.reportId || text === undefined) return;
+      await writeClipboard(text);
+      const shortened = await backend.openCrashIssue(arg.reportId);
+      useCrashReports.getState().setStatus(arg.reportId, shortened ? "openedShortened" : "opened");
+    },
+  },
+  {
+    id: "crash.delete",
+    paletteHidden: true,
+    async run(arg) {
+      if (!arg?.reportId) return;
+      await backend.deleteCrashReport(arg.reportId);
+      useCrashReports.getState().forget(arg.reportId);
+    },
+  },
+  {
+    // "Not now": the reports stay in Settings until sent or deleted.
+    id: "crash.dismiss",
+    paletteHidden: true,
+    isEnabled: () => useCrashReports.getState().prompt.length > 0,
+    run: () => useCrashReports.getState().setPrompt([]),
+  },
+  {
+    id: "crash.ask",
+    isEnabled: () => useCrashReports.getState().setting !== "ask",
+    run: () => setCrashSetting("ask"),
+  },
+  {
+    // No new reports are kept; those kept stay until deleted. Closes the prompt.
+    id: "crash.off",
+    isEnabled: () => useCrashReports.getState().setting !== "off",
+    run: () => setCrashSetting("off"),
+  },
+  {
     // The first use of OCR without its model asks to download it (spec §8);
     // with it, the whole document is read in the background (ADR 0035).
     id: "ocr.recognize",
@@ -3945,6 +4039,8 @@ export function isCommandEnabled(id: CommandId, state: AppState = store()): bool
 /** Runs a command if it is enabled. Failures surface as a localized error banner. */
 export async function runCommand(id: CommandId, arg?: CommandArg): Promise<void> {
   if (!isCommandEnabled(id)) return;
+  // The command's id, never its argument, for crash reports (ADR 0061).
+  recordCommand(id);
   try {
     await getCommand(id).run(arg);
   } catch (error) {

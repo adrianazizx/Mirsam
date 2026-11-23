@@ -103,3 +103,13 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* Kept crash reports (ADR 0061). */
+.reports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
