@@ -33,7 +33,12 @@ export function ToolRail() {
   const setActiveTool = useAppStore((state) => state.setActiveTool);
 
   return (
-    <nav className={styles.rail} aria-label={t("tools.label")} data-testid="tool-rail">
+    <nav
+      className={styles.rail}
+      aria-label={t("tools.label")}
+      data-testid="tool-rail"
+      data-region="tools"
+    >
       <ToggleButtonGroup
         className={styles.group}
         orientation="vertical"

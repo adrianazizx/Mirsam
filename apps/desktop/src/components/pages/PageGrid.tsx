@@ -5,6 +5,7 @@ import {
   FileInput,
   FileOutput,
   FilePlus2,
+  GripVertical,
   RotateCcw,
   RotateCw,
   Scissors,
@@ -12,11 +13,13 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Button,
   GridLayout,
   GridList,
   GridListItem,
   type Key,
   Size,
+  Toolbar,
   useDragAndDrop,
   useLocale,
   Virtualizer,
@@ -27,26 +30,22 @@ import { backend, type PageSize } from "../../backend";
 import { dropTarget, runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
+import { tokenPx } from "../../styles/tokens";
 import { PageImages } from "../../viewer/pageImages";
 import { CommandButton } from "../ui/CommandButton";
 import styles from "./PageGrid.module.css";
 
-/** A design token in CSS px, read from the root (`tokens.css`). */
-function tokenPx(name: string, fallback: number): number {
-  const value = Number.parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue(name),
-  );
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-/** Width of a page image in the grid (`--size-page-grid-image`). */
+/** Width of a page image in the grid (`--size-page-grid-image`; page space, not scaled). */
 const IMAGE_WIDTH = tokenPx("--size-page-grid-image", 168);
-/** Room around an image: padding and outline on each side, and the label below. */
-const ITEM_CHROME = {
-  inline: 2 * tokenPx("--space-3", 12),
-  block: 2 * tokenPx("--space-3", 12) + tokenPx("--space-6", 24),
-};
 const GAP = tokenPx("--size-page-grid-gap", 16);
+
+/** Room around an image: padding and outline on each side, and the label below (grows with the interface size). */
+function itemChrome() {
+  return {
+    inline: 2 * tokenPx("--space-3", 12),
+    block: 2 * tokenPx("--space-3", 12) + tokenPx("--space-6", 24),
+  };
+}
 
 /**
  * The page organizer (spec section 5.4): every page of the document in a
@@ -122,20 +121,23 @@ export function PageGrid({ documentId: id }: { documentId: number }) {
     },
   });
 
-  const layoutOptions = useMemo(
-    () => ({
-      minItemSize: new Size(IMAGE_WIDTH + ITEM_CHROME.inline, IMAGE_WIDTH + ITEM_CHROME.block),
-      maxItemSize: new Size(IMAGE_WIDTH + ITEM_CHROME.inline, 2 * IMAGE_WIDTH + ITEM_CHROME.block),
+  const uiScale = useAppStore((state) => state.uiScale);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the tokens are read again at another interface size
+  const layoutOptions = useMemo(() => {
+    const chrome = itemChrome();
+    return {
+      minItemSize: new Size(IMAGE_WIDTH + chrome.inline, IMAGE_WIDTH + chrome.block),
+      maxItemSize: new Size(IMAGE_WIDTH + chrome.inline, 2 * IMAGE_WIDTH + chrome.block),
       minSpace: new Size(GAP, GAP),
       preserveAspectRatio: false,
       direction,
-    }),
-    [direction],
-  );
+    };
+  }, [direction, uiScale]);
 
   return (
     <section className={styles.organizer} aria-label={t("pages.organizer", { name })}>
-      <div className={styles.toolbar} role="toolbar" aria-label={t("pages.actions")}>
+      {/* A toolbar: Tab enters and leaves it, arrow keys move between its buttons (mirrored in RTL). */}
+      <Toolbar className={styles.toolbar} aria-label={t("pages.actions")}>
         <CommandButton command="pages.rotateCounterclockwise">
           <RotateCcw aria-hidden="true" />
         </CommandButton>
@@ -172,7 +174,7 @@ export function PageGrid({ documentId: id }: { documentId: number }) {
             ? t("pages.selected", { count: formatNumber(selected.length, locale) })
             : ""}
         </span>
-      </div>
+      </Toolbar>
       <Virtualizer layout={GridLayout} layoutOptions={layoutOptions}>
         <GridList
           aria-label={t("pages.grid", { name })}
@@ -191,6 +193,14 @@ export function PageGrid({ documentId: id }: { documentId: number }) {
         >
           {(item) => (
             <GridListItem id={item.id} textValue={pageName(item.id)} className={styles.item}>
+              {/*
+               * React Aria's drag handle: keyboard and screen reader users start a
+               * drag here (Enter), move with the arrows, and drop with Enter; it
+               * names itself in the UI's language. Shown on hover and focus only.
+               */}
+              <Button slot="drag" className={styles.drag}>
+                <GripVertical aria-hidden="true" />
+              </Button>
               <PageImage images={imagesRef} page={item.id} size={item.size} />
               <span className={styles.label}>
                 {labels?.[item.id] ?? formatNumber(item.id + 1, locale)}

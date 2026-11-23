@@ -1,5 +1,5 @@
 import { RefreshCw, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { SignatureChanges, SignatureReport } from "../../backend";
 import { runCommand } from "../../commands/registry";
@@ -8,6 +8,7 @@ import { useAppStore } from "../../state/appStore";
 import { overallStatus, useCertSign } from "../../state/certSign";
 import { Button } from "../ui/Button";
 import { CommandButton } from "../ui/CommandButton";
+import { useKeyboardScrollable } from "../ui/useKeyboardScrollable";
 import styles from "./SignaturesPanel.module.css";
 
 const ICONS = { valid: ShieldCheck, unknown: ShieldAlert, invalid: ShieldX } as const;
@@ -34,10 +35,12 @@ export function SignaturesPanel({ documentId }: { documentId: number }) {
     void runCommand("signatures.check");
   }, [documentId, paint, revision]);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  useKeyboardScrollable(panelRef);
   const list = reports?.list ?? [];
   const overall = overallStatus(list);
   return (
-    <div className={styles.panel} data-testid="signatures-panel">
+    <div ref={panelRef} className={styles.panel} data-testid="signatures-panel">
       <div className={styles.controls}>
         <p className={styles.summary} role="status">
           {reports === undefined || (reports.status === "loading" && list.length === 0)

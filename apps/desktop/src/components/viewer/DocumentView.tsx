@@ -15,6 +15,7 @@ import {
   type ViewerMode,
   type ViewerSpacing,
 } from "../../viewer/controller";
+import type { ReadableNote } from "../../viewer/readableText";
 import { registerViewer, unregisterViewer } from "../../viewer/registry";
 import { NoteEditor } from "../comments/NoteEditor";
 import styles from "./DocumentView.module.css";
@@ -115,6 +116,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const pageLabel = useRef<(page: number) => string>(() => "");
   pageLabel.current = (page) =>
     t("viewer.canvasLabel", { page: formatNumber(page + 1, locale), name });
+  const readableNote = useRef<(kind: ReadableNote) => string>(() => "");
+  readableNote.current = (kind) => t(kind === "noText" ? "a11y.noPageText" : "a11y.suspectText");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -171,6 +174,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       spacing: readSpacing(container),
       isMac,
       pageLabel: (page) => pageLabel.current(page),
+      readableNote: (kind) => readableNote.current(kind),
       mode: (): ViewerMode => {
         const { activeTool, commentTool, fillTool, editMode, formsMode, designTool } =
           useAppStore.getState();
@@ -386,6 +390,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       tabIndex={0}
       aria-label={t("viewer.pagesLabel", { name })}
       data-testid="viewer"
+      // F6 to the page area lands here (commands/regions.ts).
+      data-region-focus=""
     >
       {toolbarHost &&
       (hasSelection ||

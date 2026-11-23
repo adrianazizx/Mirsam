@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { formatNumber } from "../../i18n";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
@@ -7,6 +8,7 @@ import { FormsPanel } from "../forms/FormsPanel";
 import { SignPanel } from "../forms/SignPanel";
 import { OcrPanel } from "../ocr/OcrPanel";
 import { ProtectPanel } from "../protect/ProtectPanel";
+import { useKeyboardScrollable } from "../ui/useKeyboardScrollable";
 import styles from "./Inspector.module.css";
 
 const MM_PER_POINT = 25.4 / 72;
@@ -25,11 +27,19 @@ export function Inspector() {
   const tool = useAppStore((state) => state.activeTool);
   // The Edit tool's object and link modes have panels of their own (ADR 0051).
   const editMode = useAppStore((state) => (state.activeTool === "edit" ? state.editMode : "text"));
+  const ref = useRef<HTMLElement>(null);
+  useKeyboardScrollable(ref);
   const mm = (points: number) =>
     formatNumber(points * MM_PER_POINT, locale, { maximumFractionDigits: 0 });
 
   return (
-    <aside className={styles.inspector} aria-label={t("inspector.title")} data-testid="inspector">
+    <aside
+      ref={ref}
+      className={styles.inspector}
+      aria-label={t("inspector.title")}
+      data-testid="inspector"
+      data-region="inspector"
+    >
       <h2 className={styles.title}>
         {t(
           document && editMode !== "text"

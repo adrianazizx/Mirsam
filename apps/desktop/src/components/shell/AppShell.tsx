@@ -30,6 +30,7 @@ export function AppShell() {
   // Only which document is active: the shell must not re-render as the
   // current page or zoom of that document changes.
   const activeDocumentId = useAppStore((state) => selectActiveDocument(state)?.id ?? null);
+  const activeName = useAppStore((state) => selectActiveDocument(state)?.name ?? "");
   // The Pages tool shows the page organizer in place of the page view.
   const organizing = useAppStore((state) => state.activeTool === "pages");
   const commenting = useAppStore((state) => state.activeTool === "comment");
@@ -58,24 +59,38 @@ export function AppShell() {
         }}
       >
         <TabBar />
-        <main className={styles.main}>
+        <main className={styles.main} data-region="document">
           <ErrorBanner />
-          {galleryOpen ? (
-            <Gallery />
-          ) : unlocking ? (
-            <UnlockPanel />
-          ) : activeDocumentId !== null ? (
+          {activeDocumentId !== null ? (
+            // Whatever fills the page area, the selected tab controls it: its
+            // `aria-controls` must name a panel that is there.
             <TabPanel id={activeDocumentId} className={styles.panel}>
-              {organizing ? (
-                <PageGrid documentId={activeDocumentId} />
+              {galleryOpen ? (
+                <Gallery />
+              ) : unlocking ? (
+                <UnlockPanel />
               ) : (
                 <>
-                  {commenting ? <CommentToolbar /> : null}
-                  {editing ? <TextToolbar /> : null}
-                  <DocumentView documentId={activeDocumentId} />
+                  {/* The document is the page's subject: its name heads it for screen readers. */}
+                  <h1 className="visually-hidden">
+                    <bdi>{activeName}</bdi>
+                  </h1>
+                  {organizing ? (
+                    <PageGrid documentId={activeDocumentId} />
+                  ) : (
+                    <>
+                      {commenting ? <CommentToolbar /> : null}
+                      {editing ? <TextToolbar /> : null}
+                      <DocumentView documentId={activeDocumentId} />
+                    </>
+                  )}
                 </>
               )}
             </TabPanel>
+          ) : galleryOpen ? (
+            <Gallery />
+          ) : unlocking ? (
+            <UnlockPanel />
           ) : (
             <EmptyState />
           )}
