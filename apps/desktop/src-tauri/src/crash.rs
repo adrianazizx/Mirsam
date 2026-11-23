@@ -260,17 +260,22 @@ fn install_panic_hook() {
 
 fn record_panic(info: &std::panic::PanicHookInfo<'_>) {
     let Some(context) = CONTEXT.get() else { return };
-    if !context.enabled.load(Ordering::Relaxed)
-        || context.panics.fetch_add(1, Ordering::Relaxed) >= MAX_PANICS
-    {
-        return;
-    }
     let payload = info.payload();
     let message = payload
         .downcast_ref::<&str>()
         .map(|text| (*text).to_owned())
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "(a panic without a message)".to_owned());
+    // The first panic's report says what happened; the "cannot unwind" panic
+    // that follows it out of native code only repeats it.
+    if crash::is_follow_on_panic(&message) && context.panics.load(Ordering::Relaxed) > 0 {
+        return;
+    }
+    if !context.enabled.load(Ordering::Relaxed)
+        || context.panics.fetch_add(1, Ordering::Relaxed) >= MAX_PANICS
+    {
+        return;
+    }
     let thread = std::thread::current();
     let backtrace = format!("{:#}", std::backtrace::Backtrace::force_capture());
     // `try_lock`: the panicking thread may hold the lock.
@@ -332,6 +337,15 @@ fn os_description() -> String {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn os_name() -> &'static str {
+    match std::env::consts::OS {
+        "linux" => "Linux",
+        "freebsd" => "FreeBSD",
+        other => other,
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn os_description() -> String {
     let release = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
     let pretty = release.lines().find_map(|line| line.strip_prefix("PRETTY_NAME=")).map(|name| {
@@ -342,8 +356,8 @@ fn os_description() -> String {
             .collect::<String>()
     });
     match pretty {
-        Some(name) if !name.is_empty() => format!("{} ({name})", std::env::consts::OS),
-        _ => std::env::consts::OS.to_owned(),
+        Some(name) if !name.is_empty() => format!("{} ({name})", os_name()),
+        _ => os_name().to_owned(),
     }
 }
 

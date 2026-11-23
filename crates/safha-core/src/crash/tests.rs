@@ -235,3 +235,10 @@ fn formats_times_in_utc() {
     assert_eq!(utc_minute(1_763_894_530), "2025-11-23 10:42 UTC");
     assert_eq!(utc_minute(951_782_400), "2000-02-29 00:00 UTC");
 }
+
+#[test]
+fn tells_follow_on_panics_from_first_ones() {
+    assert!(is_follow_on_panic("panic in a function that cannot unwind"));
+    assert!(is_follow_on_panic("panic in a destructor during cleanup"));
+    assert!(!is_follow_on_panic("index out of bounds: the len is 3 but the index is 7"));
+}

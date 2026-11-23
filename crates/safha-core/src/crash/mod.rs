@@ -222,6 +222,16 @@ impl CrashReport {
     }
 }
 
+/// Whether a panic only follows from an earlier one in the same run: a panic
+/// that reaches native code (the webview's callbacks on Windows and Linux)
+/// becomes a second, "cannot unwind" panic before the process aborts. One
+/// crash makes one report, so these are not reported after a first.
+pub fn is_follow_on_panic(message: &str) -> bool {
+    ["panic in a function that cannot unwind", "panic in a destructor during cleanup"]
+        .iter()
+        .any(|follow_on| message.starts_with(follow_on))
+}
+
 /// A report id: the time and a random suffix.
 fn new_id(created: i64) -> String {
     let random = getrandom::u32().unwrap_or_else(|_| std::process::id());

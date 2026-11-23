@@ -53,7 +53,9 @@ of the last 30 commands run, with repeats folded (`update_viewport ×120`): IPC 
 the shell (the invoke handler is wrapped), registry command ids in the UI. Arguments are never
 recorded. Per-page fetches that fire while scrolling are left out so they do not push everything
 else out. At most 3 panic reports and 5 UI error reports are kept per run (later ones are
-usually the first one's consequences); at most 20 reports in all.
+usually the first one's consequences); at most 20 reports in all. A panic that reaches native
+code (the webview's callbacks on Windows and Linux) turns into a second, "panic in a function
+that cannot unwind", before the process aborts; that one is not reported after a first.
 
 **The system's crash log comes late.** On this Mac, under load, ReportCrash wrote the `.ips` 34 s
 and 83 s after the crash, so a user who starts the app again at once would find nothing. A run
