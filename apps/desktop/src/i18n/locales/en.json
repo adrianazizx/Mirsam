@@ -74,7 +74,9 @@
       "uiDefaultSize": "Default interface text size",
       "nextRegion": "Next area of the window",
       "previousRegion": "Previous area of the window",
-      "reloadWindow": "Reload window"
+      "reloadWindow": "Reload window",
+      "shortcuts": "Keyboard shortcuts…",
+      "closeShortcuts": "Close keyboard shortcuts"
     },
     "tabs": {
       "next": "Next tab",
@@ -293,7 +295,8 @@
       "replaceLayers": "Replace poor text layers (OCR)",
       "setConvertOptions": "Set how pages are converted to editable text",
       "convertPage": "Convert this page to editable text",
-      "convertDocument": "Convert recognised pages to editable text"
+      "convertDocument": "Convert recognised pages to editable text",
+      "regionWholePage": "Read an area again: start from the whole page"
     },
     "ocrModels": {
       "downloadRequired": "Download the OCR model",
@@ -1082,6 +1085,11 @@
       "vulkan": "Acceleration: the graphics card, through Vulkan.",
       "none": "No graphics acceleration Mirsam can use was found, so OCR runs on the processor: expect a few minutes a page.",
       "memory": "Memory: {{size}}."
+    },
+    "announce": {
+      "installed": "{{name}}: installed.",
+      "cancelled": "{{name}}: download paused; it can be resumed.",
+      "failed": "{{name}}: download stopped. {{reason}}"
     }
   },
   "ocrPrompt": {
@@ -1134,7 +1142,6 @@
       "truncated": "Text may be cut off",
       "next": "Next",
       "previous": "Previous",
-      "word": "{{word}}: {{status}}, {{confidence}} confident",
       "status": {
         "uncertain": "Unsure; also read as {{alternatives}}",
         "uncertainNone": "Unsure",
@@ -1172,12 +1179,12 @@
       "readings": "Other readings",
       "use": "Use {{text}}",
       "keys": "Enter accepts or corrects. {{check}} marks checked, {{page}} checks the page, {{skip}} skips.",
-      "image": "The page around {{text}}"
+      "image": "Scan of page {{page}} around the word read as {{text}}; the word is outlined"
     },
     "region": {
       "heading": "Read an area again",
       "draw": "Draw an area",
-      "drawing": "Drag a rectangle on the page around the text to read again.",
+      "drawing": "Drag a rectangle on the page around the text to read again, or use the whole page and narrow it with the fields.",
       "note": "The area is read in quality mode with every word checked; its text replaces what the area had.",
       "drawn": "Area on page {{page}}",
       "language": "Language of the area",
@@ -1188,7 +1195,14 @@
       },
       "numbers": "Numbers only",
       "read": "Read area",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "wholePage": "Use the whole page",
+      "adjust": "Area, in percent of the page",
+      "left": "From the left edge",
+      "top": "From the top",
+      "width": "Width",
+      "height": "Height",
+      "adjustHint": "Type a number or use the up and down arrow keys; the area on the page follows."
     },
     "layers": {
       "heading": "Existing text layers",
@@ -1219,7 +1233,14 @@
       "page": "Convert this page",
       "document": "Convert all recognised pages",
       "note": "Recognised text becomes paragraphs you can edit. Pages with unsure words are converted once you have decided them.",
-      "listSeparator": ", "
+      "listSeparator": ", ",
+      "donePage": "Page {{page}} converted to editable text.",
+      "doneDocument": "Recognised pages converted to editable text."
+    },
+    "announce": {
+      "job": "{{label}}: {{state}}",
+      "started": "started.",
+      "resumed": "resumed."
     }
   },
   "formDesign": {
@@ -1531,5 +1552,12 @@
     "message": "Mirsam hit an error it could not recover from. Your open documents are still open: reload the window to continue.",
     "reported": "A crash report was kept. You will be asked about it after the reload.",
     "reload": "Reload window"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "intro": "Tab moves within an area of the window, F6 and Shift+F6 move between areas, the arrow keys move along toolbars and lists, and Escape closes what is open.",
+    "command": "Command",
+    "keys": "Keys",
+    "done": "Done"
   }
 }

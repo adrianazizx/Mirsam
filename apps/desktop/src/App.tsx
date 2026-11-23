@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { I18nProvider } from "react-aria-components";
+import { announceLayerChecks, announceOcrJob, announceOcrModel } from "./a11y/ocrAnnouncements";
 import { backend, type DocumentsArrived, isBackendError } from "./backend";
 import {
   acceptOutcome,
@@ -12,6 +13,7 @@ import {
   runCommand,
 } from "./commands/registry";
 import { SignatureDialog } from "./components/forms/SignatureDialog";
+import { ShortcutsDialog } from "./components/help/ShortcutsDialog";
 import { OcrModelPrompt } from "./components/ocr/OcrModelPrompt";
 import { OutputDialog } from "./components/output/OutputDialog";
 import { SplitDialog } from "./components/pages/SplitDialog";
@@ -160,6 +162,8 @@ export function App() {
     let live = true;
     backend
       .onOcrModelProgress((event) => {
+        // Before the event is applied, while the listing still names the package.
+        announceOcrModel(event);
         useOcrModels.getState().applyEvent(event);
         if (event.kind !== "progress") {
           refreshOcrModels().catch((error: unknown) =>
@@ -193,13 +197,20 @@ export function App() {
       );
     backend
       .onOcrJob((job) => {
+        const previous = useOcrJobs.getState().jobs[job.id];
+        announceOcrJob(previous, job);
         useOcrJobs.getState().setJob(job);
+        const checked = job.state === "done" && previous?.state !== "done";
         // A check's verdicts, as its pages are checked (ADR 0038).
         if (job.options.kind.kind === "check")
           for (const documentId of job.documentIds)
             backend
               .ocrLayerChecks(documentId)
-              .then((checks) => useOcrJobs.getState().setChecks(documentId, checks))
+              .then((checks) => {
+                useOcrJobs.getState().setChecks(documentId, checks);
+                if (checked && documentId === useAppStore.getState().activeDocumentId)
+                  announceLayerChecks(checks);
+              })
               .catch((error: unknown) => console.warn("OCR layer checks unavailable", error));
       })
       .then(keep)
@@ -356,6 +367,7 @@ export function App() {
       <SecurityDialog />
       <CertSignDialog />
       <SettingsDialog />
+      <ShortcutsDialog />
       <OcrModelPrompt />
     </I18nProvider>
   );

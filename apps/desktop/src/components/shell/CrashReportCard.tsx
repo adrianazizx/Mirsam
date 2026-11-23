@@ -27,6 +27,8 @@ export function CrashReportCard({
   const status = useCrashReports((state) => state.status[report.id]);
   const [open, setOpen] = useState(expanded);
   const textId = useId();
+  // Each report has the same buttons: they say which report (its kind and time).
+  const headerId = useId();
   const time = new Intl.DateTimeFormat(formatTag(locale), {
     dateStyle: "medium",
     timeStyle: "short",
@@ -35,7 +37,7 @@ export function CrashReportCard({
 
   return (
     <li className={styles.card} data-testid="crash-report">
-      <div className={styles.header}>
+      <div className={styles.header} id={headerId}>
         <span className={styles.kind}>{t(`crash.kind.${report.kind}`)}</span>
         <span className={styles.time}>{time}</span>
       </div>
@@ -47,6 +49,7 @@ export function CrashReportCard({
         variant="ghost"
         aria-expanded={open}
         aria-controls={open ? textId : undefined}
+        aria-describedby={headerId}
         onPress={() => setOpen(!open)}
       >
         {open ? t("crash.hide") : t("crash.show")}
@@ -66,14 +69,25 @@ export function CrashReportCard({
         </section>
       )}
       <div className={styles.actions}>
-        <Button onPress={() => void runCommand("crash.copy", arg)}>{t("crash.copy")}</Button>
-        <Button onPress={() => void runCommand("crash.save", arg)}>{t("crash.save")}</Button>
+        <Button aria-describedby={headerId} onPress={() => void runCommand("crash.copy", arg)}>
+          {t("crash.copy")}
+        </Button>
+        <Button aria-describedby={headerId} onPress={() => void runCommand("crash.save", arg)}>
+          {t("crash.save")}
+        </Button>
         {github && (
-          <Button onPress={() => void runCommand("crash.openIssue", arg)}>
+          <Button
+            aria-describedby={headerId}
+            onPress={() => void runCommand("crash.openIssue", arg)}
+          >
             {t("crash.openIssue")}
           </Button>
         )}
-        <Button variant="ghost" onPress={() => void runCommand("crash.delete", arg)}>
+        <Button
+          variant="ghost"
+          aria-describedby={headerId}
+          onPress={() => void runCommand("crash.delete", arg)}
+        >
           {t("crash.delete")}
         </Button>
       </div>

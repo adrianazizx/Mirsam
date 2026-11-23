@@ -598,6 +598,8 @@ export interface DocumentInfo {
    */
   readingDirection?: "ltr" | "rtl" | null;
   pageLayout?: "single" | "continuous" | "spread" | "book" | null;
+  /** The document's own `/Lang` (a BCP 47 tag), for its text read aloud (ADR 0070). */
+  language?: string | null;
   /** Restored from a recovery file with unsaved changes (ADR 0040). */
   modified?: boolean;
   canUndo?: boolean;

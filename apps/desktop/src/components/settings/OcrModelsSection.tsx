@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ProgressBar } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import type { OcrHardware, OcrPackage } from "../../backend";
@@ -63,6 +63,10 @@ function PackageRow({
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
   const [confirming, setConfirming] = useState(false);
+  // Every row has the same buttons: each says which model it acts on.
+  const nameId = useId();
+  const confirmId = useId();
+  const about = confirming && !job ? `${nameId} ${confirmId}` : nameId;
   const size = (bytes: number) => formatBytes(bytes, locale);
   const run = (command: CommandId) => void runCommand(command, { modelId: pkg.id });
 
@@ -88,13 +92,16 @@ function PackageRow({
   let actions: React.ReactNode;
   if (job) {
     actions = (
-      <Button onPress={() => run("ocrModels.cancel")}>{t("ocrModels.actions.cancel")}</Button>
+      <Button aria-describedby={about} onPress={() => run("ocrModels.cancel")}>
+        {t("ocrModels.actions.cancel")}
+      </Button>
     );
   } else if (confirming) {
     actions = (
       <>
         <Button
           variant="primary"
+          aria-describedby={about}
           onPress={() => {
             setConfirming(false);
             run("ocrModels.delete");
@@ -102,7 +109,7 @@ function PackageRow({
         >
           {t("ocrModels.actions.delete")}
         </Button>
-        <Button autoFocus onPress={() => setConfirming(false)}>
+        <Button autoFocus aria-describedby={about} onPress={() => setConfirming(false)}>
           {t("ocrModels.actions.keep")}
         </Button>
       </>
@@ -117,12 +124,18 @@ function PackageRow({
     actions = (
       <>
         {primary ? (
-          <Button variant="primary" onPress={() => run("ocrModels.download")}>
+          <Button
+            variant="primary"
+            aria-describedby={about}
+            onPress={() => run("ocrModels.download")}
+          >
             {t(`ocrModels.actions.${primary}`)}
           </Button>
         ) : null}
         {pkg.state.kind !== "notInstalled" ? (
-          <Button onPress={() => setConfirming(true)}>{t("ocrModels.actions.delete")}</Button>
+          <Button aria-describedby={about} onPress={() => setConfirming(true)}>
+            {t("ocrModels.actions.delete")}
+          </Button>
         ) : null}
       </>
     );
@@ -132,7 +145,9 @@ function PackageRow({
     <li className={styles.row} data-testid={`ocr-model-${pkg.id}`}>
       <div className={styles.details}>
         {/* A proper name in Latin script, whatever the UI's direction. */}
-        <bdi className={styles.name}>{pkg.name}</bdi>
+        <bdi className={styles.name} id={nameId}>
+          {pkg.name}
+        </bdi>
         <span className={styles.role}>{t(`ocrModels.role.${pkg.role}`)}</span>
         {pkg.role === "draft" ? (
           // The program is the user's to install (owner item 26): say where it comes from.
@@ -175,12 +190,11 @@ function PackageRow({
           <span className={styles.status}>{stateText}</span>
         )}
         {failureText ? (
-          <span className={styles.failure} role="alert">
-            {failureText}
-          </span>
+          // Announced as the download stops (a11y/ocrAnnouncements), so not a live region.
+          <span className={styles.failure}>{failureText}</span>
         ) : null}
         {confirming && !job ? (
-          <span className={styles.confirm}>
+          <span className={styles.confirm} id={confirmId}>
             {t("ocrModels.confirmDelete", {
               name: isolate(pkg.name),
               size: size(pkg.downloadSize),

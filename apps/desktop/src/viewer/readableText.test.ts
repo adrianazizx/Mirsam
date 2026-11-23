@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TextLayer } from "../backend";
-import { fillReadableText, languageOf, scriptRuns } from "./readableText";
+import { fillReadableText, languageOf, languageTag, scriptRuns } from "./readableText";
 
 describe("readable page text", () => {
   it("splits mixed text into runs of one script, spaces between scripts in neither", () => {
@@ -48,6 +48,32 @@ describe("readable page text", () => {
     fillReadableText(host, layer, () => "unused");
     expect(host.innerHTML).toBe(
       '<p dir="rtl" lang="ar">اسم المنتج <span lang="en">Mirsam Pro</span></p>',
+    );
+  });
+
+  it("takes the PDF's /Lang for the script it is written in", () => {
+    expect(languageTag("en", "fr-CA")).toBe("fr-CA");
+    expect(languageTag("ar", "fr-CA")).toBe("ar");
+    expect(languageTag("ar", "fa")).toBe("fa");
+    expect(languageTag("en", "fa")).toBe("en");
+    expect(languageTag("en", "ru")).toBe("en");
+    expect(languageTag("he", "yi")).toBe("yi");
+    expect(languageTag("en", null)).toBe("en");
+
+    const host = document.createElement("div");
+    const line = (text: string) => ({
+      text,
+      spans: [],
+      bounds: { x: 0, y: 0, width: 1, height: 1 },
+    });
+    const layer: TextLayer = {
+      direction: "ltr",
+      quality: "good",
+      blocks: [{ direction: "ltr", lines: [line("Contrat de bail"), line("عقد إيجار")] }],
+    };
+    fillReadableText(host, layer, () => "unused", "fr");
+    expect(host.innerHTML).toBe(
+      '<p dir="ltr" lang="fr">Contrat de bail <span lang="ar">عقد إيجار</span></p>',
     );
   });
 

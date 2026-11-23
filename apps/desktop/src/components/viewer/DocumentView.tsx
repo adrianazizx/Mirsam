@@ -176,6 +176,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       isMac,
       pageLabel: (page) => pageLabel.current(page),
       readableNote: (kind) => readableNote.current(kind),
+      language: current.language ?? null,
       mode: (): ViewerMode => {
         const { activeTool, commentTool, fillTool, editMode, formsMode, designTool } =
           useAppStore.getState();

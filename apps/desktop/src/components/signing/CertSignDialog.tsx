@@ -197,10 +197,18 @@ function CertSignEditor() {
                   dir="ltr"
                   spellCheck={false}
                   placeholder="https://"
+                  required
+                  aria-invalid={tsaMissing || undefined}
+                  // The hint, and why signing is off while it is empty (WCAG 3.3.1).
+                  aria-describedby={
+                    tsaMissing ? "cert-sign-tsa-hint cert-sign-tsa-missing" : "cert-sign-tsa-hint"
+                  }
                   value={form.tsaUrl}
                   onChange={(event) => update({ tsaUrl: event.target.value })}
                 />
-                <p className={styles.hint}>{t("certSign.tsaHint")}</p>
+                <p className={styles.hint} id="cert-sign-tsa-hint">
+                  {t("certSign.tsaHint")}
+                </p>
               </div>
             ) : null}
           </section>
@@ -208,18 +216,15 @@ function CertSignEditor() {
           <p className={styles.hint}>
             {t(encrypted ? "certSign.saveNoteEncrypted" : "certSign.saveNote")}
           </p>
+          {/* Not live regions: the signing command announces both (ADR 0070's second pass). */}
           {error ? (
-            <p className={styles.problem} role="alert">
-              {t(`errors.${error}`)}
-            </p>
+            <p className={styles.problem}>{t(`errors.${error}`)}</p>
           ) : tsaMissing ? (
-            <p className={styles.problem}>{t("certSign.tsaMissing")}</p>
-          ) : null}
-          {busy ? (
-            <p className={styles.hint} role="status">
-              {t("certSign.signing")}
+            <p className={styles.problem} id="cert-sign-tsa-missing">
+              {t("certSign.tsaMissing")}
             </p>
           ) : null}
+          {busy ? <p className={styles.hint}>{t("certSign.signing")}</p> : null}
           <div className={styles.actions}>
             <Button variant="primary" isDisabled={!canSign} onPress={() => sign(false)}>
               {t(form.visible ? "certSign.placeAndSign" : "certSign.sign")}

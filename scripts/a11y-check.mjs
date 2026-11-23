@@ -8,7 +8,10 @@
 // the script drives it from inside the page through the app's own store and
 // command registry. Screens, per combination: the empty window; the viewer
 // with a document (and its sepia and night reading themes); the left panels;
-// the tools; the dialogs. Commands that are disabled are reported as skipped.
+// the search panel and replace preview; the tools; the OCR tool's states (a
+// job, the review list, review mode, an area, layer checks, the model prompt);
+// the dialogs; Settings' OCR models, crash reports and the certificate dialog's
+// time-stamp field. Commands that are disabled are reported as skipped.
 // If the store has `setUiScale`, the viewer and Settings are also checked at
 // interface size 2, where clipped text counts as a failure as well.
 //
@@ -52,7 +55,7 @@ const PANELS = [
   "view.showComments",
   "view.showSignatures",
 ];
-// Not "ocr": another session owns the OCR UI.
+// The OCR tool is checked with its jobs, review mode and areas (checkOcr, below).
 const TOOLS = ["edit", "comment", "pages", "forms", "sign", "protect"];
 const DIALOGS = [
   "app.settings",
@@ -65,6 +68,7 @@ const DIALOGS = [
   "file.compress",
   "file.exportImages",
   "app.toggleGallery",
+  "app.shortcuts",
 ];
 /** Store fields that close every dialog above (the certificate dialog closes by command). */
 const CLOSED_DIALOGS = {
@@ -75,6 +79,7 @@ const CLOSED_DIALOGS = {
   outputDialog: null,
   galleryOpen: false,
   signatureDialog: null,
+  shortcutsOpen: false,
 };
 
 // Known, justified exclusions: a violation of `rule` on an element matching
@@ -429,8 +434,90 @@ async function act(step) {
     case "uiScale":
       state.setUiScale(step.scale);
       return {};
+    case "ocr":
+      // Installed by loadApp: this function is sent to the page alone.
+      return window.__a11yOcrStep(step, R);
+    case "click": {
+      const element = document.querySelector(step.selector);
+      if (!element) throw new Error(`nothing matches ${step.selector}`);
+      element.click();
+      return {};
+    }
     default:
       throw new Error(`unknown step ${step.kind}`);
+  }
+}
+
+/**
+ * The OCR tool's and Settings' states (ADR 0070's second pass), set up through
+ * the mock shell's own test hooks, which the dev server serves to the page.
+ */
+async function ocrStep(step, R) {
+  const { useAppStore } = await import("/src/state/appStore.ts");
+  const { useOcrJobs } = await import("/src/state/ocrJobs.ts");
+  const { useOcrModels } = await import("/src/state/ocrModels.ts");
+  const { resetMockOcr } = await import("/src/backend/mockOcr.ts");
+  const waitFor = async (what, test, ms = 15_000) => {
+    const deadline = Date.now() + ms;
+    while (!test()) {
+      if (Date.now() > deadline) throw new Error(`OCR: ${what} did not happen within ${ms} ms`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+  const installed = { kind: "installed" };
+  const active = () => useAppStore.getState().activeDocumentId;
+  switch (step.action) {
+    case "models": {
+      // "ready": the models in; "missing": none; "linux": the draft models' row, one model in.
+      if (step.models === "ready")
+        resetMockOcr({ states: { "nuqta-4b": installed, "llama-cpp": installed } });
+      else if (step.models === "linux")
+        resetMockOcr({
+          states: { "nuqta-4b": installed },
+          hardware: { accelerators: [], runtimeGpu: null, os: "linux", arch: "x86_64" },
+        });
+      else resetMockOcr();
+      useOcrModels.setState({ models: null, jobs: {}, failures: {}, prompt: false });
+      await R.refreshOcrModels();
+      return {};
+    }
+    case "recognizePage": {
+      await R.runCommand("ocr.recognizePage");
+      await waitFor("a recognised page", () =>
+        Object.values(useOcrJobs.getState().jobs).some((job) => job.state === "done"),
+      );
+      await waitFor("the review list", () => (useOcrJobs.getState().review[active()] ?? []).length > 0);
+      return {};
+    }
+    case "decideAll": {
+      for (let i = 0; i < 20 && R.isCommandEnabled("ocr.reviewConfirm"); i += 1)
+        await R.runCommand("ocr.reviewConfirm");
+      return {};
+    }
+    case "checkLayers": {
+      await R.runCommand("ocr.checkLayers");
+      await waitFor("a poor text layer found", () =>
+        (useOcrJobs.getState().checks[active()] ?? []).some((check) => check.verdict === "poor"),
+      );
+      return {};
+    }
+    case "crashReports": {
+      const { sampleCrashReport, setMockCrashReports } = await import("/src/backend/mockCrash.ts");
+      const { refreshCrashReports } = await import("/src/state/crashReports.ts");
+      setMockCrashReports(step.reports ? [sampleCrashReport()] : []);
+      await refreshCrashReports();
+      return {};
+    }
+    case "timestamp": {
+      const { useCertSign } = await import("/src/state/certSign.ts");
+      useCertSign.getState().updateForm({ timestamp: true, tsaUrl: "" });
+      return {};
+    }
+    case "reset":
+      useOcrJobs.setState({ reviewing: false, focus: null, drawingRegion: false, region: null });
+      return {};
+    default:
+      throw new Error(`unknown OCR step ${step.action}`);
   }
 }
 
@@ -521,6 +608,8 @@ async function audit({ exclusions, contrastRetryMs, clipped }) {
       );
       if (!ownText) continue;
       if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+      // Text for screen readers only (`.visually-hidden`: a 1px box that clips) is meant unseen.
+      if (element.closest(".visually-hidden")) continue;
       const style = getComputedStyle(element);
       const overX = hides(style.overflowX) && element.scrollWidth > element.clientWidth + 1;
       const overY = hides(style.overflowY) && element.scrollHeight > element.clientHeight + 1;
@@ -566,6 +655,7 @@ async function loadApp(cdp, url, axeSource) {
   await cdp.send("Page.navigate", { url });
   await loaded;
   await evaluate(cdp, axeSource);
+  await evaluate(cdp, `window.__a11yOcrStep = ${ocrStep}`);
   await call(cdp, checkArabicContrast);
   const ready = await call(cdp, pageReady);
   await call(cdp, settle, SETTLE_MS);
@@ -631,6 +721,8 @@ async function checkCombo(cdp, combo, { url, axeSource, uiScale }) {
   }
   await step("tool", { tool: "select" });
 
+  await checkOcr(step, check);
+
   const closeDialogs = async () => {
     await step("state", { state: CLOSED_DIALOGS });
     await step("command", { id: "certSign.cancel" });
@@ -643,9 +735,16 @@ async function checkCombo(cdp, combo, { url, axeSource, uiScale }) {
     await closeDialogs();
   }
 
+  await checkSettings(step, check, closeDialogs);
+
   if (uiScale && UI_SCALE_COMBOS.includes(combo)) {
     await step("uiScale", { scale: 2 });
     await check("interface size 2: viewer", { clipped: true });
+    await step("ocr", { action: "models", models: "ready" });
+    await step("tool", { tool: "ocr" });
+    await check("interface size 2: tool ocr", { clipped: true });
+    await step("ocr", { action: "reset" });
+    await step("tool", { tool: "select" });
     const outcome = await step("command", { id: "app.settings" });
     if (outcome.skipped) skip("interface size 2: dialog app.settings", outcome.skipped);
     else await check("interface size 2: dialog app.settings", { clipped: true });
@@ -654,6 +753,61 @@ async function checkCombo(cdp, combo, { url, axeSource, uiScale }) {
   }
   process.stdout.write("\n");
   return result;
+}
+
+/**
+ * The OCR tool (ADR 0070's second pass): the panel, a finished job with the
+ * pages-needing-review list, review mode's card (a word, then nothing left),
+ * an area set from the keyboard, a layer check, and the model prompt.
+ */
+async function checkOcr(step, check) {
+  const ocr = (action, extra = {}) => step("ocr", { action, ...extra });
+  await ocr("models", { models: "ready" });
+  await step("tool", { tool: "ocr" });
+  await check("tool ocr");
+  await ocr("recognizePage");
+  await check("tool ocr: a finished job and the review list");
+  await step("command", { id: "ocr.startReview" });
+  await check("tool ocr: review card");
+  await ocr("decideAll");
+  await check("tool ocr: review card, nothing left");
+  await step("command", { id: "ocr.stopReview" });
+  await step("command", { id: "ocr.drawRegion" });
+  await check("tool ocr: drawing an area");
+  await step("command", { id: "ocr.regionWholePage" });
+  await check("tool ocr: an area set, with its fields");
+  await step("command", { id: "ocr.cancelRegion" });
+  await ocr("checkLayers");
+  await check("tool ocr: layer checks");
+  await ocr("models", { models: "missing" });
+  await step("command", { id: "ocr.recognize" });
+  await check("dialog ocr model prompt");
+  await step("command", { id: "ocrModels.dismissPrompt" });
+  await ocr("reset");
+  await step("tool", { tool: "select" });
+}
+
+/**
+ * Settings' sections added since the first pass: OCR models with the Tesseract
+ * note and a delete being confirmed, crash reports kept and shown; and the
+ * certificate dialog's time-stamp field left empty.
+ */
+async function checkSettings(step, check, closeDialogs) {
+  const ocr = (action, extra = {}) => step("ocr", { action, ...extra });
+  await ocr("models", { models: "linux" });
+  await ocr("crashReports", { reports: true });
+  await step("command", { id: "app.settings" });
+  await check("settings: OCR models on Linux, a crash report kept");
+  await step("click", { selector: '[data-testid="ocr-model-nuqta-4b"] button' });
+  await step("click", { selector: '[data-testid="crash-report"] button' });
+  await check("settings: deleting a model, a crash report shown");
+  await closeDialogs();
+  await ocr("crashReports", { reports: false });
+  await ocr("models", { models: "ready" });
+  await step("command", { id: "certSign.open" });
+  await ocr("timestamp");
+  await check("dialog certSign.open: an empty time-stamp address");
+  await closeDialogs();
 }
 
 // --------------------------------------------------------------------- reporting

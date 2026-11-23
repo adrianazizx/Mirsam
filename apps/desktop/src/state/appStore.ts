@@ -397,6 +397,9 @@ export interface AppState {
   /** The settings dialog is open (OCR models, ADR 0034). */
   settingsOpen: boolean;
   setSettingsOpen(open: boolean): void;
+  /** The keyboard shortcuts list (ADR 0070's second pass). */
+  shortcutsOpen: boolean;
+  setShortcutsOpen(open: boolean): void;
   setGalleryOpen(open: boolean): void;
   setPaletteOpen(open: boolean): void;
   /** Applies settings read from the shell's store at startup. */
@@ -653,6 +656,10 @@ export const useAppStore = create<AppState>((set, get) => {
     settingsOpen: false,
     setSettingsOpen(settingsOpen) {
       set({ settingsOpen });
+    },
+    shortcutsOpen: false,
+    setShortcutsOpen(shortcutsOpen) {
+      set({ shortcutsOpen });
     },
     outputDialog: null,
     setOutputDialog(dialog) {

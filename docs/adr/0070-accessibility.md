@@ -107,3 +107,57 @@ and Arabic, light and dark, plus reading the code):
   shortcut for the interface size (Option-key combinations do not reach `KeyboardEvent.key`
   reliably on macOS); WCAG 2.2's focus-appearance contrast for hover-only states; Windows
   Narrator and Orca runs.
+
+## Amendment (2026-11-23): the second pass
+
+The OCR tool, the Settings sections added since (language and digits, OCR models with the
+Tesseract note, crash reports), the certificate dialog's time-stamp field, and the items
+deferred above.
+
+- **Live regions, not `role="status"`.** The OCR panel had seven status roles, each inserted with
+  its text (often skipped by VoiceOver) or updated at every progress step (spoken at every
+  step, where it was spoken). They are plain text now, and `a11y/ocrAnnouncements.ts` says the
+  changes nobody is looking at through the two shared live regions: a job starting, pausing,
+  resuming, finishing or failing (failures assertively), a layer check's verdict, a model
+  download ending (installed, paused, or why it stopped, with the disk space a full disk needs),
+  an area set, a page converted, review mode done. Progress itself is not spoken; the progress
+  bars give it when asked. The same goes for the OCR models' failure line and the certificate
+  dialog's error and "Signing…" lines (the signing command announces them).
+- **Review mode keeps focus.** The field describes itself with the card's "N of M left" line,
+  why the word is listed, and the engine's confidence (`aria-describedby`), so stepping to the
+  next word reads all of it. Escape leaves review mode and focus goes to "Review"; deciding the
+  last item moves focus to "Done reviewing" and announces it; a page to check as a whole
+  focuses "Check page". The word image's text alternative says what it is (the scan of page N
+  around the word read as X, the word outlined), not what it shows: the pixels are the one
+  thing a reviewer using a screen reader cannot get, and the reasons, the other readings and the
+  confidence are given as text beside it.
+- **The flagged words are one tab stop** (Up/Down, Home, End move between them), like the
+  thumbnails, so Tab gets past a long list.
+- **An area without a pointer** (WCAG 2.1.1): "Use the whole page" sets the area to the page
+  shown (`ocr.regionWholePage`), and four number fields (from the left edge, from the top,
+  width, height, in percent of the page) narrow it. The page's geometry is physical, so "left"
+  is left in Arabic too.
+- **`aria-keyshortcuts`** was dropped by React Aria's buttons (they filter DOM props), so the
+  review card's attribute never reached the DOM, and held display symbols ("⌘↩") rather than
+  ARIA's syntax. `Button` and `IconButton` now set it through a ref (`keyShortcutsRef`), every
+  `CommandButton` carries its command's shortcut, and `ariaShortcut(id)` gives "Meta+Enter".
+- **Repeated buttons say what they act on:** each OCR model row's and each crash report's
+  buttons are described by the model's name or the report's kind and time.
+- **The time-stamp address** is `required`, `aria-invalid` while empty, and described by its hint
+  and by why signing is off (WCAG 3.3.1, 3.3.2).
+- **Deferred items done:**
+  - the PDF's `/Lang` (`catalog::CatalogHints::language`, a well-formed BCP 47 tag, not read from
+    encrypted files) decides the language of the script it is written in (`fr` for Latin text,
+    `fa` or `ur` for Arabic script); a language in another script leaves the guess alone;
+  - interface size shortcuts: Cmd/Ctrl+Option/Alt+`=`, `-`, `0`, matched by the physical key
+    (`KeyboardEvent.code`), since Option changes `key` on macOS;
+  - the search panel's row height follows the interface size;
+  - hover and pressed states: `--color-border-strong` was 2.55:1 on a hovered control in the
+    light theme and 2.88:1 in the dark one; both now pass 3:1 on the app, hover and pressed
+    backgrounds, and the focus ring is checked against hover, pressed and selected (tokens test);
+  - **Keyboard shortcuts** (`app.shortcuts`, Cmd/Ctrl+/): every command's shortcut from the
+    registry, F6 and F8 included (the palette leaves those out), with a line on Tab, F6, the
+    arrows and Escape. A skip link stays unneeded: the page area follows the tab bar.
+- **Still deferred:** the tagged structure tree's own `/Lang` and reading order; WCAG 2.2's focus
+  appearance (AAA) beyond the contrast pairs; Windows Narrator and Orca; VoiceOver itself
+  (owner item 24).

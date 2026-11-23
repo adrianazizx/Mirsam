@@ -38,6 +38,9 @@ pub struct DocumentInfo {
     /// /Direction`, `/PageLayout`), the defaults for its page order and layout.
     reading_direction: Option<&'static str>,
     page_layout: Option<&'static str>,
+    /// The document's `/Lang` (a BCP 47 tag), for the page text read by
+    /// screen readers (ADR 0070).
+    language: Option<String>,
     /// Restored with unsaved changes (ADR 0040).
     modified: bool,
     can_undo: bool,
@@ -75,6 +78,7 @@ impl DocumentInfo {
                 PageLayout::TwoColumnLeft | PageLayout::TwoPageLeft => "spread",
                 PageLayout::TwoColumnRight | PageLayout::TwoPageRight => "book",
             }),
+            language: hints.language,
             modified: false,
             can_undo: false,
             security: document.security(),

@@ -1023,7 +1023,7 @@ impl Document {
     /// The document's own reading preferences: `/ViewerPreferences /Direction`
     /// and `/PageLayout`, where it states them (see [`crate::catalog`]).
     pub fn catalog_hints(&self) -> crate::catalog::CatalogHints {
-        self.hints
+        self.hints.clone()
     }
 
     pub fn page_count(&self) -> usize {
