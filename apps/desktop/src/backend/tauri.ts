@@ -37,6 +37,8 @@ import {
   type RedactOutcome,
   type RenderedPage,
   type RenderStats,
+  type ReplaceOutcome,
+  type ReplacePlan,
   type RestoreOutcome,
   type SanitizeOutcome,
   type SaveOutcome,
@@ -148,6 +150,10 @@ export const tauriBackend: Backend = {
   pageText: (documentId, page) => invoke<TextLayer>("page_text", { documentId, page }),
   searchDocument: (documentId, query, options) =>
     invoke<SearchResults>("search_document", { documentId, query, options }),
+  replacePreview: (documentId, query, options, replacement) =>
+    invoke<ReplacePlan>("replace_preview", { documentId, query, options, replacement }),
+  replaceText: (documentId, query, options, replacement, scope) =>
+    invoke<ReplaceOutcome>("replace_text", { documentId, query, options, replacement, scope }),
   renderTile: (documentId, generation, page, tile, priority, lane = "main") =>
     loadTile(
       new URLSearchParams({

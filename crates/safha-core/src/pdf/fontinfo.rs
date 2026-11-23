@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 
+use super::crypt::Crypt;
 use super::{Dict, File, Object, decode_stream};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,12 @@ pub(crate) struct FontInfo {
 impl FontInfo {
     /// Reads a font dictionary; `None` if it is not one.
     pub(crate) fn read(file: &File<'_>, dict: &Dict) -> Option<FontInfo> {
+        Self::read_in(file, dict, None)
+    }
+
+    /// Reads a font dictionary of a file encrypted with `crypt` (its
+    /// `/ToUnicode` stream is decrypted to be read).
+    pub(crate) fn read_in(file: &File<'_>, dict: &Dict, crypt: Option<&Crypt>) -> Option<FontInfo> {
         let subtype = dict.get(b"Subtype").and_then(|s| file.resolve(s))?;
         let subtype = subtype.as_name()?.to_vec();
         let resolve = |key: &[u8]| dict.get(key).and_then(|v| file.resolve(v));
@@ -147,7 +154,7 @@ impl FontInfo {
 
         // How codes read as text: /ToUnicode first.
         if let Some(stream) = dict.get(b"ToUnicode")
-            && let Some(data) = stream_data(file, stream)
+            && let Some(data) = stream_data_in(file, stream, crypt)
         {
             parse_to_unicode(&data, &mut info.unicode);
         }
@@ -242,9 +249,14 @@ impl FontInfo {
     }
 
     /// The font's embedded program as a face to lay text out with, when it
-    /// has one the layout engine can read (TrueType or OpenType).
-    pub(crate) fn program_face(&self, file: &File<'_>) -> Option<crate::typeset::FontFace> {
-        let data = stream_data(file, self.program.as_ref()?)?;
+    /// has one the layout engine can read (TrueType or OpenType), decrypted
+    /// with `crypt` in an encrypted file.
+    pub(crate) fn program_face(
+        &self,
+        file: &File<'_>,
+        crypt: Option<&Crypt>,
+    ) -> Option<crate::typeset::FontFace> {
+        let data = stream_data_in(file, self.program.as_ref()?, crypt)?;
         crate::typeset::FontFace::from_bytes(data, 0).ok()
     }
 
@@ -302,12 +314,19 @@ fn read_cid_widths(file: &File<'_>, w: &Object, out: &mut HashMap<u32, f64>) {
     }
 }
 
-/// The decoded data of a stream object (a reference to it).
-pub(crate) fn stream_data(file: &File<'_>, object: &Object) -> Option<Vec<u8>> {
-    let Object::Ref(number, _) = object else { return None };
-    let super::Entry::Offset(offset) = *file.entries.get(number)? else { return None };
+/// The decoded data of a stream object (a reference to it); in a file
+/// encrypted with `crypt`, decrypted under the stream's own number first.
+pub(crate) fn stream_data_in(file: &File<'_>, object: &Object, crypt: Option<&Crypt>) -> Option<Vec<u8>> {
+    let &Object::Ref(number, generation) = object else { return None };
+    let super::Entry::Offset(offset) = *file.entries.get(&number)? else { return None };
     let (dict, data) = file.indirect_at(offset)?;
-    decode_stream(&dict, data?, file)
+    match crypt {
+        Some(crypt) => {
+            let data = crypt.decrypt_stream_of(number, generation, &dict, data?)?;
+            decode_stream(&dict, &data, file)
+        }
+        None => decode_stream(&dict, data?, file),
+    }
 }
 
 /// `beginbfchar` / `beginbfrange` sections of a ToUnicode CMap.

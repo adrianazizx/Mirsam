@@ -98,8 +98,9 @@ and Arabic, light and dark, plus reading the code):
 ## Consequences
 
 - The jsdom suite (about 5 s) runs on every platform; the Chrome check (100 screens) adds about
-  75 s to the Linux job. Screens added later go on both lists. The search panel and the OCR tool are
-  left off both lists while other sessions rebuild them; they join with that work.
+  75 s to the Linux job. Screens added later go on both lists. The OCR tool is left off both lists
+  while another session rebuilds it; it joins with that work. The search panel joined with find and
+  replace (ADR 0052): results, the replace row and the replace preview.
 - VoiceOver itself was not driven: controlling it needs a VoiceOver Utility setting, a system
   change this pass did not make. The accessibility tree was read in Chromium instead.
 - Deferred, in `PROGRESS.md`: the PDF's own language and structure tree for the page text; a

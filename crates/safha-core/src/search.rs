@@ -65,6 +65,18 @@ pub struct SearchHit {
     pub rects: Vec<Rect>,
 }
 
+/// A match in a line of text, with its capture groups (ADR 0052): byte
+/// ranges of the original text, each extended over the marks on its last
+/// letter, as the match is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub start: usize,
+    pub end: usize,
+    /// Group 0 is the whole match; a group that took no part is `None`.
+    /// Literal queries have group 0 only.
+    pub groups: Vec<Option<(usize, usize)>>,
+}
+
 /// A query compiled for repeated use across pages.
 #[derive(Debug, Clone)]
 pub struct Query {
@@ -84,9 +96,11 @@ impl Query {
             if text.is_empty() {
                 return Err(SearchError::Empty);
             }
-            // The pattern runs on folded text, so it is not folded itself
-            // (that would corrupt its syntax); case is handled by the regex flag.
-            let pattern = if options.whole_word { format!(r"\b(?:{text})\b") } else { text.to_string() };
+            // The pattern runs on folded text. Its Arabic is folded the same
+            // way ("أجهزة" finds "اجهزة"); nothing else is (case folding would
+            // corrupt its syntax: `\D` is not `\d`), and case is the regex flag's.
+            let text = fold_pattern(text, &options);
+            let pattern = if options.whole_word { format!(r"\b(?:{text})\b") } else { text };
             let regex = RegexBuilder::new(&pattern)
                 .case_insensitive(!options.case_sensitive)
                 .size_limit(1 << 20)
@@ -105,25 +119,104 @@ impl Query {
 
     /// All matches in one line of text, as byte ranges of the original.
     pub fn find_in(&self, line: &str) -> Vec<(usize, usize)> {
+        self.matches_in(line).into_iter().map(|found| (found.start, found.end)).collect()
+    }
+
+    /// All matches in one line of text, with their capture groups.
+    ///
+    /// The pattern runs on folded text, but every range is the original's:
+    /// a group that matched Arabic-Indic digits as `\d` gives those digits,
+    /// and one that matched a vocalised word gives it with its marks.
+    pub fn matches_in(&self, line: &str) -> Vec<Found> {
         let folded = fold(line, &self.options);
-        let ranges: Vec<(usize, usize)> = match &self.matcher {
-            Matcher::Regex(regex) => regex
-                .find_iter(&folded.text)
-                .filter(|m| !m.is_empty())
-                .map(|m| (m.start(), m.end()))
-                .collect(),
-            Matcher::Literal(needle) => folded
-                .text
-                .match_indices(needle.as_str())
-                .map(|(start, matched)| (start, start + matched.len()))
-                .filter(|&(start, end)| !self.options.whole_word || is_whole_word(&folded.text, start, end))
-                .collect(),
+        let mut out = Vec::new();
+        match &self.matcher {
+            Matcher::Regex(regex) => {
+                for captures in regex.captures_iter(&folded.text) {
+                    let Some(whole) = captures.get(0).filter(|m| !m.is_empty()) else { continue };
+                    let Some((start, end)) = folded.original_range(whole.start(), whole.end()) else {
+                        continue;
+                    };
+                    let end = extend_over_marks(line, end);
+                    let groups = captures
+                        .iter()
+                        .map(|group| {
+                            let group = group?;
+                            let (from, to) = if group.is_empty() {
+                                let at = folded.original_position(group.start(), line.len());
+                                (at, at)
+                            } else {
+                                let (from, to) = folded.original_range(group.start(), group.end())?;
+                                (from, extend_over_marks(&line[..end], to))
+                            };
+                            Some((from.clamp(start, end), to.clamp(start, end)))
+                        })
+                        .collect();
+                    out.push(Found { start, end, groups });
+                }
+            }
+            Matcher::Literal(needle) => {
+                for (at, matched) in folded.text.match_indices(needle.as_str()) {
+                    let end = at + matched.len();
+                    if self.options.whole_word && !is_whole_word(&folded.text, at, end) {
+                        continue;
+                    }
+                    let Some((start, end)) = folded.original_range(at, end) else { continue };
+                    let end = extend_over_marks(line, end);
+                    out.push(Found { start, end, groups: vec![Some((start, end))] });
+                }
+            }
+        }
+        out
+    }
+
+    /// The text that replaces `found` in `line`, from `template`.
+    ///
+    /// A literal query's replacement is the template as typed. A regular
+    /// expression's may name its groups: `$1` (two digits when that group
+    /// exists, as in `$12`), `${1}`, `${name}` or `$<name>`, `$0` or `$&` for
+    /// the whole match, and `$$` for a dollar sign. A group that took no part,
+    /// or does not exist, gives nothing; a `$` followed by anything else is
+    /// kept as it is. Groups give the line's own text, not its folded form.
+    pub fn expand(&self, template: &str, found: &Found, line: &str) -> String {
+        let Matcher::Regex(regex) = &self.matcher else { return template.to_string() };
+        let group = |index: usize| -> &str {
+            found.groups.get(index).copied().flatten().and_then(|(a, b)| line.get(a..b)).unwrap_or("")
         };
-        ranges
-            .into_iter()
-            .filter_map(|(start, end)| folded.original_range(start, end))
-            .map(|(start, end)| (start, extend_over_marks(line, end)))
-            .collect()
+        let named = |name: &str| -> &str {
+            if let Ok(index) = name.parse::<usize>() {
+                return group(index);
+            }
+            regex.capture_names().position(|n| n == Some(name)).map_or("", group)
+        };
+        let mut out = String::with_capacity(template.len());
+        let mut rest = template;
+        while let Some(at) = rest.find('$') {
+            out.push_str(&rest[..at]);
+            let after = &rest[at + 1..];
+            let digits = after.bytes().take_while(u8::is_ascii_digit).count().min(2);
+            if let Some(tail) = after.strip_prefix('$') {
+                out.push('$');
+                rest = tail;
+            } else if let Some(tail) = after.strip_prefix('&') {
+                out.push_str(group(0));
+                rest = tail;
+            } else if digits > 0 {
+                // Two digits only when that group exists ("$10" with one group is "$1" then "0").
+                let two = digits == 2 && after[..2].parse::<usize>().is_ok_and(|n| n < found.groups.len());
+                let take = if two { 2 } else { 1 };
+                out.push_str(group(after[..take].parse().unwrap_or(usize::MAX)));
+                rest = &after[take..];
+            } else if let Some((name, tail)) = braced(after, '{', '}').or_else(|| braced(after, '<', '>')) {
+                out.push_str(named(name));
+                rest = tail;
+            } else {
+                out.push('$');
+                rest = after;
+            }
+        }
+        out.push_str(rest);
+        out
     }
 
     /// All matches on a page, with highlight boxes.
@@ -314,6 +407,15 @@ impl HitContext {
     }
 }
 
+/// `{name}` (or `<name>`) at the start of `text`: the name and what follows.
+fn braced(text: &str, open: char, close: char) -> Option<(&str, &str)> {
+    let inner = text.strip_prefix(open)?;
+    let end = inner.find(close)?;
+    let name = &inner[..end];
+    let valid = !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+    valid.then(|| (name, &inner[end + close.len_utf8()..]))
+}
+
 fn is_whole_word(text: &str, start: usize, end: usize) -> bool {
     let word = |c: char| c.is_alphanumeric();
     let before = text[..start].chars().next_back().is_none_or(|c| !word(c));
@@ -334,10 +436,48 @@ impl Folded {
         let last = self.origin.get(end.checked_sub(1)?)?;
         Some((first.0, last.1))
     }
+
+    /// Where folded byte `at` falls in the original (`len`, the original's
+    /// length, past the end): for an empty group.
+    fn original_position(&self, at: usize, len: usize) -> usize {
+        self.origin.get(at).map_or(len, |range| range.0)
+    }
 }
 
 fn is_tashkeel(c: char) -> bool {
     matches!(c, '\u{0610}'..='\u{061A}' | '\u{064B}'..='\u{065F}' | '\u{0670}' | '\u{06D6}'..='\u{06ED}')
+}
+
+/// One character as Arabic normalisation folds it: `None` drops it
+/// (tashkeel, tatweel).
+fn fold_arabic(c: char, options: &SearchOptions) -> Option<char> {
+    if is_tashkeel(c) || c == '\u{0640}' {
+        return None;
+    }
+    Some(match c {
+        'أ' | 'إ' | 'آ' | 'ٱ' => 'ا',
+        'ى' => 'ي',
+        'ة' if options.ta_marbuta_as_ha => 'ه',
+        '\u{0660}'..='\u{0669}' => char::from(b'0' + (c as u32 - 0x0660) as u8),
+        '\u{06F0}'..='\u{06F9}' => char::from(b'0' + (c as u32 - 0x06F0) as u8),
+        other => other,
+    })
+}
+
+/// A regular expression's Arabic, folded as the text it runs on is.
+fn fold_pattern(pattern: &str, options: &SearchOptions) -> String {
+    if !options.arabic_normalize {
+        return pattern.to_string();
+    }
+    let mut out = String::with_capacity(pattern.len());
+    for c in pattern.chars() {
+        if matches!(c, '\u{FB00}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}') {
+            out.extend(c.to_string().nfkc().filter_map(|c| fold_arabic(c, options)));
+        } else {
+            out.extend(fold_arabic(c, options));
+        }
+    }
+    out
 }
 
 /// Folds `text` for comparison under `options`.
@@ -359,17 +499,7 @@ fn fold(text: &str, options: &SearchOptions) -> Folded {
         };
         for c in expanded.chars() {
             if options.arabic_normalize {
-                if is_tashkeel(c) || c == '\u{0640}' {
-                    continue;
-                }
-                let c = match c {
-                    'أ' | 'إ' | 'آ' | 'ٱ' => 'ا',
-                    'ى' => 'ي',
-                    'ة' if options.ta_marbuta_as_ha => 'ه',
-                    '\u{0660}'..='\u{0669}' => char::from(b'0' + (c as u32 - 0x0660) as u8),
-                    '\u{06F0}'..='\u{06F9}' => char::from(b'0' + (c as u32 - 0x06F0) as u8),
-                    other => other,
-                };
+                let Some(c) = fold_arabic(c, options) else { continue };
                 push_cased(&mut push, c, options.case_sensitive, range);
             } else {
                 push_cased(&mut push, c, options.case_sensitive, range);
@@ -474,6 +604,11 @@ mod tests {
         );
         // Arabic-Indic digits fold to ASCII, so \d finds them.
         assert_eq!(find(r"\d+", "رقم ١٢٣٤", regex.clone()), ["١٢٣٤"]);
+        // The pattern's Arabic folds as the text does: any alef form, marks or not.
+        assert_eq!(find(r"(\d+) أجهزة", "اشتريت 3 اجهزة و٤ أَجهزة", regex.clone()), ["3 اجهزة", "٤ أَجهزة"]);
+        assert_eq!(find(r"إلى|٢٠٢٥", "الى عام 2025", regex.clone()), ["الى", "2025"]);
+        // Escapes keep their case: \D is not \d.
+        assert_eq!(find(r"\D+", "ab12", regex.clone()), ["ab"]);
         assert!(matches!(Query::new("(", regex), Err(SearchError::InvalidRegex(_))));
     }
 
@@ -495,6 +630,52 @@ mod tests {
         // Short lines are not marked.
         let short = HitContext::of("عقد إيجار", 0, "عقد".len(), 16);
         assert_eq!((short.before.as_str(), short.after.as_str()), ("", " إيجار"));
+    }
+
+    fn replaced(query: &str, template: &str, text: &str, options: SearchOptions) -> String {
+        let query = Query::new(query, options).expect("valid query");
+        let mut out = text.to_string();
+        for found in query.matches_in(text).into_iter().rev() {
+            let with = query.expand(template, &found, text);
+            out.replace_range(found.start..found.end, &with);
+        }
+        out
+    }
+
+    #[test]
+    fn regex_replacements_take_their_groups_from_the_original_text() {
+        let regex = SearchOptions { regex: true, ..SearchOptions::default() };
+        assert_eq!(
+            replaced(r"(\w+)@(\w+)", "$2 at $1", "mail bob@example now", regex.clone()),
+            "mail example at bob now"
+        );
+        // Folded, \d matches Arabic-Indic digits; the group gives them as written.
+        assert_eq!(
+            replaced(r"رقم (\d+)", "العدد $1", "صدر القرار رقم ١٢٣٤ أمس", regex.clone()),
+            "صدر القرار العدد ١٢٣٤ أمس"
+        );
+        // A vocalised word is matched unvocalised and its group keeps its marks.
+        assert_eq!(replaced(r"(العلم)", "[$1]", "طلب الْعِلْمِ فريضة", regex.clone()), "طلب [الْعِلْمِ] فريضة");
+        // Named groups, the whole match, dollars, and groups that are not there.
+        assert_eq!(replaced(r"(?<n>\d+) SAR", "${n} ريال", "pay 4500 SAR", regex.clone()), "pay 4500 ريال");
+        assert_eq!(replaced(r"(?<n>\d+) SAR", "$<n>$$", "pay 4500 SAR", regex.clone()), "pay 4500$");
+        assert_eq!(replaced(r"\d+", "<$0|$&>", "a 12 b", regex.clone()), "a <12|12> b");
+        assert_eq!(replaced(r"(a)|(b)", "[$2]", "ab", regex.clone()), "[][b]");
+        assert_eq!(replaced(r"(x)", "$9$x", "x", regex.clone()), "$x");
+        // "$10" with one group is group 1, then "0".
+        assert_eq!(replaced(r"(x)", "$10", "x", regex), "x0");
+    }
+
+    #[test]
+    fn literal_replacements_are_taken_as_typed() {
+        assert_eq!(replaced("price", "$1 cost", "the price", SearchOptions::default()), "the $1 cost");
+        // Normalised matching finds every spelling; each is replaced whole, marks and all.
+        assert_eq!(
+            replaced("الى", "إلى", "ذهب الى البيت ثم إلَى السوق", SearchOptions::default()),
+            "ذهب إلى البيت ثم إلى السوق"
+        );
+        let whole = SearchOptions { whole_word: true, ..SearchOptions::default() };
+        assert_eq!(replaced("art", "craft", "art, part, artist", whole), "craft, part, artist");
     }
 
     #[test]

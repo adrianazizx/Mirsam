@@ -10,8 +10,8 @@ import { axeViolations } from "./axe";
 /**
  * axe-core over the main screens: the empty window, a document in the page
  * view, the side panels, every tool's panel, and the dialogs, in English (LTR)
- * and Arabic (RTL). The search panel and the OCR tool are left out while
- * other work rebuilds them; they join this list with it.
+ * and Arabic (RTL). The OCR tool is left out while other work rebuilds it;
+ * it joins this list with it.
  *
  * The theme does not change what jsdom can check (it computes no colours), so
  * every screen runs in English light and Arabic dark, and the main ones in the
@@ -137,6 +137,23 @@ describe.each([
       await run(command);
       await expectClean(command);
     }
+  });
+
+  it("the search panel: results, the replace row, and the replace preview (ADR 0052)", async () => {
+    await openApp(locale, theme);
+    await run("file.open");
+    await run("search.replaceOpen");
+    await act(async () => {
+      await runCommand("search.run", { query: "4,500" });
+      await runCommand("search.setReplacement", { text: "4,750" });
+    });
+    await settle();
+    expect(screen.getByTestId("search-results")).toBeTruthy();
+    await expectClean("search results and the replace row");
+    await run("search.replaceAll");
+    expect(screen.getByTestId("replace-preview")).toBeTruthy();
+    await expectClean("replace preview");
+    await run("search.replaceCancel");
   });
 
   it("each tool's panel", async () => {

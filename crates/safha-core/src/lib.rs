@@ -6,7 +6,7 @@
 //!
 //! Surface so far: bind PDFium, open documents, report page geometry, render
 //! through a prioritized queue ([`render`]), extract text in logical order
-//! ([`text`]), search it ([`search`]), read the outline and page labels, map
+//! ([`text`]), search it ([`search`]) and replace what it finds ([`replace`]), read the outline and page labels, map
 //! page space to the displayed page ([`view`]), edit pages ([`edit`]) and
 //! annotations ([`annotate`]) and form fields ([`forms`]) as incremental updates, redact and sanitize
 //! ([`redact`]), save ([`save`]), keep local app state ([`store`]), lay out
@@ -41,6 +41,7 @@ mod pdf;
 pub mod recovery;
 pub mod redact;
 pub mod render;
+pub mod replace;
 pub mod save;
 pub mod search;
 pub mod security;

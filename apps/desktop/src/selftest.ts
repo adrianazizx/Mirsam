@@ -438,6 +438,8 @@ async function addedTextChecks(documentId: number) {
     return pixels > enough;
   }, 15_000);
   const readBack = (await pageText()).replace(/\s+/gu, " ").includes(text);
+  // Find and replace (ADR 0052): the text just written, through the real shell.
+  const replace = readBack ? await replaceChecks(documentId, pageText) : null;
 
   // In-place editing (ADR 0023): the paragraph just written is found as one block, in logical
   // order, and a word inserted in its middle reads back from the page.
@@ -476,6 +478,7 @@ async function addedTextChecks(documentId: number) {
     pixels,
     enough,
     readBack,
+    replace,
     undone,
     blockFound,
     blockEdited,
@@ -486,6 +489,36 @@ async function addedTextChecks(documentId: number) {
     typingP95Ms: bold.typingP95Ms,
     typingWithoutFrames: bold.typingWithoutFrames,
   };
+}
+
+/**
+ * Find and replace (ADR 0052) in the real shell: a search with Arabic
+ * normalisation ("الى" finds "إلى"), the preview, the replacement read back
+ * from the page in logical order, and one undo that takes it all back.
+ */
+async function replaceChecks(documentId: number, pageText: () => Promise<string>) {
+  const replaced = "أضيف هذا النص إلى الوثيقة";
+  const open = () =>
+    useAppStore.getState().documents.find((candidate) => candidate.id === documentId);
+  await runCommand("search.setReplacement", { text: "إلى الوثيقة" });
+  await runCommand("search.run", { query: "الى الصفحة" });
+  await runCommand("search.replaceAll");
+  const plan = open()?.replace.plan;
+  const ready = plan?.occurrences.filter((occurrence) => occurrence.target !== null).length ?? 0;
+  await runCommand("search.replaceConfirm");
+  let readBack = false;
+  const until = performance.now() + 15_000;
+  while (!readBack && performance.now() < until) {
+    readBack = (await pageText()).replace(/\s+/gu, " ").includes(replaced);
+    if (!readBack) await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  const notice = useAppStore.getState().notice?.key ?? null;
+  await runCommand("edit.undo");
+  const undone = !(await pageText()).includes(replaced);
+  await runCommand("search.setReplacement", { text: "" });
+  await runCommand("search.run", { query: "" });
+  useAppStore.getState().setNotice(null);
+  return { ready, readBack, notice, undone };
 }
 
 /**

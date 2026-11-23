@@ -99,3 +99,36 @@ pub fn without_spaces(text: &str) -> String {
     text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 pub mod form_pdf;
+
+/// The streams of an incremental update: how many it writes, and how many of
+/// them inflate as they are written. In an encrypted file none should: each is
+/// compressed, then encrypted. (Searching the bytes for plain text cannot tell:
+/// ciphertext holds any short string by chance on some runs.)
+pub fn streams_in_the_clear(update: &[u8]) -> (usize, usize) {
+    let find = |from: usize, needle: &[u8]| {
+        update.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|i| from + i)
+    };
+    let (mut streams, mut clear, mut at) = (0, 0, 0);
+    while let Some(keyword) = find(at, b"stream") {
+        let mut start = keyword + b"stream".len();
+        if update.get(start) == Some(&b'\r') {
+            start += 1;
+        }
+        if update.get(start) == Some(&b'\n') {
+            start += 1;
+        }
+        let Some(end) = find(start, b"endstream") else { break };
+        let mut data = &update[start..end];
+        while let Some((last, rest)) = data.split_last()
+            && matches!(last, b'\r' | b'\n')
+        {
+            data = rest;
+        }
+        streams += 1;
+        if miniz_oxide::inflate::decompress_to_vec_zlib(data).is_ok() {
+            clear += 1;
+        }
+        at = end + b"endstream".len();
+    }
+    (streams, clear)
+}

@@ -224,3 +224,17 @@ The 126 include Type 3 and CoreText Arabic text, which is refused, not read.
   - Chrome's vocalised page reads as its ground truth;
   - removing a vocalised paragraph leaves no ink in its box, on Chrome's page and in this
     app's own Naskh.
+
+## Amendment (session M6-c): encrypted files, and lines without letters
+
+From ADR 0052 (find and replace):
+
+- **Encrypted files are read and edited.** Page content and the fonts' `/ToUnicode` and program
+  streams are decrypted under their own numbers; new content streams and fonts are encrypted under
+  theirs. `encrypted` is refused only for a handler this editor cannot write; a page whose resources
+  would carry strings into its own dictionary is refused, as ADR 0021's added text is.
+- **A line without letters** (digits and punctuation, as a wrapped "١٢٣٤." is) has no direction of
+  its own: it takes its paragraph's and does not vote on it. "Direction is the majority of letters"
+  now counts letters only, not digits.
+- Each character of a paragraph keeps where it is drawn (`Block::places`), through logical
+  reordering and NFKC folding a cluster at a time.
