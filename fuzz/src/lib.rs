@@ -4,7 +4,8 @@
 //! own bytes, without PDFium — the catalog reader, the page tree and the page
 //! edits written over it, the content-stream interpreter behind text blocks
 //! and redaction, the font and ToUnicode readers, form fields (and filling
-//! them in), decryption, sanitizing, and ink strokes.
+//! them in), decryption, sanitizing, ink strokes, page objects (and moving,
+//! removing and reordering them), and links.
 //! A panic, an arithmetic overflow, a hang or a stack overflow in any of them
 //! is a finding; an `Err` is the expected answer to a damaged file.
 //!
@@ -15,6 +16,7 @@
 
 use safha_core::edit::PageEdit;
 use safha_core::forms::FormEdit;
+use safha_core::objects::{Arrange, ObjectChange, ObjectEdit, ObjectRef};
 use safha_core::redact::{Mark, SanitizeOptions};
 use safha_core::text::Rect;
 use safha_core::view::ViewTransform;
@@ -45,6 +47,29 @@ pub fn exercise(bytes: &[u8]) {
                 let _ = safha_core::forms::form_update(bytes, password, &edit);
             }
         }
+    }
+    // Page objects (ADR 0051): traced, then the first few moved, removed and reordered.
+    for password in [None, Some("safha-test")] {
+        let Ok(objects) = safha_core::objects::page_objects(bytes, password, &view, 0, 595.0 * 842.0) else {
+            continue;
+        };
+        for object in objects.iter().take(3) {
+            let at = ObjectRef { index: object.index, fingerprint: object.fingerprint };
+            for edit in [
+                ObjectEdit::Transform { matrix: [0.5, 0.0, 0.0, 0.5, 10.0, 20.0] },
+                ObjectEdit::Delete,
+                ObjectEdit::Arrange(Arrange::Front),
+                ObjectEdit::Arrange(Arrange::Backward),
+            ] {
+                let change = ObjectChange { page: 0, object: at, edit };
+                if let Ok((update, _)) = safha_core::objects::object_update(bytes, password, &view, 595.0 * 842.0, &change) {
+                    let edited = [bytes, &update].concat();
+                    let _ = safha_core::objects::page_objects(&edited, password, &view, 0, 595.0 * 842.0);
+                }
+            }
+        }
+        let _ = safha_core::links::page_links(bytes, password, &view, 0);
+        let _ = safha_core::links::named_destinations(bytes, password);
     }
     let _ = safha_core::redact::sanitize_update(bytes, SanitizeOptions::default());
     let marks = [Mark {

@@ -3,6 +3,7 @@ import type {
   CompressReport,
   DocumentInfo,
   EditOutcome,
+  NamedDestination,
   OutlineItem,
   PageSize,
   ParagraphBlock,
@@ -15,6 +16,7 @@ import type {
   SecureOutcome,
   SignatureInfo,
   TextStyle,
+  ViewRect,
 } from "../backend";
 import type { Locale } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
@@ -26,6 +28,7 @@ import {
   DEFAULT_COMMENT_FILTER,
   MAX_AUTHOR,
 } from "./comments";
+import type { EditMode, LinkDraft, LinkTip, SelectedObject } from "./objects";
 import { DEFAULT_SANITIZE, IDLE_REDACTION, type RedactionState } from "./redaction";
 import { clampZoom } from "./zoom";
 
@@ -190,6 +193,24 @@ export interface AppState {
   /** How the Edit tool sets new page text (ADR 0021). */
   textStyle: TextStyle;
   setTextStyle(patch: Partial<TextStyle>): void;
+  /** What a press on a page does with the Edit tool: text, page objects, or links (ADR 0051). */
+  editMode: EditMode;
+  setEditMode(mode: EditMode): void;
+  /** The page object selected in the Edit tool's object mode (ADR 0051). */
+  selectedObject: SelectedObject | null;
+  setSelectedObject(selected: SelectedObject | null): void;
+  /** The crop being set for the selected image (displayed page), while cropping. */
+  objectCrop: ViewRect | null;
+  setObjectCrop(crop: ViewRect | null): void;
+  /** A link being added or edited (ADR 0051). */
+  linkDraft: LinkDraft | null;
+  setLinkDraft(link: LinkDraft | null): void;
+  /** The link under the pointer, or one pressed to follow. */
+  linkTip: LinkTip | null;
+  setLinkTip(tip: LinkTip | null): void;
+  /** A document's named destinations, once read, for links to them. */
+  destinations: { documentId: number; list: NamedDestination[] } | null;
+  setDestinations(destinations: { documentId: number; list: NamedDestination[] } | null): void;
   /** The name written on new comments (ADR 0041); none when empty. */
   commentAuthor: string;
   /** The comments panel's filters and order (not kept between sessions). */
@@ -441,6 +462,21 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTool: "select",
     commentTool: "note",
     pendingNote: null,
+    editMode: "text",
+    setEditMode(editMode) {
+      set({ editMode, selectedObject: null, objectCrop: null, linkDraft: null, pendingNote: null });
+    },
+    selectedObject: null,
+    // A new selection ends a crop in progress.
+    setSelectedObject: (selectedObject) => set({ selectedObject, objectCrop: null }),
+    objectCrop: null,
+    setObjectCrop: (objectCrop) => set({ objectCrop }),
+    linkDraft: null,
+    setLinkDraft: (linkDraft) => set({ linkDraft }),
+    linkTip: null,
+    setLinkTip: (linkTip) => set({ linkTip }),
+    destinations: null,
+    setDestinations: (destinations) => set({ destinations }),
     fillTool: null,
     fillSignature: null,
     fillColor: "black",
@@ -528,7 +564,14 @@ export const useAppStore = create<AppState>((set, get) => {
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),
     setSearchOptions: (searchOptions) => update("searchOptions", searchOptions),
     setActiveTool(activeTool) {
-      set({ activeTool, pendingNote: null });
+      set({
+        activeTool,
+        pendingNote: null,
+        selectedObject: null,
+        objectCrop: null,
+        linkDraft: null,
+        linkTip: null,
+      });
     },
     setCommentTool(commentTool) {
       set({ commentTool, pendingNote: null });
@@ -581,6 +624,11 @@ export const useAppStore = create<AppState>((set, get) => {
           documents,
           activeDocumentId:
             state.activeDocumentId === id ? (neighbour?.id ?? null) : state.activeDocumentId,
+          ...(state.selectedObject?.documentId === id
+            ? { selectedObject: null, objectCrop: null }
+            : {}),
+          ...(state.linkDraft?.documentId === id ? { linkDraft: null } : {}),
+          ...(state.linkTip?.documentId === id ? { linkTip: null } : {}),
         };
       });
     },
@@ -611,6 +659,13 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     applyEdit(id, outcome) {
       set((state) => ({
+        // Objects and links were read from the old revision: the viewer selects
+        // again what an edit kept (ADR 0051).
+        ...(state.selectedObject?.documentId === id
+          ? { selectedObject: null, objectCrop: null }
+          : {}),
+        ...(state.linkDraft?.documentId === id ? { linkDraft: null } : {}),
+        ...(state.linkTip?.documentId === id ? { linkTip: null } : {}),
         documents: state.documents.map((open) =>
           open.id !== id
             ? open

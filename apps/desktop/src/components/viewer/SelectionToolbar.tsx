@@ -3,6 +3,7 @@ import {
   EyeOff,
   Highlighter,
   LineSquiggle,
+  Link,
   Maximize2,
   Minimize2,
   Strikethrough,
@@ -72,6 +73,9 @@ export function SelectionToolbar({ documentId }: { documentId: number }) {
             </CommandButton>
             <CommandButton command="markup.squiggly" tooltipPlacement="top">
               <LineSquiggle />
+            </CommandButton>
+            <CommandButton command="link.fromSelection" tooltipPlacement="top">
+              <Link />
             </CommandButton>
             <CommandButton command="redact.markSelection" tooltipPlacement="top">
               <EyeOff />

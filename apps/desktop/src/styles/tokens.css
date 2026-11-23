@@ -137,6 +137,9 @@
   /* On the white page in either theme: the pen's ink and a note's icon, as the engine draws them. */
   --color-ink: #0d3899;
   --color-note: #ffdb00;
+  /* On the white page in either theme: link areas (ADR 0051). */
+  --color-link-outline: #1d4ed8;
+  --color-link-fill: rgb(29 78 216 / 0.12);
   --color-search-mark-bg: #fde68a;
   --color-search-mark-text: #1b1f24;
   --shadow-popover: 0 2px 4px rgb(16 24 40 / 0.08), 0 8px 24px rgb(16 24 40 / 0.14);
@@ -182,6 +185,8 @@
   --color-redact-fill: rgb(180 35 24 / 0.28);
   --color-ink: #0d3899;
   --color-note: #ffdb00;
+  --color-link-outline: #1d4ed8;
+  --color-link-fill: rgb(29 78 216 / 0.12);
   --color-search-mark-bg: #854d0e;
   --color-search-mark-text: #fef3c7;
   --shadow-popover: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);

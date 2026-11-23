@@ -52,6 +52,8 @@ const PAIRS: [string, string, number][] = [
   ["color-border-strong", "color-bg-surface", 3],
   // Signatures are previewed as ink on paper in both themes (ADR 0045).
   ["color-ink", "color-page-paper", 4.5],
+  // Link areas are outlined on the page in both themes (ADR 0051).
+  ["color-link-outline", "color-page-paper", 3],
 ];
 
 describe.each([

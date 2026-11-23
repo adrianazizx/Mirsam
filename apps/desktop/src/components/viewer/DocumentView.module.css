@@ -196,8 +196,76 @@
   border-radius: var(--radius-sm);
 }
 
+/* The Edit tool's object mode (ADR 0051): the object under the pointer, the selected one, a crop. */
+[data-viewer-content][data-mode="objects"] {
+  cursor: default;
+}
+
+.objectHover {
+  position: absolute;
+  outline: var(--border-width) dashed var(--color-focus-ring);
+}
+
+.objectSelected {
+  position: absolute;
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+}
+
+.objectCrop {
+  position: absolute;
+  outline: var(--focus-ring-width) dashed var(--color-focus-ring);
+  /* What the crop leaves out, dimmed (the overlay clips it to the page). */
+  box-shadow: 0 0 0 100vmax var(--color-scrim);
+}
+
+/* The link mode: every link's area, the selected one, a new one being drawn. */
+[data-viewer-content][data-mode="links"] {
+  cursor: crosshair;
+}
+
+.linkArea,
+.linkSelected,
+.linkDraft,
+.linkHover {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.linkArea {
+  outline: var(--border-width) dashed var(--color-link-outline);
+  background: var(--color-link-fill);
+}
+
+.linkSelected {
+  outline: var(--focus-ring-width) solid var(--color-link-outline);
+  background: var(--color-link-fill);
+}
+
+.linkDraft {
+  outline: var(--focus-ring-width) dashed var(--color-link-outline);
+  background: var(--color-link-fill);
+}
+
+/* Any other tool: the link under the pointer, underlined by its area. */
+.linkHover {
+  border-block-end: var(--border-width-thick) solid var(--color-link-outline);
+}
+
+/* Anchor of the link tip (positioned by the viewer, above the link). */
+.linkTip {
+  position: absolute;
+  z-index: var(--layer-selection-toolbar);
+  inline-size: 0;
+  block-size: 0;
+}
+
 [data-viewer-content][data-over-text] {
   cursor: text;
+}
+
+/* After the text cursor: a link over text is followed when pressed (ADR 0051). */
+[data-viewer-content][data-over-link] {
+  cursor: pointer;
 }
 
 /* After the text cursor: an item placed over text is dragged, not selected through. */
