@@ -1030,6 +1030,15 @@ later sections, the certificate dialog's time-stamp field, and the first pass's 
   also shows the first-run guide at interface size 2. That run found step 2 scrolling with no
   control in it (`scrollable-region-focusable`), so each step now joins the tab order while it
   overflows (`useKeyboardScrollable`). 182 screens in 133 s, no violations, nothing clipped.
+- **Fixed (found by the macOS self-test after the merge):** the first-run guide could open over
+  the launch document. React's StrictMode runs the UI's startup twice in development. The second
+  call to the shell's `startup` can return before the first has opened the launch PDF, with an
+  empty list, and the UI then offered the guide to an "empty" window. The guide then held focus,
+  and the self-test's bold step found no selection. Every fresh-profile warm-up run had failed
+  that way since onboarding merged; this branch's English runs failed too. `Startup.first` now
+  says which call did the real start, and only that one may offer the guide (a UI test covers
+  it). The self-test now records focus, selection, and whether the hint or guide was up when bold
+  does not apply.
 - **Not done:** the tagged structure tree's `/Lang` and reading order; Narrator and Orca.
 
 ### M7 onboarding — 2026-11-23 (branch `pomidor/m7-onboarding-306aea`, ADR 0071; parallel to the accessibility follow-up)

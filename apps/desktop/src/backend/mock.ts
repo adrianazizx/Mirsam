@@ -1132,7 +1132,12 @@ export function setMockRecoveries(list: RecoveryInfo[]): void {
 export const mockBackend: Backend = {
   appInfo: async () => ({ version: "0.0.1-mock", devtools: false }),
   openDocumentDialog: async () => opened(SAMPLE),
-  startup: async () => ({ documents: [], active: null, recoveries: [...mockRecoveries] }),
+  startup: async () => ({
+    documents: [],
+    active: null,
+    recoveries: [...mockRecoveries],
+    first: true,
+  }),
   // A restored recovery file reopens with unsaved changes; the locked sample's asks first.
   restoreRecovery: async (token) => {
     const entry = mockRecoveries.find((candidate) => candidate.token === token);

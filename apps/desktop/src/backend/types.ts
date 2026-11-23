@@ -799,6 +799,12 @@ export interface Startup {
   active: number | null;
   /** Unsaved changes an earlier session left, offered once at the app's start. */
   recoveries?: RecoveryInfo[];
+  /**
+   * This call was the app's start (it opened the session and the launch
+   * documents). False for another window, a reload, or a second call made
+   * while the first was still opening files; those decide no first-run things.
+   */
+  first?: boolean;
 }
 
 export interface RecentFile {

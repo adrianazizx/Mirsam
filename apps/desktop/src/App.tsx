@@ -313,7 +313,7 @@ export function App() {
         (error: unknown) => console.warn("cannot receive documents from elsewhere", error),
       )
       .then(() => backend.startup())
-      .then(({ documents, active, recoveries }) => {
+      .then(({ documents, active, recoveries, first: appStart }) => {
         starting = false;
         for (const outcome of documents) acceptOutcome(outcome, { activate: false });
         // Unsaved changes an earlier session left (ADR 0040).
@@ -325,7 +325,13 @@ export function App() {
           store.activateDocument(target);
         }
         // A crash since the last start: ask about its report, once (ADR 0061).
-        return offerNewCrashReports().then(() => settingsRead.then(offerFirstRunGuide));
+        // The first-run guide is decided only by the call that started the app:
+        // a second one (React's StrictMode runs this effect twice in development)
+        // can get here before the launch document is open, see an empty window,
+        // and open the guide over the document it then shows.
+        return offerNewCrashReports().then(() =>
+          appStart === false ? undefined : settingsRead.then(offerFirstRunGuide),
+        );
       })
       .catch((error: unknown) => {
         starting = false;
