@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`, merged with `main` after M7 packaging).
+Last updated: 2026-11-23 (M5 certificate signatures, branch `pomidor/m5-pades-c887cc`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -115,6 +115,18 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **Conditions:** the server always runs with `--no-webui`, and no CUDA build ships (NVIDIA's
       CUDA runtime licence).
     - **Now:** the runtime is in the download catalog.
+21. **Certificate signatures need three things only a person can do** (ADR 0047):
+    - **Open signed files in Adobe Acrobat or Reader** (and ideally Foxit and Preview).
+      `scripts/check-signatures.sh <dir>` writes test files and the test root (`ca.pem`); Poppler and
+      OpenSSL accept them all. Acrobat will call the signer unknown until `ca.pem` is trusted in its
+      preferences: that is its trust policy, not a defect.
+    - **Sign with a real certificate in the macOS keychain** (a company's or a qualified provider's).
+      Listing works on this Mac, which has none for documents; macOS asks for permission the first time.
+    - **Choose a time-stamping authority to suggest**, if any. Today the field is empty until the user
+      fills it in, so nothing is sent anywhere by default. Free public ones exist (e.g. FreeTSA, DigiCert's
+      `http://timestamp.digicert.com`); their terms differ.
+    `cms` and `x509-tsp` are still pinned release candidates (ADR 0044's question); signing is now built
+    on them.
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -654,9 +666,22 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [x] Sanitize: metadata, scripts, attachments, comments, hidden text and layers; the file is
       rewritten in full so unlinked objects are gone (ADR 0042)
 - [ ] Form creation
-- [~] Certificate signatures (PAdES) — **[SPIKE] done (ADR 0044, `spikes/pades`)**: RustCrypto stack
-      recommended; a prototype signs an incremental update that Poppler/NSS and OpenSSL verify. The
-      feature itself (`safha_core::sign`, key import, signing UI, revocation) is not built.
+- [~] Certificate signatures (PAdES; spike ADR 0044, feature ADR 0047):
+  - **Signing:** PAdES B-B, and B-T with an RFC 3161 authority the user sets; one incremental update, so
+    earlier signatures stay valid; encrypted files too (`/Contents` left clear). Invisible, or visible:
+    a kept Fill & Sign signature above a shaped caption (Arabic name joined, RTL), placed by a press,
+    upright on turned pages. Signing saves; an unsigned edited file is rewritten first, as saving would.
+  - **Keys:** PKCS#12 files picked through a Rust-side dialog (PBES2 and legacy 3DES; Arabic passwords),
+    kept for the run; the macOS keychain's document-signing identities (the key stays there).
+  - **Checking on open:** byte range, digest, signature, ESS binding, path to the OS trusted roots,
+    time-stamps (with the signer's expiry judged at the time-stamp), document time-stamps, and what later
+    revisions changed (signatures, comments, form fields, pages). A status-bar verdict and a Signatures
+    panel; revocation "not checked" stated with every verdict.
+  - **Validated** with Poppler `pdfsig` (Valid, Trusted) and OpenSSL `cms -verify -cades` / `ts -verify`
+    on six kinds of file, plus `qpdf --check` (`scripts/check-signatures.sh`).
+  - **Gaps:** revocation and B-LT/B-LTA, certification (DocMDP) signatures, signing an existing empty
+    field, the Windows certificate store and smart cards, trusting a certificate inside the app;
+    Acrobat, a real keychain key and the native-shell dialogs unchecked (owner item 21).
 
 ## M6 — Edit everything else + convert
 
@@ -686,6 +711,41 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### Session M5-d — 2026-11-23 (Milestone 5: certificate signatures; branch `pomidor/m5-pades-c887cc`)
+
+From `main` after PR #18; parallel to M4 OCR jobs, M5 form creation and M6 objects. Stayed in signing
+code and its UI. Claims and merge notes: `m5-pades-claims.md` in the session notes folder.
+
+- **ADR 0047** (0044 now Accepted, built on).
+- **Engine (`safha_core::sign`):** `identity` (PKCS#12, external keys, certificate summaries),
+  `keychain` (macOS), `cms` (build B-B/B-T, check), `tsa` (RFC 3161 over HTTP(S)), `trust` (OS roots,
+  path check), `pdf` (the update; finding signatures; changes after a revision), `appearance` (visible),
+  `verify` (reports and verdicts). `Document::sign`, `Document::signatures`; `Error::Signing(code)`.
+  Small shared edits: `Update::raw_object`, `Annots::write` and `Signature::appearance` made
+  `pub(crate)`, `annotate::upright` re-exported.
+- **Dependencies (all MIT OR Apache-2.0, checked 2026-11-23):** the spike's RustCrypto set (`cms` and
+  `x509-tsp` pinned RCs), `x509-verify` with only RSA/P-256/P-384, `sha1` (only to compare an older
+  signer's ESS v1 hash), `p12-keystore` 0.4.1, `security-framework` on macOS (already in the tree).
+- **Shell (`signing.rs`):** `signing_identities`, `pick_certificate_file` (native dialog),
+  `unlock_certificate`, `cancel_certificate`, `forget_identity`, `sign_document` (save over or Save As),
+  `document_signatures`; setting `signing.tsaUrl`; `DocumentInfo.signed`.
+- **UI:** `components/signing/` (dialog, Signatures panel, status-bar badge), `state/certSign.ts`, 11
+  commands (`certSign.*`, `signatures.check|reveal`, `view.showSignatures`) gated on fill-in-forms, a
+  `certificate` Fill & Sign placement, a mock (`backend/mockSigning.ts`), en+ar strings,
+  `--color-success`/`--color-warning` with contrast pairs.
+- **Tests:** `tests/sign.rs` (11, with an in-process PKI and RFC 3161 authority: invisible, visible on
+  turned pages, caption read back flattened, RSA/Arabic/xref streams/linearized, B-T and expiry, two
+  signatures and later edits listed, encrypted, edited-then-signed, PKCS#12 incl. legacy 3DES, external
+  and refusing keys); unit tests in every `sign` module; `commands/signing.test.tsx` (12, English and
+  Arabic). The fuzz harness also runs `sign::verify`.
+- **External validation:** `scripts/check-signatures.sh` (pdfsig, OpenSSL, qpdf): all pass (ADR 0047's
+  table). New examples: `sign_fixtures`, `keychain_identities`.
+- **Checked by eye** in the browser preview against the mock, English and Arabic, dark theme: the Sign
+  panel's new section, the dialog (wrong then right PKCS#12 password, visible choice), placing, the
+  Signatures panel. Rendered a visible signature on a 90° page with PDFium (upright, Naskh name, Arabic
+  caption).
+- **Not done here:** the native-shell click-through (file dialogs), a real keychain key, Acrobat.
 
 ### M4 side track — 2026-11-22 (OCR model download manager; branch `pomidor/m4-model-downloads-ef1050`)
 

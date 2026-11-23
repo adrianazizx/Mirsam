@@ -14,6 +14,7 @@ import type {
   SearchOptions,
   SecureOutcome,
   SignatureInfo,
+  SignOutcome,
   TextStyle,
 } from "../backend";
 import type { Locale } from "../i18n";
@@ -55,7 +56,7 @@ export type ToolId = (typeof TOOLS)[number];
 export type ThemePreference = "system" | "light" | "dark";
 /** How pages themselves are tinted, independent of the UI theme (spec section 4). */
 export type ReadingTheme = "normal" | "sepia" | "night";
-export type LeftPanel = "thumbnails" | "outline" | "search" | "comments";
+export type LeftPanel = "thumbnails" | "outline" | "search" | "comments" | "signatures";
 
 export interface SearchState {
   query: string;
@@ -122,8 +123,11 @@ export interface OpenDocument extends DocumentInfo {
 /** The Comment tool's modes (ADR 0018). */
 export type CommentTool = "note" | "textBox" | "pen" | "eraser";
 
-/** What a press on a page places with the Sign tool (ADR 0045); null selects instead. */
-export type FillTool = "text" | "date" | "check" | "cross" | "dot" | "signature";
+/**
+ * What a press on a page places with the Sign tool (ADR 0045); null selects
+ * instead. "certificate": a visible certificate signature (ADR 0047).
+ */
+export type FillTool = "text" | "date" | "check" | "cross" | "dot" | "signature" | "certificate";
 
 /**
  * A note or text box being written before it is added (ADRs 0018, 0019):
@@ -255,6 +259,8 @@ export interface AppState {
   applySave(id: number, outcome: SaveOutcome): void;
   /** After a save with another protection (ADR 0043): its new protection, and undo starts over. */
   applySecured(id: number, outcome: SecureOutcome): void;
+  /** After signing with a certificate (ADR 0047): the signed file is shown, and undo starts over. */
+  applySigned(id: number, outcome: SignOutcome): void;
   /** The protection dialog is open. */
   securityPrompt: boolean;
   setSecurityPrompt(open: boolean): void;
@@ -343,7 +349,8 @@ export function parseSettings(raw: Record<string, string | undefined>): Partial<
     raw.leftPanel === "thumbnails" ||
     raw.leftPanel === "outline" ||
     raw.leftPanel === "search" ||
-    raw.leftPanel === "comments"
+    raw.leftPanel === "comments" ||
+    raw.leftPanel === "signatures"
   ) {
     out.leftPanel = raw.leftPanel;
   } else if (raw.leftPanel === "none") {
@@ -683,6 +690,25 @@ export const useAppStore = create<AppState>((set, get) => {
                 security: outcome.security,
                 canUndo: false,
                 canRedo: false,
+              }
+            : open,
+        ),
+      }));
+    },
+    applySigned(id, outcome) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id
+            ? {
+                ...open,
+                name: outcome.name,
+                modified: outcome.modified,
+                signed: true,
+                canUndo: false,
+                canRedo: false,
+                selectedAnnotation: null,
+                // The same pages, with a new widget on one.
+                paint: open.paint + 1,
               }
             : open,
         ),

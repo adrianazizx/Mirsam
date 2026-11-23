@@ -469,6 +469,8 @@ export interface DocumentInfo {
   canUndo?: boolean;
   /** How the file is protected and what the password it was opened with allows (ADR 0043). */
   security?: SecurityInfo;
+  /** It carries digital signatures (ADR 0047). */
+  signed?: boolean;
 }
 
 /** What a reader may do with a file opened with the user password. */
@@ -511,6 +513,104 @@ export interface SecureOutcome {
   name: string;
   modified: boolean;
   security: SecurityInfo;
+}
+
+/** A certificate as the UI shows it (ADR 0047). Times are Unix seconds. */
+export interface CertificateSummary {
+  /** Its common name (else organisation): may be Arabic; show it in `<bdi>`. */
+  name: string;
+  organization: string | null;
+  email: string | null;
+  issuer: string;
+  notBefore: number;
+  notAfter: number;
+  /** SHA-256, upper-case hex. */
+  fingerprint: string;
+  selfSigned: boolean;
+  key: "rsa" | "p256" | "p384" | null;
+}
+
+/** A certificate with a key to sign with: read from a PKCS#12 file, or in the macOS keychain. */
+export interface SigningIdentity {
+  /** `file:N` or `keychain:<fingerprint>`. */
+  id: string;
+  source: "file" | "keychain";
+  certificate: CertificateSummary;
+}
+
+/** A PKCS#12 file picked through the native dialog, waiting for its password. */
+export interface PickedCertificate {
+  token: number;
+  name: string;
+}
+
+/** What a certificate signature says and shows (ADR 0047). */
+export interface CertSignRequest {
+  identity: string;
+  reason: string | null;
+  location: string | null;
+  contact: string | null;
+  /** Time-stamp from the configured authority (PAdES B-T). */
+  timestamp: boolean;
+  /** A box on the displayed page (points), a kept signature, and caption lines; null: invisible. */
+  visible: {
+    page: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    signature: number | null;
+    caption: string;
+  } | null;
+}
+
+/** What later revisions changed after a signature. */
+export interface SignatureChanges {
+  revisions: number;
+  /** Pages whose content changed (zero-based). */
+  pages: number[];
+  pageOrder: boolean;
+  annotations: number;
+  formFields: number;
+  signatures: number;
+  other: number;
+}
+
+/** One signature, checked (ADR 0047). */
+export interface SignatureReport {
+  field: string | null;
+  page: number | null;
+  rect: [number, number, number, number] | null;
+  /** Its box on the displayed page, when it is visible. */
+  view: ViewRect | null;
+  documentTimestamp: boolean;
+  subFilter: string | null;
+  /** valid: intact and trusted; unknown: intact, signer not vouched for; invalid. */
+  status: "valid" | "unknown" | "invalid";
+  integrity: "intact" | "altered" | "unchecked";
+  trust: "trusted" | "expired" | "untrusted" | "unknown";
+  signer: CertificateSummary | null;
+  name: string | null;
+  reason: string | null;
+  location: string | null;
+  contact: string | null;
+  /** The signer's own clock (Unix seconds): a claim. */
+  claimedTime: number | null;
+  timestamp: { time: number; authority: string | null; intact: boolean; trusted: boolean } | null;
+  revision: number;
+  revisions: number;
+  coversWholeFile: boolean;
+  changes: SignatureChanges | null;
+  /** Codes under `signaturesPanel.problem.`. */
+  problems: string[];
+}
+
+/** The document after it was signed and saved. */
+export interface SignOutcome {
+  name: string;
+  pageCount: number;
+  modified: boolean;
+  signatures: SignatureReport[];
 }
 
 /** Unsaved changes an earlier session left, kept in a recovery file (ADR 0040). */
@@ -1123,6 +1223,25 @@ export interface Backend {
     change: SecurityChange,
     saveAs: boolean,
   ): Promise<SecureOutcome | null>;
+  /** Identities to sign with: files read this run, and the macOS keychain's (ADR 0047). */
+  signingIdentities(): Promise<SigningIdentity[]>;
+  /** Shows the native picker for a `.p12`/`.pfx` file; null if cancelled. */
+  pickCertificateFile(): Promise<PickedCertificate | null>;
+  /** Opens a picked file with its password; rejects with `certificate_password` to try again. */
+  unlockCertificate(token: number, password: string): Promise<SigningIdentity>;
+  cancelCertificate(token: number): Promise<void>;
+  forgetIdentity(id: string): Promise<void>;
+  /**
+   * Signs and saves over the document's file or (`saveAs`) to one picked;
+   * null if cancelled. The signed file is shown from then on; undo starts over.
+   */
+  signDocument(
+    documentId: number,
+    request: CertSignRequest,
+    saveAs: boolean,
+  ): Promise<SignOutcome | null>;
+  /** The document's signatures, checked against the system's trusted roots. */
+  documentSignatures(documentId: number): Promise<SignatureReport[]>;
   /** Gives the document's tab to a new window; the caller drops its own tab. */
   moveToNewWindow(documentId: number): Promise<void>;
   /**

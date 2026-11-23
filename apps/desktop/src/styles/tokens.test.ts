@@ -45,6 +45,11 @@ const PAIRS: [string, string, number][] = [
   ["color-on-accent", "color-accent-pressed", 4.5],
   ["color-tooltip-text", "color-tooltip-bg", 4.5],
   ["color-danger", "color-bg-surface", 4.5],
+  // Signature verdicts (ADR 0047) in the signatures panel.
+  ["color-success", "color-bg-surface", 4.5],
+  ["color-success", "color-bg-app", 4.5],
+  ["color-warning", "color-bg-surface", 4.5],
+  ["color-warning", "color-bg-app", 4.5],
   ["color-search-mark-text", "color-search-mark-bg", 4.5],
   ["color-focus-ring", "color-bg-app", 3],
   ["color-focus-ring", "color-bg-surface", 3],

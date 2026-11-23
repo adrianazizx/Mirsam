@@ -394,12 +394,7 @@ pub(crate) fn directory_string(value: &Any) -> Option<String> {
             String::from_utf16(&units).ok()
         }
         // UniversalString: UTF-32BE.
-        28 => bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|quad| char::from_u32(u32::from_be_bytes(*quad)))
-            .collect(),
+        28 => bytes.as_chunks::<4>().0.iter().map(|quad| char::from_u32(u32::from_be_bytes(*quad))).collect(),
         _ => None,
     }
 }

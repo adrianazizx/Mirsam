@@ -44,6 +44,8 @@ pub struct DocumentInfo {
     /// How the file is protected, and what the password it was opened with
     /// allows (ADR 0043).
     security: safha_core::security::SecurityInfo,
+    /// It carries digital signatures (ADR 0047): the UI checks them.
+    signed: bool,
 }
 
 impl DocumentInfo {
@@ -76,6 +78,7 @@ impl DocumentInfo {
             modified: false,
             can_undo: false,
             security: document.security(),
+            signed: document.is_signed(),
         }
     }
 }
@@ -504,6 +507,7 @@ const SETTINGS: &[&str] = &[
     "session.restore",
     "search.options",
     crate::editing::COMMENT_AUTHOR,
+    crate::signing::TSA_SETTING,
 ];
 
 /// Opens `path` in a tab of `window`, or switches to it if that window has it

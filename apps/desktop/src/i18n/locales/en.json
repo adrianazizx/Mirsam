@@ -55,7 +55,8 @@
       "readingNormal": "Pages: normal",
       "readingSepia": "Pages: sepia",
       "readingNight": "Pages: night",
-      "showComments": "Show comments"
+      "showComments": "Show comments",
+      "showSignatures": "Show signatures"
     },
     "app": {
       "toggleTheme": "Switch theme",
@@ -221,7 +222,9 @@
       "toNextPage": "Move to the next page"
     },
     "signatures": {
-      "load": "Load signatures"
+      "load": "Load signatures",
+      "check": "Check signatures again",
+      "reveal": "Show the signature on its page"
     },
     "signature": {
       "new": "New signature…",
@@ -250,6 +253,16 @@
       "download": "Download OCR model",
       "cancel": "Cancel model download",
       "delete": "Delete OCR model"
+    },
+    "certSign": {
+      "open": "Sign with a certificate…",
+      "cancel": "Cancel signing",
+      "importFile": "Add a certificate from a file…",
+      "unlockFile": "Open the certificate file",
+      "cancelFile": "Cancel adding the certificate",
+      "forget": "Forget this certificate",
+      "apply": "Sign",
+      "place": "Place the certificate signature"
     }
   },
   "viewer": {
@@ -312,7 +325,17 @@
     "model_checksum_mismatch": "The downloaded file was not the expected one, so it was deleted. Try again.",
     "model_disk_full": "There is not enough free disk space for the OCR model.",
     "model_archive_invalid": "The OCR engine could not be unpacked. Try again.",
-    "model_install_failed": "The OCR model could not be installed. Check that there is free disk space and try again."
+    "model_install_failed": "The OCR model could not be installed. Check that there is free disk space and try again.",
+    "certificate_password": "That password does not open this certificate file. Try again.",
+    "certificate_unreadable": "This certificate file could not be read. Choose a .p12 or .pfx file that holds a certificate with its private key.",
+    "key_unsupported": "This certificate's key type is not supported. Mirsam signs with RSA and ECDSA (P-256, P-384) keys.",
+    "certificate_cannot_sign": "This certificate cannot sign now: it has expired, is not valid yet, or is not meant for signing.",
+    "timestamp_failed": "The time-stamping server could not be reached, or it refused. Nothing was signed. Check its address and the internet connection, or sign without a time-stamp.",
+    "timestamp_url": "Enter the time-stamping server's address, starting with http:// or https://.",
+    "signing_failed": "The document could not be signed. If the keychain asked, allow Mirsam to use the key.",
+    "signature_too_large": "The signature is too large to fit in the document.",
+    "keychain_unavailable": "The keychain could not be read.",
+    "save_as_required": "The original file changed since it was opened. Choose “as…” to save to a new file."
   },
   "gallery": {
     "title": "Design gallery",
@@ -339,7 +362,8 @@
     "search": "Search",
     "close": "Hide the side panel",
     "noDocument": "Open a document to see its pages here.",
-    "comments": "Comments"
+    "comments": "Comments",
+    "signatures": "Signatures"
   },
   "thumbnails": {
     "name": "Page {{page}}",
@@ -673,7 +697,8 @@
       "check": "Click each box to tick.",
       "cross": "Click each box to cross.",
       "dot": "Click each place to mark with a dot.",
-      "signature": "Click on the page where the signature goes."
+      "signature": "Click on the page where the signature goes.",
+      "certificate": "Click on the page where the certificate signature goes. The document is signed and saved at once."
     },
     "selectedHeading": "Selected item",
     "signatures": "Signatures",
@@ -690,7 +715,9 @@
     "keptLocally": "Signatures are kept on this device only.",
     "notPermitted": "This file's permissions do not allow adding to its pages. Its owner password lifts that.",
     "color": "Colour",
-    "colorHint": "New text, dates and marks take this colour. Choosing one also recolours the selected text or mark."
+    "colorHint": "New text, dates and marks take this colour. Choosing one also recolours the selected text or mark.",
+    "certificateHeading": "Certificate signature",
+    "certificateHint": "A digital signature with your certificate proves who signed and shows any later change. Signing saves the file."
   },
   "signature": {
     "title": "New signature",
@@ -861,5 +888,112 @@
     "missing": "The OCR model is not installed yet. It is a {{size}} download.",
     "recognize": "Recognize text",
     "manage": "Manage OCR models…"
+  },
+  "certSign": {
+    "title": "Sign with a certificate",
+    "who": "Signing as",
+    "looking": "Looking for certificates…",
+    "noIdentities": "No certificate yet. Add one from a .p12 or .pfx file.",
+    "importFile": "Add from a file (.p12, .pfx)…",
+    "keychainHint": "Certificates in the macOS keychain are listed too. A certificate added from a file is kept only until Mirsam quits.",
+    "passwordFor": "Password for",
+    "open": "Open",
+    "cancel": "Cancel",
+    "forget": "Forget this certificate",
+    "issuedBy": "Issued by {{issuer}}",
+    "selfSigned": "Self-signed",
+    "source": {
+      "file": "from a file",
+      "keychain": "in the keychain"
+    },
+    "validUntil": "valid until {{date}}",
+    "details": "What the signature says",
+    "reason": "Reason (optional)",
+    "location": "Place (optional)",
+    "contact": "Contact (optional)",
+    "appearance": "On the page",
+    "invisible": "Invisible: in the file, not drawn on a page",
+    "visible": "Visible: a box with your signature, name and date",
+    "graphic": "Signature shown in the box",
+    "captionOnly": "Name and date only",
+    "placeHint": "After you choose Place and sign, click where the box goes.",
+    "time": "Time",
+    "timestamp": "Add a trusted time-stamp (PAdES B-T)",
+    "tsaUrl": "Time-stamping server",
+    "tsaHint": "Only a fingerprint of the signature is sent, nothing from the document. Your organisation or certificate provider can give you an address.",
+    "tsaMissing": "Enter the time-stamping server's address, or turn the time-stamp off.",
+    "saveNote": "Signing saves the document. Later changes are added after the signature, which stays valid and shows what changed.",
+    "saveNoteEncrypted": "Signing saves the document with its password. Its protection cannot be changed after signing.",
+    "signing": "Signing…",
+    "sign": "Sign and save",
+    "signAs": "Sign and save as…",
+    "placeAndSign": "Place and sign",
+    "placeAndSignAs": "Place and sign as…",
+    "captionSigned": "Digitally signed by"
+  },
+  "signaturesPanel": {
+    "checking": "Checking signatures…",
+    "failed": "The signatures could not be checked.",
+    "none": "This document has no digital signatures.",
+    "overall": {
+      "valid": "Signed. Valid signatures: {{formatted}}",
+      "unknown": "Signed, but at least one signer could not be verified.",
+      "invalid": "At least one signature is not valid."
+    },
+    "status": {
+      "valid": "Valid: unchanged, signer verified",
+      "unknown": "Unchanged, but the signer is not verified",
+      "invalid": "Not valid"
+    },
+    "timestampStatus": {
+      "valid": "Document time-stamp: valid",
+      "unknown": "Document time-stamp: authority not verified",
+      "invalid": "Document time-stamp: not valid"
+    },
+    "signer": "Signer",
+    "authority": "Authority",
+    "unknownSigner": "Unknown",
+    "issuer": "Issued by",
+    "selfSigned": "Itself (self-signed)",
+    "timestamped": "Time-stamped",
+    "signedAt": "Signed",
+    "signerClock": "by the signer's own clock",
+    "reason": "Reason",
+    "location": "Place",
+    "revision": "Version",
+    "revisionOf": "{{revision}} of {{revisions}}",
+    "unchanged": "The document has not changed since it was signed.",
+    "changedAfter": "Changed after signing. Later versions: {{formatted}}",
+    "changed": {
+      "signatures": "Signatures added: {{formatted}}",
+      "annotations": "Comments, markup or Fill & Sign items: {{formatted}}",
+      "formFields": "Form fields filled in: {{formatted}}",
+      "pageOrder": "Pages were added, removed or moved",
+      "pages": "Content changed on pages {{pages}}",
+      "other": "Other parts of the file"
+    },
+    "listSeparator": ", ",
+    "show": "Show it on page {{page}}",
+    "revocation": "Revocation (a certificate withdrawn before it expired) is not checked yet.",
+    "problem": {
+      "byte_range_invalid": "The signed part of the file is not marked out soundly.",
+      "digest_mismatch": "The document was changed in the part that was signed.",
+      "signature_invalid": "The signature does not match the signer's key.",
+      "certificate_not_bound": "The certificate is not the one the signature was made with.",
+      "signer_untrusted": "The signer's certificate is not from an authority this computer trusts.",
+      "signer_expired": "The signer's certificate was not valid at the time checked, and no trusted time-stamp proves when it was signed.",
+      "key_not_for_signing": "The signer's certificate is not meant for signing.",
+      "no_certificate": "The signature does not carry the signer's certificate.",
+      "timestamp_invalid": "Its time-stamp is not valid.",
+      "timestamp_untrusted": "Its time-stamp is from an authority this computer does not trust.",
+      "signature_unreadable": "The signature could not be read.",
+      "algorithm_unsupported": "The signature uses an algorithm Mirsam does not check (such as SHA-1)."
+    },
+    "badge": {
+      "checking": "Checking signatures…",
+      "valid": "Signed: valid",
+      "unknown": "Signed: signer not verified",
+      "invalid": "Signature not valid"
+    }
   }
 }
