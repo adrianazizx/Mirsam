@@ -5,6 +5,7 @@
 //! `safha-core` so the CLI and tests can reach it without a webview.
 
 mod commands;
+mod crash;
 #[cfg(feature = "devtools")]
 mod diagnostics;
 mod editing;
@@ -39,6 +40,12 @@ macro_rules! product_commands {
     ($($extra:path),* $(,)?) => {
         tauri::generate_handler![
             commands::app_info,
+            crash::crash_reports,
+            crash::new_crash_reports,
+            crash::delete_crash_report,
+            crash::save_crash_report,
+            crash::open_crash_issue,
+            crash::record_ui_error,
             commands::open_document_dialog,
             commands::startup,
             commands::new_window,
@@ -184,6 +191,9 @@ pub fn run() {
             if let Some(dir) = &state_dir {
                 open_store(app, dir);
             }
+            // Crash reports (ADR 0061) follow the stored setting, so they start
+            // once the store is open, before any window asks for anything.
+            crash::start(app.handle(), state_dir.as_deref(), app.state::<AppState>().store());
             if let Some(instance) = instance.take() {
                 let (quitting, handle) = (app.handle().clone(), app.handle().clone());
                 instance.serve(
@@ -237,11 +247,11 @@ pub fn run() {
     // Release bundles expose only the product commands. The self-test harness and
     // spike transports exist solely in `devtools` builds.
     #[cfg(not(feature = "devtools"))]
-    let builder = builder.invoke_handler(product_commands![]);
+    let builder = builder.invoke_handler(with_breadcrumbs(product_commands![]));
     #[cfg(feature = "devtools")]
     let builder = builder
         .register_asynchronous_uri_scheme_protocol("safha-tile", spike_tiles::protocol)
-        .invoke_handler(product_commands![
+        .invoke_handler(with_breadcrumbs(product_commands![
             diagnostics::render_stats,
             diagnostics::window_labels,
             diagnostics::selftest_request_close,
@@ -255,15 +265,20 @@ pub fn run() {
             spike_tiles::spike_tile_base64,
             spike_tiles::spike_pdf_bytes,
             spike_tiles::spike_rss_kb,
-        ]);
+            diagnostics::selftest_mark,
+            diagnostics::selftest_crash,
+            diagnostics::selftest_crash_state,
+        ]));
 
     let app = builder.build(context).expect("failed to start the Mirsam desktop shell");
     app.run(|handle, event| {
-        // The OCR servers hold gigabytes: stop them before the process goes.
-        if matches!(event, tauri::RunEvent::Exit)
-            && let Some(ocr) = handle.try_state::<ocr::OcrState>()
-        {
-            ocr.shutdown();
+        if matches!(event, tauri::RunEvent::Exit) {
+            // The OCR servers hold gigabytes: stop them before the process goes.
+            if let Some(ocr) = handle.try_state::<ocr::OcrState>() {
+                ocr.shutdown();
+            }
+            // A clean exit: the next start finds no unfinished run (ADR 0061).
+            crash::end_run();
         }
         // macOS asks the running app to open files (Finder, "Open with",
         // `open -a`) rather than starting another copy.
@@ -289,6 +304,17 @@ pub fn run() {
             state.set_exiting();
         }
     });
+}
+
+/// Records each IPC command's name (never its arguments) for crash reports
+/// (ADR 0061), then runs it.
+fn with_breadcrumbs<R: tauri::Runtime>(
+    handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        crash::breadcrumb(invoke.message.command());
+        handler(invoke)
+    }
 }
 
 /// Where the app keeps its state: the app data directory (as Tauri resolves

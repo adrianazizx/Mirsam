@@ -12,7 +12,9 @@
 #        SAFHA_SELFTEST_SPIKE=<name> runs a benchmark (scroll, tile-transport);
 #        SAFHA_SELFTEST_TIMEOUT=<seconds> (default 60);
 #        SAFHA_SELFTEST_UI=bundled: the app carries its own UI (a release build or
-#        an installed bundle, scripts/bundle-selftest.sh), so no dev server is started.
+#        an installed bundle, scripts/bundle-selftest.sh), so no dev server is started;
+#        SAFHA_SELFTEST_STATE=<dir>: keep the app's state there, across runs
+#        (scripts/crash-selftest.sh), instead of a fresh <out-dir>/state.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,7 +33,13 @@ native() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else printf '
 rm -f "$OUT/report.json" "$OUT/canvas.png"
 # A fresh state store per run: no recents or session from the user's own use,
 # and nothing written back to them.
-rm -rf "$OUT/state"
+if [[ -n "${SAFHA_SELFTEST_STATE:-}" ]]; then
+  mkdir -p "$SAFHA_SELFTEST_STATE"
+  STATE="$(cd "$SAFHA_SELFTEST_STATE" && pwd)"
+else
+  STATE="$OUT/state"
+  rm -rf "$STATE"
+fi
 
 VITE_PID=""
 cleanup() { [[ -z "$VITE_PID" ]] || kill "$VITE_PID" 2>/dev/null || true; }
@@ -56,8 +64,11 @@ if [[ "${SAFHA_SELFTEST_UI:-dev}" != "bundled" ]]; then
   done
 fi
 
-SAFHA_OPEN="$(native "$PDF")" SAFHA_STATE_DIR="$(native "$OUT/state")" SAFHA_SELFTEST_OUT="$(native "$OUT")" \
-  SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" \
+# The launch time, in Unix milliseconds, for the cold-start budget (spec
+# section 11): the app reports how long after it its window was usable.
+launched_ms() { perl -MTime::HiRes=time -e 'printf("%.0f", time() * 1000)' 2>/dev/null || echo ""; }
+SAFHA_OPEN="$(native "$PDF")" SAFHA_STATE_DIR="$(native "$STATE")" SAFHA_SELFTEST_OUT="$(native "$OUT")" \
+  SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" SAFHA_SELFTEST_LAUNCHED_MS="$(launched_ms)" \
   "$APP" >"$OUT/app.log" 2>&1 &
 APP_PID=$!
 ( sleep "$TIMEOUT_SECONDS"; kill "$APP_PID" 2>/dev/null || true ) &
