@@ -66,7 +66,9 @@
       "quitDiscarding": "Quit without saving",
       "cancelClose": "Keep open",
       "settings": "Settings…",
-      "closeSettings": "Close settings"
+      "closeSettings": "Close settings",
+      "digitsArabicIndic": "Arabic interface: Arabic-Indic digits (١٢٣)",
+      "digitsWestern": "Arabic interface: Western digits (123)"
     },
     "tabs": {
       "next": "Next tab",
@@ -867,7 +869,12 @@
   },
   "settings": {
     "title": "Settings",
-    "done": "Done"
+    "done": "Done",
+    "language": "Language",
+    "digits": "Numbers in the Arabic interface",
+    "digitsHint": "Page numbers, counts and zoom. Numbers inside documents are not changed.",
+    "digitsArabicIndic": "Arabic-Indic (١٢٣)",
+    "digitsWestern": "Western (123)"
   },
   "ocrModels": {
     "heading": "OCR models",

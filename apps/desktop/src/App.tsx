@@ -21,7 +21,7 @@ import { AppShell } from "./components/shell/AppShell";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
 import { CertSignDialog } from "./components/signing/CertSignDialog";
-import { applyLocale, formatTag } from "./i18n";
+import { applyLocale, formatTagWith, setUiDigits } from "./i18n";
 import {
   type AppState,
   selectActiveDocument,
@@ -62,14 +62,17 @@ function saveSessionOnChange(): () => void {
 
 export function App() {
   const locale = useAppStore((state) => state.locale);
+  const uiDigits = useAppStore((state) => state.uiDigits);
   const theme = useAppStore((state) => state.theme);
   const readingTheme = useAppStore((state) => state.readingTheme);
 
   // Language and direction live on the root element so every component, portal
-  // (tooltips), and CSS logical property follows them.
+  // (tooltips), and CSS logical property follows them. Applying the locale again
+  // after the digits change re-renders everything that formats numbers.
   useEffect(() => {
+    setUiDigits(uiDigits);
     applyLocale(locale);
-  }, [locale]);
+  }, [locale, uiDigits]);
 
   // Resolve "system" to a concrete theme and follow OS changes.
   useEffect(() => {
@@ -246,7 +249,7 @@ export function App() {
   }, []);
 
   return (
-    <I18nProvider locale={formatTag(locale)}>
+    <I18nProvider locale={formatTagWith(locale, uiDigits)}>
       <AppShell />
       <UnsavedChangesDialog />
       <RecoveryDialog />

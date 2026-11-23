@@ -501,6 +501,8 @@ struct SettingChanged {
 /// store as general-purpose storage.
 const SETTINGS: &[&str] = &[
     "locale",
+    // Digits of the Arabic UI's own numbers: "arabicIndic" or "western".
+    "uiDigits",
     "theme",
     "readingTheme",
     "leftPanel",
