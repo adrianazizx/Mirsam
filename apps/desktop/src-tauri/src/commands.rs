@@ -340,13 +340,17 @@ async fn print_with_platform(
 
 /// A window like the main one (tauri.conf.json) showing the same UI.
 pub fn create_window(app: &AppHandle, label: &str) -> CommandResult<()> {
-    tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
+    let builder = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
         .title("Mirsam")
         .inner_size(1280.0, 820.0)
-        .min_inner_size(880.0, 560.0)
-        .build()
-        .map(drop)
-        .map_err(|err| CommandError::new("window_error", err.to_string()))
+        .min_inner_size(880.0, 560.0);
+    // A self-test's windows keep running when hidden (`diagnostics::selftest_throttling`).
+    #[cfg(feature = "devtools")]
+    let builder = match crate::diagnostics::selftest_throttling() {
+        Some(policy) => builder.background_throttling(policy),
+        None => builder,
+    };
+    builder.build().map(drop).map_err(|err| CommandError::new("window_error", err.to_string()))
 }
 
 /// Tries the password for a file that needs one. A wrong password yields
