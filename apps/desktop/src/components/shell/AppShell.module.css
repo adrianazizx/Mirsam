@@ -5,7 +5,8 @@
     "rail panel main inspector"
     "status status status status";
   grid-template-columns: var(--size-rail) 0 minmax(0, 1fr) var(--size-inspector);
-  grid-template-rows: var(--size-tabbar) minmax(0, 1fr) var(--size-statusbar);
+  /* The status bar is as tall as its content: it wraps at a large interface size. */
+  grid-template-rows: var(--size-tabbar) minmax(0, 1fr) auto;
   block-size: 100%;
 }
 

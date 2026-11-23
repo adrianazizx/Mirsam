@@ -109,6 +109,19 @@ jobs:
           pnpm test
           pnpm build
 
+      # axe-core over the main screens in headless Chrome (the runner image's,
+      # as for the fixture corpus), with real rendering so colour contrast is
+      # checked. One platform is enough: the UI is the same on all three.
+      - name: "Accessibility in Chrome (axe: en/ar, light/dark)"
+        id: a11y
+        if: runner.os == 'Linux'
+        run: node scripts/a11y-check.mjs --out a11y-report
+      - uses: actions/upload-artifact@v4
+        if: failure() && steps.a11y.outcome == 'failure'
+        with:
+          name: a11y-report
+          path: a11y-report
+
       - name: Generate the fixture corpus
         run: node fixtures/generate.mjs
 

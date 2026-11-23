@@ -59,6 +59,13 @@
   flex-direction: column;
 }
 
+/* The interface sizes side by side, wrapping when the text is large. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+}
+
 .legend {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);

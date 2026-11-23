@@ -69,6 +69,11 @@
       "closeSettings": "Close settings",
       "digitsArabicIndic": "Arabic interface: Arabic-Indic digits (١٢٣)",
       "digitsWestern": "Arabic interface: Western digits (123)",
+      "uiLarger": "Larger interface text",
+      "uiSmaller": "Smaller interface text",
+      "uiDefaultSize": "Default interface text size",
+      "nextRegion": "Next area of the window",
+      "previousRegion": "Previous area of the window",
       "reloadWindow": "Reload window"
     },
     "tabs": {
@@ -950,6 +955,11 @@
     "digitsHint": "Page numbers, counts and zoom. Numbers inside documents are not changed.",
     "digitsArabicIndic": "Arabic-Indic (١٢٣)",
     "digitsWestern": "Western (123)",
+    "display": "Display",
+    "uiScale": "Interface size",
+    "uiScaleHint": "Text, buttons and panels. Pages have their own zoom.",
+    "uiScaleOption": "{{percent}}%",
+    "uiScaleNow": "Interface size {{percent}}%",
     "crash": {
       "heading": "Crash reports",
       "ask": "Ask me after a crash",
@@ -1324,6 +1334,13 @@
       "unknown": "Signed: signer not verified",
       "invalid": "Signature not valid"
     }
+  },
+  "a11y": {
+    "page": "Page {{page}} of {{count}}",
+    "separator": ", ",
+    "saved": "Saved {{name}}.",
+    "noPageText": "This page has no text, only images. OCR can add text to it.",
+    "suspectText": "The text of this page may read wrongly; OCR would read it again."
   },
   "crash": {
     "title": "Send a crash report?",

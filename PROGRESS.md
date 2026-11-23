@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; after M4's close: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate).
+Last updated: 2026-11-23 (M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before it, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -159,7 +159,17 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     runs, words are boxed on the page's own line strips, and pages become searchable only as
     each quality page finishes. Bundle it, or accept that?
 
-24. **Run a crash server?** (ADR 0061) Crash reports are built without one: they are kept on the
+24. **Try the app once with VoiceOver** (M7 accessibility, ADR 0070). No session could drive it:
+    controlling VoiceOver from a script needs "Allow VoiceOver to be controlled with AppleScript"
+    in VoiceOver Utility, a system setting nobody changed. What to try, in English and in Arabic
+    (VoiceOver switches voice by `lang`): open a PDF, then
+    - **F6** through the window's areas; arrows along the tools and the tabs;
+    - **VO+→ into the page area**: each page is "Page N of name, group", its text read in order,
+      an English number or name inside an Arabic sentence in the English voice;
+    - **Cmd+S** after an edit ("Saved name.pdf"), **Cmd+K**, **Escape**;
+    - **Settings → Display → 200%**, then **Next page** (said once you stop).
+    Anything read wrongly, read twice, or not at all is worth a note.
+25. **Run a crash server?** (ADR 0061) Crash reports are built without one: they are kept on the
     computer, offered once after a crash, shown exactly as they would be sent, and leave only
     when the user copies one, saves it, or opens a pre-filled issue on `adrianazizx/Mirsam` in
     their browser. Nothing is sent automatically. A server would let users send with one click
@@ -823,7 +833,11 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ## M7 — v1.0 polish
 
-- [ ] Accessibility pass
+- [~] Accessibility pass (WCAG 2.1 AA, ADR 0070): axe-core over the main screens in jsdom (en/ar)
+      and in Chrome with contrast (en/ar × light/dark, reading themes, `scripts/a11y-check.mjs`, CI);
+      keyboard tests; F6 between areas; page text for screen readers; live regions; interface size
+      100–200%. **Gaps:** VoiceOver not driven (owner item 24); the search panel and OCR UI get their
+      pass with the sessions rebuilding them; the deferred list in the session log
 - [ ] Native-speaker Arabic localization review
 - [ ] Onboarding
 - [x] Installers with PDFium for every platform (ADR 0060): `node scripts/bundle.mjs`; each installer
@@ -833,7 +847,7 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [~] Opt-in crash reporting (ADR 0061): Rust panics, native crashes (macOS and Windows, from the
       system's crash log) and UI errors become redacted reports kept on the computer, offered once
       after a crash and shown exactly as they would be sent; sent only by the user (copy, save, a
-      pre-filled GitHub issue). Settings → Crash reports. **Open:** a crash server (owner item 24);
+      pre-filled GitHub issue). Settings → Crash reports. **Open:** a crash server (owner item 25);
       Linux native crashes; the Windows reader is untested on a real crash
 - [~] Performance hardening: every spec §11 budget measured on a release build (session log
       below, "M7 crash reports and performance"); the cold-start budget is now checked by the
@@ -868,14 +882,14 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   backend, browser) and in the real app in Arabic (`crash-selftest.sh`).
 - **Destination** chosen at build time (`SAFHA_CRASH_DESTINATION`: `github:owner/name`, the
   default `github:adrianazizx/Mirsam`, or `manual`); a crash server is refused until the owner
-  decides (owner item 24).
+  decides (owner item 25).
 - **Release builds keep function names** (`strip = "debuginfo"` instead of `strip = true`):
   a release panic's stack was all `__mh_execute_header` before; see the installer size below.
 - **Checks:** 24 `safha-core` unit tests (redaction, frames, store, run marker, the `.ips`
   reader on a fixture and on a real crash log, WER, issue links); 6 UI tests;
   `scripts/crash-selftest.sh <out> panic|abort|thread-panic` passes all three on this Mac (debug)
   and `panic` on the release bundle. CI runs `panic` on macOS, Windows and Linux.
-- **Not done:** a crash server (owner item 24); Linux native crashes; the WER reader on a real
+- **Not done:** a crash server (owner item 25); Linux native crashes; the WER reader on a real
   Windows crash; symbol files for Windows release builds (their frames print as addresses).
 
 **Performance (spec §11), release builds** on this Mac (M3 Max, 14 cores, macOS 26.5.2). Other
@@ -921,11 +935,78 @@ report clean. UI: 302 tests in 33 files, Biome, `tsc` and the production build c
 `crash-selftest.sh` `panic`, `thread-panic` and `abort`; release bundle: self-tests and
 `crash-selftest.sh panic`.
 
-**Not done / to do next:** the crash server decision (owner item 24); the hidden-window stall
+**Not done / to do next:** the crash server decision (owner item 25); the hidden-window stall
 above; re-run the scroll benchmark several times on an idle Mac with the window visible (owner
 item 16); Windows: a real crash through WER, and `.pdb` files kept per release so its frames can
 be symbolicated; the Arabic strings for crash reports need the native-speaker review (owner
 item 11).
+
+### M7 accessibility — 2026-11-23 (WCAG 2.1 AA pass; branch `pomidor/m7-accessibility-fb6cd3`, ADR 0070)
+
+Parallel to M6 find and replace, M6 OCR review and M7 crash reporting/performance. Stayed in the
+shell, viewer chrome, panels and dialogs; the search panel and the OCR UI were left alone (they
+get their pass with those sessions). Claims and merge notes: `m7-accessibility-claims.md` in the
+session notes folder.
+
+- **Checks (axe-core 4.14.1, MPL-2.0, dev only):**
+  - `src/a11y/screens.test.tsx` (jsdom): empty window, page view, thumbnails/outline/comments/
+    signatures panels, the Edit/Comment/Pages/Forms/Sign/Protect panels, nine dialogs; English
+    light and Arabic dark in full, the main screens in English dark and Arabic light. A guard test
+    proves the harness catches a nameless button and a nested control; it caught the old tab bar.
+  - `scripts/a11y-check.mjs` (headless Chrome over the dev server, reduced motion): the same
+    screens in all four language/theme combinations, the reading themes, contrast included; a
+    200% interface pass that also reports clipped text. 100 screens, 75 s, in CI's Linux test job.
+    axe skipped contrast on most Arabic text (it takes joined letters for icon-font ligatures);
+    the script makes it check them. Run against `main` it finds the old tab bar, h1 and
+    `aria-controls` problems and the contrast failure below.
+  - `src/a11y/keyboard.test.tsx`: a full Tab round and a Shift+Tab round through every area (no
+    traps), F6 order, arrows on the tool rail, tab bar, organizer toolbar and thumbnails (mirrored
+    in Arabic), Escape on the palette, a dropdown, Settings and the password prompt (focus given
+    back).
+  - `src/a11y/announcements.test.tsx`, `src/viewer/readableText.test.ts`, a controller test for
+    the page groups, and nine more token contrast pairs.
+- **Found and fixed:**
+  - **Tab bar:** the close button nested in each tab (unreachable, nested-interactive) is now the
+    pointer's shortcut only (Cmd/Ctrl+W for everyone else); "unsaved changes" is part of the tab's
+    name; the tab panel stays mounted under the gallery and the password prompt (dangling
+    `aria-controls`).
+  - **Page view:** pages are named groups; once the view rests, the pages on screen get their text
+    as hidden paragraphs (block `dir`, script-guessed `lang`, other-script runs marked); scans say
+    they have no text and that OCR can add it. A visually hidden h1 names the document.
+  - **Live regions:** two, always present and kept audible over dialogs; errors, notices, saves,
+    the interface size, and settled page/zoom changes (not fitted zoom following the window).
+  - **Keyboard:** F6/Shift+F6 between areas in visual order; the organizer's toolbar is a real
+    toolbar (arrows); the thumbnails are one tab stop with arrows, Page Up/Down, Home, End;
+    text-only scrolling areas (inspector, signatures panel) join the tab order while they scroll;
+    Escape leaves the password prompt; dropdown options get a focus ring; pages in the organizer
+    have React Aria's drag handle, so they can be dragged from the keyboard (checked by hand in
+    Arabic: Tab, Enter, arrows, Enter moved the page).
+  - **Interface size 100–200%** (Settings → Display, three commands, setting `uiScale` allowed in
+    the shell): every chrome token scales, the page canvas does not; the status bar, side panel
+    header and tool rail wrap or scroll; side panels are capped by the window's width. Checked by
+    eye at 200% in English light and Arabic dark, at 1024×768 and at the smallest window
+    (880×560): nothing cut off, the status bar takes three rows there.
+  - **Arabic and names:** the language switch is named in its own language (`lang`); the palette
+    search follows the typed direction; file names in notices and tooltips are bidi-isolated.
+  - **Contrast:** "Clear recent files" was 4.32:1 on the start screen's canvas (light): new
+    `--color-link-text` token.
+- **Verified by hand (browser pane, Chromium):** the accessibility tree in Arabic (regions, h1,
+  page groups with text, radio groups, live regions), F6 and arrows with real key presses and
+  a visible ring, 200% layouts. **Not verified:** VoiceOver itself (owner item 24), WebKit's own
+  accessibility tree, Windows Narrator, Orca, the Tauri window (the page text comes from the same
+  `page_text` the selection uses).
+- **Deferred:**
+  - the PDF's own `/Lang` and structure tree (tagged PDFs) for the page text; Latin is read as
+    English;
+  - a keyboard shortcut for the interface size (Option combinations are unreliable in
+    `KeyboardEvent.key` on macOS); the palette and Settings have it;
+  - the search panel's row height follows the interface size only when the panel is opened again
+    (it reads the token once; the panel is another session's);
+  - WCAG 2.2 focus appearance (hover-only states' contrast), and a skip link (F6 covers it);
+  - a check of the shortcut list for screen-reader discoverability (no help screen lists F6 yet).
+- **Tests:** UI tests pass (`pnpm test`), typecheck and biome clean; `cargo fmt`, `cargo clippy
+  -p safha-desktop --all-targets -D warnings` clean, `cargo test -p safha-desktop` 42 passed (the one
+  Rust change is the `uiScale` setting in the shell's allowlist).
 
 ### M4 close — 2026-11-23 (background jobs, searchable PDF, review list, CI gate, exit test; branch `pomidor/m4-jobs-searchable-fe4973`)
 

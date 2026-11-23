@@ -508,6 +508,8 @@ const SETTINGS: &[&str] = &[
     "uiDigits",
     "theme",
     "readingTheme",
+    // The interface's size, "1" to "2" (WCAG 1.4.4; the pages keep their own zoom).
+    "uiScale",
     "leftPanel",
     "session.restore",
     "search.options",

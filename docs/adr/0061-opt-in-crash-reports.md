@@ -1,7 +1,7 @@
 # 0061 — Opt-in crash reports, kept on the computer
 
 Status: Accepted. Date: 2026-11-23. Whether to run a crash server is the owner's decision
-(`PROGRESS.md`, owner item 24); nothing here needs one.
+(`PROGRESS.md`, owner item 25); nothing here needs one.
 
 ## Context
 

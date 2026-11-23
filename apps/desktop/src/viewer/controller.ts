@@ -59,6 +59,7 @@ import {
   reshaped,
   spanned,
 } from "./objects";
+import { fillReadableText, type ReadableNote } from "./readableText";
 import {
   type Caret,
   caretAt,
@@ -378,6 +379,8 @@ export interface ViewerOptions {
   callbacks: ViewerCallbacks;
   /** Accessible name of a page, e.g. "Page 3 of contract.pdf". */
   pageLabel(page: number): string;
+  /** What screen readers hear for a page with no text, or text that may be wrong. */
+  readableNote?(kind: ReadableNote): string;
   isMac: boolean;
   /** What a press on a page does now (the active tool); "select" if absent. */
   mode?(): ViewerMode;
@@ -437,6 +440,10 @@ const ZOOM_SETTLE_MS = 140;
 const PREVIEW_CACHE_PAGES = 48;
 /** Text layers kept for selection; pages inside the selection are never dropped. */
 const TEXT_LAYER_PAGES = 64;
+/** The view rests this long before its pages' text is given to screen readers. */
+const READABLE_DELAY_MS = 400;
+/** At most this many pages on screen get their text at once (a zoomed-out spread shows many). */
+const READABLE_PAGES = 6;
 /** While selecting, the view scrolls when the pointer is this close to an edge (CSS px). */
 const AUTOSCROLL_EDGE = 24;
 /** Presses closer than this in time and place count as a double or triple click. */
@@ -466,6 +473,9 @@ interface Slot {
   sharpAt: number | null;
   firstTileRequestAt: number | null;
   renderMicros: number;
+  /** The page's text for screen readers (hidden), and the text layer it was filled from. */
+  readable: HTMLDivElement;
+  readableFrom: TextLayer | null;
 }
 
 type Wanted = WantedTile & { kind: "preview" | "tile" };
@@ -535,6 +545,9 @@ export class ViewerController {
   private readonly content: HTMLDivElement;
   private readonly callbacks: ViewerCallbacks;
   private readonly pageLabel: (page: number) => string;
+  private readonly readableNote: (kind: ReadableNote) => string;
+  /** Fills the visible pages' readable text once the view stops moving. */
+  private readableTimer: number | null = null;
   private readonly spacing: ViewerSpacing;
   private readonly isMac: boolean;
   private readonly classNames: ViewerClassNames;
@@ -714,6 +727,7 @@ export class ViewerController {
     this.container = options.container;
     this.callbacks = options.callbacks;
     this.pageLabel = options.pageLabel;
+    this.readableNote = options.readableNote ?? (() => "");
     this.spacing = options.spacing;
     this.isMac = options.isMac;
     this.classNames = options.classNames;
@@ -795,6 +809,7 @@ export class ViewerController {
     this.resizeObserver.disconnect();
     this.dprQuery?.removeEventListener("change", this.onDevicePixelRatioChange);
     if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
+    if (this.readableTimer !== null) window.clearTimeout(this.readableTimer);
     if (this.gesture?.canvas) releaseCanvas(this.gesture.canvas);
     for (const slot of this.slots.values()) releaseSlot(slot);
     this.content.remove();
@@ -842,6 +857,8 @@ export class ViewerController {
     this.layerGeneration += 1;
     this.layers.clear();
     this.layerRequests.clear();
+    for (const slot of this.slots.values()) slot.readableFrom = null;
+    this.scheduleReadableText();
     this.setSelection(null);
     const keep = this.keepAfterRefresh;
     this.keepAfterRefresh = null;
@@ -1317,10 +1334,12 @@ export class ViewerController {
     };
   }
 
-  /** Re-reads every mounted page's accessible name (after a language change). */
+  /** Re-reads every mounted page's accessible name and notes (after a language change). */
   refreshLabels(): void {
     for (const slot of this.slots.values()) {
       slot.element.setAttribute("aria-label", this.pageLabel(slot.page));
+      const layer = slot.readableFrom;
+      if (layer) fillReadableText(slot.readable, layer, this.readableNote);
     }
   }
 
@@ -1735,6 +1754,8 @@ export class ViewerController {
   }
 
   private onLayerLoaded(page: number, layer: TextLayer): void {
+    const slot = this.slots.get(page);
+    if (slot && slot.readableFrom !== layer) this.fillReadable(slot, layer);
     const pending = this.pendingAnchor;
     if (pending && pending.page === page) {
       this.pendingAnchor = null;
@@ -3332,6 +3353,40 @@ export class ViewerController {
     // 4. Current page.
     const current = this.pinned?.page ?? currentPageIn(layout, view);
     if (current !== null) this.reportCurrentPage(current);
+
+    // 5. Text for screen readers, once the view settles.
+    this.scheduleReadableText();
+  }
+
+  /**
+   * Gives the pages on screen their text for screen readers, a moment after
+   * the view stops moving: scrolling never waits on it, and a page passed on
+   * the way costs nothing. Text layers are cached, and pointer moves over a
+   * page load the same layer.
+   */
+  private scheduleReadableText(): void {
+    if (this.readableTimer !== null) window.clearTimeout(this.readableTimer);
+    this.readableTimer = window.setTimeout(() => {
+      this.readableTimer = null;
+      const layout = this.layout;
+      if (!layout || this.destroyed) return;
+      const view = this.shownRect();
+      let count = 0;
+      for (const [page, slot] of this.slots) {
+        const box = layout.boxes[page];
+        if (!box || intersect(view, boxRect(box)) === null || slot.readableFrom) continue;
+        if (count >= READABLE_PAGES) break;
+        count += 1;
+        const cached = this.layers.get(page);
+        if (cached) this.fillReadable(slot, cached);
+        else void this.loadLayer(page);
+      }
+    }, READABLE_DELAY_MS);
+  }
+
+  private fillReadable(slot: Slot, layer: TextLayer): void {
+    slot.readableFrom = layer;
+    fillReadableText(slot.readable, layer, this.readableNote);
   }
 
   private reportCurrentPage(page: number): void {
@@ -3360,13 +3415,19 @@ export class ViewerController {
     element.className = this.classNames.page;
     element.dataset.page = String(page);
     element.dataset.testid = `page-${page}`;
-    element.setAttribute("role", "img");
+    // A group, not an image: screen readers read the text inside it.
+    element.setAttribute("role", "group");
     element.setAttribute("aria-label", this.pageLabel(page));
     const tileLayer = document.createElement("div");
     tileLayer.className = this.classNames.tiles;
+    tileLayer.setAttribute("aria-hidden", "true");
     const overlay = document.createElement("div");
     overlay.className = this.classNames.overlay;
-    element.append(tileLayer, overlay);
+    overlay.setAttribute("aria-hidden", "true");
+    const readable = document.createElement("div");
+    readable.className = "visually-hidden";
+    readable.dataset.readable = "";
+    element.append(tileLayer, overlay, readable);
     const slot: Slot = {
       page,
       element,
@@ -3381,7 +3442,11 @@ export class ViewerController {
       sharpAt: null,
       firstTileRequestAt: null,
       renderMicros: 0,
+      readable,
+      readableFrom: null,
     };
+    const layer = this.layers.get(page);
+    if (layer) this.fillReadable(slot, layer);
     this.placeSlot(slot, box);
     this.slots.set(page, slot);
     this.content.append(element);

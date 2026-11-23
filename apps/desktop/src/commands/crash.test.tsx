@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { axeViolations } from "../a11y/axe";
 import { backend } from "../backend";
 import {
   recordedUiErrors,
@@ -71,6 +72,8 @@ describe("crash reports (ADR 0061)", () => {
     const text = within(dialog).getByTestId("crash-report-text");
     expect(text.textContent).toBe(SAMPLE_CRASH_TEXT);
     expect(text.querySelector("pre")?.getAttribute("dir")).toBe("ltr");
+    // WCAG 2.1 AA (ADR 0070): the prompt, with its report open.
+    expect(await axeViolations()).toEqual([]);
 
     // Copy puts exactly that text on the clipboard.
     const copied = captureClipboard();
@@ -136,6 +139,7 @@ describe("crash reports (ADR 0061)", () => {
     expect(within(card).queryByTestId("crash-report-text")).toBeNull();
     fireEvent.click(within(card).getByRole("button", { name: "عرض التقرير" }));
     expect(within(card).getByTestId("crash-report-text").textContent).toBe(SAMPLE_CRASH_TEXT);
+    expect(await axeViolations()).toEqual([]);
   });
 
   it("records the ids of commands run, never their arguments", async () => {

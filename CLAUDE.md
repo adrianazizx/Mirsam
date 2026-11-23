@@ -34,6 +34,7 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | Crash reports end to end (ADR 0061) | `scripts/crash-selftest.sh <out> [panic\|abort\|thread-panic]` (debug devtools build, or `SAFHA_SELFTEST_APP` + `SAFHA_SELFTEST_UI=bundled`) |
 | Self-test an installer | `scripts/bundle-selftest.sh <dmg\|deb\|rpm\|AppImage\|setup.exe\|msi> <out>` (bundle built with `--features devtools`) |
 | Fuzz the open/parse path | `node fuzz/seed.mjs && cp Cargo.lock fuzz/ && cd fuzz && cargo fuzz run <open\|file\|objects\|content\|cmap>` (fuzz/README.md) |
+| Accessibility in Chrome (axe, en/ar × light/dark, contrast) | `node scripts/a11y-check.mjs [--out <dir>] [--only en-light,ar-dark]` (jsdom checks run in `pnpm test`, `src/a11y/`) |
 | Licence check | `cargo deny check licenses bans sources` · `node scripts/third-party-licenses.mjs [--check]` |
 | Scroll/zoom benchmark (window must be visible) | `scripts/scroll-benchmark.sh <out> debug\|release` then `node scripts/check-scroll-benchmark.mjs <out>` |
 | Page text / extraction report | `cargo run -p safha-core --example page_text -- f.pdf [page]` · `--example fixture_report [-- --verbose]` |

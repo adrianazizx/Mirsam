@@ -1,10 +1,10 @@
 import { Command, FolderOpen, Languages, Moon, Search, Sun, X } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef } from "react";
-import { Button as AriaButton, Tab, TabList } from "react-aria-components";
+import { Tab, TabList } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { resolvedTheme, runCommand, shortcutLabel } from "../../commands/registry";
-import { directionOf } from "../../i18n";
+import { directionOf, isolate, otherLocale } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
 import { CommandButton } from "../ui/CommandButton";
@@ -64,6 +64,7 @@ export function TabBar() {
   return (
     <header
       className={styles.bar}
+      data-region="tabs"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
@@ -88,19 +89,41 @@ export function TabBar() {
             }}
           >
             {/* A file name can be in either script regardless of UI language. */}
-            <bdi className={styles.name}>{document.name}</bdi>
+            {/* Cut short with an ellipsis when tabs are many or the text large: the title shows it whole. */}
+            <bdi className={styles.name} title={document.name}>
+              {document.name}
+            </bdi>
             {document.modified && (
-              <span className={styles.modified} role="img" aria-label={t("tabs.modified")} />
+              <>
+                <span className={styles.modified} aria-hidden="true" />
+                {/* A tab's content is its name: "contract.pdf, unsaved changes". */}
+                <span className="visually-hidden">
+                  {t("a11y.separator")}
+                  {t("tabs.modified")}
+                </span>
+              </>
             )}
-            <AriaButton
+            {/*
+             * Not a button: a tab's content is presentational, so a control
+             * inside it is unreachable for screen readers and nests one
+             * interactive element in another. The keyboard and screen readers
+             * close the tab with Cmd/Ctrl+W (`file.close`); this is the
+             * pointer's shortcut to the same command.
+             */}
+            <span
               className={styles.close}
-              aria-label={t("tabs.close", { name: document.name })}
-              // Reachable with Cmd/Ctrl+W; kept out of the tab order so arrow keys move between tabs.
-              excludeFromTabOrder
-              onPress={() => void runCommand("file.close", { documentId: document.id })}
+              aria-hidden="true"
+              title={t("tabs.close", { name: isolate(document.name) })}
+              data-testid="tab-close"
+              // Pressing here must not select the tab or start dragging it.
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void runCommand("file.close", { documentId: document.id });
+              }}
             >
-              <X aria-hidden="true" />
-            </AriaButton>
+              <X />
+            </span>
           </Tab>
         )}
       </TabList>
@@ -121,7 +144,8 @@ export function TabBar() {
           </Button>
         </Tooltip>
         <span className={styles.divider} aria-hidden="true" />
-        <CommandButton command="app.toggleLanguage">
+        {/* Named in the other language ("العربية", "English"): spoken in that language's voice. */}
+        <CommandButton command="app.toggleLanguage" labelLang={otherLocale(locale)}>
           <Languages />
         </CommandButton>
         <CommandButton
