@@ -56,6 +56,11 @@ export class ThumbnailStrip {
   /** One row per page: its top and bottom in the list. */
   private rows: Row[] = [];
   private current = 0;
+  /**
+   * The thumbnail Tab lands on (one tab stop for the whole strip, arrows move
+   * within it): the one last focused while it is mounted, else the current page's.
+   */
+  private tabStop: number | null = null;
   private dpr = window.devicePixelRatio || 1;
   private destroyed = false;
 
@@ -68,6 +73,7 @@ export class ThumbnailStrip {
     this.client = this.newClient();
     options.container.addEventListener("scroll", this.update, { passive: true });
     options.container.addEventListener("keydown", this.onKeyDown);
+    options.container.addEventListener("focusin", this.onFocusIn);
     options.backend.pageSizes(options.documentId).then(
       (sizes) => {
         if (this.destroyed) return;
@@ -113,6 +119,7 @@ export class ThumbnailStrip {
     this.client.close();
     this.options.container.removeEventListener("scroll", this.update);
     this.options.container.removeEventListener("keydown", this.onKeyDown);
+    this.options.container.removeEventListener("focusin", this.onFocusIn);
     for (const item of this.items.values()) release(item);
     this.items.clear();
     this.list.remove();
@@ -125,7 +132,10 @@ export class ThumbnailStrip {
     this.current = page;
     const item = this.items.get(page);
     if (item) this.markCurrent(item, true);
+    // Away from the strip, Tab brings the reader back to the page they are on.
+    if (!this.options.container.contains(document.activeElement)) this.tabStop = null;
     this.reveal(page);
+    this.refreshTabStop();
   }
 
   /** Re-reads every mounted label (language change, labels loaded). */
@@ -199,7 +209,21 @@ export class ThumbnailStrip {
       }
     }
     this.client.update(wanted, () => false);
+    this.refreshTabStop();
   };
+
+  /** Gives exactly one mounted thumbnail a place in the tab order. */
+  private refreshTabStop(): void {
+    let target: number | null = null;
+    if (this.tabStop !== null && this.items.has(this.tabStop)) target = this.tabStop;
+    else if (this.items.has(this.current)) target = this.current;
+    else for (const page of this.items.keys()) if (target === null || page < target) target = page;
+    for (const [page, item] of this.items) {
+      const tabIndex = page === target ? 0 : -1;
+      // Called on every scroll: write only what changes.
+      if (item.element.tabIndex !== tabIndex) item.element.tabIndex = tabIndex;
+    }
+  }
 
   private tileFor(size: PageSize | undefined): TileRequest | null {
     if (!size || size.width <= 0) return null;
@@ -213,6 +237,7 @@ export class ThumbnailStrip {
     const { classNames } = this.options;
     const element = document.createElement("button");
     element.type = "button";
+    element.tabIndex = -1;
     element.className = classNames.item;
     element.dataset.page = String(page);
     element.style.position = "absolute";
@@ -272,18 +297,44 @@ export class ThumbnailStrip {
     item.canvas = canvas;
   }
 
-  /** Up and down arrows move between thumbnails (only nearby ones are mounted). */
+  private readonly onFocusIn = (event: FocusEvent) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target.dataset.page === undefined) return;
+    this.tabStop = Number(target.dataset.page);
+    this.refreshTabStop();
+  };
+
+  /**
+   * Up and down arrows move between thumbnails, Page Up and Page Down by a
+   * screenful, Home and End to the first and last (only nearby ones are
+   * mounted). The strip is a vertical list, so nothing mirrors in RTL.
+   */
   private readonly onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     const focused = document.activeElement;
     if (!(focused instanceof HTMLElement) || focused.dataset.page === undefined) return;
+    const from = Number(focused.dataset.page);
+    const last = this.rows.length - 1;
+    const row = this.rows[from];
+    const screenful = row
+      ? Math.max(1, Math.floor(this.options.container.clientHeight / (row.bottom - row.top)))
+      : 1;
+    const steps: Record<string, number> = {
+      ArrowDown: from + 1,
+      ArrowUp: from - 1,
+      PageDown: Math.min(last, from + screenful),
+      PageUp: Math.max(0, from - screenful),
+      Home: 0,
+      End: last,
+    };
+    const page = steps[event.key];
+    if (page === undefined) return;
     event.preventDefault();
-    const page = Number(focused.dataset.page) + (event.key === "ArrowDown" ? 1 : -1);
-    const row = this.rows[page];
-    if (!row) return;
+    const target = this.rows[page];
+    if (!target) return;
+    this.tabStop = page;
     this.reveal(page);
     this.update();
-    (this.items.get(page) ?? this.mount(page, row)).element.focus();
+    (this.items.get(page) ?? this.mount(page, target)).element.focus();
   };
 }
 

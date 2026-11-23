@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { refreshRecents, runCommand } from "../../commands/registry";
-import { formatTag } from "../../i18n";
+import { formatTag, isolate } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -58,7 +58,7 @@ export function EmptyState() {
                   </span>
                 </AriaButton>
                 <IconButton
-                  label={t("recents.forget", { name: recent.name })}
+                  label={t("recents.forget", { name: isolate(recent.name) })}
                   onPress={() => void runCommand("file.forgetRecent", { token: recent.token })}
                 >
                   <X />

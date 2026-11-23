@@ -12,6 +12,11 @@ export function directionOf(locale: Locale): Direction {
   return locale === "ar" ? "rtl" : "ltr";
 }
 
+/** The UI language that is not `locale`: the language switch is named in it. */
+export function otherLocale(locale: Locale): Locale {
+  return locale === "ar" ? "en" : "ar";
+}
+
 /** Digits the Arabic UI shows its own numbers in: ٠–٩ or 0–9. */
 export type UiDigits = "arabicIndic" | "western";
 

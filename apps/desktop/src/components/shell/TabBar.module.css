@@ -24,7 +24,7 @@
   display: inline-flex;
   align-items: center;
   min-inline-size: 0;
-  max-inline-size: 240px;
+  max-inline-size: var(--size-tab-max);
   block-size: calc(var(--size-tabbar) - var(--space-1));
   padding-inline: var(--space-3);
   border: var(--border-width) solid transparent;
@@ -100,12 +100,11 @@
 }
 
 .tab[data-selected] .close,
-.tab[data-hovered] .close,
-.close[data-focus-visible] {
+.tab[data-hovered] .close {
   opacity: 1;
 }
 
-.close[data-hovered] {
+.close:hover {
   background: var(--color-bg-pressed);
   color: var(--color-text);
 }

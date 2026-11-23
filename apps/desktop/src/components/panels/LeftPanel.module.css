@@ -12,6 +12,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* A narrow panel at a large interface size: the views wrap rather than being cut off. */
+  flex-wrap: wrap;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
   border-block-end: var(--border-width) solid var(--color-border);
@@ -19,6 +21,7 @@
 
 .views {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
 }
 

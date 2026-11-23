@@ -10,7 +10,7 @@ import { useAppStore } from "../../state/appStore";
 import { IconButton, type IconButtonProps } from "./IconButton";
 
 export interface CommandButtonProps
-  extends Pick<IconButtonProps, "mirrorInRtl" | "tooltipPlacement"> {
+  extends Pick<IconButtonProps, "mirrorInRtl" | "tooltipPlacement" | "labelLang"> {
   command: CommandId;
   /** Overrides the command's title, e.g. to name the state a toggle leads to. */
   label?: string;
