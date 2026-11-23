@@ -278,10 +278,16 @@ fn a_job_survives_a_restart_and_restores_what_the_document_lost() {
     let engines = Engines::new("نص");
     let job = {
         let runner = JobRunner::start(book.clone(), host.clone(), Box::new(engines.clone())).expect("starts");
+        // Held on the first quality page, so the pause comes before the job can finish.
+        engines.primary.hold.store(true, Ordering::SeqCst);
         let job = runner.submit(&path, "c.pdf", 3, &[0, 1, 2]).expect("submits");
-        wait_for("the first quality page", || runner.status(job.id).is_some_and(|s| s.finished == 1));
+        wait_for("the first quality page", || {
+            runner.status(job.id).and_then(|s| s.current) == Some((0, Pass::Quality))
+        });
         runner.pause(job.id);
+        engines.primary.hold.store(false, Ordering::SeqCst);
         wait_for("paused", || state(&runner, job.id) == JobState::Paused);
+        assert_eq!(runner.status(job.id).map(|s| s.finished), Some(1), "stops after the page being read");
         job
         // The app quits here.
     };
@@ -316,10 +322,11 @@ fn a_job_waits_for_its_document_and_refuses_a_changed_one() {
     runner.wake();
     wait_for("done", || state(&runner, job.id) == JobState::Done);
 
-    let other = runner.submit(&path, "d.pdf", 2, &[0]).expect("submits");
+    // A job made for the 2-page document, when the file now open has 5 pages
+    // (changed before submitting: a one-page job would otherwise finish first).
     host.close(&path);
     host.open(&path, 5);
-    runner.wake();
+    let other = runner.submit(&path, "d.pdf", 2, &[0]).expect("submits");
     wait_for("failed", || state(&runner, other.id) == JobState::Failed);
     assert_eq!(runner.status(other.id).and_then(|s| s.error).as_deref(), Some("ocr_document_changed"));
     runner.remove(other.id).expect("removes");
