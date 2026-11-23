@@ -98,3 +98,15 @@
   outline: var(--focus-ring-width) solid var(--color-focus-ring);
   outline-offset: var(--border-width);
 }
+
+/* A mode's icon beside its name. */
+.word .glyph {
+  margin-inline-end: var(--space-1);
+}
+
+/* What a press on the page does in the object and link modes. */
+.hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}

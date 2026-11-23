@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (Session M5-e: certificate signatures, branch `pomidor/m5-pades-c887cc`, merged with `main` after form creation and the owner decisions).
+Last updated: 2026-11-23 (Session M5-e: certificate signatures, branch `pomidor/m5-pades-c887cc`, merged with `main` after form creation, the owner decisions and M6 objects).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -712,7 +712,22 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ## M6 — Edit everything else + convert
 
-- [ ] Images, links, object manipulation
+- [~] Images, links, object manipulation (session M6-b, ADR 0051):
+  - **Page objects** (images, paths, text blocks, form XObjects, shadings) traced to their bytes; moved,
+    resized, turned a quarter, cropped (images, paths, forms), deleted, and reordered (front/back
+    always; one step where the clip and `gs` allow), by byte-range edits as incremental updates —
+    z-order and clip kept, nothing regenerated; text taken out of its text object in runs, marked
+    content (`/ActualText`) kept whole; one undo step each.
+  - **Images:** inserted (PNG/JPEG through the shell's dialog) and replaced (fitted in the old box).
+  - **Links:** to web/mail addresses, pages, and named destinations; added over a drawn rectangle or
+    selected text, pointed elsewhere, moved, resized, deleted; targets shown on hover; page links
+    followed at once, web links opened only from their shown address.
+  - Turned pages, encrypted files, save and reopen, English and Arabic documents; the Edit tool's
+    Objects and Links modes in both UI languages.
+  - **Gaps:** align/distribute and multi-select; free rotation from the UI (the engine takes any
+    map); image extraction; objects inside form XObjects (a form is one object); invisible OCR text
+    stays when its scan is moved; text blocks grouped by geometry (close cells or paragraphs can
+    join); a link over a selection spanning pages covers its first page.
 - [~] Headers/footers, page numbers (Western or Arabic-Indic digits, start on the right in RTL),
       watermarks (text as outlines, PNG/JPEG images; opacity, rotation, behind or over; page
       ranges) — ADR 0050. Gap: text that runs vertically in page space (an upright footer on a
@@ -774,6 +789,53 @@ code and its UI. Claims and merge notes: `m5-pades-claims.md` in the session not
   Signatures panel. Rendered a visible signature on a 90° page with PDFium (upright, Naskh name, Arabic
   caption).
 - **Not done here:** the native-shell click-through (file dialogs), a real keychain key, Acrobat.
+
+### Session M6-b — 2026-11-23 (Milestone 6: images, links, page objects; parallel to M4 jobs, M5 PAdES and form creation)
+
+Branch `pomidor/m6-objects-ca4940` (PR #27), from `main` after PR #18; `main` merged in after PR #25 (M5-d form creation) and PR #29 (owner decisions). Stayed out of OCR, signing and form-field code.
+
+- **ADR 0051** records the approach: objects traced to their bytes with a *recipe* of the state they
+  were drawn in; edits are splices of the content streams (a `/MirsamObj <</G n>> BDC q cm … Q EMC`
+  wrapper where the object is, so z-order and clip keep); text moved in runs out of its text object
+  with marked content balanced and the text after it kept in place; reordering draws the object again
+  from its recipe; links as `/Link` annotations.
+- **Engine (`safha_core`):**
+  - `objects` (`trace.rs` walks the page: pieces, recipes, clips as page-space paths, our wrappers;
+    `mod.rs` groups pieces into objects and applies edits): `page_objects`, `object_update`,
+    `insert_image_update`, `object_with_group`; `Document::page_objects`, `with_object_edit`,
+    `with_new_image`. Type 3 widths read from `/Widths` through `/FontMatrix` for bounds.
+  - `links`: `page_links`, `named_destinations`, `link_update` (add, retarget, move, remove),
+    `normalise_url`, `openable`; `Document::page_links`, `named_destinations`, `with_link_edit`.
+    Strings decrypted to read and encrypted to write.
+  - `examples/objects_report.rs`: objects per page, tracing and edit times. Release: 1–8 ms to trace
+    a fixture page; 0.3–3 ms to move or reorder a block (9–10 ms on the 1,000-page file).
+  - First try at text split one show at a time; Chrome's per-letter `/ActualText` spans broke
+    ("المشروع" read as "المش" + "روع"), hence runs.
+- **Shell (`objects.rs`):** `page_objects`, `edit_object`, `replace_image` and `insert_image` (the
+  image picked here, at most 64 MB; error `image_too_large`), `page_links`, `named_destinations`,
+  `edit_link`, `open_link` (checked again; `link_refused`). New dependency **`open` 5** (MIT, with
+  ShellExecute on Windows; pulls `is-wsl`, `is-docker`, MIT) to open a web link in the browser;
+  licence report regenerated (620 components).
+- **UI:** the Edit tool's strip has Text / Objects / Links; the viewer gains `objects` and `links`
+  modes (hover, select topmost, drag, corner handles in proportion — Shift freely — crop handles,
+  drawing links) and, with the Select tool, link outlines and a tip on hover, a pinned tip with
+  **Open** on press. Inspector panels `ObjectsPanel` and `LinkPanel`; **Link…** in the selection
+  toolbar. 39 commands (`edit.*Mode`, `object.*`, `link.*`) gated by `modify`/`annotate`;
+  `commandForEvent` now gives a shared key (Delete, Escape, arrows) to the command that applies.
+  Tokens `--color-link-outline` (3:1 on paper, checked) and `--color-link-fill`. Strings in English
+  and Arabic. Checked in the browser preview in both directions; found and fixed link outlines
+  missing after an edit, and a selection made before a page's objects were read not drawn.
+- **Tests:** `tests/objects.rs` (13) and `tests/links.rs` (6) — see ADR 0051 "Verified"; unit tests in
+  `objects`, `links`, `objects.rs`; UI `commands/objects.test.tsx` (14, panels in English and Arabic)
+  and 4 viewer gesture tests. The fuzz harness traces, edits and reads links of every input (the
+  `content` target ran 3,200 inputs clean). The shell self-test gains an objects-and-links step (a
+  block moved and undone, a link to an Arabic address added and undone); run here in English and
+  Arabic (dark), both pass. Words-unchanged is required only on pages whose text reads well:
+  CoreText's Arabic dots (no text) regroup with a moved heading on their line.
+- Workspace tests, clippy (with and without `devtools`), `cargo fmt`, Biome, `tsc`, UI tests (253),
+  `cargo deny` and the licence report pass. **Not re-run:** the scroll and zoom benchmark (the
+  machine is shared with other sessions' builds; only hover in the Select tool touches the viewer's
+  scrolling path, reading a page's links once).
 
 ### Owner decisions — 2026-11-23 (branch `pomidor/owner-decisions`)
 

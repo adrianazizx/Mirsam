@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { formatNumber } from "../../i18n";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
+import { LinkPanel } from "../edit/LinkPanel";
+import { ObjectsPanel } from "../edit/ObjectsPanel";
 import { FormsPanel } from "../forms/FormsPanel";
 import { SignPanel } from "../forms/SignPanel";
 import { OcrPanel } from "../ocr/OcrPanel";
@@ -21,6 +23,8 @@ export function Inspector() {
   const locale = useAppStore((state) => state.locale);
   const document = useAppStore(selectActiveDocument);
   const tool = useAppStore((state) => state.activeTool);
+  // The Edit tool's object and link modes have panels of their own (ADR 0051).
+  const editMode = useAppStore((state) => (state.activeTool === "edit" ? state.editMode : "text"));
   const mm = (points: number) =>
     formatNumber(points * MM_PER_POINT, locale, { maximumFractionDigits: 0 });
 
@@ -28,12 +32,18 @@ export function Inspector() {
     <aside className={styles.inspector} aria-label={t("inspector.title")} data-testid="inspector">
       <h2 className={styles.title}>
         {t(
-          tool === "ocr" || (document && TOOL_PANELS.includes(tool))
-            ? `tools.${tool}`
-            : "inspector.title",
+          document && editMode !== "text"
+            ? `editMode.titles.${editMode}`
+            : tool === "ocr" || (document && TOOL_PANELS.includes(tool))
+              ? `tools.${tool}`
+              : "inspector.title",
         )}
       </h2>
-      {tool === "ocr" ? (
+      {document && editMode === "objects" ? (
+        <ObjectsPanel key={document.id} documentId={document.id} />
+      ) : document && editMode === "links" ? (
+        <LinkPanel key={document.id} documentId={document.id} />
+      ) : tool === "ocr" ? (
         <OcrPanel />
       ) : document && tool === "protect" ? (
         <ProtectPanel key={document.id} document={document} />

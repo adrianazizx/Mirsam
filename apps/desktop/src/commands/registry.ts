@@ -8,9 +8,13 @@ import {
   type FieldSpec,
   type ImageFormat,
   isBackendError,
+  type LinkInfo,
+  type LinkTarget,
   type MarkupKind,
+  type ObjectEdit,
   type OpenOutcome,
   type PageEdit,
+  type PageObject,
   type ParagraphBlock,
   type Permissions,
   type RedactPattern,
@@ -42,6 +46,7 @@ import {
 import { useCertSign, VISIBLE_SIZE } from "../state/certSign";
 import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
+import { isOpenable, mapBetween, quarterTurn } from "../state/objects";
 import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
 import {
   addMark,
@@ -193,6 +198,12 @@ export interface CommandArg {
   colorId?: string;
   /** `ocrModels.download`, `.cancel`, `.delete`: the OCR package (ADR 0034). */
   modelId?: string;
+  /** `object.select`, `object.reshape`: a page object (ADR 0051) (`page`, and `rect` its new box). */
+  object?: PageObject | null;
+  /** `link.select`, `link.reshape`, `link.follow`, `link.hover`: a link (`page`, `rect`). */
+  link?: LinkInfo | null;
+  /** `link.save`: where the link goes. */
+  linkTarget?: LinkTarget;
 }
 
 /** A new mark's side, in points (the engine's `Mark::DEFAULT_SIZE`). */
@@ -434,7 +445,46 @@ export type CommandId =
   | "ocrModels.dismissPrompt"
   | "ocrModels.download"
   | "ocrModels.cancel"
-  | "ocrModels.delete";
+  | "ocrModels.delete"
+  | "edit.textMode"
+  | "edit.objectsMode"
+  | "edit.linksMode"
+  | "object.select"
+  | "object.reshape"
+  | "object.insertImage"
+  | "object.replaceImage"
+  | "object.delete"
+  | "object.rotateClockwise"
+  | "object.rotateCounterclockwise"
+  | "object.bringToFront"
+  | "object.bringForward"
+  | "object.sendBackward"
+  | "object.sendToBack"
+  | "object.crop"
+  | "object.setCrop"
+  | "object.applyCrop"
+  | "object.cancelCrop"
+  | "object.uncrop"
+  | "object.deselect"
+  | "object.moveLeft"
+  | "object.moveRight"
+  | "object.moveUp"
+  | "object.moveDown"
+  | "object.moveLeftMore"
+  | "object.moveRightMore"
+  | "object.moveUpMore"
+  | "object.moveDownMore"
+  | "link.fromSelection"
+  | "link.draw"
+  | "link.select"
+  | "link.save"
+  | "link.reshape"
+  | "link.delete"
+  | "link.cancel"
+  | "link.hover"
+  | "link.follow"
+  | "link.open"
+  | "link.dismiss";
 
 const store = () => useAppStore.getState();
 const hasDocument = (state: AppState) => selectActiveDocument(state) !== null;
@@ -895,6 +945,114 @@ function setReadingTheme(theme: ReadingTheme) {
   store().setReadingTheme(theme);
 }
 
+// ------------------------------------------------------------ objects and links (ADR 0051)
+
+/** The Edit tool in one of its modes, on a document. */
+const editingIn = (state: AppState, mode: "objects" | "links") =>
+  hasDocument(state) && state.activeTool === "edit" && state.editMode === mode;
+/** An object of the active document is selected in the object mode. */
+const objectSelected = (state: AppState) =>
+  editingIn(state, "objects") &&
+  state.selectedObject !== null &&
+  state.selectedObject.documentId === state.activeDocumentId;
+/** The selected object can be changed (some text cannot be split out of its text object). */
+const objectChangeable = (state: AppState) =>
+  objectSelected(state) &&
+  state.selectedObject?.object.refusal === null &&
+  state.objectCrop === null;
+const isCropping = (state: AppState) => objectSelected(state) && state.objectCrop !== null;
+const croppable = (state: AppState) =>
+  objectChangeable(state) && state.selectedObject?.object.kind !== "text";
+/** Arrow keys move the selected object only while the page view has the focus. */
+const nudgesObject = (state: AppState) =>
+  objectChangeable(state) &&
+  (typeof document === "undefined" ||
+    document.activeElement === null ||
+    document.activeElement === document.body ||
+    document.activeElement.closest("[data-testid='viewer']") !== null);
+/** A link of the active document is being added or edited. */
+const linkDrafted = (state: AppState) =>
+  editingIn(state, "links") &&
+  state.linkDraft !== null &&
+  state.linkDraft.documentId === state.activeDocumentId;
+const linkSelected = (state: AppState) => linkDrafted(state) && state.linkDraft?.index !== null;
+
+/** Whether an object the selected one overlaps is drawn above it (`1`) or below it (`-1`). */
+function hasOverlapping(state: AppState, direction: 1 | -1): boolean {
+  const selected = state.selectedObject;
+  if (!objectChangeable(state) || !selected) return false;
+  const list = getViewer(selected.documentId)?.objectsOf(selected.page) ?? [];
+  const r = selected.object.rect;
+  const overlaps = (o: PageObject) =>
+    o.rect.x < r.x + r.width &&
+    r.x < o.rect.x + o.rect.width &&
+    o.rect.y < r.y + r.height &&
+    r.y < o.rect.y + o.rect.height;
+  return list.some((o) =>
+    direction === 1
+      ? o.index > selected.object.index && overlaps(o)
+      : o.index < selected.object.index && overlaps(o),
+  );
+}
+
+/** Changes the selected object as one undo step, and keeps it selected where it went. */
+async function editObject(edit: ObjectEdit): Promise<void> {
+  const active = selectActiveDocument(store());
+  const selected = store().selectedObject;
+  if (!active || !selected || selected.documentId !== active.id) return;
+  const outcome = await backend.editObject(
+    active.id,
+    selected.page,
+    { index: selected.object.index, fingerprint: selected.object.fingerprint },
+    edit,
+  );
+  afterObjectEdit(active.id, selected.page, outcome);
+}
+
+function afterObjectEdit(
+  documentId: number,
+  page: number,
+  outcome: { index: number | null } & EditOutcome,
+) {
+  if (outcome.index !== null)
+    getViewer(documentId)?.reselectObjectAfterRefresh(page, outcome.index);
+  store().setSelectedObject(null);
+  store().applyEdit(documentId, outcome);
+}
+
+/** Moves the selected object by (`dx`, `dy`) points of the displayed page. */
+function nudgeObject(dx: number, dy: number): Promise<void> {
+  return editObject({ kind: "transform", matrix: [1, 0, 0, 1, dx, dy] });
+}
+
+/** The Edit tool in `mode`, on the active document. */
+function chooseEditMode(mode: "text" | "objects" | "links") {
+  if (store().activeTool !== "edit") store().setActiveTool("edit");
+  store().setEditMode(mode);
+}
+
+/** Reads the active document's named destinations, once, for links to them. */
+async function loadDestinations(documentId: number): Promise<void> {
+  if (store().destinations?.documentId === documentId) return;
+  const list = await backend.namedDestinations(documentId);
+  store().setDestinations({ documentId, list });
+}
+
+/** Saves the link being added or edited, as one undo step. */
+async function saveLink(target: LinkTarget): Promise<void> {
+  const active = selectActiveDocument(store());
+  const draft = store().linkDraft;
+  if (!active || !draft || draft.documentId !== active.id) return;
+  const outcome = await backend.editLink(
+    active.id,
+    draft.index === null
+      ? { kind: "add", page: draft.page, rects: draft.rects, target }
+      : { kind: "setTarget", page: draft.page, index: draft.index, target },
+  );
+  store().setLinkDraft(null);
+  store().applyEdit(active.id, outcome);
+}
+
 /** Error codes with their own message under `errors.`; anything else is "generic". */
 const KNOWN_ERRORS = [
   "invalid_pdf",
@@ -932,6 +1090,8 @@ const KNOWN_ERRORS = [
   "signature_too_large",
   "keychain_unavailable",
   "save_as_required",
+  "image_too_large",
+  "link_refused",
 ];
 
 function reportError(error: unknown) {
@@ -3135,6 +3295,343 @@ const DECLARED: Command[] = [
       await refreshOcrModels();
     },
   },
+  // ---- The Edit tool's modes, page objects and links (ADR 0051).
+  { id: "edit.textMode", isEnabled: hasDocument, run: () => chooseEditMode("text") },
+  { id: "edit.objectsMode", isEnabled: hasDocument, run: () => chooseEditMode("objects") },
+  { id: "edit.linksMode", isEnabled: hasDocument, run: () => chooseEditMode("links") },
+  {
+    // The viewer selected an object, or nothing.
+    id: "object.select",
+    paletteHidden: true,
+    isEnabled: (state) => editingIn(state, "objects"),
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined) return;
+      store().setSelectedObject(
+        arg.object ? { documentId: active.id, page: arg.page, object: arg.object } : null,
+      );
+    },
+  },
+  {
+    // The viewer dragged or resized the selected object to `rect`.
+    id: "object.reshape",
+    paletteHidden: true,
+    isEnabled: objectChangeable,
+    async run(arg) {
+      const selected = store().selectedObject;
+      if (!selected || !arg?.rect || (arg.object && arg.object.index !== selected.object.index))
+        return;
+      await editObject({ kind: "transform", matrix: mapBetween(selected.object.rect, arg.rect) });
+    },
+  },
+  {
+    id: "object.insertImage",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      chooseEditMode("objects");
+      const outcome = await backend.insertImage(active.id, active.page, null);
+      if (outcome) afterObjectEdit(active.id, active.page, outcome);
+    },
+  },
+  {
+    id: "object.replaceImage",
+    isEnabled: (state) => objectChangeable(state) && state.selectedObject?.object.kind === "image",
+    async run() {
+      const active = selectActiveDocument(store());
+      const selected = store().selectedObject;
+      if (!active || !selected) return;
+      const outcome = await backend.replaceImage(active.id, selected.page, {
+        index: selected.object.index,
+        fingerprint: selected.object.fingerprint,
+      });
+      if (outcome) afterObjectEdit(active.id, selected.page, outcome);
+    },
+  },
+  {
+    id: "object.delete",
+    shortcut: { key: "Delete", alternate: "Backspace", notInFields: true },
+    isEnabled: objectChangeable,
+    run: () => editObject({ kind: "delete" }),
+  },
+  {
+    id: "object.rotateClockwise",
+    isEnabled: objectChangeable,
+    run() {
+      const selected = store().selectedObject;
+      if (selected)
+        return editObject({ kind: "transform", matrix: quarterTurn(selected.object.rect, true) });
+    },
+  },
+  {
+    id: "object.rotateCounterclockwise",
+    isEnabled: objectChangeable,
+    run() {
+      const selected = store().selectedObject;
+      if (selected)
+        return editObject({ kind: "transform", matrix: quarterTurn(selected.object.rect, false) });
+    },
+  },
+  {
+    id: "object.bringToFront",
+    shortcut: { key: "]", mod: true, shift: true },
+    isEnabled: (state) => hasOverlapping(state, 1),
+    run: () => editObject({ kind: "arrange", to: "front" }),
+  },
+  {
+    id: "object.bringForward",
+    shortcut: { key: "]", mod: true },
+    isEnabled: (state) => hasOverlapping(state, 1),
+    run: () => editObject({ kind: "arrange", to: "forward" }),
+  },
+  {
+    id: "object.sendBackward",
+    shortcut: { key: "[", mod: true },
+    isEnabled: (state) => hasOverlapping(state, -1),
+    run: () => editObject({ kind: "arrange", to: "backward" }),
+  },
+  {
+    id: "object.sendToBack",
+    shortcut: { key: "[", mod: true, shift: true },
+    isEnabled: (state) => hasOverlapping(state, -1),
+    run: () => editObject({ kind: "arrange", to: "back" }),
+  },
+  {
+    // Shows the crop handles on the selected object; Enter applies, Escape cancels.
+    id: "object.crop",
+    isEnabled: croppable,
+    run() {
+      const selected = store().selectedObject;
+      if (selected) store().setObjectCrop(selected.object.rect);
+    },
+  },
+  {
+    id: "object.setCrop",
+    paletteHidden: true,
+    isEnabled: isCropping,
+    run(arg) {
+      if (arg?.rect) store().setObjectCrop(arg.rect);
+    },
+  },
+  {
+    id: "object.applyCrop",
+    shortcut: { key: "Enter", notInFields: true },
+    isEnabled: isCropping,
+    async run() {
+      const crop = store().objectCrop;
+      if (!crop) return;
+      store().setObjectCrop(null);
+      await editObject({ kind: "crop", rect: crop });
+    },
+  },
+  {
+    id: "object.cancelCrop",
+    shortcut: { key: "Escape", notInFields: true },
+    isEnabled: isCropping,
+    run: () => store().setObjectCrop(null),
+  },
+  {
+    id: "object.uncrop",
+    isEnabled: (state) => objectChangeable(state) && state.selectedObject?.object.cropped === true,
+    run: () => editObject({ kind: "crop", rect: null }),
+  },
+  {
+    id: "object.deselect",
+    shortcut: { key: "Escape", notInFields: true },
+    isEnabled: (state) => objectSelected(state) && state.objectCrop === null,
+    run: () => store().setSelectedObject(null),
+  },
+  ...(
+    [
+      ["object.moveLeft", "ArrowLeft", -1, 0],
+      ["object.moveRight", "ArrowRight", 1, 0],
+      ["object.moveUp", "ArrowUp", 0, -1],
+      ["object.moveDown", "ArrowDown", 0, 1],
+    ] as const
+  ).flatMap(([id, key, dx, dy]): Command[] => [
+    {
+      id,
+      shortcut: { key, notInFields: true },
+      isEnabled: nudgesObject,
+      run: () => nudgeObject(dx * NUDGE, dy * NUDGE),
+    },
+    {
+      id: `${id}More` as CommandId,
+      shortcut: { key, shift: true, notInFields: true },
+      isEnabled: nudgesObject,
+      run: () => nudgeObject(dx * NUDGE_MORE, dy * NUDGE_MORE),
+    },
+  ]),
+  {
+    // A link over the selected text: the link mode opens with it, to say where it goes.
+    id: "link.fromSelection",
+    isEnabled: hasSelection,
+    run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const viewer = getViewer(active.id);
+      const first = viewer?.selectionMarks()[0];
+      if (!first || first.rects.length === 0) return;
+      viewer?.clearSelection();
+      chooseEditMode("links");
+      store().setLinkDraft({
+        documentId: active.id,
+        page: first.page,
+        index: null,
+        rects: first.rects,
+        target: { kind: "url", url: "" },
+      });
+      void loadDestinations(active.id);
+    },
+  },
+  {
+    // The viewer drew a rectangle for a new link.
+    id: "link.draw",
+    paletteHidden: true,
+    isEnabled: (state) => editingIn(state, "links"),
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || !arg.rect) return;
+      store().setLinkDraft({
+        documentId: active.id,
+        page: arg.page,
+        index: null,
+        rects: [arg.rect],
+        target: { kind: "url", url: "" },
+      });
+      void loadDestinations(active.id);
+    },
+  },
+  {
+    // The viewer selected a link (to edit it), or nothing.
+    id: "link.select",
+    paletteHidden: true,
+    isEnabled: (state) => editingIn(state, "links"),
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined) return;
+      const link = arg.link;
+      store().setLinkDraft(
+        link
+          ? {
+              documentId: active.id,
+              page: arg.page,
+              index: link.index,
+              rects: link.rects,
+              target: link.target,
+            }
+          : null,
+      );
+      if (link) void loadDestinations(active.id);
+    },
+  },
+  {
+    id: "link.save",
+    paletteHidden: true,
+    isEnabled: linkDrafted,
+    async run(arg) {
+      if (arg?.linkTarget) await saveLink(arg.linkTarget);
+    },
+  },
+  {
+    // The viewer dragged or resized the selected link to `rect`.
+    id: "link.reshape",
+    paletteHidden: true,
+    isEnabled: linkSelected,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const draft = store().linkDraft;
+      if (!active || !draft || draft.index === null || !arg?.rect) return;
+      const outcome = await backend.editLink(active.id, {
+        kind: "setRect",
+        page: draft.page,
+        index: draft.index,
+        rect: arg.rect,
+      });
+      store().applyEdit(active.id, outcome);
+      // Still the link being edited, where it went.
+      store().setLinkDraft({ ...draft, rects: [arg.rect] });
+    },
+  },
+  {
+    id: "link.delete",
+    shortcut: { key: "Delete", alternate: "Backspace", notInFields: true },
+    isEnabled: linkSelected,
+    async run() {
+      const active = selectActiveDocument(store());
+      const draft = store().linkDraft;
+      if (!active || !draft || draft.index === null) return;
+      const outcome = await backend.editLink(active.id, {
+        kind: "remove",
+        page: draft.page,
+        index: draft.index,
+      });
+      store().setLinkDraft(null);
+      store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    id: "link.cancel",
+    shortcut: { key: "Escape", notInFields: true },
+    isEnabled: linkDrafted,
+    run: () => store().setLinkDraft(null),
+  },
+  {
+    // The pointer came over a link, or left it: its target is shown (ADR 0051).
+    id: "link.hover",
+    paletteHidden: true,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      const tip = store().linkTip;
+      if (!active || tip?.pinned) return;
+      store().setLinkTip(
+        arg?.link && arg.page !== undefined
+          ? { documentId: active.id, page: arg.page, link: arg.link, pinned: false }
+          : null,
+      );
+    },
+  },
+  {
+    // A link was pressed: a page of this document is shown at once; a web
+    // address only once the user, having seen it, chooses to open it.
+    id: "link.follow",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      const link = arg?.link;
+      if (!active || !link || arg.page === undefined) return;
+      const target = link.target;
+      if (target.kind === "page") {
+        store().setLinkTip(null);
+        navigateTo(active, target.page);
+      } else if (target.kind === "named" && target.page !== undefined && target.page !== null) {
+        store().setLinkTip(null);
+        navigateTo(active, target.page);
+      } else {
+        store().setLinkTip({ documentId: active.id, page: arg.page, link, pinned: true });
+      }
+    },
+  },
+  {
+    // From the link tip's own button, after the address was shown.
+    id: "link.open",
+    paletteHidden: true,
+    isEnabled: (state) => state.linkTip?.pinned === true && isOpenable(state.linkTip.link.target),
+    async run() {
+      const tip = store().linkTip;
+      if (!tip || !isOpenable(tip.link.target)) return;
+      store().setLinkTip(null);
+      await backend.openLink(tip.link.target.url);
+    },
+  },
+  {
+    id: "link.dismiss",
+    shortcut: { key: "Escape", notInFields: true },
+    isEnabled: (state) => state.linkTip?.pinned === true,
+    run: () => store().setLinkTip(null),
+  },
 ];
 
 /**
@@ -3228,6 +3725,33 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "fill.moveDownMore": "annotate",
   "fill.larger": "annotate",
   "fill.smaller": "annotate",
+  // Page objects change the page's content; links are annotations (ADR 0051).
+  "object.reshape": "modify",
+  "object.insertImage": "modify",
+  "object.replaceImage": "modify",
+  "object.delete": "modify",
+  "object.rotateClockwise": "modify",
+  "object.rotateCounterclockwise": "modify",
+  "object.bringToFront": "modify",
+  "object.bringForward": "modify",
+  "object.sendBackward": "modify",
+  "object.sendToBack": "modify",
+  "object.crop": "modify",
+  "object.applyCrop": "modify",
+  "object.uncrop": "modify",
+  "object.moveLeft": "modify",
+  "object.moveRight": "modify",
+  "object.moveUp": "modify",
+  "object.moveDown": "modify",
+  "object.moveLeftMore": "modify",
+  "object.moveRightMore": "modify",
+  "object.moveUpMore": "modify",
+  "object.moveDownMore": "modify",
+  "link.fromSelection": "annotate",
+  "link.draw": "annotate",
+  "link.save": "annotate",
+  "link.reshape": "annotate",
+  "link.delete": "annotate",
 };
 
 /** Whether the active document's protection lets its reader do what `flag` names. */
@@ -3304,7 +3828,7 @@ export function commandForEvent(event: KeyboardEvent, mac = isMac): Command | un
       !(inField && command.shortcut.notInFields) &&
       matchesShortcut(command.shortcut, event, mac),
   );
-  // A key several commands share (Delete, the arrows) runs the one that applies now.
+  // A key several commands share (Delete, Escape, the arrows) runs the one that applies now.
   return matching.find((command) => isCommandEnabled(command.id)) ?? matching[0];
 }
 

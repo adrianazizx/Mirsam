@@ -14,9 +14,13 @@ import type {
   FormInfo,
   KeptRequest,
   Lane,
+  LinkInfo,
+  NamedDestination,
+  ObjectEditOutcome,
   OpenOutcome,
   OutlineItem,
   PageEdit,
+  PageObject,
   PageSize,
   ParagraphBlock,
   Priority,
@@ -235,8 +239,86 @@ interface MockState {
   change: "pages" | "annotations";
   /** Form field values by field id (ADR 0045); carried into later states. */
   form?: Map<number, string[]>;
+  /** Page objects by original page (ADR 0051); carried into later states. */
+  objects?: Map<number, MockObject[]>;
+  /** Links by original page (ADR 0051); carried into later states. */
+  links?: Map<number, LinkInfo[]>;
   /** The form's fields once the form designer changed them (ADR 0047), in tab order. */
   fields?: FormField[];
+}
+
+/** A mock page object: what the engine reports, and its box before any crop. */
+interface MockObject {
+  kind: PageObject["kind"];
+  rect: ViewRect;
+  full: ViewRect;
+  image: PageObject["image"];
+  cropped: boolean;
+  /** Bumped by every change, for the fingerprint. */
+  version: number;
+}
+
+/** The sample document's first page: an image, a path, and the paragraph's text. */
+function mockObjects(): Map<number, MockObject[]> {
+  const object = (kind: PageObject["kind"], rect: ViewRect, image: PageObject["image"] = null) => ({
+    kind,
+    rect,
+    full: rect,
+    image,
+    cropped: false,
+    version: 0,
+  });
+  return new Map([
+    [
+      0,
+      [
+        object("path", { x: 72, y: 300, width: 200, height: 80 }),
+        object("image", { x: 340, y: 90, width: 160, height: 120 }, { width: 800, height: 600 }),
+        object("text", { x: 72, y: 120, width: 300, height: 36 }),
+      ],
+    ],
+  ]);
+}
+
+function mockLinks(): Map<number, LinkInfo[]> {
+  return new Map([
+    [
+      0,
+      [
+        {
+          index: 0,
+          rects: [{ x: 72, y: 200, width: 120, height: 14 }],
+          target: { kind: "url", url: "https://example.com/مرسام" },
+        },
+        {
+          index: 1,
+          rects: [{ x: 72, y: 220, width: 80, height: 14 }],
+          target: { kind: "page", page: 1 },
+        },
+      ],
+    ],
+  ]);
+}
+
+const MOCK_DESTINATIONS: NamedDestination[] = [
+  { name: "chapter-2", page: 1 },
+  { name: "الملحق", page: 2 },
+];
+
+/** The box `rect` takes under the displayed-page map `m`. */
+function transformed(rect: ViewRect, m: readonly number[]): ViewRect {
+  const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = m;
+  const corners = [
+    [rect.x, rect.y],
+    [rect.x + rect.width, rect.y],
+    [rect.x, rect.y + rect.height],
+    [rect.x + rect.width, rect.y + rect.height],
+  ].map(([x = 0, y = 0]) => [a * x + c * y + e, b * x + d * y + f] as const);
+  const xs = corners.map(([x]) => x);
+  const ys = corners.map(([, y]) => y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
 
 /** The sample document's form, on its first page (ADR 0045). */
@@ -555,6 +637,8 @@ const mockCompressed = new Set<number>();
 
 function pushState(documentId: number, next: MockState): EditOutcome {
   next.form ??= stateOf(documentId).form;
+  next.objects ??= stateOf(documentId).objects;
+  next.links ??= stateOf(documentId).links;
   next.fields ??= stateOf(documentId).fields;
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
@@ -1398,6 +1482,183 @@ export const mockBackend: Backend = {
       ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
       textChanged: true,
     };
+  },
+  // Objects and links on page 0 (ADR 0051), so the Edit tool's modes can be tried in `pnpm dev`.
+  pageObjects: async (documentId, page) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+    const list = (state.objects ?? mockObjects()).get(original) ?? [];
+    return list.map((object, index) => ({
+      index,
+      fingerprint: index * 1000 + object.version,
+      kind: object.kind,
+      rect: object.rect,
+      image: object.image,
+      cropped: object.cropped,
+      refusal: null,
+    }));
+  },
+  editObject: async (documentId, page, object, edit) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    const objects = new Map(state.objects ?? mockObjects());
+    const list = [...(original === undefined ? [] : (objects.get(original) ?? []))];
+    const found = list[object.index];
+    if (
+      original === undefined ||
+      !found ||
+      object.fingerprint !== object.index * 1000 + found.version
+    ) {
+      throw { code: "invalid_edit", detail: "the page's objects changed since they were read" };
+    }
+    let index: number | null = object.index;
+    const changed = { ...found, version: found.version + 1 };
+    switch (edit.kind) {
+      case "transform":
+        changed.rect = transformed(found.rect, edit.matrix);
+        changed.full = transformed(found.full, edit.matrix);
+        list[object.index] = changed;
+        break;
+      case "delete":
+        list.splice(object.index, 1);
+        index = null;
+        break;
+      case "crop":
+        changed.rect = edit.rect ?? found.full;
+        changed.cropped = edit.rect !== null;
+        list[object.index] = changed;
+        break;
+      case "arrange": {
+        list.splice(object.index, 1);
+        const at = {
+          front: list.length,
+          back: 0,
+          forward: object.index + 1,
+          backward: object.index - 1,
+        }[edit.to];
+        index = Math.max(0, Math.min(list.length, at));
+        list.splice(index, 0, changed);
+        break;
+      }
+    }
+    objects.set(original, list);
+    return {
+      ...pushState(documentId, {
+        pages: state.pages,
+        markup: state.markup,
+        objects,
+        change: "annotations",
+      }),
+      textChanged: true,
+      index,
+    } satisfies ObjectEditOutcome;
+  },
+  replaceImage: async (documentId, page, object) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    const objects = new Map(state.objects ?? mockObjects());
+    const list = [...(original === undefined ? [] : (objects.get(original) ?? []))];
+    const found = list[object.index];
+    if (original === undefined || found?.kind !== "image") {
+      throw { code: "invalid_edit", detail: "only an image is replaced by an image" };
+    }
+    list[object.index] = {
+      ...found,
+      image: { width: 400, height: 300 },
+      version: found.version + 1,
+    };
+    objects.set(original, list);
+    return {
+      ...pushState(documentId, {
+        pages: state.pages,
+        markup: state.markup,
+        objects,
+        change: "annotations",
+      }),
+      textChanged: true,
+      index: object.index,
+    };
+  },
+  insertImage: async (documentId, page, at) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+    const objects = new Map(state.objects ?? mockObjects());
+    const list = [...(objects.get(original) ?? [])];
+    const center = at ?? { x: A4.width / 2, y: A4.height / 2 };
+    const rect = { x: center.x - 60, y: center.y - 45, width: 120, height: 90 };
+    list.push({
+      kind: "image",
+      rect,
+      full: rect,
+      image: { width: 160, height: 120 },
+      cropped: false,
+      version: 0,
+    });
+    objects.set(original, list);
+    return {
+      ...pushState(documentId, {
+        pages: state.pages,
+        markup: state.markup,
+        objects,
+        change: "annotations",
+      }),
+      textChanged: true,
+      index: list.length - 1,
+    };
+  },
+  pageLinks: async (documentId, page) => {
+    const state = stateOf(documentId);
+    const original = state.pages[page];
+    if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+    return (state.links ?? mockLinks()).get(original) ?? [];
+  },
+  namedDestinations: async () => MOCK_DESTINATIONS,
+  editLink: async (documentId, edit) => {
+    const state = stateOf(documentId);
+    const original = state.pages[edit.page];
+    if (original === undefined) throw { code: "page_out_of_range", detail: "page out of range" };
+    if ("target" in edit && edit.target.kind === "url") {
+      const url = edit.target.url.trim();
+      const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1]?.toLowerCase();
+      if (
+        /\s/.test(url) ||
+        url === "" ||
+        (scheme && !["http", "https", "mailto"].includes(scheme))
+      ) {
+        throw { code: "invalid_edit", detail: "only web and e-mail addresses can be linked" };
+      }
+    }
+    const links = new Map(state.links ?? mockLinks());
+    const list = [...(links.get(original) ?? [])];
+    switch (edit.kind) {
+      case "add":
+        list.push({ index: list.length, rects: edit.rects, target: edit.target });
+        break;
+      case "setTarget":
+        list[edit.index] = { ...(list[edit.index] as LinkInfo), target: edit.target };
+        break;
+      case "setRect":
+        list[edit.index] = { ...(list[edit.index] as LinkInfo), rects: [edit.rect] };
+        break;
+      case "remove":
+        list.splice(edit.index, 1);
+        list.forEach((link, i) => {
+          list[i] = { ...link, index: i };
+        });
+        break;
+    }
+    links.set(original, list);
+    return pushState(documentId, {
+      pages: state.pages,
+      markup: state.markup,
+      links,
+      change: "annotations",
+    });
+  },
+  openLink: async (url) => {
+    console.info("mock: would open", url);
   },
   // One paragraph on page 0, so the Edit tool can be tried in `pnpm dev`.
   pageTextBlocks: async (documentId, page) => {

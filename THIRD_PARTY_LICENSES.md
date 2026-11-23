@@ -21,7 +21,7 @@ PDFium: Its licence and its own third-party notices (third_party/pdfium/<platfor
 
 SQLite: Compiled into the app from source by rusqlite's `bundled` feature; public domain.
 
-## Rust crates (610)
+## Rust crates (613)
 
 | Component | Version | Licence | Source |
 |---|---|---|---|
@@ -247,6 +247,8 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | infer | 0.22.0 | MIT | https://github.com/bojand/infer |
 | inout | 0.2.6 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | ipnet | 2.12.2 | MIT OR Apache-2.0 | https://github.com/krisprice/ipnet |
+| is-docker | 0.2.0 | MIT | https://github.com/TheLarkInn/is-docker |
+| is-wsl | 0.4.0 | MIT | https://github.com/TheLarkInn/is-wsl |
 | itertools | 0.15.0 | MIT OR Apache-2.0 | https://github.com/rust-itertools/itertools |
 | itoa | 1.0.19 | MIT OR Apache-2.0 | https://github.com/dtolnay/itoa |
 | javascriptcore-rs | 1.1.2 | MIT | https://github.com/tauri-apps/javascriptcore-rs |
@@ -331,6 +333,7 @@ SQLite: Compiled into the app from source by rusqlite's `bundled` feature; publi
 | objc2-web-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
 | oid-registry | 0.8.1 | MIT OR Apache-2.0 | https://github.com/rusticata/oid-registry.git |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | https://github.com/matklad/once_cell |
+| open | 5.4.5 | MIT | https://github.com/Byron/open-rs |
 | openssl-probe | 0.2.2 | MIT OR Apache-2.0 | https://github.com/rustls/openssl-probe |
 | option-ext | 0.2.0 | MPL-2.0 | https://github.com/soc/option-ext.git |
 | p12-keystore | 0.4.1 | MIT/Apache-2.0 | https://github.com/ancwrd1/p12-keystore |

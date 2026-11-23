@@ -129,6 +129,20 @@ if (nav) {
       `typing in the paragraph field took ${added.typingMedianMs} ms a keystroke (median; budget 32 ms)`,
     );
   }
+  // Page objects and links (ADR 0051): through the real shell's commands.
+  const objects = nav.objectsAndLinks;
+  check(objects !== undefined && objects !== null, "no objects-and-links results");
+  if (objects) {
+    check(objects.objects > 0 && objects.kinds.includes("text"), `the page's objects were ${JSON.stringify(objects.kinds)}`);
+    check(objects.moved, "the text block did not move where it was dragged");
+    // CoreText's Arabic draws dots as glyphs of their own with no text ("suspect", ADR 0023): a
+    // block moved on their line regroups a dot with it. Only a page that reads well must read the same.
+    if (nav.textQuality === "good") check(objects.textKept, "moving a text block changed the page's words");
+    check(objects.undone, "undo did not put the text block back byte for byte");
+    check(objects.linkAdded, "the link to an Arabic address did not read back, percent-encoded");
+    check(objects.linkUndone, "undo did not remove the link");
+    check(objects.errorCode === null, `objects and links reported ${objects.errorCode}`);
+  }
   // Editing (ADR 0014): duplicate a page, the new revision paints, undo restores the file.
   const editing = nav.editing;
   check(editing !== undefined && editing !== null, "no editing results");
@@ -189,6 +203,13 @@ if (nav) {
     console.log(
       `  added text: ${a.pixels} px painted, read back ${a.readBack}, undone ${a.undone}; ` +
         `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}; bold in the field ${a.boldApplied}, read back ${a.boldReadBack}; typing ${a.typingMedianMs} ms (p95 ${a.typingP95Ms})`,
+    );
+  }
+  if (nav.objectsAndLinks) {
+    const o = nav.objectsAndLinks;
+    console.log(
+      `  objects and links: ${o.objects} objects ${JSON.stringify(o.kinds)}; a block moved ${o.moved}, words kept ${o.textKept}, undone ${o.undone}; ` +
+        `a link added ${o.linkAdded}, undone ${o.linkUndone}`,
     );
   }
   if (nav.editing) {

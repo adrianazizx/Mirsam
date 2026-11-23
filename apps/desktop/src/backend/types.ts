@@ -133,6 +133,68 @@ export interface BlockEditOutcome extends EditOutcome {
   source: "page" | "embedded" | "bundled" | "none";
 }
 
+/** What a page object is (ADR 0051). */
+export type ObjectKind = "image" | "path" | "text" | "form" | "shading";
+
+/** One object of a page, in drawing order (the last is on top), traced to its content (ADR 0051). */
+export interface PageObject {
+  index: number;
+  /** Changes when the object's bytes do: an edit names the object it read. */
+  fingerprint: number;
+  kind: ObjectKind;
+  /** Its bounds on the displayed page, within any clip. */
+  rect: ViewRect;
+  /** An image's own size in pixels. */
+  image: { width: number; height: number } | null;
+  /** Cropped by this app: it can be uncropped. */
+  cropped: boolean;
+  /** Why it can be seen but not changed. */
+  refusal: "textState" | null;
+}
+
+/** Where a reorder takes an object. */
+export type Arrange = "front" | "forward" | "backward" | "back";
+
+/** A change to one object. `matrix` is an affine map of the displayed page, `[a b c d e f]`. */
+export type ObjectEdit =
+  | { kind: "transform"; matrix: [number, number, number, number, number, number] }
+  | { kind: "delete" }
+  | { kind: "arrange"; to: Arrange }
+  | { kind: "crop"; rect: ViewRect | null };
+
+/** The document after an object edit, and the object's index afterwards (null once removed). */
+export interface ObjectEditOutcome extends EditOutcome {
+  index: number | null;
+}
+
+/** Where a link goes (ADR 0051). Pages count from 0. */
+export type LinkTarget =
+  | { kind: "url"; url: string }
+  | { kind: "page"; page: number }
+  | { kind: "named"; name: string; page?: number | null }
+  /** Shown, never followed or written: javascript, launch, remote, named, … */
+  | { kind: "other"; action: string };
+
+/** One link of a page: its position in `/Annots`, the areas it covers, and where it goes. */
+export interface LinkInfo {
+  index: number;
+  rects: ViewRect[];
+  target: LinkTarget;
+}
+
+/** A named destination of the document. */
+export interface NamedDestination {
+  name: string;
+  page: number | null;
+}
+
+/** A change to a page's links. */
+export type LinkEdit =
+  | { kind: "add"; page: number; rects: ViewRect[]; target: LinkTarget }
+  | { kind: "setTarget"; page: number; index: number; target: LinkTarget }
+  | { kind: "setRect"; page: number; index: number; rect: ViewRect }
+  | { kind: "remove"; page: number; index: number };
+
 /** The four text-markup annotations (ADR 0017). */
 export type MarkupKind = "highlight" | "underline" | "strikeOut" | "squiggly";
 
@@ -1255,6 +1317,35 @@ export interface Backend {
   removeAnnotations(documentId: number, page: number, indices: number[]): Promise<EditOutcome>;
   /** The page's annotations of the kinds the app writes. */
   pageAnnotations(documentId: number, page: number): Promise<PageAnnotation[]>;
+  /** A page's objects in drawing order (ADR 0051). */
+  pageObjects(documentId: number, page: number): Promise<PageObject[]>;
+  /** Moves, resizes, rotates, crops, removes or reorders an object: one undo step. */
+  editObject(
+    documentId: number,
+    page: number,
+    object: { index: number; fingerprint: number },
+    edit: ObjectEdit,
+  ): Promise<ObjectEditOutcome>;
+  /** Asks for a PNG or JPEG and puts it in an image's place; null if cancelled. */
+  replaceImage(
+    documentId: number,
+    page: number,
+    object: { index: number; fingerprint: number },
+  ): Promise<ObjectEditOutcome | null>;
+  /** Asks for a PNG or JPEG and places it on a page, centred on `at` (or the page); null if cancelled. */
+  insertImage(
+    documentId: number,
+    page: number,
+    at: { x: number; y: number } | null,
+  ): Promise<ObjectEditOutcome | null>;
+  /** A page's links and where they go. */
+  pageLinks(documentId: number, page: number): Promise<LinkInfo[]>;
+  /** The document's named destinations. */
+  namedDestinations(documentId: number): Promise<NamedDestination[]>;
+  /** Adds, points elsewhere, moves or removes a link: one undo step. */
+  editLink(documentId: number, edit: LinkEdit): Promise<EditOutcome>;
+  /** Opens a web or mail address in the system's own app, after the user has seen it. */
+  openLink(url: string): Promise<void>;
   /**
    * Asks for PDFs and inserts their pages before page `at`, in order (ADR 0016);
    * null if cancelled.
