@@ -128,3 +128,35 @@
 .check[data-disabled] {
   color: var(--color-text-muted);
 }
+
+/* Fill in, or design (ADR 0047): a two-way switch at the top of the Forms panel. */
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+
+.mode {
+  min-block-size: var(--size-hit);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: default;
+}
+
+.mode[data-selected] {
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mode[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}

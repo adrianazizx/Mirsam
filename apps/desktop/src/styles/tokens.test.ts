@@ -52,6 +52,9 @@ const PAIRS: [string, string, number][] = [
   ["color-border-strong", "color-bg-surface", 3],
   // Signatures are previewed as ink on paper in both themes (ADR 0045).
   ["color-ink", "color-page-paper", 4.5],
+  // The form designer's field outlines and tab numbers, on the page (ADR 0047).
+  ["color-field-outline", "color-page-paper", 3],
+  ["color-field-tab-text", "color-field-tab-bg", 4.5],
 ];
 
 describe.each([
