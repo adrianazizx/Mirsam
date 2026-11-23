@@ -21,23 +21,23 @@ on:
   pull_request:
     paths:
       - ".github/workflows/ocr-benchmark.yml"
-      - "crates/safha-core/src/ocr/**"
-      - "crates/safha-core/src/models/**"
-      - "crates/safha-core/src/text/**"
-      - "crates/safha-core/examples/ocr_bench.rs"
-      - "crates/safha-core/examples/ocr_smoke.rs"
-      - "crates/safha-ocr-eval/**"
+      - "crates/mirsam-core/src/ocr/**"
+      - "crates/mirsam-core/src/models/**"
+      - "crates/mirsam-core/src/text/**"
+      - "crates/mirsam-core/examples/ocr_bench.rs"
+      - "crates/mirsam-core/examples/ocr_smoke.rs"
+      - "crates/mirsam-ocr-eval/**"
       - "ocr-eval/**"
   push:
     branches: [main]
     paths:
       - ".github/workflows/ocr-benchmark.yml"
-      - "crates/safha-core/src/ocr/**"
-      - "crates/safha-core/src/models/**"
-      - "crates/safha-core/src/text/**"
-      - "crates/safha-core/examples/ocr_bench.rs"
-      - "crates/safha-core/examples/ocr_smoke.rs"
-      - "crates/safha-ocr-eval/**"
+      - "crates/mirsam-core/src/ocr/**"
+      - "crates/mirsam-core/src/models/**"
+      - "crates/mirsam-core/src/text/**"
+      - "crates/mirsam-core/examples/ocr_bench.rs"
+      - "crates/mirsam-core/examples/ocr_smoke.rs"
+      - "crates/mirsam-ocr-eval/**"
       - "ocr-eval/**"
   workflow_dispatch:
 
@@ -67,20 +67,20 @@ jobs:
         run: node ocr-eval/generate.mjs
       - name: Build
         run: |
-          cargo build --release --locked -p safha-ocr-eval
-          cargo build --release --locked -p safha-core --example ocr_bench
+          cargo build --release --locked -p mirsam-ocr-eval
+          cargo build --release --locked -p mirsam-core --example ocr_bench
       - name: Run the pipeline on the recorded answers
         run: |
-          export SAFHA_PDFIUM_DIR="$PWD/third_party/pdfium/$(ls third_party/pdfium | head -1)/lib"
+          export MIRSAM_PDFIUM_DIR="$PWD/third_party/pdfium/$(ls third_party/pdfium | head -1)/lib"
           target/release/examples/ocr_bench --out ocr-bench --replay ocr-eval/recordings/set-v2
       - name: Score the pipeline's text (targets and baseline)
         run: |
-          target/release/safha-ocr-eval --manifest ocr-eval/out/manifest.json --hyp ocr-bench/text \
+          target/release/mirsam-ocr-eval --manifest ocr-eval/out/manifest.json --hyp ocr-bench/text \
             --engine pipeline-nuqta-4b+0.8b --targets ocr-eval/targets.json \
             --baseline ocr-eval/baselines/pipeline-nuqta-4b+0.8b.set-v2.json --out ocr-bench/text.json
       - name: Score the searchable PDF's text (baseline)
         run: |
-          target/release/safha-ocr-eval --manifest ocr-eval/out/manifest.json --hyp ocr-bench/layer \
+          target/release/mirsam-ocr-eval --manifest ocr-eval/out/manifest.json --hyp ocr-bench/layer \
             --engine pipeline-layer-nuqta-4b+0.8b \
             --baseline ocr-eval/baselines/pipeline-layer-nuqta-4b+0.8b.set-v2.json --out ocr-bench/layer.json
       - uses: actions/upload-artifact@v4
@@ -113,9 +113,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/ocr-models
-          key: ocr-models-${{ runner.os }}-${{ hashFiles('crates/safha-core/src/models/catalog.rs') }}
+          key: ocr-models-${{ runner.os }}-${{ hashFiles('crates/mirsam-core/src/models/catalog.rs') }}
       - name: Install the runtime and Nuqta 0.8B, read one page on the CPU
         run: |
-          cargo run --release --locked -p safha-core --example ocr_smoke -- --models ~/ocr-models \
+          cargo run --release --locked -p mirsam-core --example ocr_smoke -- --models ~/ocr-models \
             --image ocr-eval/out/images/syn-ar-plain-naskh-clean-300.png \
             --truth ocr-eval/out/truth/syn-ar-plain-naskh-clean-300.txt --max-cer 0.05

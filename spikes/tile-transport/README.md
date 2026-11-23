@@ -9,7 +9,7 @@ Question, method, results, and decision: [docs/adr/0004-tile-transport.md](../..
 Re-run (needed on Windows and Linux before M1 closes):
 
 ```bash
-cargo build -p safha-desktop --features devtools
+cargo build -p mirsam-desktop --features devtools
 node fixtures/generate.mjs
 scripts/spike-tile-transport.sh        # writes spikes/out/tile-transport/report.json
 ```

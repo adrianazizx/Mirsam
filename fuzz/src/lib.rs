@@ -1,6 +1,6 @@
 //! Shared drivers for the fuzz targets (fuzz/README.md).
 //!
-//! Every target ends in [`exercise`]: the readers safha-core runs on a file's
+//! Every target ends in [`exercise`]: the readers mirsam-core runs on a file's
 //! own bytes, without PDFium — the catalog reader, the page tree and the page
 //! edits written over it, the content-stream interpreter behind text blocks
 //! and redaction, the font and ToUnicode readers, form fields (and filling
@@ -14,43 +14,43 @@
 //! (`objects`), one page's content stream (`content`), or one font's
 //! ToUnicode CMap (`cmap`).
 
-use safha_core::edit::PageEdit;
-use safha_core::forms::FormEdit;
-use safha_core::objects::{Arrange, ObjectChange, ObjectEdit, ObjectRef};
-use safha_core::redact::{Mark, SanitizeOptions};
-use safha_core::text::Rect;
-use safha_core::view::ViewTransform;
+use mirsam_core::edit::PageEdit;
+use mirsam_core::forms::FormEdit;
+use mirsam_core::objects::{Arrange, ObjectChange, ObjectEdit, ObjectRef};
+use mirsam_core::redact::{Mark, SanitizeOptions};
+use mirsam_core::text::Rect;
+use mirsam_core::view::ViewTransform;
 
-/// Runs every PDFium-free reader of safha-core over `bytes`.
+/// Runs every PDFium-free reader of mirsam-core over `bytes`.
 pub fn exercise(bytes: &[u8]) {
-    let _ = safha_core::catalog::catalog_hints(bytes);
+    let _ = mirsam_core::catalog::catalog_hints(bytes);
     let view = ViewTransform::unrotated(842.0);
     for page in 0..2 {
-        let _ = safha_core::block_edit::text_blocks(bytes, None, &view, page);
-        let _ = safha_core::annotate::ink_strokes(bytes, page);
+        let _ = mirsam_core::block_edit::text_blocks(bytes, None, &view, page);
+        let _ = mirsam_core::annotate::ink_strokes(bytes, page);
     }
     for edit in edits() {
-        if let Ok(update) = safha_core::edit::page_edit_update(bytes, &edit) {
+        if let Ok(update) = mirsam_core::edit::page_edit_update(bytes, &edit) {
             // The next edit starts from the edited file, so it must read back.
             let edited = [bytes, &update].concat();
-            let _ = safha_core::catalog::catalog_hints(&edited);
-            let _ = safha_core::block_edit::text_blocks(&edited, None, &view, 0);
+            let _ = mirsam_core::catalog::catalog_hints(&edited);
+            let _ = mirsam_core::block_edit::text_blocks(&edited, None, &view, 0);
         }
     }
     // Forms are read with the document's password, if any; the fixtures' is
-    // `safha-test` (fixtures/generate.mjs), so encrypted seeds decrypt.
-    for password in [None, Some("safha-test")] {
-        let Ok(form) = safha_core::forms::read(bytes, password) else { continue };
+    // `mirsam-test` (fixtures/generate.mjs), so encrypted seeds decrypt.
+    for password in [None, Some("mirsam-test")] {
+        let Ok(form) = mirsam_core::forms::read(bytes, password) else { continue };
         for field in form.fields.iter().take(4) {
             for values in [vec!["\u{0627}\u{0644} 12 ab".to_string()], Vec::new()] {
                 let edit = FormEdit { field: field.id, values };
-                let _ = safha_core::forms::form_update(bytes, password, &edit);
+                let _ = mirsam_core::forms::form_update(bytes, password, &edit);
             }
         }
     }
     // Page objects (ADR 0051): traced, then the first few moved, removed and reordered.
-    for password in [None, Some("safha-test")] {
-        let Ok(objects) = safha_core::objects::page_objects(bytes, password, &view, 0, 595.0 * 842.0) else {
+    for password in [None, Some("mirsam-test")] {
+        let Ok(objects) = mirsam_core::objects::page_objects(bytes, password, &view, 0, 595.0 * 842.0) else {
             continue;
         };
         for object in objects.iter().take(3) {
@@ -62,27 +62,27 @@ pub fn exercise(bytes: &[u8]) {
                 ObjectEdit::Arrange(Arrange::Backward),
             ] {
                 let change = ObjectChange { page: 0, object: at, edit };
-                if let Ok((update, _)) = safha_core::objects::object_update(bytes, password, &view, 595.0 * 842.0, &change) {
+                if let Ok((update, _)) = mirsam_core::objects::object_update(bytes, password, &view, 595.0 * 842.0, &change) {
                     let edited = [bytes, &update].concat();
-                    let _ = safha_core::objects::page_objects(&edited, password, &view, 0, 595.0 * 842.0);
+                    let _ = mirsam_core::objects::page_objects(&edited, password, &view, 0, 595.0 * 842.0);
                 }
             }
         }
-        let _ = safha_core::links::page_links(bytes, password, &view, 0);
-        let _ = safha_core::links::named_destinations(bytes, password);
+        let _ = mirsam_core::links::page_links(bytes, password, &view, 0);
+        let _ = mirsam_core::links::named_destinations(bytes, password);
     }
-    let _ = safha_core::redact::sanitize_update(bytes, SanitizeOptions::default());
+    let _ = mirsam_core::redact::sanitize_update(bytes, SanitizeOptions::default());
     let marks = [Mark {
         page: 0,
         rect: Rect { left: 0.0, bottom: 300.0, right: 400.0, top: 760.0 },
         text: Some("ab".into()),
     }];
-    let _ = safha_core::redact::redaction_update(bytes, &marks);
+    let _ = mirsam_core::redact::redaction_update(bytes, &marks);
     // Signatures (ADR 0048): found by the field tree and by scanning for
     // signature dictionaries, their byte ranges and CMS read from the file.
-    let trust = safha_core::sign::TrustStore::default();
-    for password in [None, Some("safha-test")] {
-        let _ = safha_core::sign::verify(bytes, password, &trust);
+    let trust = mirsam_core::sign::TrustStore::default();
+    for password in [None, Some("mirsam-test")] {
+        let _ = mirsam_core::sign::verify(bytes, password, &trust);
     }
 }
 
@@ -232,22 +232,22 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    /// The templates must be files safha-core reads in full; otherwise the
+    /// The templates must be files mirsam-core reads in full; otherwise the
     /// fuzzer would spend its time on the first error.
     #[test]
     fn the_page_template_reads_as_text() {
         let pdf = page_pdf(CONTENT, TO_UNICODE);
-        let blocks = safha_core::block_edit::text_blocks(&pdf, None, &ViewTransform::unrotated(842.0), 0)
+        let blocks = mirsam_core::block_edit::text_blocks(&pdf, None, &ViewTransform::unrotated(842.0), 0)
             .expect("the template's page reads");
         let text: String = blocks.iter().map(|block| block.text.as_str()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("Hello, world"), "{text}");
         assert!(text.contains('\u{0627}'), "the composite font's text reads through the CMap: {text}");
         assert!(
-            safha_core::edit::page_edit_update(&pdf, &PageEdit::Rotate { pages: vec![0], quarter_turns: 1 })
+            mirsam_core::edit::page_edit_update(&pdf, &PageEdit::Rotate { pages: vec![0], quarter_turns: 1 })
                 .is_ok()
         );
         let (_, report) =
-            safha_core::redact::sanitize_update(&pdf, SanitizeOptions::default()).expect("sanitizes");
+            mirsam_core::redact::sanitize_update(&pdf, SanitizeOptions::default()).expect("sanitizes");
         assert!(report.hidden > 0, "the hidden layer is found: {report:?}");
     }
 
@@ -257,9 +257,9 @@ mod tests {
                      << /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\
                      << /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>";
         let pdf = pdf_from_objects(&split_bodies(data));
-        let hints = safha_core::catalog::catalog_hints(&pdf);
-        assert_eq!(hints.direction, Some(safha_core::catalog::ReadingDirection::RightToLeft));
-        assert!(safha_core::edit::page_edit_update(&pdf, &PageEdit::Delete { pages: vec![0] }).is_err());
-        assert!(safha_core::edit::page_edit_update(&pdf, &PageEdit::Duplicate { pages: vec![0] }).is_ok());
+        let hints = mirsam_core::catalog::catalog_hints(&pdf);
+        assert_eq!(hints.direction, Some(mirsam_core::catalog::ReadingDirection::RightToLeft));
+        assert!(mirsam_core::edit::page_edit_update(&pdf, &PageEdit::Delete { pages: vec![0] }).is_err());
+        assert!(mirsam_core::edit::page_edit_update(&pdf, &PageEdit::Duplicate { pages: vec![0] }).is_ok());
     }
 }

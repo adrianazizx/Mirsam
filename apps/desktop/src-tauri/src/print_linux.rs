@@ -14,7 +14,7 @@ use gtk::prelude::*;
 use gtk::{
     PageOrientation, PrintContext, PrintOperation, PrintOperationAction, PrintOperationResult, Unit, cairo,
 };
-use safha_core::Document;
+use mirsam_core::Document;
 use tauri::{AppHandle, Manager as _};
 
 use crate::error::{CommandError, CommandResult};
@@ -51,10 +51,10 @@ pub async fn print(
     }
 }
 
-/// Self-test builds only: `SAFHA_PRINT_EXPORT=<file.pdf>` prints to that file
+/// Self-test builds only: `MIRSAM_PRINT_EXPORT=<file.pdf>` prints to that file
 /// without a dialog, so CI can check what would reach the printer.
 fn export_target() -> Option<PathBuf> {
-    if cfg!(feature = "devtools") { std::env::var_os("SAFHA_PRINT_EXPORT").map(PathBuf::from) } else { None }
+    if cfg!(feature = "devtools") { std::env::var_os("MIRSAM_PRINT_EXPORT").map(PathBuf::from) } else { None }
 }
 
 fn run(
@@ -79,7 +79,7 @@ fn run(
     });
     operation.connect_draw_page(move |_, context, page| {
         if let Err(message) = draw_page(&document, context, page) {
-            eprintln!("safha: printing page {page} failed: {message}");
+            eprintln!("mirsam: printing page {page} failed: {message}");
         }
     });
 

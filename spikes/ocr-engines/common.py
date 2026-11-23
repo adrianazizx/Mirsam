@@ -19,9 +19,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "ocr-eval" / "out" / "manifest.json"
-OUT = Path(os.environ.get("SAFHA_OCR_BENCH_OUT", REPO / "spikes" / "out" / "ocr-engines"))
+OUT = Path(os.environ.get("MIRSAM_OCR_BENCH_OUT", REPO / "spikes" / "out" / "ocr-engines"))
 # Models, Python environments and caches live outside the repo and outside OneDrive.
-CACHE = Path(os.environ.get("SAFHA_OCR_BENCH_CACHE", Path.home() / "Library" / "Caches" / "safha-dev" / "ocr-bench"))
+CACHE = Path(os.environ.get("MIRSAM_OCR_BENCH_CACHE", Path.home() / "Library" / "Caches" / "mirsam-dev" / "ocr-bench"))
 
 
 @dataclass

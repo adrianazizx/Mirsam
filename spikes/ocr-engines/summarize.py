@@ -2,7 +2,7 @@
 
     python summarize.py [engine ...]     # default: every directory under <out>/hyp
 
-Runs `safha-ocr-eval` once per engine (reports land in <out>/reports/), then prints
+Runs `mirsam-ocr-eval` once per engine (reports land in <out>/reports/), then prints
 Markdown: one table per metric (rows = categories, columns = engines), plus the
 recorded speed, memory and model size.
 """
@@ -34,7 +34,7 @@ def score(engine: str) -> dict:
     reports = OUT / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     path = reports / f"{engine}.json"
-    command = ["cargo", "run", "-q", "-p", "safha-ocr-eval", "--", "--manifest", str(MANIFEST)]
+    command = ["cargo", "run", "-q", "-p", "mirsam-ocr-eval", "--", "--manifest", str(MANIFEST)]
     command += ["--hyp", str(OUT / "hyp" / engine), "--engine", engine, "--out", str(path)]
     subprocess.run(command, cwd=REPO, check=True, stdout=subprocess.DEVNULL)
     return json.loads(path.read_text())

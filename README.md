@@ -16,9 +16,8 @@ search and copy that handle Arabic correctly, tabs, recent files, reading themes
 password-protected files. Milestone 2 (annotate and organize) is in progress, and the groundwork
 for the text engine (Milestone 3) is in.
 
-Mirsam was called Safha (صفحة) while it had a working name. Code identifiers (the `safha-core`
-crate, `SAFHA_*` environment variables, the `safha:` URI scheme) still carry that name; they will
-be renamed once the milestone branches now in progress have merged.
+Mirsam was called Safha (صفحة) while it had a working name. Code identifiers were renamed to
+`mirsam` on 2026-11-23; older ADRs and session notes still say `safha`.
 
 ## Licence
 

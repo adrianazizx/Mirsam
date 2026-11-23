@@ -1,7 +1,7 @@
 //! Crash reports (ADR 0061): the panic hook, this run's marker, the names of
 //! the last commands run, and the commands the UI reviews and sends reports
 //! with. The reports themselves (what they hold, redaction, the store, the
-//! system crash logs) are `safha_core::crash`.
+//! system crash logs) are `mirsam_core::crash`.
 //!
 //! Nothing here sends anything. A report leaves the computer only when the
 //! user copies it, saves it, or opens a pre-filled issue in their browser.
@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use safha_core::crash::{
+use mirsam_core::crash::{
     self, About, Breadcrumbs, CrashKind, CrashReport, CrashStore, Destination, PanicDetails, RunRecord,
     Scrubber,
 };
@@ -27,11 +27,11 @@ use crate::error::{CommandError, CommandResult};
 pub const SETTING: &str = "crashReports";
 
 /// Where reports can be sent, chosen at build time:
-/// `SAFHA_CRASH_DESTINATION=github:owner/name` or `manual`.
+/// `MIRSAM_CRASH_DESTINATION=github:owner/name` or `manual`.
 fn destination() -> Destination {
-    let spec = option_env!("SAFHA_CRASH_DESTINATION").unwrap_or(crash::DEFAULT_DESTINATION);
+    let spec = option_env!("MIRSAM_CRASH_DESTINATION").unwrap_or(crash::DEFAULT_DESTINATION);
     Destination::parse(spec).unwrap_or_else(|err| {
-        eprintln!("safha: crash reports: {err}; reports can be copied and saved only");
+        eprintln!("mirsam: crash reports: {err}; reports can be copied and saved only");
         Destination::Manual { github: None }
     })
 }
@@ -113,12 +113,12 @@ fn scrubber() -> Scrubber {
 /// earlier runs that ended in a native crash become reports, this run's
 /// marker is written, and the panic hook is installed. Without a state
 /// directory nothing is kept (the panic hook still prints, as by default).
-pub fn start(app: &AppHandle, state_dir: Option<&Path>, store: Option<&safha_core::store::Store>) {
+pub fn start(app: &AppHandle, state_dir: Option<&Path>, store: Option<&mirsam_core::store::Store>) {
     let Some(dir) = state_dir else { return };
     let crash_store = match CrashStore::open(&dir.join("crash-reports")) {
         Ok(store) => store,
         Err(err) => {
-            eprintln!("safha: crash reports cannot be kept: {err}");
+            eprintln!("mirsam: crash reports cannot be kept: {err}");
             return;
         }
     };
@@ -163,21 +163,21 @@ pub fn start(app: &AppHandle, state_dir: Option<&Path>, store: Option<&safha_cor
     if !waiting.is_empty() {
         watch_for_crash_logs(app.clone(), waiting);
     }
-    let marker = std::thread::Builder::new().name("safha-crash-marker".into()).spawn(|| {
+    let marker = std::thread::Builder::new().name("mirsam-crash-marker".into()).spawn(|| {
         loop {
             std::thread::sleep(MARKER_INTERVAL);
             write_marker();
         }
     });
     if let Err(err) = marker {
-        eprintln!("safha: crash reports: no marker thread: {err}");
+        eprintln!("mirsam: crash reports: no marker thread: {err}");
     }
 }
 
 fn keep_native(store: &CrashStore, run: RunRecord, native: crash::NativeCrash) {
     let report = CrashReport::from_native(&run.about, run.updated, native, run.commands);
     if let Err(err) = store.write(&report) {
-        eprintln!("safha: could not keep a crash report: {err}");
+        eprintln!("mirsam: could not keep a crash report: {err}");
     }
 }
 
@@ -185,7 +185,7 @@ fn keep_native(store: &CrashStore, run: RunRecord, native: crash::NativeCrash) {
 /// that ended without one yet; each found becomes a report, and the windows
 /// are told.
 fn watch_for_crash_logs(app: AppHandle, mut waiting: Vec<RunRecord>) {
-    let watcher = std::thread::Builder::new().name("safha-crash-logs".into()).spawn(move || {
+    let watcher = std::thread::Builder::new().name("mirsam-crash-logs".into()).spawn(move || {
         let deadline = Instant::now() + WATCH_FOR;
         while !waiting.is_empty() && Instant::now() < deadline {
             std::thread::sleep(WATCH_EVERY);
@@ -210,12 +210,12 @@ fn watch_for_crash_logs(app: AppHandle, mut waiting: Vec<RunRecord>) {
             }
             context.store.keep_unconfirmed(&waiting);
             if let Err(err) = app.emit(REPORTS_ADDED, ()) {
-                eprintln!("safha: could not announce a crash report: {err}");
+                eprintln!("mirsam: could not announce a crash report: {err}");
             }
         }
     });
     if let Err(err) = watcher {
-        eprintln!("safha: crash reports: no crash log watcher: {err}");
+        eprintln!("mirsam: crash reports: no crash log watcher: {err}");
     }
 }
 
@@ -288,7 +288,7 @@ fn record_panic(info: &std::panic::PanicHookInfo<'_>) {
     };
     let report = CrashReport::from_panic(&context.about, crash::now(), details, commands, &scrubber());
     if let Err(err) = context.store.write(&report) {
-        eprintln!("safha: could not keep a crash report: {err}");
+        eprintln!("mirsam: could not keep a crash report: {err}");
         return;
     }
     if let Ok(mut run) = context.run.try_lock() {
@@ -301,7 +301,7 @@ fn record_panic(info: &std::panic::PanicHookInfo<'_>) {
 /// The app's version, build and operating system.
 fn about() -> About {
     let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
-    let commit = option_env!("SAFHA_BUILD_COMMIT")
+    let commit = option_env!("MIRSAM_BUILD_COMMIT")
         .filter(|commit| !commit.is_empty())
         .map(|commit| format!(", commit {commit}"))
         .unwrap_or_default();
@@ -483,7 +483,7 @@ pub fn record_ui_error(message: String, stack: String, commands: Vec<String>) ->
     match context.store.write(&report) {
         Ok(()) => Some(report.id),
         Err(err) => {
-            eprintln!("safha: could not keep a crash report: {err}");
+            eprintln!("mirsam: could not keep a crash report: {err}");
             None
         }
     }

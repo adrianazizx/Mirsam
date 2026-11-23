@@ -2801,6 +2801,81 @@ dependencies = [
 ]
 
 [[package]]
+name = "mirsam-core"
+version = "0.0.1"
+dependencies = [
+ "aes",
+ "base64 0.23.1",
+ "cms",
+ "const-oid",
+ "der",
+ "flate2",
+ "fs4",
+ "getrandom 0.3.4",
+ "harfrust",
+ "icu_properties",
+ "icu_segmenter",
+ "md-5",
+ "miniz_oxide 0.9.1",
+ "p12-keystore",
+ "p256",
+ "p384",
+ "pdfium-render",
+ "pkcs8",
+ "png",
+ "read-fonts 0.47.0",
+ "regex",
+ "rsa",
+ "rusqlite",
+ "rustls",
+ "rustls-native-certs",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.1",
+ "signature",
+ "spki",
+ "subsetter",
+ "tar",
+ "thiserror 2.0.21",
+ "unicode-bidi",
+ "unicode-normalization",
+ "ureq",
+ "x509-cert",
+ "x509-tsp",
+ "x509-verify",
+]
+
+[[package]]
+name = "mirsam-desktop"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "dirs",
+ "getrandom 0.3.4",
+ "gtk",
+ "mirsam-core",
+ "open",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "thiserror 2.0.21",
+ "windows-version",
+]
+
+[[package]]
+name = "mirsam-ocr-eval"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "muda"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4088,81 +4163,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
-name = "safha-core"
-version = "0.0.1"
-dependencies = [
- "aes",
- "base64 0.23.1",
- "cms",
- "const-oid",
- "der",
- "flate2",
- "fs4",
- "getrandom 0.3.4",
- "harfrust",
- "icu_properties",
- "icu_segmenter",
- "md-5",
- "miniz_oxide 0.9.1",
- "p12-keystore",
- "p256",
- "p384",
- "pdfium-render",
- "pkcs8",
- "png",
- "read-fonts 0.47.0",
- "regex",
- "rsa",
- "rusqlite",
- "rustls",
- "rustls-native-certs",
- "security-framework",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.11.1",
- "signature",
- "spki",
- "subsetter",
- "tar",
- "thiserror 2.0.21",
- "unicode-bidi",
- "unicode-normalization",
- "ureq",
- "x509-cert",
- "x509-tsp",
- "x509-verify",
-]
-
-[[package]]
-name = "safha-desktop"
-version = "0.0.1"
-dependencies = [
- "base64 0.22.1",
- "dirs",
- "getrandom 0.3.4",
- "gtk",
- "open",
- "safha-core",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "thiserror 2.0.21",
- "windows-version",
-]
-
-[[package]]
-name = "safha-ocr-eval"
-version = "0.0.1"
-dependencies = [
- "serde",
- "serde_json",
- "unicode-normalization",
-]
-
-[[package]]
 name = "salsa20"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4682,7 +4682,7 @@ dependencies = [
 name = "spike-editor-surface"
 version = "0.0.1"
 dependencies = [
- "safha-core",
+ "mirsam-core",
  "serde_json",
 ]
 
@@ -4711,9 +4711,9 @@ version = "0.0.1"
 dependencies = [
  "harfrust",
  "lopdf",
+ "mirsam-core",
  "pdfium-render",
  "png",
- "safha-core",
  "serde_json",
  "subsetter",
  "unicode-bidi",
@@ -4724,8 +4724,8 @@ name = "spike-pdfium-regenerate"
 version = "0.0.1"
 dependencies = [
  "lopdf",
+ "mirsam-core",
  "pdfium-render",
- "safha-core",
  "serde_json",
 ]
 

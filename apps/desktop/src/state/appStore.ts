@@ -413,7 +413,7 @@ export interface AppState {
  * `localStorage` keeps a copy so the first frame already has the right
  * language and theme, before the store answers.
  */
-const CACHE_KEY = "safha.preferences";
+const CACHE_KEY = "mirsam.preferences";
 
 type Persisted = Pick<
   AppState,
@@ -721,7 +721,7 @@ export const useAppStore = create<AppState>((set, get) => {
         pageOffset: saved ? Math.min(Math.max(0, saved.pageOffset), 1) : 0,
         ...initialZoom(info),
         pageSize: null,
-        // The document's own preferences (safha_core::catalog), else continuous,
+        // The document's own preferences (mirsam_core::catalog), else continuous,
         // left to right. Many Arabic books ask for right-to-left spreads.
         viewMode: info.pageLayout ?? "continuous",
         pageOrder: info.readingDirection === "rtl" ? "rtl" : "ltr",

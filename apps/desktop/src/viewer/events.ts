@@ -3,10 +3,10 @@
  * current scale (the page is sharp). Once per page and scale. The self-test
  * waits for it.
  */
-export const PAGE_PAINTED_EVENT = "safha:page-painted";
+export const PAGE_PAINTED_EVENT = "mirsam:page-painted";
 
 /** Fired on `window` when a page's low-resolution preview is drawn. Used by the benchmark. */
-export const PAGE_PREVIEW_EVENT = "safha:page-preview";
+export const PAGE_PREVIEW_EVENT = "mirsam:page-preview";
 
 export interface PagePreviewDetail {
   documentId: number;

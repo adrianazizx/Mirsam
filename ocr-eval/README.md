@@ -10,7 +10,7 @@ category before M4 can close.
 node ocr-eval/generate.mjs      # synthetic samples -> ocr-eval/out/ (images, truth, manifest.json)
 
 # Score an engine: it must write <out-dir>/<sample id>.txt, plain text in reading order.
-cargo run -p safha-ocr-eval -- \
+cargo run -p mirsam-ocr-eval -- \
   --manifest ocr-eval/out/manifest.json --hyp <out-dir> --engine <name> \
   --targets ocr-eval/targets.json [--baseline ocr-eval/baselines/<name>.set-v1.json] [--out report.json]
 ```
@@ -23,12 +23,12 @@ CI cannot run the models (6.6 GB, minutes a page on a hosted runner's CPU), so i
 their recorded answers through the current pipeline code and scores the result:
 
 ```bash
-# CI's run, no models needed (release builds need SAFHA_PDFIUM_DIR, see CLAUDE.md):
-cargo run --release -p safha-core --example ocr_bench -- --out <dir> --replay ocr-eval/recordings/set-v2
-cargo run --release -p safha-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir>/text \
+# CI's run, no models needed (release builds need MIRSAM_PDFIUM_DIR, see CLAUDE.md):
+cargo run --release -p mirsam-core --example ocr_bench -- --out <dir> --replay ocr-eval/recordings/set-v2
+cargo run --release -p mirsam-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir>/text \
   --engine pipeline-nuqta-4b+0.8b --targets ocr-eval/targets.json \
   --baseline ocr-eval/baselines/pipeline-nuqta-4b+0.8b.set-v2.json
-cargo run --release -p safha-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir>/layer \
+cargo run --release -p mirsam-ocr-eval -- --manifest ocr-eval/out/manifest.json --hyp <dir>/layer \
   --engine pipeline-layer-nuqta-4b+0.8b --baseline ocr-eval/baselines/pipeline-layer-nuqta-4b+0.8b.set-v2.json
 ```
 
@@ -40,7 +40,7 @@ then fails with "no recorded answer … record again"), when the models' pins ch
 the set's version changes. It needs the models and a GPU (about 25 minutes on an M3 Max):
 
 ```bash
-cargo run --release -p safha-core --example ocr_bench -- --out <dir> \
+cargo run --release -p mirsam-core --example ocr_bench -- --out <dir> \
   --record ocr-eval/recordings/set-v2 --model-dir <GGUF folder> [--truth-boxes word-boxes-truth.json]
 ```
 

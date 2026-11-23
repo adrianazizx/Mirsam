@@ -1,8 +1,8 @@
 //! Mirsam desktop shell.
 //!
-//! This crate is deliberately thin: it owns the window, exposes `safha-core`
+//! This crate is deliberately thin: it owns the window, exposes `mirsam-core`
 //! to the UI through typed commands, and nothing else. Engine logic belongs in
-//! `safha-core` so the CLI and tests can reach it without a webview.
+//! `mirsam-core` so the CLI and tests can reach it without a webview.
 
 mod commands;
 mod crash;
@@ -183,10 +183,10 @@ pub fn run() {
             // Another copy holds the directory but does not answer (hung, or
             // still quitting): run, but write nothing there.
             Err(err @ instance::InstanceError::NoAnswer(_)) => {
-                eprintln!("safha: {err}; running without recents, session or recovery");
+                eprintln!("mirsam: {err}; running without recents, session or recovery");
                 state_dir = None;
             }
-            Err(err) => eprintln!("safha: {err}; other copies of the app cannot be detected"),
+            Err(err) => eprintln!("mirsam: {err}; other copies of the app cannot be detected"),
         }
     }
 
@@ -196,7 +196,7 @@ pub fn run() {
         .manage(output::OutputState::default())
         .manage(signing::SigningState::default())
         // Tiles: BMP images fetched by the webview (ADR 0011).
-        .register_asynchronous_uri_scheme_protocol("safha", viewer::tile_protocol)
+        .register_asynchronous_uri_scheme_protocol("mirsam", viewer::tile_protocol)
         .setup(move |app| {
             app.state::<AppState>().set_app(app.handle().clone());
             if let Some(dir) = &state_dir {
@@ -238,7 +238,7 @@ pub fn run() {
                     if let Err(err) =
                         window.app_handle().emit_to(window.label(), editing::CLOSE_REQUESTED, ())
                     {
-                        eprintln!("safha: could not ask about unsaved changes: {err}");
+                        eprintln!("mirsam: could not ask about unsaved changes: {err}");
                     }
                 }
             }
@@ -249,7 +249,7 @@ pub fn run() {
                 if state.close_window(window.label())
                     && let Err(err) = commands::write_session(&state)
                 {
-                    eprintln!("safha: could not save the session: {}", err.detail);
+                    eprintln!("mirsam: could not save the session: {}", err.detail);
                 }
             }
             _ => {}
@@ -261,7 +261,7 @@ pub fn run() {
     let builder = builder.invoke_handler(with_breadcrumbs(product_commands![]));
     #[cfg(feature = "devtools")]
     let builder = builder
-        .register_asynchronous_uri_scheme_protocol("safha-tile", spike_tiles::protocol)
+        .register_asynchronous_uri_scheme_protocol("mirsam-tile", spike_tiles::protocol)
         .invoke_handler(with_breadcrumbs(product_commands![
             diagnostics::render_stats,
             diagnostics::window_labels,
@@ -307,7 +307,7 @@ pub fn run() {
             {
                 api.prevent_exit();
                 if let Err(err) = handle.emit_to(window.as_str(), editing::QUIT_REQUESTED, ()) {
-                    eprintln!("safha: could not ask about unsaved changes: {err}");
+                    eprintln!("mirsam: could not ask about unsaved changes: {err}");
                 }
                 return;
             }
@@ -330,14 +330,14 @@ fn with_breadcrumbs<R: tauri::Runtime>(
 
 /// Where the app keeps its state: the app data directory (as Tauri resolves
 /// it: the platform's data directory and the bundle identifier), or
-/// `SAFHA_STATE_DIR` (self-tests and benchmarks, which must not read or touch
+/// `MIRSAM_STATE_DIR` (self-tests and benchmarks, which must not read or touch
 /// the user's recents and session).
 fn state_dir(identifier: &str) -> Option<PathBuf> {
-    let dir = std::env::var_os("SAFHA_STATE_DIR")
+    let dir = std::env::var_os("MIRSAM_STATE_DIR")
         .map(PathBuf::from)
         .or_else(|| dirs::data_dir().map(|data| data.join(identifier)));
     if dir.is_none() {
-        eprintln!("safha: no app data directory; recents and positions will not be kept");
+        eprintln!("mirsam: no app data directory; recents and positions will not be kept");
     }
     dir
 }
@@ -345,9 +345,9 @@ fn state_dir(identifier: &str) -> Option<PathBuf> {
 /// Opens the local state store in `dir`. Without a store the app still
 /// runs; it just forgets everything at exit.
 fn open_store(app: &tauri::App, dir: &Path) {
-    match safha_core::store::Store::open(&dir.join("state.sqlite3")) {
+    match mirsam_core::store::Store::open(&dir.join("state.sqlite3")) {
         Ok(store) => app.state::<AppState>().set_store(store),
-        Err(err) => eprintln!("safha: could not open the state store in {}: {err}", dir.display()),
+        Err(err) => eprintln!("mirsam: could not open the state store in {}: {err}", dir.display()),
     }
     // Recovery files of documents with unsaved changes, beside the store (ADR 0040).
     recovery::open_files(&app.state::<AppState>(), dir);
@@ -355,7 +355,7 @@ fn open_store(app: &tauri::App, dir: &Path) {
 
 /// The PDFs handed to us at launch, as absolute paths: the command-line
 /// arguments that are not flags ("Open with", file associations, a shell),
-/// or `SAFHA_OPEN` during development.
+/// or `MIRSAM_OPEN` during development.
 fn launch_documents() -> Vec<PathBuf> {
     let mut documents: Vec<PathBuf> = std::env::args_os()
         .skip(1)
@@ -363,7 +363,7 @@ fn launch_documents() -> Vec<PathBuf> {
         .map(PathBuf::from)
         .collect();
     if documents.is_empty()
-        && let Some(path) = std::env::var_os("SAFHA_OPEN")
+        && let Some(path) = std::env::var_os("MIRSAM_OPEN")
     {
         documents.push(PathBuf::from(path));
     }

@@ -6,10 +6,10 @@
 //! [`ViewTransform`] (rotation, crop-box origin), offsets through
 //! [`Utf16Offsets`].
 
-use safha_core::outline::OutlineItem;
-use safha_core::search::{HitContext, Query, SearchError, SearchOptions};
-use safha_core::text::{Direction, PageText, TextQuality};
-use safha_core::view::{ViewRect, ViewTransform};
+use mirsam_core::outline::OutlineItem;
+use mirsam_core::search::{HitContext, Query, SearchError, SearchOptions};
+use mirsam_core::text::{Direction, PageText, TextQuality};
+use mirsam_core::view::{ViewRect, ViewTransform};
 use serde::Serialize;
 use tauri::State;
 

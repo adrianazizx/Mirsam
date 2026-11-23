@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     drop(pdfium);
 
-    // Logical text through safha-core's own extractor, in a child process:
+    // Logical text through mirsam-core's own extractor, in a child process:
     // pdfium-render allows one binding per process.
     let child = Command::new(std::env::current_exe()?).arg("verify").args(&verify_args).output()?;
     if !child.status.success() {
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let original = out_dir.join(format!("{file}.original.pdf"));
         let before = &texts[original.to_string_lossy().as_ref()][page as usize];
         let after = &texts[out][page as usize];
-        row["safha_text_same"] = json!(before == after);
+        row["mirsam_text_same"] = json!(before == after);
     }
 
     let report = json!({ "scale": SCALE, "pixel_tolerance": PIXEL_TOLERANCE, "rows": rows });
@@ -392,9 +392,9 @@ fn qpdf_check(path: &Path, password: Option<&str>) -> String {
     }
 }
 
-/// Child process: logical page text through `safha-core`.
+/// Child process: logical page text through `mirsam-core`.
 fn verify(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    use safha_core::{Engine, PdfiumSource};
+    use mirsam_core::{Engine, PdfiumSource};
     let engine = Engine::global(&PdfiumSource::Auto)?;
     let mut out = serde_json::Map::new();
     for arg in args {
@@ -442,7 +442,7 @@ fn print_summary(rows: &[Value]) {
             row["vs_original_pixels"],
             objects,
             row["pdfium_text_same"],
-            row["safha_text_same"],
+            row["mirsam_text_same"],
             row["content"]["mark_runs_same"],
             row["content"]["operators_lost"].to_string(),
             row["qpdf"].as_str().unwrap_or("?"),
