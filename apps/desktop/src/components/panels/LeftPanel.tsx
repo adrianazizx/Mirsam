@@ -39,7 +39,12 @@ export function LeftPanel() {
   if (!panel) return null;
 
   return (
-    <aside className={styles.panel} aria-label={t("panel.label")} data-testid="left-panel">
+    <aside
+      className={styles.panel}
+      aria-label={t("panel.label")}
+      data-testid="left-panel"
+      data-region="panel"
+    >
       <div className={styles.header}>
         <ToggleButtonGroup
           aria-label={t("panel.views")}

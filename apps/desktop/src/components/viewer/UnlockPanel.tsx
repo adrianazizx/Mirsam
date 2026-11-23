@@ -20,7 +20,17 @@ export function UnlockPanel() {
   if (!pending) return null;
 
   return (
-    <section className={styles.panel} aria-labelledby="unlock-title" data-testid="unlock">
+    <section
+      className={styles.panel}
+      aria-labelledby="unlock-title"
+      data-testid="unlock"
+      // Escape always backs out (spec section 4), here as the Cancel button does.
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        void runCommand("file.cancelUnlock");
+      }}
+    >
       <LockKeyhole className={styles.icon} aria-hidden="true" />
       <h1 id="unlock-title" className={styles.title}>
         {t("unlock.title")}

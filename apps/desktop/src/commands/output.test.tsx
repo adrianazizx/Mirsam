@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
+import { isolate } from "../i18n";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
 import { isCommandEnabled, runCommand } from "./registry";
 
@@ -75,7 +76,8 @@ describe("output commands (ADR 0050)", () => {
     await runCommand("output.exportText", { pages: [0], textFormat: "markdown" });
     expect(useAppStore.getState().notice).toEqual({
       key: "exportedText",
-      values: { name: "Sample.md" },
+      // The name is isolated in the sentence (either direction).
+      values: { name: isolate("Sample.md") },
     });
   });
 

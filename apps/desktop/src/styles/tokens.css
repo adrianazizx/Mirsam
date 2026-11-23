@@ -10,16 +10,23 @@
  */
 
 :root {
+  /*
+   * Interface size (Settings → Display, WCAG 1.4.4): text and the chrome
+   * around it grow by this factor. The pages do not: they have their own zoom,
+   * and the tokens the viewer lays pages out with are plain lengths.
+   */
+  --ui-scale: 1;
+
   /* Spacing: 4px grid */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  --space-1: calc(4px * var(--ui-scale));
+  --space-2: calc(8px * var(--ui-scale));
+  --space-3: calc(12px * var(--ui-scale));
+  --space-4: calc(16px * var(--ui-scale));
+  --space-5: calc(20px * var(--ui-scale));
+  --space-6: calc(24px * var(--ui-scale));
+  --space-8: calc(32px * var(--ui-scale));
+  --space-10: calc(40px * var(--ui-scale));
+  --space-12: calc(48px * var(--ui-scale));
 
   /* Radii */
   --radius-sm: 4px;
@@ -28,39 +35,53 @@
   --radius-full: 999px;
 
   /* Sizes */
-  --size-hit: 32px; /* minimum pointer target on desktop */
-  --size-icon: 18px;
-  --size-icon-sm: 14px; /* inline with small text */
-  --size-tabbar: 40px;
-  --size-rail: 48px;
-  --size-statusbar: 32px;
-  --size-inspector: 272px;
-  /* Page viewer geometry, read by the viewer's layout code (src/viewer/layout.ts) */
-  --size-page-gap: var(--space-4); /* between rows of pages */
-  --size-spread-gap: var(--space-1); /* between the two pages of a spread */
-  --size-viewer-padding: var(--space-6); /* around the pages */
-  --size-page-number-field: 56px;
-  --size-side-panel: 248px;
+  --size-hit: calc(32px * var(--ui-scale)); /* minimum pointer target on desktop */
+  --size-icon: calc(18px * var(--ui-scale));
+  --size-icon-sm: calc(14px * var(--ui-scale)); /* inline with small text */
+  --size-tabbar: calc(40px * var(--ui-scale));
+  --size-tab-max: calc(240px * var(--ui-scale)); /* the widest a document tab grows */
+  --size-rail: calc(48px * var(--ui-scale));
+  --size-statusbar: calc(32px * var(--ui-scale));
+  /* The side panels grow with the interface, but leave the pages most of the window. */
+  --size-inspector: min(calc(272px * var(--ui-scale)), 34vw);
+  /* Page viewer geometry, read by the viewer's layout code (src/viewer/layout.ts): page space, not scaled */
+  --size-page-gap: 16px; /* between rows of pages */
+  --size-spread-gap: 4px; /* between the two pages of a spread */
+  --size-viewer-padding: 24px; /* around the pages */
+  --size-page-number-field: calc(56px * var(--ui-scale));
+  --size-zoom-label: calc(84px * var(--ui-scale)); /* the status bar's zoom percentage */
+  --size-side-panel: min(calc(248px * var(--ui-scale)), 30vw);
   /* Thumbnails are drawn this wide (CSS px), read by src/viewer/thumbnails.ts */
   --size-thumbnail: 128px;
   /* The page organizer: a page image's width, and the gap between pages. */
   --size-page-grid-image: 168px;
   --size-page-grid-gap: 16px;
-  --size-search-result: 56px; /* row height of the virtualized results list */
-  --size-replace-result: 72px; /* row height of the replace preview's list (ADR 0052) */
-  --size-palette: 560px;
-  --size-note-editor: 280px; /* the note editor's width */
-  --size-note-text: 96px; /* its text field's height */
-  --size-palette-row: 36px;
-  --size-unlock-panel: 400px;
-  --size-settings: 640px; /* the settings dialog's width */
-  --size-progress: 6px; /* a progress bar's thickness */
-  --size-selection-toolbar-span: 480px;
-  --size-panel-choice: 140px; /* the widest a side panel's filter shows its choice */
-  --size-swatch: 22px; /* a colour choice */
+  --size-gallery-swatch: calc(120px * var(--ui-scale)); /* the design gallery's colour swatches */
+  --size-search-result: calc(
+    56px *
+    var(--ui-scale)
+  ); /* row height of the virtualized results list */
+  --size-replace-result: calc(
+    72px *
+    var(--ui-scale)
+  ); /* row height of the replace preview's list (ADR 0052) */
+  --size-palette: calc(560px * var(--ui-scale));
+  --size-note-editor: calc(280px * var(--ui-scale)); /* the note editor's width */
+  --size-note-text: calc(96px * var(--ui-scale)); /* its text field's height */
+  --size-palette-row: calc(36px * var(--ui-scale));
+  --size-unlock-panel: calc(400px * var(--ui-scale));
+  --size-settings: calc(640px * var(--ui-scale)); /* the settings dialog's width */
+  --size-tooltip: calc(280px * var(--ui-scale)); /* the widest a tooltip grows */
+  --size-progress: calc(6px * var(--ui-scale)); /* a progress bar's thickness */
+  --size-selection-toolbar-span: calc(480px * var(--ui-scale));
+  --size-panel-choice: calc(
+    140px *
+    var(--ui-scale)
+  ); /* the widest a side panel's filter shows its choice */
+  --size-swatch: calc(22px * var(--ui-scale)); /* a colour choice */
   --size-signature-pad: 160px; /* the height of the pad a signature is drawn on */
   --size-signature-preview: 44px; /* a kept signature's preview */
-  --size-signature-text: 32px; /* a typed signature's preview text */
+  --size-signature-text: calc(32px * var(--ui-scale)); /* a typed signature's preview text */
   --size-signature-choice: 120px; /* a kept signature offered for a certificate signature's look */
   --size-fill-handle: 10px; /* a selected Fill & Sign item's corner handle */
   --size-field-tab: 16px; /* a form field's tab-order number in the form designer */
@@ -72,11 +93,11 @@
   --font-ui: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
   /* Typed signatures' previews; the PDF itself is set in the bundled Amiri (ADR 0045). */
   --font-signature-naskh: "Amiri", "Noto Naskh Arabic", "Geeza Pro", serif;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-md: 13px;
-  --font-size-lg: 15px;
-  --font-size-xl: 20px;
+  --font-size-xs: calc(11px * var(--ui-scale));
+  --font-size-sm: calc(12px * var(--ui-scale));
+  --font-size-md: calc(13px * var(--ui-scale));
+  --font-size-lg: calc(15px * var(--ui-scale));
+  --font-size-xl: calc(20px * var(--ui-scale));
   --line-height-tight: 1.25;
   --line-height-normal: 1.5;
   --font-weight-regular: 400;
@@ -98,6 +119,23 @@
   /* Reading themes tint the page image, not the UI (spec section 4) */
   --filter-reading-sepia: sepia(0.55) saturate(1.15) brightness(0.97);
   --filter-reading-night: invert(0.9) hue-rotate(180deg) contrast(0.92);
+}
+
+/* The interface sizes on offer (src/state/appStore.ts, UI_SCALES). */
+:root[data-ui-scale="1.25"] {
+  --ui-scale: 1.25;
+}
+
+:root[data-ui-scale="1.5"] {
+  --ui-scale: 1.5;
+}
+
+:root[data-ui-scale="1.75"] {
+  --ui-scale: 1.75;
+}
+
+:root[data-ui-scale="2"] {
+  --ui-scale: 2;
 }
 
 /* Light theme (default) */
@@ -123,6 +161,8 @@
   --color-accent-hover: #0b5f77;
   --color-accent-pressed: #094d61;
   --color-on-accent: #ffffff;
+  /* Text in the accent colour (a link-like button), readable on the page area's canvas too. */
+  --color-link-text: #0b5f77;
 
   --color-danger: #b42318;
   /* A signature's verdict (ADR 0048): valid, and signer not vouched for. */
@@ -185,6 +225,7 @@
   --color-accent-hover: #6fd2e6;
   --color-accent-pressed: #8adcee;
   --color-on-accent: #06242c;
+  --color-link-text: #4dc4dc;
 
   --color-danger: #ff8a80;
   --color-success: #3fb950;

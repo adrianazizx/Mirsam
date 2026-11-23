@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { backend } from "../backend";
+import { isolate } from "../i18n";
 import { DEFAULT_TEXT_STYLE, selectActiveDocument, useAppStore } from "../state/appStore";
 import type { ViewerController } from "../viewer/controller";
 import { registerViewer, unregisterViewer } from "../viewer/registry";
@@ -322,7 +323,7 @@ describe("command registry", () => {
     await runCommand("pages.extract");
     expect(useAppStore.getState().notice).toEqual({
       key: "extracted",
-      values: { name: "Extract.pdf" },
+      values: { name: isolate("Extract.pdf") },
     });
 
     await runCommand("pages.split");

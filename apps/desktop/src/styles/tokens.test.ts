@@ -44,6 +44,17 @@ const PAIRS: [string, string, number][] = [
   ["color-on-accent", "color-accent-hover", 4.5],
   ["color-on-accent", "color-accent-pressed", 4.5],
   ["color-tooltip-text", "color-tooltip-bg", 4.5],
+  // Muted text on a pressed or selected control (an icon button held down, a chosen tool).
+  ["color-text-muted", "color-bg-pressed", 4.5],
+  ["color-text-muted", "color-bg-selected", 4.5],
+  // The page area's own text (the start screen, notices) on its canvas.
+  ["color-text", "color-bg-canvas", 4.5],
+  ["color-text-muted", "color-bg-canvas", 4.5],
+  // Link-like buttons (Clear recent files), on the canvas and on surfaces.
+  ["color-link-text", "color-bg-canvas", 4.5],
+  ["color-link-text", "color-bg-surface", 4.5],
+  ["color-link-text", "color-bg-app", 4.5],
+  ["color-danger", "color-bg-app", 4.5],
   ["color-danger", "color-bg-surface", 4.5],
   // Signature verdicts (ADR 0048) in the signatures panel.
   ["color-success", "color-bg-surface", 4.5],

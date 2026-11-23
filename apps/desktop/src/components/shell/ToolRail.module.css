@@ -4,6 +4,10 @@
   flex-direction: column;
   align-items: center;
   padding-block: var(--space-2);
+  /* A short window at a large interface size: the tools scroll rather than being cut off. */
+  min-block-size: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--color-bg-surface);
   border-inline-end: var(--border-width) solid var(--color-border);
 }

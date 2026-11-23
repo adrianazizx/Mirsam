@@ -17,7 +17,7 @@ import {
   runCommand,
   shortcutLabel,
 } from "../../commands/registry";
-import { i18n } from "../../i18n";
+import { i18n, otherLocale } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import styles from "./CommandPalette.module.css";
 import { paletteMatch } from "./match";
@@ -66,6 +66,8 @@ function PaletteDialog() {
           <Autocomplete filter={paletteMatch}>
             <SearchField aria-label={t("palette.label")} autoFocus className={styles.field}>
               <Input
+                // A command can be looked for in either language, whatever the UI's.
+                dir="auto"
                 className={styles.input}
                 placeholder={t("palette.placeholder")}
                 data-testid="palette-input"
@@ -89,7 +91,15 @@ function PaletteDialog() {
                   textValue={`${command.title} ${command.also}`}
                   className={styles.item}
                 >
-                  <span className={styles.title}>{command.title}</span>
+                  <span
+                    className={styles.title}
+                    // The language switch is named in the other language.
+                    lang={
+                      command.id === "app.toggleLanguage" ? otherLocale(state.locale) : undefined
+                    }
+                  >
+                    {command.title}
+                  </span>
                   {command.shortcut ? (
                     // Shortcuts are key names: always left to right.
                     <kbd className={styles.shortcut} dir="ltr">

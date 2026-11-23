@@ -109,7 +109,7 @@ export function StatusBar() {
   const document = useAppStore(selectActiveDocument);
 
   return (
-    <footer className={styles.bar} data-testid="status-bar">
+    <footer className={styles.bar} data-testid="status-bar" data-region="status">
       <div className={styles.group}>
         {/* The icon draws a panel on its start side, so it mirrors with the layout. */}
         <CommandButton command="view.toggleLeftPanel" tooltipPlacement="top" mirrorInRtl>

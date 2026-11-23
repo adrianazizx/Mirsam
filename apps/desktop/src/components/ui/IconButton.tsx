@@ -14,6 +14,11 @@ export interface IconButtonProps extends Omit<AriaButtonProps, "className" | "ch
    * icons, which must not flip (docs/SPEC.md section 6.5).
    */
   mirrorInRtl?: boolean;
+  /**
+   * The label's language, when it is not the UI's (the language switch is
+   * named in the other language), so screen readers speak it in that voice.
+   */
+  labelLang?: string;
   children: ReactNode;
 }
 
@@ -22,15 +27,25 @@ export function IconButton({
   shortcut,
   tooltipPlacement,
   mirrorInRtl = false,
+  labelLang,
   children,
   ...props
 }: IconButtonProps) {
+  // `aria-label` cannot carry a language; hidden text inside the button can.
+  const name = labelLang ? (
+    <span lang={labelLang} dir="auto">
+      {label}
+    </span>
+  ) : (
+    label
+  );
   return (
-    <Tooltip label={label} shortcut={shortcut} placement={tooltipPlacement}>
-      <AriaButton {...props} aria-label={label} className={styles.button}>
+    <Tooltip label={name} shortcut={shortcut} placement={tooltipPlacement}>
+      <AriaButton {...props} aria-label={labelLang ? undefined : label} className={styles.button}>
         <span className={mirrorInRtl ? styles.mirrored : styles.glyph} aria-hidden="true">
           {children}
         </span>
+        {labelLang ? <span className="visually-hidden">{name}</span> : null}
       </AriaButton>
     </Tooltip>
   );

@@ -38,3 +38,8 @@
 .empty {
   color: var(--color-text-muted);
 }
+
+/* Focusable while it scrolls (useKeyboardScrollable): the ring sits inside its edges. */
+.inspector:focus-visible {
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
