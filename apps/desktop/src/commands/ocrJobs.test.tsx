@@ -29,8 +29,8 @@ beforeEach(() => {
   });
 });
 
-function openDocument() {
-  act(() => app().addDocument({ id: 1, name: "scan.pdf", pageCount: 240 }));
+function openDocument(pageCount = 240) {
+  act(() => app().addDocument({ id: 1, name: "scan.pdf", pageCount }));
 }
 
 describe("background OCR jobs (ADR 0035)", () => {
@@ -85,12 +85,13 @@ describe("background OCR jobs (ADR 0035)", () => {
     await waitFor(() => expect(screen.queryByTestId("ocr-job")).toBeNull());
   });
 
-  // A 240-page job writes an edit every 30 ms while it runs, and each edit
-  // builds the viewer again: on a loaded CI runner (Windows, beside the
-  // accessibility suite) the round trip outlasts vitest's 5 s default.
+  // The job writes an edit every 30 ms while it runs, and each edit builds the
+  // viewer again. With 240 pages that flooded a loaded Windows runner past
+  // 20 s; 40 pages still leave dozens of steps between seeing the quality pass
+  // and pressing Pause (each check runs on the next edit), at a sixth of the cost.
   it("pauses, resumes and cancels a job", { timeout: 20_000 }, async () => {
     render(<App />);
-    openDocument();
+    openDocument(40);
     await act(() => runCommand("ocr.recognize"));
     const job = await screen.findByTestId("ocr-job");
     await waitFor(() => expect(job.textContent).toMatch(/Reading page \d+ in quality mode/));
