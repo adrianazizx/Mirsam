@@ -837,8 +837,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [~] Accessibility pass (WCAG 2.1 AA, ADR 0070): axe-core over the main screens in jsdom (en/ar)
       and in Chrome with contrast (en/ar × light/dark, reading themes, `scripts/a11y-check.mjs`, CI);
       keyboard tests; F6 between areas; page text for screen readers; live regions; interface size
-      100–200%. **Gaps:** VoiceOver not driven (owner item 24); the search panel and OCR UI get their
-      pass with the sessions rebuilding them; the deferred list in the session log
+      100–200%. **Gaps:** VoiceOver not driven (owner item 24); the OCR UI gets its pass with the
+      session rebuilding it (the search panel had its with find and replace, ADR 0052); the
+      deferred list in the session log
 - [ ] Native-speaker Arabic localization review
 - [ ] Onboarding
 - [x] Installers with PDFium for every platform (ADR 0060): `node scripts/bundle.mjs`; each installer
@@ -893,6 +894,10 @@ text-editing engine.
 - **Budgets:** search's index reads one more property per character (its angle): 1,000 pages index
   in 1.12–1.21 s, then 17–19 ms per search (release, `search_bench`, load average 30; M2: 1.11 s and
   17–18 ms). Typing in the paragraph field: 17 ms a keystroke (self-test).
+- **Accessibility (after merging the M7 pass):** the search panel, its replace row and the replace
+  preview join both axe lists (jsdom, and Chrome with contrast in en/ar × light/dark): clean. Chrome
+  found the Arabic option toggles' names lacked their visible "أ≈ا" and "ة≈ه" (label in name,
+  WCAG 2.5.3); the names now end with them.
 - Workspace tests, clippy (with and without `devtools`), `cargo fmt`, Biome, `tsc`, UI tests (305),
   the fuzz crate's build pass. **Not re-run:** the scroll and zoom benchmark (the viewer is not
   touched).

@@ -45,7 +45,7 @@ const SETTLE_MS = 400;
 /** A colour-contrast failure must still be there this long after the first run. */
 const CONTRAST_RETRY_MS = 1000;
 
-// Not the search panel: another session is rebuilding it.
+// The search panel is checked with its replace row and preview (below).
 const PANELS = [
   "view.showThumbnails",
   "view.showOutline",
@@ -414,6 +414,18 @@ async function act(step) {
     case "readingTheme":
       state.setReadingTheme(step.theme);
       return {};
+    case "replacePreview":
+      // The search panel with its replace row, then the replace preview (ADR 0052).
+      await R.runCommand("search.replaceOpen");
+      await R.runCommand("search.run", { query: step.query });
+      await R.runCommand("search.setReplacement", { text: step.replacement });
+      if (step.preview) await R.runCommand("search.replaceAll");
+      return {};
+    case "replaceClose":
+      await R.runCommand("search.replaceCancel");
+      await R.runCommand("search.replaceClose");
+      useAppStore.setState({ leftPanel: null });
+      return {};
     case "uiScale":
       state.setUiScale(step.scale);
       return {};
@@ -606,6 +618,12 @@ async function checkCombo(cdp, combo, { url, axeSource, uiScale }) {
     else await check(`panel ${id}`);
     await step("state", { state: { leftPanel: null } });
   }
+
+  await step("replacePreview", { query: "4,500", replacement: "4,750", preview: false });
+  await check("panel search.focus with the replace row");
+  await step("replacePreview", { query: "4,500", replacement: "4,750", preview: true });
+  await check("replace preview");
+  await step("replaceClose");
 
   for (const tool of TOOLS) {
     await step("tool", { tool });

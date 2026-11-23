@@ -32,13 +32,29 @@ import styles from "./SearchPanel.module.css";
 /** Typing searches after this pause, so each keystroke does not start a search. */
 const TYPING_DELAY_MS = 180;
 
-const OPTIONS: { key: keyof SearchOptions; command: CommandId; icon: ReactNode }[] = [
+const OPTIONS: {
+  key: keyof SearchOptions;
+  command: CommandId;
+  icon: ReactNode;
+  /** Text shown in place of an icon: part of the button's name too (WCAG 2.5.3, label in name). */
+  text?: string;
+}[] = [
   { key: "caseSensitive", command: "search.toggleCase", icon: <CaseSensitive /> },
   { key: "wholeWord", command: "search.toggleWholeWord", icon: <WholeWord /> },
   { key: "regex", command: "search.toggleRegex", icon: <Regex /> },
   // Arabic normalization: "أ ≈ ا"; ta marbuta: "ة ≈ ه". Shown as text, not icons.
-  { key: "arabicNormalize", command: "search.toggleArabic", icon: <bdi lang="ar">أ≈ا</bdi> },
-  { key: "taMarbutaAsHa", command: "search.toggleTaMarbuta", icon: <bdi lang="ar">ة≈ه</bdi> },
+  {
+    key: "arabicNormalize",
+    command: "search.toggleArabic",
+    icon: <bdi lang="ar">أ≈ا</bdi>,
+    text: "أ≈ا",
+  },
+  {
+    key: "taMarbutaAsHa",
+    command: "search.toggleTaMarbuta",
+    icon: <bdi lang="ar">ة≈ه</bdi>,
+    text: "ة≈ه",
+  },
 ];
 
 /**
@@ -135,7 +151,11 @@ export function SearchPanel({ documentId: id }: { documentId: number }) {
                 className={styles.option}
                 isSelected={options[option.key]}
                 onChange={() => void runCommand(option.command)}
-                aria-label={t(`commands.${option.command}`)}
+                aria-label={
+                  option.text
+                    ? `${t(`commands.${option.command}`)}: ${option.text}`
+                    : t(`commands.${option.command}`)
+                }
               >
                 <span className={styles.glyph} aria-hidden="true">
                   {option.icon}
