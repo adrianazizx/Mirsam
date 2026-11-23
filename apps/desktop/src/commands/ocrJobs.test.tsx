@@ -98,7 +98,7 @@ describe("background OCR jobs (ADR 0035)", () => {
     expect(Object.values(jobs().jobs).map((j) => j.state)).toEqual(["cancelled"]);
   });
 
-  it("lays the panel out right to left in Arabic, with Western digits", async () => {
+  it("lays the panel out right to left in Arabic, with Arabic-Indic digits", async () => {
     render(<App />);
     act(() => app().setLocale("ar"));
     openDocument();
@@ -109,8 +109,10 @@ describe("background OCR jobs (ADR 0035)", () => {
     await waitFor(() => expect(job.textContent).toContain("اكتمل."));
     const review = await screen.findByTestId("ocr-review");
     expect(within(review).getByRole("heading", { name: "صفحات تحتاج إلى مراجعة" })).toBeTruthy();
-    expect(review.textContent).toContain("الصفحة 1");
-    expect(review.textContent).toContain("غير مؤكَّدة: 1");
+    // The Arabic UI's own numbers are Arabic-Indic (owner decision, PR #29).
+    expect(review.textContent).toContain("الصفحة ١");
+    expect(review.textContent).toContain("غير مؤكَّدة: ١");
+    expect(review.textContent).toContain("الثقة ٩٣٪");
     // The word keeps its own direction inside the Arabic label.
     expect(review.querySelector("bdi")?.textContent).toBe("١٣٣٤");
     expect(within(panel).getByRole("button", { name: "التعرّف على هذه الصفحة" })).toBeTruthy();
