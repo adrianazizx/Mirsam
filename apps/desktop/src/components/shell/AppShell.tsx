@@ -4,6 +4,7 @@ import { Gallery } from "../../gallery/Gallery";
 import { selectActiveDocument, useAppStore } from "../../state/appStore";
 import { CommentToolbar } from "../comments/CommentToolbar";
 import { TextToolbar } from "../edit/TextToolbar";
+import { ToolHint } from "../onboarding/ToolHint";
 import { PageGrid } from "../pages/PageGrid";
 import { CommandPalette } from "../palette/CommandPalette";
 import { LeftPanel } from "../panels/LeftPanel";
@@ -94,6 +95,7 @@ export function AppShell() {
           ) : (
             <EmptyState />
           )}
+          <ToolHint />
         </main>
       </Tabs>
       <ToolRail />

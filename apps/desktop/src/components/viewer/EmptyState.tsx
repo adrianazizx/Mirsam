@@ -1,15 +1,32 @@
-import { FileText, FolderOpen, X } from "lucide-react";
-import { useEffect } from "react";
+import {
+  Command,
+  Compass,
+  FileText,
+  FolderOpen,
+  Languages,
+  type LucideIcon,
+  Settings,
+  X,
+} from "lucide-react";
+import { useEffect, useId } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import { refreshRecents, runCommand } from "../../commands/registry";
+import { type CommandId, refreshRecents, runCommand, shortcutLabel } from "../../commands/registry";
 import { formatTag, isolate } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import styles from "./EmptyState.module.css";
 
-/** The start screen: open a file, or pick up a recent one. */
+/** The start screen's first actions besides opening a file (M7 onboarding). */
+const FIRST_ACTIONS: { command: CommandId; icon: LucideIcon; key: string }[] = [
+  { command: "help.guide", icon: Compass, key: "guide" },
+  { command: "app.commandPalette", icon: Command, key: "palette" },
+  { command: "app.toggleLanguage", icon: Languages, key: "language" },
+  { command: "app.settings", icon: Settings, key: "settings" },
+];
+
+/** The start screen: open a file, pick up a recent one, or a first step (the guide, the palette, the language, Settings). */
 export function EmptyState() {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
@@ -29,6 +46,7 @@ export function EmptyState() {
       <Button variant="primary" icon={<FolderOpen />} onPress={() => void runCommand("file.open")}>
         {t("commands.file.open")}
       </Button>
+      <FirstActions />
       {recents && recents.length > 0 ? (
         <section className={styles.recents} aria-labelledby="recents-title">
           <div className={styles.recentsHeader}>
@@ -69,5 +87,55 @@ export function EmptyState() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * First steps for a new user, each a registry command. Each card's name is
+ * all its text (WCAG 2.5.3). The language card names the other language in
+ * that language (as the command's title does).
+ */
+function FirstActions() {
+  const { t } = useTranslation();
+  const locale = useAppStore((state) => state.locale);
+  const headingId = useId();
+  return (
+    <section className={styles.first} aria-labelledby={headingId}>
+      <h2 id={headingId} className="visually-hidden">
+        {t("onboarding.start.heading")}
+      </h2>
+      <ul className={styles.actions}>
+        {FIRST_ACTIONS.map(({ command, icon: Icon, key }) => {
+          const shortcut = shortcutLabel(command);
+          const label =
+            key === "language" ? (
+              <span lang={locale === "ar" ? "en" : "ar"}>{t(`commands.${command}`)}</span>
+            ) : (
+              t(`onboarding.start.${key}`)
+            );
+          return (
+            <li key={command}>
+              <AriaButton className={styles.action} onPress={() => void runCommand(command)}>
+                <Icon className={styles.actionIcon} aria-hidden="true" />
+                <span className={styles.actionText}>
+                  <span className={styles.actionLabel}>{label}</span>
+                  <span className={styles.actionAbout}>
+                    {t(`onboarding.start.${key}About`)}
+                    {shortcut ? (
+                      <>
+                        {" "}
+                        <kbd className={styles.kbd} dir="ltr">
+                          {shortcut}
+                        </kbd>
+                      </>
+                    ) : null}
+                  </span>
+                </span>
+              </AriaButton>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

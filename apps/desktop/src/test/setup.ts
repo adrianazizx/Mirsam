@@ -1,5 +1,6 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { setOnboardingAutomatic } from "../state/onboarding";
 
 afterEach(() => {
   cleanup();
@@ -28,3 +29,7 @@ if (!window.ResizeObserver) {
     disconnect() {}
   };
 }
+
+// The first-run guide and the tools' one-time hints stay out of the way of
+// screens under test; the onboarding tests turn them on.
+setOnboardingAutomatic(false);

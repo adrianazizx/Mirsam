@@ -1,3 +1,5 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect } from "react";
 import { I18nProvider } from "react-aria-components";
 import { backend, type DocumentsArrived, isBackendError } from "./backend";
@@ -13,6 +15,7 @@ import {
 } from "./commands/registry";
 import { SignatureDialog } from "./components/forms/SignatureDialog";
 import { OcrModelPrompt } from "./components/ocr/OcrModelPrompt";
+import { OnboardingGuide } from "./components/onboarding/OnboardingGuide";
 import { OutputDialog } from "./components/output/OutputDialog";
 import { SplitDialog } from "./components/pages/SplitDialog";
 import { RedactDialog } from "./components/protect/RedactDialog";
@@ -34,6 +37,7 @@ import {
 import { CRASH_SETTING, refreshCrashReports, useCrashReports } from "./state/crashReports";
 import { useOcrJobs } from "./state/ocrJobs";
 import { useOcrModels } from "./state/ocrModels";
+import { guideDue, setOnboardingWriter, useOnboarding } from "./state/onboarding";
 import { getViewer } from "./viewer/registry";
 
 /** Documents that arrived while running open as tabs; the last one is shown. */
@@ -60,6 +64,23 @@ function offerNewCrashReports(): Promise<void> {
     },
     (error: unknown) => console.warn("crash reports unavailable", error),
   );
+}
+
+/**
+ * Opens the first-run guide on a first launch whose window starts empty, once
+ * nothing else is asking (recovered changes, a crash report, a password). The
+ * main window only: a window opened later is not a first run.
+ */
+function offerFirstRunGuide(): void {
+  if (isTauri() && getCurrentWebviewWindow().label !== "main") return;
+  const app = useAppStore.getState();
+  const busy =
+    app.recoveries.length > 0 ||
+    app.unlocks.length > 0 ||
+    app.galleryOpen ||
+    useCrashReports.getState().prompt.length > 0;
+  const onboarding = useOnboarding.getState();
+  if (guideDue(onboarding, { documents: app.documents.length, busy })) onboarding.openGuide();
 }
 
 /**
@@ -141,6 +162,7 @@ export function App() {
       .onSettingChanged((key, value) => {
         useAppStore.getState().applySetting(key, value);
         if (key === CRASH_SETTING) useCrashReports.getState().applySetting(value);
+        useOnboarding.getState().applySetting(key, value);
       })
       .then((unlisten) => {
         if (live) stop = unlisten;
@@ -247,10 +269,16 @@ export function App() {
         .setSetting(key, value)
         .catch((error: unknown) => console.warn("could not save a setting", key, error));
     });
-    backend.settings().then(
+    setOnboardingWriter((key, value) => {
+      backend
+        .setSetting(key, value)
+        .catch((error: unknown) => console.warn("could not save a setting", key, error));
+    });
+    const settingsRead = backend.settings().then(
       (settings) => {
         useAppStore.getState().hydrate(settings);
         useCrashReports.getState().applySetting(settings[CRASH_SETTING]);
+        useOnboarding.getState().hydrate(settings);
       },
       (error: unknown) => console.warn("settings unavailable", error),
     );
@@ -286,7 +314,7 @@ export function App() {
           store.activateDocument(target);
         }
         // A crash since the last start: ask about its report, once (ADR 0061).
-        return offerNewCrashReports();
+        return offerNewCrashReports().then(() => settingsRead.then(offerFirstRunGuide));
       })
       .catch((error: unknown) => {
         starting = false;
@@ -357,6 +385,7 @@ export function App() {
       <CertSignDialog />
       <SettingsDialog />
       <OcrModelPrompt />
+      <OnboardingGuide />
     </I18nProvider>
   );
 }

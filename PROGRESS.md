@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -927,7 +927,11 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       session rebuilding it (the search panel had its with find and replace, ADR 0052); the
       deferred list in the session log
 - [ ] Native-speaker Arabic localization review
-- [ ] Onboarding
+- [x] Onboarding (ADR 0071): a four-step first-run guide (open a PDF, the tool rail, Arabic and
+      English with the digits setting, OCR on this computer), skippable, never shown again once
+      finished or skipped, reopened from the command palette ("Welcome guide") and the start
+      screen; one-time hints for OCR, Sign and Edit; first steps on the start screen. en/ar,
+      light/dark, reduced motion; axe in jsdom and Chrome; cold start unchanged (session log)
 - [x] Installers with PDFium for every platform (ADR 0060): `node scripts/bundle.mjs`; each installer
       opened and checked, the installed app self-tested in English and Arabic (`bundle.yml`)
 - [ ] Code signing and auto-update (owner item 17: certificates)
@@ -943,6 +947,46 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### M7 onboarding — 2026-11-23 (branch `pomidor/m7-onboarding-306aea`, ADR 0071; parallel to the accessibility follow-up)
+
+- **First-run guide** (`components/onboarding/OnboardingGuide.tsx`): a modal of four steps —
+  open a PDF; the tool rail (its eight tools with the rail's icons) and the command palette;
+  Arabic and English, with the interface language and the Arabic interface's digits chosen in
+  the step; OCR (models download once, with the user's OK; recognition on this computer;
+  documents never leave it). Next keeps focus (it becomes Done) and the new step is announced;
+  Escape or Skip skips. Every button is a command: `onboarding.next/.back/.skip/.finish`,
+  `app.languageEnglish/.languageArabic`, `help.guide` (palette: "Welcome guide").
+- **When it opens:** on a launch whose main window starts empty, after the settings are read,
+  unless recovered changes, a crash report or a password prompt are asking. Not again once
+  finished or skipped (`onboarding.guide` = `done`/`skipped`); skipping a reopened, finished
+  guide keeps `done`.
+- **One-time hints** for OCR, Sign and Edit (`ToolHint.tsx`): the first time the tool is active
+  with a document open, a card over the page area's inline-end bottom corner (nothing moves),
+  announced, never focused; "Got it" or another tool closes it. Seen when shown
+  (`onboarding.hints`), so at most once each.
+- **Start screen:** four first steps under "Open PDF…": the tour, the command palette, the other
+  language (named in it, with `lang`), Settings. axe in Chrome flagged the first version's cards
+  (name = title only, `label-content-name-mismatch`); each card's name is now all its text.
+- **Shell:** `onboarding.guide` and `onboarding.hints` on the settings allowlist, with a test.
+- **Tests:** `onboarding.test.tsx` (12: keyboard walk, announcements, persistence, Escape,
+  reopen from the palette, Arabic RTL with Arabic-Indic digits and both radio groups, not over
+  recovered changes, hints once each and in Arabic, start-screen commands, axe on each screen).
+  Unit tests elsewhere run with onboarding off (`setOnboardingAutomatic(false)` in
+  `src/test/setup.ts`). `scripts/a11y-check.mjs` now checks each guide step on its fresh start
+  in en/ar × light/dark with contrast, then skips it (124 screens, passed); its Edit and Sign
+  tool screens include their hints.
+- **Cold start** (release `.app` with devtools, `scripts/selftest.sh` with
+  `SAFHA_SELFTEST_UI=bundled`, `bilingual-100-pages.pdf`, load average 15–18 from other
+  sessions): **410–457 ms** launch → first frame over 6 runs (en/ar × light/dark), first page
+  469–502 ms; every run passes `check-selftest.mjs`, budget included. The last recorded figure
+  was 460–745 ms (median 484). The UI bundle grows 19.7 kB (5 kB gzipped, +1.4%); the guide
+  reads the settings the app already reads and draws nothing until it opens. The self-test
+  launches with a document, so the guide stays closed there (its Edit step may show that hint; the run is unaffected).
+- `pnpm test` 40 files / 394 tests, typecheck, biome, `cargo clippy -D warnings` (with and
+  without `devtools`), `cargo test -p safha-desktop` (43) green.
+- **Not done:** VoiceOver not driven (owner item 24 applies here too); the Arabic wording awaits
+  the native-speaker review like the rest of the UI (owner item 11).
 
 ### Owner decisions 3 — 2026-11-23 (branch `pomidor/owner-decisions-3-69ac27`)
 

@@ -72,6 +72,7 @@ import {
   wordRect,
 } from "../state/ocrJobs";
 import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
+import { GUIDE_STEPS, useOnboarding } from "../state/onboarding";
 import {
   addMark,
   MIN_MARK_SIDE,
@@ -500,6 +501,14 @@ export type CommandId =
   | "app.settings"
   | "app.closeSettings"
   | "app.reloadWindow"
+  | "app.languageEnglish"
+  | "app.languageArabic"
+  | "help.guide"
+  | "onboarding.next"
+  | "onboarding.back"
+  | "onboarding.finish"
+  | "onboarding.skip"
+  | "onboarding.dismissHint"
   | "crash.copy"
   | "crash.save"
   | "crash.openIssue"
@@ -1822,6 +1831,28 @@ async function downloadOcrModel(id: string): Promise<void> {
     await refreshOcrModels().catch(() => {});
     throw error;
   }
+}
+
+/** The guide is open at a step that `test` accepts. */
+function guideOpenAt(test: (step: number) => boolean): boolean {
+  const { guideOpen, step } = useOnboarding.getState();
+  return guideOpen && test(step);
+}
+
+/** Moves the guide a step and says where it is now (focus stays on the button pressed). */
+function moveGuide(by: 1 | -1) {
+  const onboarding = useOnboarding.getState();
+  onboarding.setStep(onboarding.step + by);
+  const step = useOnboarding.getState().step;
+  const { locale } = store();
+  announce(
+    i18n.t("onboarding.stepAnnounce", {
+      lng: locale,
+      step: formatNumber(step + 1, locale),
+      count: formatNumber(GUIDE_STEPS.length, locale),
+      title: i18n.t(`onboarding.steps.${GUIDE_STEPS[step]}.title`, { lng: locale }),
+    }),
+  );
 }
 
 const DECLARED: Command[] = [
@@ -3891,6 +3922,47 @@ const DECLARED: Command[] = [
     paletteHidden: true,
     isEnabled: (state) => state.settingsOpen,
     run: () => store().setSettingsOpen(false),
+  },
+  // The guide's language step picks one; the palette keeps the toggle.
+  { id: "app.languageEnglish", paletteHidden: true, run: () => store().setLocale("en") },
+  { id: "app.languageArabic", paletteHidden: true, run: () => store().setLocale("ar") },
+  // Onboarding (M7): the first-run guide, reopened from here, and the tools' one-time hints.
+  {
+    id: "help.guide",
+    run() {
+      useOnboarding.getState().openGuide();
+    },
+  },
+  {
+    id: "onboarding.next",
+    paletteHidden: true,
+    isEnabled: () => guideOpenAt((step) => step < GUIDE_STEPS.length - 1),
+    run: () => moveGuide(1),
+  },
+  {
+    id: "onboarding.back",
+    paletteHidden: true,
+    isEnabled: () => guideOpenAt((step) => step > 0),
+    run: () => moveGuide(-1),
+  },
+  {
+    id: "onboarding.finish",
+    paletteHidden: true,
+    isEnabled: () => useOnboarding.getState().guideOpen,
+    run: () => useOnboarding.getState().closeGuide("done"),
+  },
+  {
+    // Escape, or "Skip": the guide does not open by itself again.
+    id: "onboarding.skip",
+    paletteHidden: true,
+    isEnabled: () => useOnboarding.getState().guideOpen,
+    run: () => useOnboarding.getState().closeGuide("skipped"),
+  },
+  {
+    id: "onboarding.dismissHint",
+    paletteHidden: true,
+    isEnabled: () => useOnboarding.getState().hint !== null,
+    run: () => useOnboarding.getState().dismissHint(),
   },
   {
     // After an error the window could not recover from (ADR 0061). The
