@@ -12,15 +12,35 @@ export function directionOf(locale: Locale): Direction {
   return locale === "ar" ? "rtl" : "ltr";
 }
 
+/** Digits the Arabic UI shows its own numbers in: ٠–٩ or 0–9. */
+export type UiDigits = "arabicIndic" | "western";
+
+let arabicUiDigits: UiDigits = "arabicIndic";
+
+/**
+ * Sets the digits of the Arabic UI's own numbers. Call `applyLocale` after it so
+ * mounted components re-render with the new digits.
+ */
+export function setUiDigits(digits: UiDigits) {
+  arabicUiDigits = digits;
+}
+
 /**
  * BCP 47 tag used for number and date formatting.
  *
- * The Arabic UI uses Western digits (nu-latn) for chrome such as page counts and
- * zoom. This is a product default awaiting confirmation (see PROGRESS.md);
- * digits *inside documents* are a separate, per-feature user choice (spec 6.3).
+ * The Arabic UI shows chrome such as page counts and zoom in Arabic-Indic digits
+ * (nu-arab) by default, or Western digits (nu-latn) if the user chooses them in
+ * Settings (owner decision, 2026-11-23). Digits *inside documents* are a
+ * separate, per-feature user choice (spec 6.3).
  */
 export function formatTag(locale: Locale): string {
-  return locale === "ar" ? "ar-u-nu-latn" : "en";
+  return formatTagWith(locale, arabicUiDigits);
+}
+
+/** `formatTag` for given digits, without the current setting. */
+export function formatTagWith(locale: Locale, digits: UiDigits): string {
+  if (locale !== "ar") return "en";
+  return digits === "western" ? "ar-u-nu-latn" : "ar-u-nu-arab";
 }
 
 export function formatNumber(value: number, locale: Locale, options?: Intl.NumberFormatOptions) {

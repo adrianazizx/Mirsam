@@ -29,8 +29,8 @@ subsetter lands.
 **Embedded now (ADR 0019).** Text boxes embed subsets of `IBMPlexSans-VF.ttf`
 (instanced at weight 400) and `IBMPlexSansArabic-Regular.ttf` in the user's
 PDFs, under their own names with a subset tag. Both files are compiled into the
-engine. The Reserved Font Name question above is listed for the project owner
-in `PROGRESS.md`.
+engine. **The project owner decided (2026-11-23) to keep IBM Plex** for subsets
+embedded under the fonts' own names (`PROGRESS.md`, owner item 14).
 
 **Embedded from Milestone 3 (ADR 0021).** Text added to pages embeds subsets of
 the same two Plex files (the Sans family) or of `Amiri-Regular.ttf` (the Naskh
@@ -48,4 +48,5 @@ faces' bolds:
 All of these are now compiled into the engine. Italic runs are drawn slanted
 from the upright faces and embedded under oblique names (`IBMPlexSans-Oblique`,
 …). The font programs are not changed, but the names are ours, so the Reserved
-Font Name question above applies to them too.
+Font Name question above applies to them too; that case is still open for the
+project owner (owner item 14).

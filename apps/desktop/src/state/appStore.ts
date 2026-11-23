@@ -19,7 +19,7 @@ import type {
   SignatureInfo,
   TextStyle,
 } from "../backend";
-import type { Locale } from "../i18n";
+import type { Locale, UiDigits } from "../i18n";
 import type { SelectedAnnotation } from "../viewer/controller";
 import type { PageOrder, ViewMode } from "../viewer/layout";
 import type { DocumentColorId } from "./colors";
@@ -202,6 +202,8 @@ export const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
 
 export interface AppState {
   locale: Locale;
+  /** Digits of the Arabic UI's own numbers (page counts, zoom). */
+  uiDigits: UiDigits;
   theme: ThemePreference;
   readingTheme: ReadingTheme;
   /** The open side panel at the inline start, or null when it is closed. */
@@ -260,6 +262,7 @@ export interface AppState {
   paletteOpen: boolean;
 
   setLocale(locale: Locale): void;
+  setUiDigits(digits: UiDigits): void;
   setTheme(theme: ThemePreference): void;
   setReadingTheme(theme: ReadingTheme): void;
   setLeftPanel(panel: LeftPanel | null): void;
@@ -344,11 +347,12 @@ const CACHE_KEY = "safha.preferences";
 
 type Persisted = Pick<
   AppState,
-  "locale" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
+  "locale" | "uiDigits" | "theme" | "readingTheme" | "leftPanel" | "searchOptions" | "commentAuthor"
 >;
 
 const DEFAULTS: Persisted = {
   locale: "en",
+  uiDigits: "arabicIndic",
   theme: "system",
   readingTheme: "normal",
   leftPanel: null,
@@ -360,6 +364,7 @@ const DEFAULTS: Persisted = {
 export function parseSettings(raw: Record<string, string | undefined>): Partial<Persisted> {
   const out: Partial<Persisted> = {};
   if (raw.locale === "en" || raw.locale === "ar") out.locale = raw.locale;
+  if (raw.uiDigits === "arabicIndic" || raw.uiDigits === "western") out.uiDigits = raw.uiDigits;
   if (raw.theme === "system" || raw.theme === "light" || raw.theme === "dark") {
     out.theme = raw.theme;
   }
@@ -573,6 +578,7 @@ export const useAppStore = create<AppState>((set, get) => {
     paletteOpen: false,
 
     setLocale: (locale) => update("locale", locale),
+    setUiDigits: (uiDigits) => update("uiDigits", uiDigits),
     setTheme: (theme) => update("theme", theme),
     setReadingTheme: (readingTheme) => update("readingTheme", readingTheme),
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),

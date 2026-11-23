@@ -159,7 +159,8 @@ describe("the form designer (ADR 0047)", () => {
 
   it.each([
     ["en", "Design", "Draw fields", "Text field", "Tab order on page 1"],
-    ["ar", "تصميم", "رسم الحقول", "حقل نصي", "ترتيب التنقل في الصفحة 1"],
+    // The Arabic UI numbers its pages in Arabic-Indic digits.
+    ["ar", "تصميم", "رسم الحقول", "حقل نصي", "ترتيب التنقل في الصفحة ١"],
   ] as const)("shows the designer in %s", async (locale, mode, tools, kind, tabs) => {
     render(<App />);
     await act(async () => {

@@ -363,8 +363,8 @@ describe("comments panel", () => {
     await addNote(42, 0, "ملاحظة");
     const panel = screen.getByTestId("comments");
     await within(panel).findByText("ملاحظة");
-    // The UI's own numbers are Western digits in Arabic too (i18n `formatTag`).
-    expect(within(panel).getByRole("heading", { name: "الصفحة 1" })).toBeTruthy();
+    // The Arabic UI's own numbers are Arabic-Indic digits by default (i18n `formatTag`).
+    expect(within(panel).getByRole("heading", { name: "الصفحة ١" })).toBeTruthy();
     expect(within(panel).getByText("بلا اسم")).toBeTruthy();
   });
 });
