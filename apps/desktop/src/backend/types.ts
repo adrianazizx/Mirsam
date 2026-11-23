@@ -832,6 +832,78 @@ export type OcrModelUpdate =
 /** A download moved on (sent to every window). */
 export type OcrModelEvent = { id: string } & OcrModelUpdate;
 
+/** Where a background OCR job is (ADR 0035). */
+export type OcrJobState = "queued" | "running" | "paused" | "done" | "cancelled" | "failed";
+/** The quick draft (platform OCR) or the quality pipeline. */
+export type OcrPass = "draft" | "quality";
+
+/** A background OCR job: a document's pages, drafted first, then read in quality mode. */
+export interface OcrJob {
+  id: number;
+  /** The document's file name (not translated). */
+  name: string;
+  /** How many pages it reads. */
+  pages: number;
+  state: OcrJobState;
+  /** An error code (`errors.*`) when it failed. */
+  error: string | null;
+  /** Pages that have a draft or the final text. */
+  drafted: number;
+  /** Pages that have the quality result. */
+  finished: number;
+  /** The page being read now (zero-based) and by which pass. */
+  current: [number, OcrPass] | null;
+  /** The open documents showing the job's file. */
+  documentIds: number[];
+}
+
+export type OcrJobAction = "pause" | "resume" | "cancel";
+
+/** What reconciling did to a word (ADR 0033). */
+export type OcrWordStatus =
+  | { kind: "unchecked" }
+  | { kind: "confirmed" }
+  /** Replaced: other readings agreed on something else; `read` is what the page read said. */
+  | { kind: "corrected"; read: string }
+  /** The readers disagree; the page read was kept. */
+  | { kind: "uncertain"; alternatives: string[] }
+  /** A number–unit compound put in logical order ("bit-64" to "64-bit"). */
+  | { kind: "reordered"; read: string };
+
+/** A word on the pages-needing-review list. */
+export interface OcrReviewWord {
+  /** Its place among the page's words. */
+  index: number;
+  text: string;
+  /** The engine's probability for it, 0–1. */
+  probability: number;
+  status: OcrWordStatus;
+  /** Its box on the displayed page in points (left, top, right, bottom). */
+  bounds: [number, number, number, number] | null;
+}
+
+/** A page on the pages-needing-review list (spec §5.8). */
+export interface OcrReviewPage {
+  page: number;
+  uncertain: number;
+  corrected: number;
+  reordered: number;
+  /** The engine's answer was cut off: part of the page may be missing. */
+  truncated: boolean;
+  /** Mean and lowest word probability, 0–1. */
+  confidence: number;
+  lowest: number;
+  words: OcrReviewWord[];
+}
+
+/** OCR text was written into a document (an edit, undoable like any other). */
+export interface OcrApplied {
+  documentId: number;
+  outcome: EditOutcome;
+  /** The pages written, each now with the draft or the final text. */
+  pages: [number, "draft" | "final"][];
+}
+
 export interface Backend {
   appInfo(): Promise<AppInfo>;
   /** Shows the native picker. Resolves to null when the user cancels. */
@@ -1168,4 +1240,21 @@ export interface Backend {
   /** Removes a package and any partial download of it; `model_busy` while it downloads. */
   deleteOcrModel(id: string): Promise<void>;
   onOcrModelProgress(listener: (event: OcrModelEvent) => void): Promise<() => void>;
+  /**
+   * Queues OCR of a document's pages (zero-based; all when absent) as a
+   * background job (ADR 0035). Rejects with `ocr_model_missing`,
+   * `ocr_signed_document` or `ocr_unavailable`.
+   */
+  startOcr(documentId: number, pages?: number[]): Promise<OcrJob>;
+  /** The OCR jobs of a document, oldest first. */
+  ocrJobs(documentId: number): Promise<OcrJob[]>;
+  controlOcrJob(jobId: number, action: OcrJobAction): Promise<OcrJob>;
+  /** Forgets a job that is not running, and its part of the review list. */
+  removeOcrJob(jobId: number): Promise<void>;
+  /** The pages-needing-review list of a document: decisions first. */
+  ocrReview(documentId: number): Promise<OcrReviewPage[]>;
+  /** Jobs moving on (every window). */
+  onOcrJob(listener: (job: OcrJob) => void): Promise<() => void>;
+  /** OCR text written into a document shown in this window. */
+  onOcrApplied(listener: (applied: OcrApplied) => void): Promise<() => void>;
 }

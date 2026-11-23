@@ -1,0 +1,121 @@
+name: OCR benchmark
+
+# The OCR benchmark gate (spec §8 "CI runs the benchmark on every change to the
+# OCR pipeline and fails on any regression"; ADR 0036).
+#
+# The models are 6.6 GB and read a page in minutes on a hosted runner's CPU, so
+# the gate does not run them over the 47-page evaluation set. It replays the
+# answers they gave, recorded in ocr-eval/recordings/ by a full run on a Mac,
+# through the current pipeline code: assessment, line strips, re-reading,
+# reconciling, word boxes and the text layer all run for real. Both the
+# pipeline's text and the searchable PDF's text (read back by the app's own
+# extractor) are scored against the stored baselines; any regression in CER,
+# WER, fields, reading order or table cells fails, as do the spec's targets.
+# A change that makes the pipeline ask the models something new fails with
+# "record again": run ocr_bench --record with the models (ocr-eval/README.md).
+#
+# The smoke job runs the real thing on one page: the runtime and Nuqta 0.8B
+# installed through the app's download manager (cached between runs), read on
+# the CPU.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ocr-benchmark.yml"
+      - "crates/safha-core/src/ocr/**"
+      - "crates/safha-core/src/models/**"
+      - "crates/safha-core/src/text/**"
+      - "crates/safha-core/examples/ocr_bench.rs"
+      - "crates/safha-core/examples/ocr_smoke.rs"
+      - "crates/safha-ocr-eval/**"
+      - "ocr-eval/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ocr-benchmark.yml"
+      - "crates/safha-core/src/ocr/**"
+      - "crates/safha-core/src/models/**"
+      - "crates/safha-core/src/text/**"
+      - "crates/safha-core/examples/ocr_bench.rs"
+      - "crates/safha-core/examples/ocr_smoke.rs"
+      - "crates/safha-ocr-eval/**"
+      - "ocr-eval/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ocr-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    name: OCR benchmark gate (recorded answers)
+    # The recordings were made on macOS; its Chrome draws the evaluation set's
+    # pages as they were drawn then.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Fetch PDFium (pinned, checksum-verified)
+        run: scripts/fetch-pdfium.sh
+      - name: Generate the evaluation set
+        run: node ocr-eval/generate.mjs
+      - name: Build
+        run: |
+          cargo build --release --locked -p safha-ocr-eval
+          cargo build --release --locked -p safha-core --example ocr_bench
+      - name: Run the pipeline on the recorded answers
+        run: |
+          export SAFHA_PDFIUM_DIR="$PWD/third_party/pdfium/$(ls third_party/pdfium | head -1)/lib"
+          target/release/examples/ocr_bench --out ocr-bench --replay ocr-eval/recordings/set-v2
+      - name: Score the pipeline's text (targets and baseline)
+        run: |
+          target/release/safha-ocr-eval --manifest ocr-eval/out/manifest.json --hyp ocr-bench/text \
+            --engine pipeline-nuqta-4b+0.8b --targets ocr-eval/targets.json \
+            --baseline ocr-eval/baselines/pipeline-nuqta-4b+0.8b.set-v2.json --out ocr-bench/text.json
+      - name: Score the searchable PDF's text (baseline)
+        run: |
+          target/release/safha-ocr-eval --manifest ocr-eval/out/manifest.json --hyp ocr-bench/layer \
+            --engine pipeline-layer-nuqta-4b+0.8b \
+            --baseline ocr-eval/baselines/pipeline-layer-nuqta-4b+0.8b.set-v2.json --out ocr-bench/layer.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ocr-benchmark
+          path: ocr-bench
+
+  smoke:
+    name: OCR smoke run (real model, CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        # The runtime's Linux build loads OpenMP and a Vulkan loader (it falls
+        # back to the CPU without a driver).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgomp1 libvulkan1
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Fetch PDFium (pinned, checksum-verified)
+        run: scripts/fetch-pdfium.sh
+      - name: Generate the evaluation set
+        run: node ocr-eval/generate.mjs
+      - name: Model store (cached by the catalog's pins)
+        uses: actions/cache@v4
+        with:
+          path: ~/ocr-models
+          key: ocr-models-${{ runner.os }}-${{ hashFiles('crates/safha-core/src/models/catalog.rs') }}
+      - name: Install the runtime and Nuqta 0.8B, read one page on the CPU
+        run: |
+          cargo run --release --locked -p safha-core --example ocr_smoke -- --models ~/ocr-models \
+            --image ocr-eval/out/images/syn-ar-plain-naskh-clean-300.png \
+            --truth ocr-eval/out/truth/syn-ar-plain-naskh-clean-300.txt --max-cer 0.05

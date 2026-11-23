@@ -90,7 +90,7 @@ pub struct StoredSignature {
 }
 
 /// Bumped whenever `migrate` gains a step.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const MAX_RECENTS: i64 = 200;
 /// The most signatures kept; saving another forgets the oldest.
 pub const MAX_SIGNATURES: i64 = 24;
@@ -392,11 +392,17 @@ fn decode_signature(kind: &str, data: Vec<u8>) -> Option<crate::annotate::Signat
 /// A file that no longer exists cannot be canonicalized, so its folder is
 /// (on macOS `/var` is itself a symlink to `/private/var`).
 fn key_of(path: &Path) -> String {
+    canonical_path(path).to_string_lossy().into_owned()
+}
+
+/// `path` as the store keys files: canonical where it can be resolved (the
+/// file, or else its folder), so two spellings of one file are one key.
+pub fn canonical_path(path: &Path) -> PathBuf {
     let canonical = std::fs::canonicalize(path).ok().or_else(|| {
         let parent = std::fs::canonicalize(path.parent()?).ok()?;
         Some(parent.join(path.file_name()?))
     });
-    canonical.unwrap_or_else(|| path.to_path_buf()).to_string_lossy().into_owned()
+    canonical.unwrap_or_else(|| path.to_path_buf())
 }
 
 fn now() -> i64 {
@@ -482,7 +488,151 @@ fn migrate(db: &Connection) -> StoreResult<()> {
              COMMIT;",
         )?;
     }
+    if version < 5 {
+        // Background OCR jobs and their page results (ADR 0035).
+        db.execute_batch(
+            "BEGIN;
+             CREATE TABLE ocr_jobs (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 path TEXT NOT NULL,
+                 name TEXT NOT NULL,
+                 page_count INTEGER NOT NULL,
+                 -- JSON array of zero-based page numbers, in reading order.
+                 pages TEXT NOT NULL,
+                 state TEXT NOT NULL,
+                 error TEXT,
+                 created INTEGER NOT NULL,
+                 updated INTEGER NOT NULL
+             );
+             CREATE TABLE ocr_pages (
+                 job INTEGER NOT NULL REFERENCES ocr_jobs(id) ON DELETE CASCADE,
+                 page INTEGER NOT NULL,
+                 quality TEXT NOT NULL,
+                 -- JSON: the page's text layer, and its words with confidence and status.
+                 result TEXT NOT NULL,
+                 PRIMARY KEY (job, page)
+             );
+             PRAGMA user_version = 5;
+             COMMIT;",
+        )?;
+    }
     Ok(())
+}
+
+impl crate::ocr::jobs::JobBook for Store {
+    fn create_job(&self, path: &Path, name: &str, page_count: usize, pages: &[usize]) -> Result<i64, String> {
+        let pages = serde_json::to_string(pages).map_err(|err| err.to_string())?;
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO ocr_jobs (path, name, page_count, pages, state, created, updated)
+                 VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?5)",
+                params![key_of(path), name, page_count as i64, pages, now()],
+            )?;
+            Ok(db.last_insert_rowid())
+        })
+        .map_err(|err| err.to_string())
+    }
+
+    fn jobs(&self) -> Result<Vec<crate::ocr::jobs::JobRecord>, String> {
+        use crate::ocr::jobs::{JobRecord, JobState};
+        let rows = self
+            .with(|db| {
+                let mut statement = db.prepare(
+                    "SELECT id, path, name, page_count, pages, state, error FROM ocr_jobs ORDER BY id",
+                )?;
+                let rows = statement.query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                })?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(|err| err.to_string())?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, path, name, page_count, pages, state, error)| {
+                Some(JobRecord {
+                    id,
+                    path: PathBuf::from(path),
+                    name,
+                    page_count: usize::try_from(page_count).ok()?,
+                    pages: serde_json::from_str(&pages).ok()?,
+                    state: JobState::from_name(&state)?,
+                    error,
+                })
+            })
+            .collect())
+    }
+
+    fn set_job_state(
+        &self,
+        id: i64,
+        state: crate::ocr::jobs::JobState,
+        error: Option<&str>,
+    ) -> Result<(), String> {
+        self.with(|db| {
+            db.execute(
+                "UPDATE ocr_jobs SET state = ?2, error = ?3, updated = ?4 WHERE id = ?1",
+                params![id, state.name(), error, now()],
+            )
+        })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+    }
+
+    fn set_job_path(&self, id: i64, path: &Path, name: &str) -> Result<(), String> {
+        self.with(|db| {
+            db.execute(
+                "UPDATE ocr_jobs SET path = ?2, name = ?3, updated = ?4 WHERE id = ?1",
+                params![id, key_of(path), name, now()],
+            )
+        })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+    }
+
+    fn save_page(&self, id: i64, page: &crate::ocr::jobs::PageOcr) -> Result<(), String> {
+        let result = serde_json::to_string(page).map_err(|err| err.to_string())?;
+        let quality = match page.quality() {
+            crate::ocr::LayerQuality::Draft => "draft",
+            crate::ocr::LayerQuality::Final => "final",
+        };
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO ocr_pages (job, page, quality, result) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(job, page) DO UPDATE SET quality = excluded.quality, result = excluded.result",
+                params![id, page.page as i64, quality, result],
+            )?;
+            db.execute("UPDATE ocr_jobs SET updated = ?2 WHERE id = ?1", params![id, now()])
+        })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+    }
+
+    fn pages(&self, id: i64) -> Result<Vec<crate::ocr::jobs::PageOcr>, String> {
+        let rows = self
+            .with(|db| {
+                let mut statement =
+                    db.prepare("SELECT result FROM ocr_pages WHERE job = ?1 ORDER BY page")?;
+                let rows = statement.query_map(params![id], |row| row.get::<_, String>(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(|err| err.to_string())?;
+        // A result this version cannot read is read again rather than failing the job.
+        Ok(rows.iter().filter_map(|row| serde_json::from_str(row).ok()).collect())
+    }
+
+    fn delete_job(&self, id: i64) -> Result<(), String> {
+        self.with(|db| db.execute("DELETE FROM ocr_jobs WHERE id = ?1", params![id]))
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
 }
 
 #[cfg(test)]

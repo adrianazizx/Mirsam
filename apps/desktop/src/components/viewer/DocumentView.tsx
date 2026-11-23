@@ -7,6 +7,7 @@ import { isMac } from "../../commands/platform";
 import { runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
+import { useOcrJobs } from "../../state/ocrJobs";
 import { ViewerController, type ViewerMode, type ViewerSpacing } from "../../viewer/controller";
 import { registerViewer, unregisterViewer } from "../../viewer/registry";
 import { NoteEditor } from "../comments/NoteEditor";
@@ -104,6 +105,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         overlay: styles.overlay ?? "",
         searchHit: styles.searchHit ?? "",
         searchHitActive: styles.searchHitActive ?? "",
+        reviewMark: styles.reviewMark ?? "",
         selection: styles.selection ?? "",
         markupSelected: styles.markupSelected ?? "",
         inkPreview: styles.inkPreview ?? "",
@@ -233,6 +235,14 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   useEffect(() => {
     viewerRef.current?.setSearchHits(hits ?? [], activeHit);
   }, [hits, activeHit]);
+
+  // The OCR word under review (ADR 0035).
+  const reviewFocus = useOcrJobs((state) => (state.focus?.documentId === id ? state.focus : null));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows it again
+  useEffect(() => {
+    const rect = reviewFocus?.rect;
+    viewerRef.current?.setReviewMark(reviewFocus && rect ? { page: reviewFocus.page, rect } : null);
+  }, [reviewFocus, revision]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows them again
   useEffect(() => {

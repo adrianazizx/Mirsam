@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M4 model download manager, branch `pomidor/m4-model-downloads-ef1050`, merged with `main` after M7 packaging).
+Last updated: 2026-11-23 (M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -115,6 +115,20 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     - **Conditions:** the server always runs with `--no-webui`, and no CUDA build ships (NVIDIA's
       CUDA runtime licence).
     - **Now:** the runtime is in the download catalog.
+
+21. **M4's exit test needs Acrobat (and ABBYY) for two lines** (`docs/demos/m4.md`):
+    - **copy** from a searchable PDF the app made, in Acrobat Reader (spec §12 names it);
+    - **Acrobat's and ABBYY FineReader's own OCR** on `ocr-eval/`, for the §8 ship gate
+      "beat the OCR in the leading commercial editors". Apple Vision (Preview's) is beaten.
+    Neither is installed here. Everything else in the exit test passed on the synthetic set;
+    real scans (item 9) are still what would make the numbers trustworthy.
+22. **A draft reader for Windows and Linux.** On macOS, Apple Vision drafts each page in
+    under a second (ADR 0035). Elsewhere the app uses Tesseract (`ara+eng`) only if the user
+    installed it. Bundling it means the `tesseract` program (Apache-2.0, about 15–30 MB with
+    Leptonica) and `tessdata_best` `ara` + `eng` (about 25 MB, Apache-2.0) through the model
+    download manager. Without it, Windows and Linux skip the draft: the quality pass still
+    runs, words are boxed on the page's own line strips, and pages become searchable only as
+    each quality page finishes. Bundle it, or accept that?
 
 Spec §3 open decisions D1–D7: all proceeding on the stated assumptions; none has been questioned
 by anything found so far.
@@ -574,8 +588,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     - Examples `ocr_eval` and `ocr_page`.
     - **Result:** over the eval set, byte-identical text to the benchmark on all 47 pages (0.89%
       CER), at 8.3 s per page on Metal and 141 s on the CPU.
-  - [ ] **2. Word boxes in Rust:** the PP-OCRv5 detector through ONNX Runtime, and ADR 0031's
-        alignment.
+  - [x] **2. Word boxes in Rust** (ADR 0035): ADR 0031's alignment, with the draft reader's
+        lines (Apple Vision) as detector and guide instead of PP-OCRv5. 99.0% of words on the
+        right line, 95% with IoU-x ≥ 0.5 (the spike: 99.0%, 93%). No ONNX Runtime needed.
   - [x] **3. Reconcile and verify** (ADR 0033): `QualityReader`.
     - **Assessment:** skew and specks.
     - **Deskewed line strips,** found without a detector.
@@ -588,12 +603,37 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     - **Cost:** 24.9 s per page on Metal.
     - **Still open:** omitted lines ("Lease Agreement") wait for slice 2's detector. CPU-only
       cost is not measured.
-  - [ ] **4. Assembly into the text layer** in logical order (spec §6.3).
-- [ ] Background jobs with draft-then-quality results; survives restart
-- [~] Word-level confidence, pages-needing-review list. The engine side is done (ADR 0033):
-      each word has a probability and a status, and `review_list` gives the pages needing
-      review. The UI is not built yet.
-- [ ] Searchable-PDF output in logical order
+  - [x] **4. Assembly into the text layer** in logical order (ADR 0035): see searchable-PDF
+        output below.
+- [x] Background jobs with draft-then-quality results; survives restart (ADR 0035):
+  - **Runner:** `safha_core::ocr::jobs`, one worker; Apple Vision drafts every page first
+    (0.3 s a page), then the quality pipeline replaces each page.
+  - **Controls and restart:** progress, pause, resume, cancel (stops the servers mid-page).
+    Jobs and page results are kept in the state store (schema 5). After a restart, what the
+    document lost is written back without reading again.
+  - **Servers:** one 4B and one 0.8B `llama-server`, shared by all jobs, stopped when idle
+    and at exit.
+  - **In the document:** each batch is an undoable edit; signed documents are refused.
+- [x] Word-level confidence, pages-needing-review list (ADR 0033, ADR 0035):
+  - **The OCR panel:** jobs with a two-layer progress bar, and pages needing review
+    (decisions first, with counts and confidence) with their flagged words (status, other
+    readings, confidence).
+  - **A flagged word** opens its page with the word marked; Next and Previous step through
+    them.
+  - **Commands and strings:** 10 registry commands, en and ar strings, RTL checked in the
+    browser build.
+- [~] Searchable-PDF output in logical order (ADR 0035):
+  - **The layer:** invisible, written by our writer as an incremental update. It replaces
+    the draft, and Undo removes it. Encrypted files are handled; `qpdf --check` passes.
+  - **Read back** on the eval set's 45 non-contract pages: 0.88% CER (the pipeline's text:
+    0.60%); clean and degraded Arabic 0.00–0.06%.
+  - **Order,** of 8 probe lines exact: this app 7 of 8, Preview 8 of 8, PDFium 4 of 8 (all
+    its Arabic lines).
+  - **Gaps:**
+    - PDFium reverses English runs inside Arabic lines;
+    - "(64-bit)" reads back as "bit-64";
+    - the two-column contract reads paragraph by paragraph (as the born-digital one does);
+    - Acrobat is untested (owner item 21).
 - [~] Model download manager; hardware acceleration (ADR 0034, branch `pomidor/m4-model-downloads-ef1050`):
   - **Engine:** `safha_core::models`. A pinned catalog (Nuqta 4B and 0.8B GGUF by revision, size
     and SHA-256). Resumable HTTPS downloads with retries, checksum, a disk-space check, cancel,
@@ -606,12 +646,33 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - **Runtime:** the llama.cpp runtime (`b12359`; Metal, CPU, and Vulkan with CPU fallback; no
     CUDA) is a required package, with the owner's licence approval (item 20).
   - **Gaps:**
-    - Acceleration is reported, not yet used by recognition.
+    - ~~Acceleration is reported, not yet used by recognition.~~ Jobs now run on the GPU when
+      the runtime has a backend (ADR 0035).
+    - The runtime, the 0.8B and the 4B were installed through it end to end here (headless,
+      `ocr_smoke`), and each read a page.
     - Windows memory detection and the Windows/Linux archive paths are untested on those OSes
       (CI builds them).
     - Signing a downloaded `llama-server` is open (M7).
-- [ ] Benchmark gate in CI
-- [ ] Exit test: targets and ship gates in spec §8 met on `ocr-eval/`
+- [x] Benchmark gate in CI (ADR 0036, `.github/workflows/ocr-benchmark.yml`):
+  - **Gate:** recorded model answers (`ocr-eval/recordings/set-v2`, 740 KB) replayed
+    through the current pipeline on macOS. The pipeline's text and the searchable PDF's
+    read-back are scored against stored baselines; any regression fails. A test mutation
+    failed it.
+  - **Smoke:** the runtime and Nuqta 0.8B installed through the download manager on Linux,
+    then one page read on the CPU.
+- [~] Exit test (`docs/demos/m4.md`):
+  - **Passed:**
+    - all five accuracy gates;
+    - the Tesseract and Apple Vision ship gates;
+    - a scanned bilingual document becomes searchable (headless, through the real runner,
+      engines and store, including a resume);
+    - copied Arabic is in logical order in this app, in Preview, and in PDFium for Arabic
+      lines.
+  - **Open:**
+    - Acrobat (copy, and its OCR) and ABBYY (owner item 21);
+    - real scans (item 9);
+    - Chrome's window itself (PDFium's API was used);
+    - PDFium's English-inside-Arabic word order.
 
 ## M5 — Forms, sign, protect
 
@@ -686,6 +747,65 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### M4 close — 2026-11-23 (background jobs, searchable PDF, review list, CI gate, exit test; branch `pomidor/m4-jobs-searchable-fe4973`)
+
+- **ADR 0035 and ADR 0036.** State store schema 5 (`ocr_jobs`, `ocr_pages`).
+- **Engine (`safha_core::ocr`):**
+  - `jobs`: the runner, `LocalEngines`, `draft_page`, `final_page`, `review`.
+  - `layer` and `font`: the text layer and its glyphless font.
+  - `boxes`: word boxes.
+  - `draft`: the Vision helper (`vision.swift`, built on first use) and Tesseract's TSV.
+  - `replay`: recording and replaying model answers.
+  - `Document::with_text_layers`, `text_layer_qualities`, `ocr_placement`.
+  - `LlamaServer::stop`.
+- **Text-layer order, measured** (`examples/ocr_layer_probe.rs`): five orders against this
+  app, PDFium, PDFKit and Poppler.
+  - **Chosen: lines as a word processor writes them.** Reads 7, 4, 8 and 3 of 8 lines exactly.
+  - **Font fixes the probe found:** PDFium dropped one-letter words with empty glyphs, and
+    Preview dropped a vowel stacked on shadda when the glyphs overlapped exactly.
+- **Shell (`ocr.rs`):**
+  - **Commands:** `start_ocr`, `ocr_jobs`, `control_ocr_job`, `remove_ocr_job`,
+    `ocr_review`.
+  - **Events:** `ocr-job` and `ocr-applied`.
+  - **Lifecycle:** the runner wakes when documents open or close; Save As moves jobs; the
+    servers stop at exit.
+- **UI:**
+  - **The OCR panel:** jobs, and the review list with clickable flagged words.
+  - **The viewer's review mark.**
+  - **10 commands, 12 error codes, en and ar strings.**
+  - **A browser mock of jobs,** checked in Arabic dark and English light.
+- **Benchmark:**
+  - **Examples:** `ocr_bench` (record, replay, `--truth-boxes`), `ocr_smoke` and
+    `ocr_document`.
+  - **The recorded run** (47 pages, 25 minutes on Metal) is byte-identical to ADR 0033's
+    numbers.
+  - **The replay** reproduces its text exactly in 7.5 s.
+  - **New baseline** `pipeline-layer-nuqta-4b+0.8b.set-v2.json`.
+- **Fixed while measuring the read-back on the full set:**
+  - one font size per column, and robust line bands: clean Arabic 7.45% → 0.00%;
+  - wide word gaps closed: degraded mixed 9.31% → 0.47%;
+  - Vision's line pieces joined;
+  - weak guide anchors ignored;
+  - words placed by their letters, not their punctuation.
+- **Tests:**
+  - **Rust:** `cargo test --workspace` passes: 538 tests, 2 ignored (the real-model ones).
+    - 5 job-runner tests, 3 text-layer integration tests;
+    - box, draft, font, layer, replay and store unit tests;
+    - a shell test that jobs reach the UI without their path.
+  - **UI:** 237 tests, 4 new for jobs and review, Arabic RTL included.
+  - **Clean:** clippy (both surfaces), fmt, biome, typecheck.
+- **Not checked here:**
+  - **The Tauri window with real models.** The job ran headless through the same runner,
+    engines and store. The shell's glue is unit-tested, and the UI was tested against the
+    mock.
+  - **Windows and Linux runs** of the Vision-less draft path.
+  - **Acrobat.**
+  - **The new CI workflow's first run** (it runs on this pull request).
+- **For other sessions:**
+  - State store schema 5 is taken; a later bump renumbers to 6.
+  - `EditOutcome` is now `Clone`.
+  - `AppState` gains `documents_of` and `window_of`.
 
 ### M4 side track — 2026-11-22 (OCR model download manager; branch `pomidor/m4-model-downloads-ef1050`)
 

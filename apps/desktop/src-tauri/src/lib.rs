@@ -13,6 +13,7 @@ mod forms;
 mod instance;
 mod models;
 mod navigation;
+mod ocr;
 mod output;
 #[cfg(target_os = "linux")]
 mod print_linux;
@@ -107,6 +108,11 @@ macro_rules! product_commands {
             models::download_ocr_model,
             models::cancel_ocr_model_download,
             models::delete_ocr_model,
+            ocr::start_ocr,
+            ocr::ocr_jobs,
+            ocr::control_ocr_job,
+            ocr::remove_ocr_job,
+            ocr::ocr_review,
             navigation::document_outline,
             navigation::page_labels,
             navigation::page_text,
@@ -161,6 +167,12 @@ pub fn run() {
             }
             // OCR models, downloaded on demand into the same directory (ADR 0034).
             app.manage(models::ModelsState::new(models::models_root(state_dir.as_deref())));
+            // Background OCR jobs, kept in the state store (ADR 0035).
+            app.manage(ocr::OcrState::start(
+                app.handle().clone(),
+                state_dir.as_deref(),
+                models::models_root(state_dir.as_deref()),
+            ));
             #[cfg(feature = "devtools")]
             diagnostics::prepare_window(app);
             Ok(())
@@ -221,6 +233,12 @@ pub fn run() {
 
     let app = builder.build(context).expect("failed to start the Mirsam desktop shell");
     app.run(|handle, event| {
+        // The OCR servers hold gigabytes: stop them before the process goes.
+        if matches!(event, tauri::RunEvent::Exit)
+            && let Some(ocr) = handle.try_state::<ocr::OcrState>()
+        {
+            ocr.shutdown();
+        }
         // macOS asks the running app to open files (Finder, "Open with",
         // `open -a`) rather than starting another copy.
         #[cfg(target_os = "macos")]

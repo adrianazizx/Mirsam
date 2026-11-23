@@ -1,4 +1,5 @@
 import { mockOcrBackend } from "./mockOcr";
+import { mockOcrJobs } from "./mockOcrJobs";
 import type {
   AnnotationKind,
   Backend,
@@ -1452,4 +1453,15 @@ export const mockBackend: Backend = {
   webviewRssKb: async () => null,
   selftestLog: async () => {},
   ...mockOcrBackend,
+  ...mockOcrJobs({
+    pageCount: (documentId) => pagesOf(documentId).length,
+    write: (documentId) => {
+      const state = stateOf(documentId);
+      return pushState(documentId, {
+        pages: state.pages,
+        markup: state.markup,
+        change: "annotations",
+      });
+    },
+  }),
 };

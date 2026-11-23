@@ -16,20 +16,35 @@
 //!
 //! Word boxes and writing the text layer come in later slices.
 
+mod boxes;
 mod command;
+mod draft;
+mod font;
 mod image;
+pub mod jobs;
+mod layer;
 mod layout;
 mod llama;
 mod order;
 mod pipeline;
 mod reconcile;
+mod replay;
 mod text;
 
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub use boxes::{BoxedLine, BoxedWord, word_boxes};
 pub use command::CommandEngine;
+pub use draft::{
+    DraftLine, DraftPage, DraftReader, DraftWord, PixelBox, TesseractReader, VISION_SOURCE, VisionReader,
+    first_strong_rtl, parse_tesseract_tsv, vision_helper,
+};
 pub use image::{NUQTA_PIXELS, OcrImage, nuqta_size, prepare_nuqta};
+pub use layer::{
+    LAYER_KEY, LayerLine, LayerQuality, LayerWord, ORDER, Order, PageLayer, text_layer_update_with,
+};
+pub(crate) use layer::{layer_qualities, text_layer_update};
 pub use layout::{LineBox, PageLayout, analyze, deskew};
 pub use llama::{
     ChatAnswer, Device, LlamaServer, NUQTA_PROMPT, NuqtaEngine, NuqtaModel, NuqtaQuant, NuqtaSize,
@@ -40,6 +55,7 @@ pub use pipeline::{PageResult, PageReview, QualityReader, Settings, review_list}
 pub use reconcile::{
     OtherReadings, ReviewedWord, WordStatus, is_target, key, reconcile, words_with_confidence,
 };
+pub use replay::{RecordedRead, Recorder, Recording, Replay, fingerprint};
 pub use text::{Token, strip_think, to_text, word_confidences};
 
 /// A recogniser: page (or crop) image in, text in reading order out.

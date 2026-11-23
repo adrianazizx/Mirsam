@@ -307,6 +307,28 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, height))
     }
 
+    /// This document with OCR text layers written into their pages (ADR 0035),
+    /// replacing any layer those pages had, and the update that does it.
+    pub fn with_text_layers(&self, layers: &[crate::ocr::PageLayer]) -> Result<(Document, Vec<u8>)> {
+        let update = crate::ocr::text_layer_update(&self.bytes, self.password.as_deref(), layers)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
+    /// The OCR text layer each page has, if any (`Draft` or `Final`).
+    pub fn text_layer_qualities(&self) -> Result<Vec<Option<crate::ocr::LayerQuality>>> {
+        crate::ocr::layer_qualities(&self.bytes)
+    }
+
+    /// The `cm` matrix from page `index` as displayed (origin top-left, x right,
+    /// y up, points) to its own space: where an OCR layer measured on the
+    /// displayed page goes ([`crate::ocr::PageLayer::placement`]).
+    pub fn ocr_placement(&self, index: usize) -> Result<[f32; 6]> {
+        let view = self.view_transform(index)?;
+        crate::stamp::local_to_page(&view, |u, v| (u, -v))
+    }
+
     /// This document with `stamp` (a header or footer, page numbers, or a
     /// watermark) drawn on its pages (ADR 0050), and the update that does it.
     pub fn with_stamp(&self, stamp: &crate::stamp::Stamp) -> Result<(Document, Vec<u8>)> {
