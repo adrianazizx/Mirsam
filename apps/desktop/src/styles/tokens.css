@@ -61,6 +61,10 @@
     56px *
     var(--ui-scale)
   ); /* row height of the virtualized results list */
+  --size-replace-result: calc(
+    72px *
+    var(--ui-scale)
+  ); /* row height of the replace preview's list (ADR 0052) */
   --size-palette: calc(560px * var(--ui-scale));
   --size-note-editor: calc(280px * var(--ui-scale)); /* the note editor's width */
   --size-note-text: calc(96px * var(--ui-scale)); /* its text field's height */
@@ -195,6 +199,9 @@
   --color-link-fill: rgb(29 78 216 / 0.12);
   --color-search-mark-bg: #fde68a;
   --color-search-mark-text: #1b1f24;
+  /* What a match becomes, in the replace preview (ADR 0052). */
+  --color-replace-new-bg: #bbf7d0;
+  --color-replace-new-text: #1b1f24;
   --shadow-popover: 0 2px 4px rgb(16 24 40 / 0.08), 0 8px 24px rgb(16 24 40 / 0.14);
   --color-scrim: rgb(16 24 40 / 0.2);
 
@@ -249,6 +256,8 @@
   --color-link-fill: rgb(29 78 216 / 0.12);
   --color-search-mark-bg: #854d0e;
   --color-search-mark-text: #fef3c7;
+  --color-replace-new-bg: #14532d;
+  --color-replace-new-text: #dcfce7;
   --shadow-popover: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
   --color-scrim: rgb(0 0 0 / 0.45);
 

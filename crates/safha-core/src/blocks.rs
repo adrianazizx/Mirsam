@@ -108,6 +108,10 @@ pub(crate) struct Block {
     pub(crate) pitch: Option<f32>,
     /// Its text in styled runs, in logical order (cover `text`).
     pub(crate) runs: Vec<Run>,
+    /// Where each character of `text` is drawn: its line, and its left and
+    /// right edges on the page as displayed. The space that joins two lines
+    /// sits, without width, at the end of the first.
+    pub(crate) places: Vec<(usize, [f32; 2])>,
     /// The operators that drew it, in drawing order.
     pub(crate) shown: Vec<usize>,
     /// Some operator that drew it also drew other text.
@@ -127,6 +131,22 @@ pub(crate) struct Line {
     pub(crate) shown: Vec<usize>,
     /// Its text in styled runs, in logical order.
     pub(crate) runs: Vec<Run>,
+    /// The left and right edges of each character of `text`, as displayed:
+    /// its glyph's (the whole glyph, for a ligature's letters), or the gap
+    /// a space stands for.
+    pub(crate) boxes: Vec<[f32; 2]>,
+    /// A line with no letters (digits and punctuation: "١٢٣٤.") has no
+    /// direction of its own and takes its paragraph's: read right to left,
+    /// here, when it is read left to right above.
+    pub(crate) as_rtl: Option<Box<Ordered>>,
+}
+
+/// A line's text in logical order, its runs, and each character's edges.
+#[derive(Debug, Clone)]
+pub(crate) struct Ordered {
+    text: String,
+    runs: Vec<Run>,
+    boxes: Vec<[f32; 2]>,
 }
 
 const COLUMN_GAP_EMS: f32 = 2.0;
@@ -375,6 +395,9 @@ fn distance(unit: &Unit, x: f32) -> f32 {
     if x >= unit.x0 && x <= unit.x1 { 0.0 } else { (x - unit.x0).abs().min((x - unit.x1).abs()) }
 }
 
+/// A piece of a line's text, its style, and its left and right edges.
+type Item<'a> = (&'a str, RunStyle, [f32; 2]);
+
 /// One line from its units in visual order.
 fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
     let first = &atoms[units[0].atom];
@@ -385,59 +408,71 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
     shown.dedup();
 
     // Spaces where the gap is wide enough to be one.
-    let mut visual: Vec<(String, Class, RunStyle)> = Vec::new();
+    let mut visual: Vec<(String, Class, RunStyle, [f32; 2])> = Vec::new();
     for (i, unit) in units.iter().enumerate() {
         let style = RunStyle::of(&atoms[unit.atom]);
         if i > 0 {
             let gap = unit.x0 - units[i - 1].x1;
             let spaced = unit.text.trim().is_empty() || units[i - 1].text.trim().is_empty();
             if gap > SPACE_GAP_EMS * size && !spaced {
-                visual.push((" ".into(), Class::N, style));
+                visual.push((" ".into(), Class::N, style, [units[i - 1].x1, unit.x0]));
             }
         }
-        visual.push((unit.text.clone(), class_of(&unit.text), style));
+        visual.push((unit.text.clone(), class_of(&unit.text), style, [unit.x0, unit.x1]));
     }
-    let letters = |wanted: Class| visual.iter().filter(|(_, c, _)| *c == wanted).count();
-    let rtl = letters(Class::R) > letters(Class::L);
-
-    // Neutrals take the class of the strong text on both sides, else the line's.
-    let paragraph = if rtl { Class::R } else { Class::L };
-    let mut classes: Vec<Class> = visual.iter().map(|(_, c, _)| *c).collect();
-    let mut i = 0;
-    while i < classes.len() {
-        if classes[i] != Class::N {
-            i += 1;
-            continue;
+    // A line's direction is its letters' majority; digits and punctuation
+    // have none (UAX #9: they are weak or neutral).
+    let letters = |wanted: Class| {
+        visual.iter().filter(|(text, c, _, _)| *c == wanted && text.chars().any(char::is_alphabetic)).count()
+    };
+    let (right, left) = (letters(Class::R), letters(Class::L));
+    let rtl = right > left;
+    let logical = |rtl: bool| -> Ordered {
+        // Neutrals take the class of the strong text on both sides, else the line's.
+        let paragraph = if rtl { Class::R } else { Class::L };
+        let mut classes: Vec<Class> = visual.iter().map(|(_, c, _, _)| *c).collect();
+        let mut i = 0;
+        while i < classes.len() {
+            if classes[i] != Class::N {
+                i += 1;
+                continue;
+            }
+            let end = classes[i..].iter().position(|c| *c != Class::N).map_or(classes.len(), |n| i + n);
+            let before = i.checked_sub(1).map(|b| classes[b]);
+            let after = classes.get(end).copied();
+            let resolved = match (before, after) {
+                (Some(a), Some(b)) if a == b => a,
+                _ => paragraph,
+            };
+            classes[i..end].iter_mut().for_each(|c| *c = resolved);
+            i = end;
         }
-        let end = classes[i..].iter().position(|c| *c != Class::N).map_or(classes.len(), |n| i + n);
-        let before = i.checked_sub(1).map(|b| classes[b]);
-        let after = classes.get(end).copied();
-        let resolved = match (before, after) {
-            (Some(a), Some(b)) if a == b => a,
-            _ => paragraph,
-        };
-        classes[i..end].iter_mut().for_each(|c| *c = resolved);
-        i = end;
-    }
-    // Runs of one class, then logical order.
-    let mut runs: Vec<(Class, Vec<(&str, RunStyle)>)> = Vec::new();
-    for ((text, _, style), class) in visual.iter().zip(&classes) {
-        match runs.last_mut() {
-            Some((c, items)) if c == class => items.push((text, *style)),
-            _ => runs.push((*class, vec![(text, *style)])),
+        // Runs of one class, then logical order.
+        let mut runs: Vec<(Class, Vec<Item<'_>>)> = Vec::new();
+        for ((text, _, style, place), class) in visual.iter().zip(&classes) {
+            match runs.last_mut() {
+                Some((c, items)) if c == class => items.push((text, *style, *place)),
+                _ => runs.push((*class, vec![(text, *style, *place)])),
+            }
         }
-    }
-    if rtl {
-        runs.reverse();
-    }
-    let mut chars: Vec<(char, RunStyle)> = Vec::new();
-    for (class, items) in runs {
-        let items: Vec<(&str, RunStyle)> =
-            if class == Class::R { items.into_iter().rev().collect() } else { items };
-        for (item, style) in items {
-            chars.extend(item.chars().map(|c| (c, style)));
+        if rtl {
+            runs.reverse();
         }
-    }
+        let mut chars: Vec<(char, RunStyle, [f32; 2])> = Vec::new();
+        for (class, items) in runs {
+            let items: Vec<Item<'_>> =
+                if class == Class::R { items.into_iter().rev().collect() } else { items };
+            for (item, style, place) in items {
+                chars.extend(item.chars().map(|c| (c, style, place)));
+            }
+        }
+        let collapsed = collapse_spaces(&chars);
+        let boxes = collapsed.iter().map(|&(_, _, place)| place).collect();
+        let (text, runs) = runs_of(&collapsed.iter().map(|&(c, style, _)| (c, style)).collect::<Vec<_>>());
+        Ordered { text, runs, boxes }
+    };
+    let Ordered { text, runs, boxes } = logical(rtl);
+    let as_rtl = (right == 0 && left == 0).then(|| Box::new(logical(true)));
     let _ = first;
     let color_key = |c: [f32; 3]| {
         (c[0] * 255.0).round() as i64 * 65_536
@@ -446,8 +481,9 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
     };
     let key = most_common(units.iter().map(|u| color_key(atoms[u.atom].color)));
     let color = units.iter().map(|u| atoms[u.atom].color).find(|c| color_key(*c) == key).unwrap_or([0.0; 3]);
-    let (text, runs) = runs_of(&collapse_spaces(&chars));
     Line {
+        boxes,
+        as_rtl,
         color,
         x0: units.iter().map(|u| u.x0).fold(f32::MAX, f32::min),
         x1: units.iter().map(|u| u.x1).fold(f32::MIN, f32::max),
@@ -463,17 +499,17 @@ fn segment(atoms: &[Atom], units: &[Unit]) -> Line {
 
 /// Runs of spaces become one, the ends are trimmed, and every space takes
 /// the style of the character before it in logical order (as typing would).
-fn collapse_spaces(chars: &[(char, RunStyle)]) -> Vec<(char, RunStyle)> {
+fn collapse_spaces(chars: &[(char, RunStyle, [f32; 2])]) -> Vec<(char, RunStyle, [f32; 2])> {
     let space = |c: char| c == ' ' || c == '\u{a0}';
-    let mut out: Vec<(char, RunStyle)> = Vec::with_capacity(chars.len());
-    for &(c, style) in chars {
-        if space(c) && out.last().is_none_or(|&(p, _)| space(p)) {
+    let mut out: Vec<(char, RunStyle, [f32; 2])> = Vec::with_capacity(chars.len());
+    for &(c, style, place) in chars {
+        if space(c) && out.last().is_none_or(|&(p, _, _)| space(p)) {
             continue;
         }
-        let style = if space(c) { out.last().map_or(style, |&(_, s)| s) } else { style };
-        out.push((c, style));
+        let style = if space(c) { out.last().map_or(style, |&(_, s, _)| s) } else { style };
+        out.push((c, style, place));
     }
-    while out.last().is_some_and(|&(c, _)| space(c)) {
+    while out.last().is_some_and(|&(c, _, _)| space(c)) {
         out.pop();
     }
     out
@@ -557,24 +593,42 @@ fn fits(group: &[Line], previous: &Line, line: &Line) -> bool {
     edge || indented
 }
 
-fn block_of(lines: Vec<Line>) -> Block {
+fn block_of(mut lines: Vec<Line>) -> Block {
     let n = lines.len();
     let x0 = lines.iter().map(|l| l.x0).fold(f32::MAX, f32::min);
     let x1 = lines.iter().map(|l| l.x1).fold(f32::MIN, f32::max);
     let size = most_common(lines.iter().map(|l| l.size.round() as i64)) as f32;
     let font = most_common(lines.iter().map(|l| l.font as i64)) as usize;
+    // Lines with letters decide; one of digits and punctuation then reads in that direction.
     let rtl = {
-        let rtl_lines = lines.iter().filter(|l| l.rtl).count();
-        rtl_lines * 2 > n || (rtl_lines * 2 == n && lines[0].rtl)
+        let voting: Vec<&Line> = lines.iter().filter(|l| l.as_rtl.is_none()).collect();
+        let rtl_lines = voting.iter().filter(|l| l.rtl).count();
+        rtl_lines * 2 > voting.len()
+            || (rtl_lines * 2 == voting.len() && voting.first().is_some_and(|l| l.rtl))
     };
+    if rtl {
+        for line in &mut lines {
+            if let Some(ordered) = line.as_rtl.take() {
+                let Ordered { text, runs, boxes } = *ordered;
+                (line.text, line.runs, line.boxes, line.rtl) = (text, runs, boxes, true);
+            }
+        }
+    }
     // Lines joined by a space in the style of the line it ends.
     let mut chars: Vec<(char, RunStyle)> = Vec::new();
-    for line in &lines {
+    let mut places: Vec<(usize, [f32; 2])> = Vec::new();
+    for (l, line) in lines.iter().enumerate() {
         if let Some(&(_, style)) = chars.last() {
             chars.push((' ', style));
+            let end = places.last().map_or(0.0, |&(_, [_, x1])| x1);
+            places.push((l - 1, [end, end]));
         }
+        let mut boxes = line.boxes.iter();
         for run in &line.runs {
-            chars.extend(line.text[run.range.clone()].chars().map(|c| (c, run.style)));
+            for c in line.text[run.range.clone()].chars() {
+                chars.push((c, run.style));
+                places.push((l, boxes.next().copied().unwrap_or([line.x0, line.x1])));
+            }
         }
     }
     let (text, runs) = runs_of(&chars);
@@ -642,6 +696,7 @@ fn block_of(lines: Vec<Line>) -> Block {
         font,
         pitch,
         runs,
+        places,
         shown,
         shared: false,
     }
@@ -772,6 +827,40 @@ mod tests {
         let visual = "مث iPhone مث";
         let blocks = analyze(row(visual, 10.0, 100.0, 0));
         assert_eq!(blocks[0].text, "ثم iPhone ثم");
+    }
+
+    #[test]
+    fn a_line_of_digits_and_punctuation_reads_in_its_paragraphs_direction() {
+        // "تم الدفع بموجب القرار رقم" then, wrapped, "١٢٣٤." (visual: ".١٢٣٤").
+        let first: String = "تم الدفع بموجب القرار رقم".chars().rev().collect();
+        let mut atoms = row(&first, 10.0, 100.0, 0);
+        atoms.extend(row(".١٢٣٤", 100.0, 114.0, 1));
+        let blocks = analyze(atoms);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, "تم الدفع بموجب القرار رقم ١٢٣٤.");
+        assert!(blocks[0].rtl && blocks[0].lines[1].rtl);
+        // Each character keeps its glyph's place: the full stop is the leftmost glyph.
+        assert_eq!(blocks[0].places.last(), Some(&(1, [100.0, 105.0])));
+        // Alone, the same line reads left to right.
+        let alone = analyze(row(".١٢٣٤", 100.0, 114.0, 1));
+        assert_eq!(alone[0].text, ".١٢٣٤");
+    }
+
+    #[test]
+    fn every_character_keeps_its_glyphs_place_in_logical_order() {
+        // "سلام" drawn left to right in visual order: its first letter is the rightmost glyph.
+        let visual: String = "سلام".chars().rev().collect();
+        let blocks = analyze(row(&visual, 10.0, 100.0, 0));
+        assert_eq!(blocks[0].text, "سلام");
+        assert_eq!(blocks[0].places[0], (0, [25.0, 30.0]));
+        assert_eq!(blocks[0].places[3], (0, [10.0, 15.0]));
+        // Two lines: the space that joins them sits, without width, at the first's end.
+        let mut atoms = row("one two", 10.0, 100.0, 0);
+        atoms.extend(row("three", 10.0, 112.0, 1));
+        let blocks = analyze(atoms);
+        assert_eq!(blocks[0].text, "one two three");
+        assert_eq!(blocks[0].places[7], (0, [45.0, 45.0]));
+        assert_eq!(blocks[0].places[8], (1, [10.0, 15.0]));
     }
 
     #[test]

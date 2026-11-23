@@ -12,6 +12,7 @@ import type {
   ParagraphBlock,
   RecentFile,
   RecoveryInfo,
+  ReplacePlan,
   SanitizeOptions,
   SaveOutcome,
   SearchHit,
@@ -94,6 +95,27 @@ export const IDLE_SEARCH: SearchState = {
   serial: 0,
 };
 
+/** Find and replace's preview of a document (ADR 0052). */
+export interface ReplaceState {
+  /** "loading" while the preview is built, "replacing" while it is applied. */
+  status: "idle" | "loading" | "ready" | "replacing" | "error";
+  plan: ReplacePlan | null;
+  /** Occurrences (indices into the plan) the user unticked: left as they are. */
+  excluded: number[];
+  /** Key under `errors.` when `status` is "error". */
+  error: string | null;
+  /** Increases with every preview; an answer for an older one is dropped. */
+  serial: number;
+}
+
+export const IDLE_REPLACE: ReplaceState = {
+  status: "idle",
+  plan: null,
+  excluded: [],
+  error: null,
+  serial: 0,
+};
+
 export interface OpenDocument extends DocumentInfo {
   /** Zero-based index of the current page (the viewer reports it as the user scrolls). */
   page: number;
@@ -112,6 +134,8 @@ export interface OpenDocument extends DocumentInfo {
   /** The outline, or null until loaded. */
   outline: OutlineItem[] | null;
   search: SearchState;
+  /** The replace preview, while one is open (ADR 0052). */
+  replace: ReplaceState;
   /** Areas marked for redaction, and the search for more (ADR 0042). */
   redaction: RedactionState;
   /** Whether text is selected in this document's page view. */
@@ -224,6 +248,12 @@ export interface AppState {
   /** The open side panel at the inline start, or null when it is closed. */
   leftPanel: LeftPanel | null;
   searchOptions: SearchOptions;
+  /** The search panel shows its replace row (ADR 0052). */
+  replaceOpen: boolean;
+  /** What matches are replaced with; a regular expression's may name its groups (`$1`). */
+  replacement: string;
+  setReplaceOpen(open: boolean): void;
+  setReplacement(text: string): void;
   /** How the Edit tool sets new page text (ADR 0021). */
   textStyle: TextStyle;
   setTextStyle(patch: Partial<TextStyle>): void;
@@ -332,6 +362,7 @@ export interface AppState {
   closePrompt: ClosePrompt | null;
   setClosePrompt(prompt: ClosePrompt | null): void;
   updateSearch(id: number, patch: Partial<SearchState>): void;
+  updateReplace(id: number, patch: Partial<ReplaceState>): void;
   /** Changes a document's redaction state: a patch, or a function of the current state. */
   updateRedaction(
     id: number,
@@ -646,6 +677,14 @@ export const useAppStore = create<AppState>((set, get) => {
     setUiScale: (uiScale) => update("uiScale", uiScale),
     setLeftPanel: (leftPanel) => update("leftPanel", leftPanel),
     setSearchOptions: (searchOptions) => update("searchOptions", searchOptions),
+    replaceOpen: false,
+    replacement: "",
+    setReplaceOpen(replaceOpen) {
+      set({ replaceOpen });
+    },
+    setReplacement(replacement) {
+      set({ replacement });
+    },
     setActiveTool(activeTool) {
       set({
         activeTool,
@@ -682,6 +721,7 @@ export const useAppStore = create<AppState>((set, get) => {
         labels: null,
         outline: null,
         search: IDLE_SEARCH,
+        replace: IDLE_REPLACE,
         redaction: IDLE_REDACTION,
         hasSelection: false,
         selectedAnnotation: null,
@@ -759,7 +799,9 @@ export const useAppStore = create<AppState>((set, get) => {
                   paint: open.paint + 1,
                   selectedAnnotation: null,
                   // Text written into them: what search found, and selected, is stale.
-                  ...(outcome.textChanged ? { search: IDLE_SEARCH, hasSelection: false } : {}),
+                  ...(outcome.textChanged
+                    ? { search: IDLE_SEARCH, replace: IDLE_REPLACE, hasSelection: false }
+                    : {}),
                   canUndo: outcome.canUndo,
                   canRedo: outcome.canRedo,
                   modified: outcome.modified,
@@ -772,6 +814,7 @@ export const useAppStore = create<AppState>((set, get) => {
                   labels: null,
                   outline: null,
                   search: IDLE_SEARCH,
+                  replace: IDLE_REPLACE,
                   // Page numbers moved: marks on the old pages mean nothing now.
                   redaction: IDLE_REDACTION,
                   hasSelection: false,
@@ -876,6 +919,13 @@ export const useAppStore = create<AppState>((set, get) => {
       set((state) => ({
         documents: state.documents.map((open) =>
           open.id === id ? { ...open, search: { ...open.search, ...patch } } : open,
+        ),
+      }));
+    },
+    updateReplace(id, patch) {
+      set((state) => ({
+        documents: state.documents.map((open) =>
+          open.id === id ? { ...open, replace: { ...open.replace, ...patch } } : open,
         ),
       }));
     },

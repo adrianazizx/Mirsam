@@ -21,6 +21,8 @@ import {
   type Permissions,
   type RedactPattern,
   type RedactPreset,
+  type ReplaceOutcome,
+  type ReplaceSkip,
   type RestoreOutcome,
   type SanitizeOptions,
   type SecurityChange,
@@ -39,6 +41,7 @@ import {
   type CommentTool,
   type DesignTool,
   type FillTool,
+  IDLE_REPLACE,
   type LeftPanel,
   type OpenDocument,
   type OutputDialog,
@@ -116,6 +119,8 @@ export interface Shortcut {
   /** The Control key itself on every platform (Ctrl+Tab). */
   ctrl?: boolean;
   shift?: boolean;
+  /** Option on macOS, Alt elsewhere. Matched by the physical key, since Option changes `key`. */
+  alt?: boolean;
   /**
    * Leave the key to a focused text field (Cmd+C, Cmd+A and Escape mean
    * something there already).
@@ -127,6 +132,8 @@ export interface Command {
   /** Translation key suffix under `commands.`. */
   id: CommandId;
   shortcut?: Shortcut;
+  /** The shortcut on macOS, where it differs (⌘H hides the app there). */
+  macShortcut?: Shortcut;
   isEnabled?(state: AppState): boolean;
   /** `arg` comes from the control that ran the command (e.g. a typed page number); shortcuts pass none. */
   run(arg?: CommandArg): void | Promise<void>;
@@ -142,7 +149,7 @@ export interface CommandArg {
   token?: number;
   /** `file.unlock`. Used once, never stored. */
   password?: string;
-  /** `search.run`. */
+  /** `search.run`. `search.setReplacement`: the replacement (`text` below). */
   query?: string;
   /** `search.goTo`: index into the hits. `tabs.move`: the new position in tab order. */
   index?: number;
@@ -259,6 +266,8 @@ export const SIGNATURE_PEN = 3;
 export const PAGE_NUMBER_INPUT_ID = "page-number-input";
 /** DOM id of the search panel's query field, which `search.focus` focuses. */
 export const SEARCH_INPUT_ID = "search-input";
+/** DOM id of the search panel's replacement field, which `search.replaceOpen` focuses. */
+export const REPLACE_INPUT_ID = "replace-input";
 
 export type CommandId =
   | "file.open"
@@ -475,6 +484,15 @@ export type CommandId =
   | "search.toggleRegex"
   | "search.toggleArabic"
   | "search.toggleTaMarbuta"
+  | "search.replaceOpen"
+  | "search.replaceClose"
+  | "search.setReplacement"
+  | "search.replace"
+  | "search.replaceAll"
+  | "search.replaceConfirm"
+  | "search.replaceCancel"
+  | "search.replaceToggle"
+  | "search.replaceShow"
   | "app.toggleTheme"
   | "app.toggleLanguage"
   | "app.toggleGallery"
@@ -664,6 +682,26 @@ const DESIGN_TOOLS: [CommandId, DesignTool | null][] = [
   ["formDesign.button", "pushButton"],
 ];
 const hasHits = (state: AppState) => (selectActiveDocument(state)?.search.hits.length ?? 0) > 0;
+/** A search has run whose matches can be previewed for replacing (ADR 0052). */
+const hasQuery = (state: AppState) => {
+  const search = selectActiveDocument(state)?.search;
+  return search !== undefined && search.status === "done" && search.query.trim() !== "";
+};
+/** The search hit shown can be replaced. */
+const hasActiveHit = (state: AppState) => {
+  const search = selectActiveDocument(state)?.search;
+  return search !== undefined && search.active >= 0 && search.active < search.hits.length;
+};
+/** A replace preview is open, or being built or applied. */
+const isPreviewing = (state: AppState) =>
+  (selectActiveDocument(state)?.replace.status ?? "idle") !== "idle";
+/** The ticked matches of an open replace preview. */
+function chosenTargets(active: OpenDocument) {
+  const { plan, excluded } = active.replace;
+  return (plan?.occurrences ?? []).flatMap((occurrence, index) =>
+    occurrence.target && !excluded.includes(index) ? [occurrence.target] : [],
+  );
+}
 const hasAnnotationSelected = (state: AppState) =>
   Boolean(selectActiveDocument(state)?.selectedAnnotation);
 /** A note is being written: a new one, or the selected one. */
@@ -1400,7 +1438,84 @@ function toggleSearchOption(key: keyof AppState["searchOptions"]) {
   const options = store().searchOptions;
   store().setSearchOptions({ ...options, [key]: !options[key] });
   const active = selectActiveDocument(store());
+  // The preview was of the old options' matches.
+  if (active && active.replace.status !== "idle") store().updateReplace(active.id, IDLE_REPLACE);
   if (active?.search.query) void runSearch(active, active.search.query);
+}
+
+const documentById = (id: number) => store().documents.find((open) => open.id === id);
+
+/** A preview made again after typing in the replacement field waits for a pause. */
+const REPREVIEW_DELAY_MS = 250;
+let repreview: number | null = null;
+
+/**
+ * Builds the replace preview of the active search (ADR 0052), keeping the
+ * newest answer. `again`: the same matches with another replacement, so the
+ * list stays (its ticks too) while the new one is built.
+ */
+async function previewReplace(active: OpenDocument, again = false) {
+  const query = active.search.query;
+  if (!query.trim()) return;
+  const serial = active.replace.serial + 1;
+  store().updateReplace(active.id, {
+    status: "loading",
+    ...(again ? {} : { plan: null, excluded: [] }),
+    error: null,
+    serial,
+  });
+  try {
+    const plan = await backend.replacePreview(
+      active.id,
+      query,
+      store().searchOptions,
+      store().replacement,
+    );
+    if (documentById(active.id)?.replace.serial !== serial) return;
+    store().updateReplace(active.id, { status: "ready", plan });
+  } catch (error) {
+    if (documentById(active.id)?.replace.serial !== serial) return;
+    if (isBackendError(error) && error.code === "cancelled") return;
+    const code =
+      isBackendError(error) && error.code === "invalid_query" ? "searchInvalid" : "replaceFailed";
+    store().updateReplace(active.id, { status: "error", error: code, plan: null });
+  }
+}
+
+/** Says what replacing did, then searches again: what is left is what was not replaced. */
+function finishReplace(id: number, query: string, outcome: ReplaceOutcome, hitIndex?: number) {
+  const { report, edit } = outcome;
+  if (edit) store().applyEdit(id, edit);
+  else store().updateReplace(id, IDLE_REPLACE);
+  const locale = store().locale;
+  const skipped = report.skipped.length;
+  const [substituted] = report.substituted;
+  if (report.replaced === 0) {
+    const reason: ReplaceSkip = outcome.hitSkipped ?? report.skipped[0]?.reason ?? "changed";
+    store().setNotice({ key: "replaceNone", values: { reason: i18n.t(`replace.skip.${reason}`) } });
+  } else {
+    // Font names come from the document: isolated, as <bdi> would.
+    const isolate = (name: string) => `\u2068${name}\u2069`;
+    const key = `replaced${skipped > 0 ? "Skipped" : ""}${substituted ? (substituted.from ? "Substituted" : "SubstitutedUnnamed") : ""}`;
+    store().setNotice({
+      key,
+      values: {
+        count: formatNumber(report.replaced, locale),
+        skipped: formatNumber(skipped, locale),
+        ...(substituted ? { from: isolate(substituted.from), to: isolate(substituted.font) } : {}),
+      },
+    });
+  }
+  const current = documentById(id);
+  if (!current || !query.trim()) return;
+  void runSearch(current, query).then(() => {
+    // After replacing the hit shown, the next one takes its place.
+    if (hitIndex === undefined) return;
+    const after = documentById(id);
+    if (!after || after.search.query !== query || after.search.hits.length === 0) return;
+    const next = report.replaced > 0 ? hitIndex : hitIndex + 1;
+    goToHit(after, Math.min(next, after.search.hits.length - 1));
+  });
 }
 
 /** The theme currently on screen, with "system" resolved. */
@@ -3574,6 +3689,150 @@ const DECLARED: Command[] = [
   { id: "search.toggleArabic", run: () => toggleSearchOption("arabicNormalize") },
   { id: "search.toggleTaMarbuta", run: () => toggleSearchOption("taMarbutaAsHa") },
   {
+    // Find and replace (ADR 0052): the search panel with its replace row.
+    id: "search.replaceOpen",
+    shortcut: { key: "h", mod: true },
+    macShortcut: { key: "f", mod: true, alt: true },
+    isEnabled: hasDocument,
+    run() {
+      store().setReplaceOpen(true);
+      showPanel("search");
+      requestAnimationFrame(() => {
+        const field = document.getElementById(REPLACE_INPUT_ID);
+        if (field instanceof HTMLInputElement) {
+          field.focus();
+          field.select();
+        }
+      });
+    },
+  },
+  {
+    id: "search.replaceClose",
+    isEnabled: (state) => state.replaceOpen,
+    run() {
+      store().setReplaceOpen(false);
+      const active = selectActiveDocument(store());
+      if (active && active.replace.status !== "idle")
+        store().updateReplace(active.id, IDLE_REPLACE);
+    },
+  },
+  {
+    id: "search.setReplacement",
+    paletteHidden: true,
+    run(arg) {
+      store().setReplacement(arg?.text ?? "");
+      // A preview shows what the old replacement made of each match: it is
+      // made again after a pause in typing, and cannot be applied meanwhile.
+      const active = selectActiveDocument(store());
+      const status = active?.replace.status;
+      if (!active || (status !== "ready" && status !== "loading")) return;
+      store().updateReplace(active.id, { status: "loading" });
+      if (repreview !== null) window.clearTimeout(repreview);
+      repreview = window.setTimeout(() => {
+        repreview = null;
+        const current = documentById(active.id);
+        if (current?.replace.status === "loading") void previewReplace(current, true);
+      }, REPREVIEW_DELAY_MS);
+    },
+  },
+  {
+    // The search hit shown, replaced; then the next one is shown.
+    id: "search.replace",
+    isEnabled: (state) => hasActiveHit(state) && !isPreviewing(state),
+    async run() {
+      const active = selectActiveDocument(store());
+      const hit = active?.search.hits[active.search.active];
+      if (!active || !hit) return;
+      const query = active.search.query;
+      const outcome = await backend.replaceText(
+        active.id,
+        query,
+        store().searchOptions,
+        store().replacement,
+        { kind: "hit", page: hit.page, rects: hit.rects },
+      );
+      finishReplace(active.id, query, outcome, active.search.active);
+    },
+  },
+  {
+    // Every match, listed with what it becomes before anything changes.
+    id: "search.replaceAll",
+    isEnabled: (state) => hasQuery(state) && !isPreviewing(state),
+    async run() {
+      const active = selectActiveDocument(store());
+      if (active) await previewReplace(active);
+    },
+  },
+  {
+    id: "search.replaceConfirm",
+    isEnabled: (state) => {
+      const active = selectActiveDocument(state);
+      return active?.replace.status === "ready" && chosenTargets(active).length > 0;
+    },
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      const targets = chosenTargets(active);
+      if (targets.length === 0) return;
+      const query = active.search.query;
+      store().updateReplace(active.id, { status: "replacing" });
+      try {
+        const outcome = await backend.replaceText(
+          active.id,
+          query,
+          store().searchOptions,
+          store().replacement,
+          { kind: "targets", targets },
+        );
+        finishReplace(active.id, query, outcome);
+      } catch (error) {
+        store().updateReplace(active.id, { status: "ready" });
+        throw error;
+      }
+    },
+  },
+  {
+    id: "search.replaceCancel",
+    shortcut: { key: "Escape", notInFields: true },
+    isEnabled: (state) => {
+      const status = selectActiveDocument(state)?.replace.status ?? "idle";
+      return status !== "idle" && status !== "replacing";
+    },
+    run() {
+      const active = selectActiveDocument(store());
+      if (active) store().updateReplace(active.id, IDLE_REPLACE);
+    },
+  },
+  {
+    // A match of the preview ticked or unticked.
+    id: "search.replaceToggle",
+    paletteHidden: true,
+    isEnabled: (state) => selectActiveDocument(state)?.replace.status === "ready",
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.index === undefined) return;
+      const { excluded } = active.replace;
+      const index = arg.index;
+      store().updateReplace(active.id, {
+        excluded: excluded.includes(index)
+          ? excluded.filter((other) => other !== index)
+          : [...excluded, index],
+      });
+    },
+  },
+  {
+    // A match of the preview, shown on its page.
+    id: "search.replaceShow",
+    paletteHidden: true,
+    isEnabled: (state) => selectActiveDocument(state)?.replace.plan != null,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      const occurrence =
+        arg?.index === undefined ? undefined : active?.replace.plan?.occurrences[arg.index];
+      if (active && occurrence) getViewer(active.id)?.revealHit(occurrence);
+    },
+  },
+  {
     id: "app.toggleTheme",
     run() {
       store().setTheme(resolvedTheme(store().theme) === "dark" ? "light" : "dark");
@@ -4324,6 +4583,10 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "pages.extract": "assemble",
   "text.place": "modify",
   "text.editBlock": "modify",
+  // Find and replace sets paragraphs again (ADR 0052).
+  "search.replace": "modify",
+  "search.replaceAll": "modify",
+  "search.replaceConfirm": "modify",
   "redact.apply": "modify",
   "sanitize.run": "modify",
   "markup.highlight": "annotate",
@@ -4467,18 +4730,28 @@ export async function runCommand(id: CommandId, arg?: CommandArg): Promise<void>
   }
 }
 
+/** A command's shortcut on this platform. */
+export function shortcutOf(command: Command, mac = isMac): Shortcut | undefined {
+  return mac ? (command.macShortcut ?? command.shortcut) : command.shortcut;
+}
+
 export function matchesShortcut(shortcut: Shortcut, event: KeyboardEvent, mac = isMac): boolean {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   // "+" is Shift+"=" on most layouts; accept either for zoom in.
+  // With Option held, macOS gives another character ("ƒ" for F): the physical key decides.
   const keyMatches =
-    key === shortcut.key || key === shortcut.alternate || (shortcut.key === "=" && key === "+");
+    key === shortcut.key ||
+    key === shortcut.alternate ||
+    (shortcut.key === "=" && key === "+") ||
+    (Boolean(shortcut.alt) && event.code === `Key${shortcut.key.toUpperCase()}`);
   const shiftMatches = shortcut.key === "=" || event.shiftKey === Boolean(shortcut.shift);
+  const altMatches = event.altKey === Boolean(shortcut.alt);
   if (shortcut.ctrl) {
-    return keyMatches && event.ctrlKey && !event.metaKey && !event.altKey && shiftMatches;
+    return keyMatches && event.ctrlKey && !event.metaKey && altMatches && shiftMatches;
   }
   const mod = mac ? event.metaKey : event.ctrlKey;
   const otherMod = mac ? event.ctrlKey : event.metaKey;
-  return keyMatches && mod === Boolean(shortcut.mod) && !otherMod && !event.altKey && shiftMatches;
+  return keyMatches && mod === Boolean(shortcut.mod) && !otherMod && altMatches && shiftMatches;
 }
 
 /** True when keyboard focus is somewhere that edits text. */
@@ -4495,19 +4768,21 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 /** The command bound to this key event, if any. */
 export function commandForEvent(event: KeyboardEvent, mac = isMac): Command | undefined {
   const inField = isEditableTarget(event.target);
-  const matching = COMMANDS.filter(
-    (command) =>
-      command.shortcut &&
-      !(inField && command.shortcut.notInFields) &&
-      matchesShortcut(command.shortcut, event, mac),
-  );
+  const matching = COMMANDS.filter((command) => {
+    const shortcut = shortcutOf(command, mac);
+    return (
+      shortcut !== undefined &&
+      !(inField && shortcut.notInFields) &&
+      matchesShortcut(shortcut, event, mac)
+    );
+  });
   // A key several commands share (Delete, Escape, the arrows) runs the one that applies now.
   return matching.find((command) => isCommandEnabled(command.id)) ?? matching[0];
 }
 
 /** Human-readable shortcut, e.g. "⌘O" on macOS and "Ctrl+O" elsewhere. */
 export function shortcutLabel(id: CommandId, mac = isMac): string | null {
-  const shortcut = getCommand(id).shortcut;
+  const shortcut = shortcutOf(getCommand(id), mac);
   if (!shortcut) return null;
   const names: Record<string, string> = {
     "=": "+",
@@ -4525,9 +4800,14 @@ export function shortcutLabel(id: CommandId, mac = isMac): string | null {
   };
   const key = names[shortcut.key] ?? shortcut.key.toUpperCase();
   if (mac) {
-    return `${shortcut.ctrl ? "⌃" : ""}${shortcut.shift ? "⇧" : ""}${shortcut.mod ? "⌘" : ""}${key}`;
+    return `${shortcut.ctrl ? "⌃" : ""}${shortcut.alt ? "⌥" : ""}${shortcut.shift ? "⇧" : ""}${shortcut.mod ? "⌘" : ""}${key}`;
   }
-  return [shortcut.mod || shortcut.ctrl ? "Ctrl" : null, shortcut.shift ? "Shift" : null, key]
+  return [
+    shortcut.mod || shortcut.ctrl ? "Ctrl" : null,
+    shortcut.alt ? "Alt" : null,
+    shortcut.shift ? "Shift" : null,
+    key,
+  ]
     .filter(Boolean)
     .join("+");
 }

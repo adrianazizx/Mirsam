@@ -19,9 +19,13 @@
 //!    the page's `/Contents` and `/Resources`, new fonts. Bundled fonts left
 //!    unused by earlier edits drop out of the page's resources.
 //!
-//! Not edited: text in form XObjects, in encrypted files, text drawn in
-//! Type 3 fonts or fonts with no way to read their codes as text, and text
-//! that is not upright on the displayed page.
+//! In an encrypted file the page's content and its fonts' streams are
+//! decrypted to be read, and the new content and fonts are encrypted under
+//! their own numbers (`pdf::crypt`, ADR 0052).
+//!
+//! Not edited: text in form XObjects, text drawn in Type 3 fonts or fonts
+//! with no way to read their codes as text, text that is not upright on the
+//! displayed page, and files encrypted in a way this editor cannot write.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -31,11 +35,12 @@ use serde::Serialize;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::blocks::{Atom, Block, BlockAlign, RunStyle, analyze};
-use crate::edit::{Leaf, PageTree, Start, set};
+use crate::edit::{Leaf, PageTree, Start, contains_string, set};
 use crate::error::{Error, Result};
 use crate::fonts::{FontFamily, bold_of, candidates, fallbacks, family_of, for_text, oblique_of};
 use crate::pdf::content::{Matrix, Op, Operand, ShowKind, Shown, interpret, tokenize};
-use crate::pdf::fontinfo::{FontInfo, stream_data};
+use crate::pdf::crypt::Crypt;
+use crate::pdf::fontinfo::{FontInfo, stream_data_in};
 use crate::pdf::text::{NamedFont, Paint, draw_painted_text, write_font};
 use crate::pdf::write::Update;
 use crate::pdf::{Dict, File, Object};
@@ -63,7 +68,7 @@ pub enum Refusal {
     Font,
     /// It is not upright on the page as displayed.
     Rotated,
-    /// The file is encrypted.
+    /// The file is encrypted in a way this editor cannot read and write.
     Encrypted,
     /// It is drawn in a way the editor does not follow yet (stroked text, an
     /// unusual text state, a content filter it cannot read).
@@ -313,14 +318,17 @@ struct PageRead {
     obstacle_reasons: Vec<Refusal>,
 }
 
-fn read_page(file: &File<'_>, tree: &PageTree, leaf: &Leaf, view: &ViewTransform) -> Result<PageRead> {
-    if file.trailer.get(b"Encrypt").is_some() {
-        return Err(Error::EditUnsupported("text in encrypted files cannot be edited yet"));
-    }
+fn read_page(
+    file: &File<'_>,
+    crypt: Option<&Crypt>,
+    tree: &PageTree,
+    leaf: &Leaf,
+    view: &ViewTransform,
+) -> Result<PageRead> {
     let items = page_contents(file, &leaf.dict)?;
     let mut streams = Vec::new();
     for item in &items {
-        let data = stream_data(file, item)
+        let data = stream_data_in(file, item, crypt)
             .ok_or(Error::EditUnsupported("the page's content uses a filter the editor cannot read"))?;
         let ops = tokenize(&data).ok_or(Error::EditUnsupported("the page's content cannot be read"))?;
         streams.push(StreamData { data, ops });
@@ -336,7 +344,7 @@ fn read_page(file: &File<'_>, tree: &PageTree, leaf: &Leaf, view: &ViewTransform
         .unwrap_or_default();
     let mut resolve = |name: &[u8]| -> Option<Rc<FontInfo>> {
         let dict = font_dict.get(name).and_then(|f| file.resolve(f))?;
-        FontInfo::read(file, dict.as_dict()?).map(Rc::new)
+        FontInfo::read_in(file, dict.as_dict()?, crypt).map(Rc::new)
     };
 
     let ops: Vec<Vec<Op>> = streams.iter().map(|s| s.ops.clone()).collect();
@@ -449,9 +457,34 @@ fn refused_areas(obstacles: &[[f32; 4]], reasons: &[Refusal]) -> Vec<([f32; 4], 
     areas
 }
 
-/// Whether the file is encrypted (its text is not read, ADR 0023).
+/// Whether the file is encrypted.
 pub(crate) fn encrypted(bytes: &[u8]) -> Result<bool> {
     Ok(Start::read(bytes)?.file.trailer.get(b"Encrypt").is_some())
+}
+
+/// A page of a file, read for editing: the file, its handler when it is
+/// encrypted (`password` is the one it was opened with), and the page.
+pub(crate) struct PageEditing<'a> {
+    pub(crate) start: Start<'a>,
+    pub(crate) tree: PageTree,
+    pub(crate) crypt: Option<Crypt>,
+    pub(crate) index: usize,
+}
+
+impl<'a> PageEditing<'a> {
+    pub(crate) fn open(bytes: &'a [u8], password: Option<&str>, page: usize) -> Result<Self> {
+        let start = Start::read(bytes)?;
+        let tree = PageTree::read(&start.file)?;
+        if page >= tree.leaves.len() {
+            return Err(Error::PageOutOfRange { index: page, count: tree.leaves.len() });
+        }
+        let crypt = Crypt::of(&start.file, password)?;
+        Ok(Self { start, tree, crypt, index: page })
+    }
+
+    fn read(&self, view: &ViewTransform) -> Result<PageRead> {
+        read_page(&self.start.file, self.crypt.as_ref(), &self.tree, &self.tree.leaves[self.index], view)
+    }
 }
 
 fn fingerprint(block: &Block, shown: &[Shown]) -> u32 {
@@ -469,26 +502,23 @@ fn fingerprint(block: &Block, shown: &[Shown]) -> u32 {
     hash
 }
 
-/// The page's paragraphs, in reading order.
-pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Vec<TextBlock>> {
-    let Start { file, .. } = Start::read(bytes)?;
-    let tree = PageTree::read(&file)?;
-    let leaf =
-        tree.leaves.get(page).ok_or(Error::PageOutOfRange { index: page, count: tree.leaves.len() })?;
-    let read = read_page(&file, &tree, leaf, view)?;
+/// The page's paragraphs, in reading order. `password` is the one the
+/// document was opened with.
+pub fn text_blocks(
+    bytes: &[u8],
+    password: Option<&str>,
+    view: &ViewTransform,
+    page: usize,
+) -> Result<Vec<TextBlock>> {
+    let editing = PageEditing::open(bytes, password, page)?;
+    let read = editing.read(view)?;
     let mut blocks: Vec<TextBlock> = read
         .blocks
         .iter()
         .enumerate()
         .map(|(index, block)| {
             let font = read.fonts.get(block.font).and_then(|(_, f)| f.clone());
-            let reason = if block.shared {
-                Some(Refusal::Shared)
-            } else if block.shown.is_empty() || !readable(&block.text) {
-                Some(Refusal::Unreadable)
-            } else {
-                None
-            };
+            let reason = refusal_of(block);
             let chars = styled_chars(block);
             let text: String = chars.iter().map(|&(c, _)| c).collect();
             let runs = style_runs(&chars)
@@ -535,6 +565,72 @@ pub fn text_blocks(bytes: &[u8], view: &ViewTransform, page: usize) -> Result<Ve
     Ok(blocks)
 }
 
+/// Why a paragraph cannot be edited, if it cannot.
+fn refusal_of(block: &Block) -> Option<Refusal> {
+    if block.shared {
+        Some(Refusal::Shared)
+    } else if block.shown.is_empty() || !readable(&block.text) {
+        Some(Refusal::Unreadable)
+    } else {
+        None
+    }
+}
+
+/// A paragraph as find and replace reads it (ADR 0052): its text as the
+/// editor shows and edits it, every character placed, and whether it can be
+/// edited.
+#[derive(Debug, Clone)]
+pub(crate) struct Paragraph {
+    pub(crate) index: usize,
+    pub(crate) fingerprint: u32,
+    pub(crate) text: String,
+    /// One per character of `text`.
+    pub(crate) placed: Vec<Placed>,
+    /// Each line's baseline and size, as displayed.
+    pub(crate) lines: Vec<(f32, f32)>,
+    pub(crate) rtl: bool,
+    /// Left, right, top, bottom, as displayed.
+    pub(crate) bounds: [f32; 4],
+    pub(crate) refusal: Option<Refusal>,
+}
+
+/// A page's paragraphs, and where its other text is and why it cannot be edited.
+#[derive(Debug, Clone)]
+pub(crate) struct PageParagraphs {
+    pub(crate) paragraphs: Vec<Paragraph>,
+    pub(crate) areas: Vec<([f32; 4], Refusal)>,
+}
+
+/// The page's paragraphs as find and replace reads them.
+pub(crate) fn page_paragraphs(
+    bytes: &[u8],
+    password: Option<&str>,
+    view: &ViewTransform,
+    page: usize,
+) -> Result<PageParagraphs> {
+    let editing = PageEditing::open(bytes, password, page)?;
+    let read = editing.read(view)?;
+    let paragraphs = read
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            let placed = placed_chars(block);
+            Paragraph {
+                index,
+                fingerprint: fingerprint(block, &read.shown),
+                text: placed.iter().map(|p| p.c).collect(),
+                placed,
+                lines: block.lines.iter().map(|line| (line.baseline, line.size)).collect(),
+                rtl: block.rtl,
+                bounds: [block.x0, block.x1, block.top, block.bottom],
+                refusal: refusal_of(block),
+            }
+        })
+        .collect();
+    Ok(PageParagraphs { paragraphs, areas: refused_areas(&read.obstacles, &read.obstacle_reasons) })
+}
+
 /// Text that cannot be read at all here, as refused areas: the page's
 /// blocks as PDFium reads them, each with `reason`.
 pub(crate) fn refused_page(areas: impl IntoIterator<Item = [f32; 4]>, reason: Refusal) -> Vec<TextBlock> {
@@ -550,11 +646,60 @@ fn readable(text: &str) -> bool {
 /// The block's text as the UI shows and edits it (compatibility forms
 /// folded, NFKC), each character with the style it was drawn in.
 fn styled_chars(block: &Block) -> Vec<(char, RunStyle)> {
-    block
-        .runs
-        .iter()
-        .flat_map(|run| block.text[run.range.clone()].nfkc().map(move |c| (c, run.style)))
-        .collect()
+    placed_chars(block).into_iter().map(|p| (p.c, p.style)).collect()
+}
+
+/// One character of a paragraph's text as the UI shows and edits it, with
+/// the style it was drawn in and where: its line, and its left and right
+/// edges on the page as displayed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Placed {
+    pub(crate) c: char,
+    pub(crate) style: RunStyle,
+    pub(crate) line: usize,
+    pub(crate) x: [f32; 2],
+}
+
+/// The block's text as the UI shows and edits it, each character placed.
+///
+/// Folded (NFKC) a cluster at a time within each run: a character, the
+/// marks after it, and any character that composes with them. Each folded
+/// character takes the cluster's place, so a ligature's letters keep its
+/// glyph's box and a letter its marks'.
+pub(crate) fn placed_chars(block: &Block) -> Vec<Placed> {
+    use unicode_normalization::char::canonical_combining_class as ccc;
+    let mut out = Vec::with_capacity(block.text.len());
+    let mut first = 0; // characters of the block's text before the run
+    for run in &block.runs {
+        let chars: Vec<char> = block.text[run.range.clone()].chars().collect();
+        let mut start = 0;
+        while start < chars.len() {
+            let mut end = start + 1;
+            loop {
+                while end < chars.len() && ccc(chars[end]) != 0 {
+                    end += 1;
+                }
+                let Some(&next) = chars.get(end) else { break };
+                let head: String = chars[start..end].iter().collect();
+                let apart = head.nfkc().chain(std::iter::once(next).nfkc());
+                if format!("{head}{next}").nfkc().eq(apart) {
+                    break;
+                }
+                end += 1;
+            }
+            let place = |i: usize| block.places.get(first + i).copied().unwrap_or((0, [block.x0, block.x1]));
+            let line = place(start).0;
+            let x = (start..end)
+                .map(place)
+                .filter(|(l, _)| *l == line)
+                .fold([f32::MAX, f32::MIN], |[x0, x1], (_, [a, b])| [x0.min(a), x1.max(b)]);
+            let cluster: String = chars[start..end].iter().collect();
+            out.extend(cluster.nfkc().map(|c| Placed { c, style: run.style, line, x }));
+            start = end;
+        }
+        first += chars.len();
+    }
+    out
 }
 
 /// Runs of `chars`: byte ranges of their text, consecutive equal styles merged.
@@ -663,25 +808,24 @@ struct Splice {
 }
 
 /// The bytes to append to `bytes` to apply `edit`: an incremental update.
+/// `password` is the one the document was opened with.
 pub fn edit_block_update(
     bytes: &[u8],
+    password: Option<&str>,
     view: &ViewTransform,
     page_width: f32,
     edit: &BlockEdit,
 ) -> Result<(Vec<u8>, EditedBlock)> {
-    let Start { file, section, form, mut next_number } = Start::read(bytes)?;
-    let tree = PageTree::read(&file)?;
-    let leaf = tree
-        .leaves
-        .get(edit.page)
-        .ok_or(Error::PageOutOfRange { index: edit.page, count: tree.leaves.len() })?;
-    let read = read_page(&file, &tree, leaf, view)?;
+    let editing = PageEditing::open(bytes, password, edit.page)?;
+    let read = editing.read(view)?;
+    let PageEditing { start: Start { file, section, form, mut next_number }, tree, crypt, .. } = editing;
+    let leaf = &tree.leaves[edit.page];
     let block = read
         .blocks
         .get(edit.index)
         .filter(|b| fingerprint(b, &read.shown) == edit.fingerprint)
         .ok_or(Error::InvalidEdit("the page's text changed since it was read"))?;
-    if block.shared || block.shown.is_empty() || !readable(&block.text) {
+    if refusal_of(block).is_some() {
         return Err(Error::InvalidEdit("this text cannot be edited"));
     }
     if edit.text.encode_utf16().count() > crate::text_edit::MAX_TEXT {
@@ -817,14 +961,14 @@ pub fn edit_block_update(
             let prefix = free_prefix(&font_names);
             let drawing = draw_painted_text(text, &laid, fonts, (0.0, 0.0), paints, &prefix)?;
             for font in &drawing.fonts {
-                let number = write_font(&mut update, None, &mut next_number, font)?;
+                let number = write_font(&mut update, crypt.as_ref(), &mut next_number, font)?;
                 set(&mut font_names, font.resource.as_bytes(), Object::Ref(number, 0));
             }
             let top = first_baseline - laid.lines.first().map_or(0.0, |l| l.baseline);
             Ok((drawing.content, top, laid.lines.len()))
         };
         let own_programs = if reuse.is_none() && edit.family.is_none() {
-            embedded_programs(&file, &text, &looks, &read.fonts)
+            embedded_programs(&file, crypt.as_ref(), &text, &looks, &read.fonts)
         } else {
             None
         };
@@ -918,6 +1062,13 @@ pub fn edit_block_update(
     }
     font_names.0.retain(|(name, _)| !is_ours(name) || used.contains(name));
     set(&mut resources, b"Font", Object::Dict(font_names));
+    // Strings were encrypted under the number of the object they sat in; in
+    // the page's own dictionary they would no longer decrypt.
+    if crypt.is_some() && contains_string(&Object::Dict(resources.clone())) {
+        return Err(Error::EditUnsupported(
+            "this page's resources in an encrypted file cannot be copied yet",
+        ));
+    }
 
     // ---- New content streams, then the page.
     let mut items = read.items.clone();
@@ -932,7 +1083,11 @@ pub fn edit_block_update(
         let number = take()?;
         let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&data, 6);
         let dict = Dict(vec![(b"Filter".to_vec(), Object::Name(b"FlateDecode".to_vec()))]);
-        update.stream(number, 0, dict, &compressed);
+        let data = match crypt.as_ref() {
+            Some(crypt) => crypt.encrypt_stream(number, 0, &compressed),
+            None => compressed,
+        };
+        update.stream(number, 0, dict, &data);
         items[i] = Object::Ref(number, 0);
     }
     let mut page = leaf.dict.clone();
@@ -1221,6 +1376,7 @@ fn permits_reembedding(fs_type: Option<u16>) -> bool {
 /// it has no `GSUB`), and places marks (`GPOS`) when there are any.
 fn embedded_programs(
     file: &File<'_>,
+    crypt: Option<&Crypt>,
     text: &str,
     looks: &[(Range<usize>, Look)],
     fonts: &[(Vec<u8>, Option<Rc<FontInfo>>)],
@@ -1230,7 +1386,7 @@ fn embedded_programs(
     let mut face_of = |key: usize| -> Option<FontFace> {
         faces
             .entry(key)
-            .or_insert_with(|| info(key).and_then(|f| f.program_face(file)).filter(may_reembed))
+            .or_insert_with(|| info(key).and_then(|f| f.program_face(file, crypt)).filter(may_reembed))
             .clone()
     };
     // Each run's page font.

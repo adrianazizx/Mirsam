@@ -31,6 +31,9 @@ import type {
   RedactHit,
   RedactPreset,
   RenderedPage,
+  ReplaceOccurrence,
+  ReplaceSkip,
+  ReplaceTarget,
   SearchHit,
   SearchOptions,
   SignatureInfo,
@@ -247,6 +250,10 @@ interface MockState {
   links?: Map<number, LinkInfo[]>;
   /** The form's fields once the form designer changed them (ADR 0047), in tab order. */
   fields?: FormField[];
+  /** Search hits replaced (ADR 0052), by `hitKey`; carried into later states. */
+  replaced?: Set<string>;
+  /** This step changed the pages' text: undoing or redoing it makes search results stale. */
+  text?: boolean;
 }
 
 /** A mock page object: what the engine reports, and its box before any crop. */
@@ -642,6 +649,7 @@ function pushState(documentId: number, next: MockState): EditOutcome {
   next.objects ??= stateOf(documentId).objects;
   next.links ??= stateOf(documentId).links;
   next.fields ??= stateOf(documentId).fields;
+  next.replaced ??= stateOf(documentId).replaced;
   const history = edits.get(documentId) ?? { states: [stateOf(documentId)], at: 0, saved: 0 };
   history.states = [...history.states.slice(0, history.at + 1), next];
   history.at += 1;
@@ -750,7 +758,44 @@ function findPreset(documentId: number, preset: RedactPreset): RedactHit[] {
   return hits;
 }
 
+/**
+ * Matches the mock "replaced" (ADR 0052, `MockState.replaced`): their text
+ * stays as drawn, but search no longer finds them, as it would not find text
+ * that changed. Undo brings them back.
+ */
+const hitKey = (hit: Pick<SearchHit, "page" | "block" | "line" | "start">) =>
+  `${hit.page}:${hit.block}:${hit.line}:${hit.start}`;
+const targetOf = (hit: SearchHit): ReplaceTarget => ({
+  page: hit.page,
+  block: hit.block * 1000 + hit.line,
+  fingerprint: 0,
+  start: hit.start,
+  end: hit.end,
+});
+const keyOfTarget = (target: ReplaceTarget) =>
+  `${target.page}:${Math.floor(target.block / 1000)}:${target.block % 1000}:${target.start}`;
+/** The mock's odd pages stand for text the editor cannot read (a Type 3 font). */
+const mockSkip = (hit: SearchHit): ReplaceSkip | null => (hit.page % 2 === 1 ? "font" : null);
+
+function occurrenceOf(hit: SearchHit, replacement: string): ReplaceOccurrence {
+  const skip = mockSkip(hit);
+  return {
+    page: hit.page,
+    target: skip ? null : targetOf(hit),
+    rects: hit.rects,
+    rtl: hit.direction === "rtl",
+    context: hit.context,
+    replacement,
+    skip,
+  };
+}
+
 function search(documentId: number, query: string, options: SearchOptions): SearchHit[] {
+  const replaced = stateOf(documentId).replaced;
+  return searchAll(documentId, query, options).filter((hit) => !replaced?.has(hitKey(hit)));
+}
+
+function searchAll(documentId: number, query: string, options: SearchOptions): SearchHit[] {
   const needle = fold(query, options)
     .replace(/\uFFFF/g, "")
     .trim();
@@ -1156,9 +1201,12 @@ export const mockBackend: Backend = {
   undoEdit: async (documentId) => {
     const history = edits.get(documentId);
     if (!history || history.at === 0) return outcome(documentId, "annotations");
-    const undone = history.states[history.at]?.change ?? "pages";
+    const undone = history.states[history.at];
     history.at -= 1;
-    return outcome(documentId, undone);
+    return {
+      ...outcome(documentId, undone?.change ?? "pages"),
+      ...(undone?.text ? { textChanged: true } : {}),
+    };
   },
   findRedactions: async (documentId, pattern) => {
     if (pattern.kind === "preset")
@@ -1864,7 +1912,11 @@ export const mockBackend: Backend = {
       return outcome(documentId, "annotations");
     }
     history.at += 1;
-    return outcome(documentId, history.states[history.at]?.change ?? "pages");
+    const redone = history.states[history.at];
+    return {
+      ...outcome(documentId, redone?.change ?? "pages"),
+      ...(redone?.text ? { textChanged: true } : {}),
+    };
   },
   documentOutline: async (documentId) => (documentId === SAMPLE.id ? OUTLINE : []),
   pageLabels: async () => null,
@@ -1875,6 +1927,59 @@ export const mockBackend: Backend = {
   searchDocument: async (documentId, query, options) => {
     const hits = search(documentId, query, options);
     return { hits: hits.slice(0, 5000), truncated: hits.length > 5000 };
+  },
+  replacePreview: async (documentId, query, options, replacement) => {
+    const hits = search(documentId, query, options);
+    return {
+      occurrences: hits.slice(0, 5000).map((hit) => occurrenceOf(hit, replacement)),
+      truncated: hits.length > 5000,
+    };
+  },
+  replaceText: async (documentId, query, options, _replacement, scope) => {
+    const hits = search(documentId, query, options);
+    let targets: ReplaceTarget[];
+    let hitSkipped: ReplaceSkip | null = null;
+    if (scope.kind === "targets") {
+      targets = scope.targets;
+    } else {
+      const [first] = scope.rects;
+      const hit = hits.find(
+        (candidate) =>
+          candidate.page === scope.page &&
+          first !== undefined &&
+          candidate.rects.some(
+            (rect) => Math.abs(rect.x - first.x) < 1 && Math.abs(rect.y - first.y) < 1,
+          ),
+      );
+      hitSkipped = hit ? mockSkip(hit) : "changed";
+      targets = hit && !hitSkipped ? [targetOf(hit)] : [];
+    }
+    const live = new Set(hits.map(hitKey));
+    const done = targets.filter((target) => live.has(keyOfTarget(target)));
+    const report = {
+      replaced: done.length,
+      paragraphs: new Set(done.map((target) => `${target.page}:${target.block}`)).size,
+      skipped: targets
+        .filter((target) => !live.has(keyOfTarget(target)))
+        .map((target) => ({ target, reason: "changed" as const })),
+      substituted: [],
+      substitutedParagraphs: 0,
+    };
+    if (done.length === 0) return { edit: null, report, hitSkipped };
+    const state = stateOf(documentId);
+    const replaced = new Set(state.replaced);
+    for (const target of done) replaced.add(keyOfTarget(target));
+    const edit = {
+      ...pushState(documentId, {
+        pages: state.pages,
+        markup: state.markup,
+        change: "annotations",
+        replaced,
+        text: true,
+      }),
+      textChanged: true,
+    };
+    return { edit, report, hitSkipped };
   },
   renderTile: (documentId, requestGeneration, page, tile, priority, lane = "main") =>
     new Promise<RenderedPage>((resolve, reject) => {

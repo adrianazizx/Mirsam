@@ -22,6 +22,7 @@ mod output;
 mod print_linux;
 mod recovery;
 mod redaction;
+mod replace;
 mod security;
 mod signing;
 #[cfg(feature = "devtools")]
@@ -149,6 +150,8 @@ macro_rules! product_commands {
             navigation::page_labels,
             navigation::page_text,
             navigation::search_document,
+            replace::replace_preview,
+            replace::replace_text,
             viewer::page_sizes,
             viewer::update_viewport,
             $($extra),*

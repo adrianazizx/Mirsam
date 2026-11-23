@@ -27,9 +27,30 @@ pub struct Glyph {
     pub origin_y: f32,
     /// Font size in points after the text matrix.
     pub size: f32,
+    /// Quarter turns (counter-clockwise, 0–3) its baseline makes with page
+    /// space's x axis: 1 for text running up the page, as text upright on a
+    /// page displayed turned a quarter is.
+    pub turn: u8,
 }
 
 impl Glyph {
+    /// This glyph in the frame where text of quarter turn `turn` runs left
+    /// to right (see [`turn_point`]).
+    fn turned(&self, turn: u8) -> Glyph {
+        let rect = turn_rect(self.rect(), turn);
+        let (origin_x, origin_y) = turn_point((self.origin_x, self.origin_y), turn);
+        Glyph {
+            left: rect.left,
+            right: rect.right,
+            bottom: rect.bottom,
+            top: rect.top,
+            origin_x,
+            origin_y,
+            turn: 0,
+            ..self.clone()
+        }
+    }
+
     fn center_x(&self) -> f32 {
         (self.left + self.right) / 2.0
     }
@@ -47,6 +68,10 @@ pub struct SpaceMark {
     /// Baseline.
     pub y: f32,
     pub size: f32,
+    /// The quarter turn of the text it stands in (see [`Glyph::turn`]); `x`
+    /// and `y` are page space's, the point that is its left and baseline in
+    /// that text's own frame.
+    pub turn: u8,
 }
 
 /// Thresholds, in ems of the font size unless noted. Calibrated on the fixture
@@ -93,9 +118,101 @@ const PARAMS: Params = Params {
     align_tolerance: 0.6,
 };
 
+/// `point` turned back by `turn` quarter turns (clockwise): into the frame
+/// where text whose baseline makes `turn` quarter turns runs left to right.
+pub(super) fn turn_point((x, y): (f32, f32), turn: u8) -> (f32, f32) {
+    match turn % 4 {
+        1 => (y, -x),
+        2 => (-x, -y),
+        3 => (-y, x),
+        _ => (x, y),
+    }
+}
+
+/// `point` turned forward by `turn` quarter turns: the inverse of [`turn_point`].
+pub(super) fn unturn_point((x, y): (f32, f32), turn: u8) -> (f32, f32) {
+    turn_point((x, y), (4 - turn % 4) % 4)
+}
+
+fn rect_through(rect: Rect, map: impl Fn((f32, f32)) -> (f32, f32)) -> Rect {
+    let corners = [(rect.left, rect.bottom), (rect.right, rect.top)].map(map);
+    Rect {
+        left: corners[0].0.min(corners[1].0),
+        right: corners[0].0.max(corners[1].0),
+        bottom: corners[0].1.min(corners[1].1),
+        top: corners[0].1.max(corners[1].1),
+    }
+}
+
+fn turn_rect(rect: Rect, turn: u8) -> Rect {
+    rect_through(rect, |p| turn_point(p, turn))
+}
+
 /// Rebuilds the reading-order text of a page from its glyphs and the space
 /// glyphs it draws.
+///
+/// Text set along another quarter turn of the page (text upright on a page
+/// displayed turned, a label up the margin) is read in its own frame, where
+/// it runs left to right, and its boxes are turned back: it reads as lines,
+/// not letter by letter. Its blocks follow the page's main text.
 pub fn analyze(glyphs: &[Glyph], spaces: &[SpaceMark]) -> PageText {
+    if glyphs.iter().all(|g| g.turn % 4 == 0) && spaces.iter().all(|s| s.turn % 4 == 0) {
+        return analyze_upright(glyphs, spaces);
+    }
+    let mut parts: Vec<(usize, PageText)> = Vec::new();
+    for turn in 0..4u8 {
+        let group: Vec<Glyph> =
+            glyphs.iter().filter(|g| g.turn % 4 == turn).map(|g| g.turned(turn)).collect();
+        if group.is_empty() {
+            continue;
+        }
+        // Each text's own space marks: another's, whose box can cross it, say nothing of its words.
+        let spaces: Vec<SpaceMark> = spaces
+            .iter()
+            .filter(|mark| mark.turn % 4 == turn)
+            .map(|mark| {
+                let (x, y) = turn_point((mark.x, mark.y), turn);
+                SpaceMark { x, y, size: mark.size, turn: 0 }
+            })
+            .collect();
+        let mut text = analyze_upright(&group, &spaces);
+        let back = |rect: Rect| rect_through(rect, |p| unturn_point(p, turn));
+        for block in &mut text.blocks {
+            block.bounds = back(block.bounds);
+            for line in &mut block.lines {
+                line.bounds = back(line.bounds);
+                for span in &mut line.spans {
+                    span.rect = span.rect.map(back);
+                }
+            }
+        }
+        parts.push((group.len(), text));
+    }
+    parts.sort_by_key(|part| std::cmp::Reverse(part.0));
+    let direction = parts.first().map_or(Direction::Ltr, |(_, text)| text.direction);
+    let (mut suspicious, mut counted, mut any) = (0, 0, false);
+    for (_, text) in &parts {
+        match text.quality {
+            TextQuality::Suspect { suspicious_glyphs, glyphs } => {
+                suspicious += suspicious_glyphs;
+                counted += glyphs;
+            }
+            TextQuality::Good => any = true,
+            TextQuality::NoText => {}
+        }
+    }
+    let quality = if counted > 0 {
+        TextQuality::Suspect { suspicious_glyphs: suspicious, glyphs: counted }
+    } else if any {
+        TextQuality::Good
+    } else {
+        TextQuality::NoText
+    };
+    PageText { blocks: parts.into_iter().flat_map(|(_, text)| text.blocks).collect(), direction, quality }
+}
+
+/// [`analyze`] for glyphs whose baselines all run along page space's x axis.
+fn analyze_upright(glyphs: &[Glyph], spaces: &[SpaceMark]) -> PageText {
     let p = PARAMS;
     let spaces = with_spaces_drawn_in_runs(glyphs, spaces);
     let spaces = spaces.as_slice();
@@ -154,7 +271,7 @@ fn with_spaces_drawn_in_runs(glyphs: &[Glyph], spaces: &[SpaceMark]) -> Vec<Spac
     spaces
         .iter()
         .copied()
-        .chain(in_runs.map(|g| SpaceMark { x: g.left, y: g.origin_y, size: g.size }))
+        .chain(in_runs.map(|g| SpaceMark { x: g.left, y: g.origin_y, size: g.size, turn: g.turn }))
         .collect()
 }
 
@@ -1191,6 +1308,7 @@ mod tests {
             origin_x: x,
             origin_y: y,
             size,
+            turn: 0,
         }
     }
 
@@ -1213,6 +1331,40 @@ mod tests {
 
     fn text(glyphs: &[Glyph]) -> String {
         analyze(glyphs, &[]).text()
+    }
+
+    #[test]
+    fn text_running_up_or_down_the_page_reads_as_lines() {
+        // "Hello world" upright on a page displayed turned a quarter: in page
+        // space its baseline runs up the page (turn 1), or down it (turn 3).
+        for turn in [1u8, 2, 3] {
+            let glyphs: Vec<Glyph> = line(&["Hello", "world"], 100.0, 50.0, 5.0, 10.0, 0)
+                .into_iter()
+                .map(|g| {
+                    let rect = rect_through(g.rect(), |p| unturn_point(p, turn));
+                    let (origin_x, origin_y) = unturn_point((g.origin_x, g.origin_y), turn);
+                    Glyph {
+                        left: rect.left,
+                        right: rect.right,
+                        bottom: rect.bottom,
+                        top: rect.top,
+                        origin_x,
+                        origin_y,
+                        turn,
+                        ..g
+                    }
+                })
+                .collect();
+            let mut all = glyphs.clone();
+            // The page's own text, upright, below: more of it, so it comes first.
+            all.extend(line(&["The", "page", "text"], 300.0, 50.0, 5.0, 10.0, 100));
+            let page = analyze(&all, &[]);
+            assert_eq!(page.text(), "The page text\n\nHello world", "turn {turn}");
+            // Boxes are where the glyphs are, in page space.
+            let hello = &page.blocks[1].lines[0];
+            let first = hello.spans[0].rect.expect("drawn");
+            assert!((first.left - glyphs[0].left).abs() < 0.01 && (first.top - glyphs[0].top).abs() < 0.01);
+        }
     }
 
     #[test]
@@ -1350,7 +1502,7 @@ mod tests {
         // A page that draws its spaces (Chrome): there, only drawn spaces break
         // Arabic words. "بكم مرحبا" (visual: "ابحرم" then "مكب"), 0.3 em apart.
         let mut glyphs = line(&["ابحرم", "مكب"], 700.0, 300.0, 3.5, 12.0, 0);
-        let marks = [SpaceMark { x: 100.0, y: 650.0, size: 12.0 }];
+        let marks = [SpaceMark { x: 100.0, y: 650.0, size: 12.0, turn: 0 }];
         assert_eq!(analyze(&glyphs, &marks).blocks[0].lines[0].text, "بكممرحبا");
         // Chrome on Linux draws that space in one `Tj` with the letter before it;
         // PDFium reports it as a full-size space with a real advance.
