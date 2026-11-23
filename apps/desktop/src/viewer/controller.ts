@@ -1,8 +1,10 @@
 import {
   type AnnotationKind,
   type Backend,
+  type LinkInfo,
   type MarkedPage,
   type PageAnnotation,
+  type PageObject,
   type PageSize,
   type ParagraphBlock,
   type RenderedPage,
@@ -44,6 +46,19 @@ import {
   rowsInBand,
   type ViewMode,
 } from "./layout";
+import {
+  BOX_CORNERS,
+  type BoxCorner,
+  boundsOf,
+  cornerAt,
+  cornerPoint,
+  linkAt,
+  MIN_SIDE,
+  moved as movedRect,
+  objectAt,
+  reshaped,
+  spanned,
+} from "./objects";
 import {
   type Caret,
   caretAt,
@@ -135,6 +150,22 @@ export interface ViewerCallbacks {
   onEditBlock?(page: number, block: ParagraphBlock): void;
   /** The Edit tool pressed text that cannot be edited (ADR 0023). */
   onBlockRefused?(block: ParagraphBlock): void;
+  /** The Edit tool's object mode selected an object, or nothing (ADR 0051). */
+  onObjectSelect?(page: number, object: PageObject | null): void;
+  /** An object was dragged or resized to `rect` on its displayed page. */
+  onObjectReshape?(page: number, object: PageObject, rect: ViewRect): void;
+  /** The crop being set for the selected object changed. */
+  onCropChange?(rect: ViewRect): void;
+  /** The Edit tool's link mode selected a link, or nothing. */
+  onLinkSelect?(page: number, link: LinkInfo | null): void;
+  /** A rectangle was drawn for a new link. */
+  onLinkDraw?(page: number, rect: ViewRect): void;
+  /** The selected link was dragged or resized to `rect`. */
+  onLinkReshape?(page: number, link: LinkInfo, rect: ViewRect): void;
+  /** The pointer came over a link, or left it (outside the link mode). */
+  onLinkHover?(page: number, link: LinkInfo | null): void;
+  /** A link was pressed to follow it (the Select tool). */
+  onLinkPress?(page: number, link: LinkInfo): void;
 }
 
 /** An annotation the reader selected by clicking it. */
@@ -165,6 +196,8 @@ export type ViewerMode =
   | "eraser"
   | "redact"
   | "place"
+  | "objects"
+  | "links"
   | "design"
   | "draw"
   | "none";
@@ -313,6 +346,17 @@ export interface ViewerClassNames {
   fillMoving?: string;
   /** A selected Fill & Sign item's corner handles, which resize it. */
   fillHandle?: string;
+  /** Page objects (ADR 0051): under the pointer, selected, and the crop being set. */
+  objectHover?: string;
+  objectSelected?: string;
+  objectCrop?: string;
+  /** Links: in the link mode, the selected one, the one under the pointer, a new one. */
+  linkArea?: string;
+  linkSelected?: string;
+  linkHover?: string;
+  linkDraft?: string;
+  /** Anchor element the link tip is rendered into. */
+  linkTip?: string;
   /** A form field's widget in the form designer, the selected one, and its tab number (ADR 0047). */
   fieldBox?: string;
   fieldBoxSelected?: string;
@@ -621,6 +665,40 @@ export class ViewerController {
     pending: boolean;
     kind: "note" | "textBox";
   } | null = null;
+  /** Page objects by page (ADR 0051), read on demand, dropped by `refresh`. */
+  private readonly objects = new Map<number, PageObject[]>();
+  private readonly objectRequests = new Map<number, Promise<void>>();
+  /** Links by page, read on demand, dropped by `refresh`. */
+  private readonly links = new Map<number, LinkInfo[]>();
+  private readonly linkRequests = new Map<number, Promise<void>>();
+  /** Bumped by `refresh`: objects and links read for an older revision are dropped. */
+  private contentGeneration = 0;
+  private selectedObject: { page: number; index: number } | null = null;
+  private hoveredObject: { page: number; index: number } | null = null;
+  /** The object to select again once the next revision's objects arrive. */
+  private keepObject: { page: number; index: number } | null = null;
+  /** The crop being set for the selected object, on its displayed page. */
+  private objectCrop: ViewRect | null = null;
+  private selectedLink: { page: number; index: number } | null = null;
+  private hoveredLink: { page: number; index: number } | null = null;
+  /** A link being added: where it goes. */
+  private linkDraft: { page: number; rects: ViewRect[] } | null = null;
+  /** A press in the object or link mode turning into a move, resize, crop, or a new link. */
+  private reshaping: {
+    pointerId: number;
+    page: number;
+    kind: "move" | "resize" | "crop" | "draw";
+    target: "object" | "link";
+    corner: BoxCorner | null;
+    start: ViewRect;
+    rect: ViewRect;
+    from: { x: number; y: number };
+    clientX: number;
+    clientY: number;
+    moved: boolean;
+  } | null = null;
+  /** Where the link tip is drawn: above the link under the pointer. */
+  readonly linkTipHost: HTMLDivElement;
   /** Where the note editor is drawn: under the note's icon. */
   readonly noteEditorHost: HTMLDivElement;
   /** Where the selection toolbar is drawn: above the selection's first line. */
@@ -653,6 +731,10 @@ export class ViewerController {
     this.noteEditorHost.className = this.classNames.noteEditor;
     this.noteEditorHost.hidden = true;
     this.content.append(this.noteEditorHost);
+    this.linkTipHost = document.createElement("div");
+    this.linkTipHost.className = this.classNames.linkTip ?? "";
+    this.linkTipHost.hidden = true;
+    this.content.append(this.linkTipHost);
 
     this.client = this.newClient();
 
@@ -760,10 +842,361 @@ export class ViewerController {
     const keep = this.keepAfterRefresh;
     this.keepAfterRefresh = null;
     if (keep) this.setSelectedAnnotation(keep);
+    // Objects and links are read again; the object an edit kept is selected again.
+    this.contentGeneration += 1;
+    this.objects.clear();
+    this.objectRequests.clear();
+    this.links.clear();
+    this.linkRequests.clear();
+    this.hoveredObject = null;
+    this.hoveredLink = null;
+    this.selectedLink = null;
+    this.objectCrop = null;
+    this.selectedObject = null;
+    this.linkTipHost.hidden = true;
+    const kept = this.keepObject;
+    this.keepObject = null;
+    if (kept) {
+      void this.loadObjects(kept.page).then(() => {
+        const object = this.objects.get(kept.page)?.[kept.index] ?? null;
+        this.selectedObject = object ? kept : null;
+        this.callbacks.onObjectSelect?.(kept.page, object);
+        this.repaint(kept.page);
+      });
+    }
+    // The link mode outlines every link: the pages on screen read theirs again.
+    if (this.mode() === "links") for (const slot of this.slots.values()) this.paintOverlay(slot);
     this.update();
     // The pages on screen read their annotations again at once, so an item
     // just placed can be pressed (dragged, ADR 0045) before the pointer moves.
     for (const page of this.slots.keys()) void this.loadAnnotations(page);
+  }
+
+  /** Selects an object of a page (by index), or none (ADR 0051); the caller already knows. */
+  selectObject(page: number, index: number | null): void {
+    const previous = this.selectedObject?.page;
+    this.selectedObject = index === null ? null : { page, index };
+    this.objectCrop = null;
+    this.repaint(previous, page);
+  }
+
+  /** Selects the object at `index` of `page` once the next revision's objects are read. */
+  reselectObjectAfterRefresh(page: number, index: number): void {
+    this.keepObject = { page, index };
+  }
+
+  /** Shows the crop being set for the selected object, or none. */
+  setObjectCrop(rect: ViewRect | null): void {
+    this.objectCrop = rect;
+    this.repaint(this.selectedObject?.page);
+  }
+
+  /** Selects a link of a page (by its index among the annotations), or none. */
+  selectLink(page: number, index: number | null): void {
+    const previous = this.selectedLink?.page;
+    this.selectedLink = index === null ? null : { page, index };
+    this.repaint(previous, page);
+  }
+
+  /** Shows where a new link goes, or nothing. */
+  setLinkDraft(draft: { page: number; rects: ViewRect[] } | null): void {
+    const previous = this.linkDraft?.page;
+    this.linkDraft = draft;
+    this.repaint(previous, draft?.page);
+  }
+
+  /** A page's objects, when read. */
+  objectsOf(page: number): readonly PageObject[] | undefined {
+    return this.objects.get(page);
+  }
+
+  /** Paints the overlays again: the tool or its mode changed. */
+  repaintOverlays(): void {
+    this.hoveredObject = null;
+    this.hoveredLink = null;
+    this.linkTipHost.hidden = true;
+    for (const slot of this.slots.values()) this.paintOverlay(slot);
+  }
+
+  private repaint(...pages: (number | undefined)[]): void {
+    for (const page of new Set(pages)) {
+      const slot = page === undefined ? undefined : this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+  }
+
+  private loadObjects(page: number): Promise<void> {
+    if (this.objects.has(page)) return Promise.resolve();
+    const pending = this.objectRequests.get(page);
+    if (pending) return pending;
+    const generation = this.contentGeneration;
+    const request = this.backend.pageObjects(this.documentId, page).then(
+      (list) => {
+        if (this.destroyed || generation !== this.contentGeneration) return;
+        this.objectRequests.delete(page);
+        this.objects.set(page, list);
+        this.repaint(page);
+        // A selection made before the page's objects were read gets its object now.
+        const selected = this.selectedObject;
+        if (selected?.page === page && !this.keepObject) {
+          this.callbacks.onObjectSelect?.(page, list[selected.index] ?? null);
+        }
+      },
+      (error: unknown) => {
+        if (generation === this.contentGeneration) {
+          this.objectRequests.delete(page);
+          this.objects.set(page, []);
+        }
+        console.warn("page objects unavailable", page, error);
+      },
+    );
+    this.objectRequests.set(page, request);
+    return request;
+  }
+
+  private loadLinks(page: number): Promise<void> {
+    if (this.links.has(page)) return Promise.resolve();
+    const pending = this.linkRequests.get(page);
+    if (pending) return pending;
+    const generation = this.contentGeneration;
+    const request = this.backend.pageLinks(this.documentId, page).then(
+      (list) => {
+        if (this.destroyed || generation !== this.contentGeneration) return;
+        this.linkRequests.delete(page);
+        this.links.set(page, list);
+        if (this.mode() === "links") this.repaint(page);
+      },
+      (error: unknown) => {
+        if (generation === this.contentGeneration) {
+          this.linkRequests.delete(page);
+          this.links.set(page, []);
+        }
+        console.warn("page links unavailable", page, error);
+      },
+    );
+    this.linkRequests.set(page, request);
+    return request;
+  }
+
+  private objectOf(at: { page: number; index: number } | null): PageObject | null {
+    return at ? (this.objects.get(at.page)?.[at.index] ?? null) : null;
+  }
+
+  private linkOf(at: { page: number; index: number } | null): LinkInfo | null {
+    return at ? (this.links.get(at.page)?.find((link) => link.index === at.index) ?? null) : null;
+  }
+
+  /** How far around a corner a press grabs its handle, in points of `page`. */
+  private handleReach(page: number): number {
+    const box = this.layout?.boxes[page];
+    const size = this.sizes?.[page];
+    return box && size && box.width > 0 ? (HANDLE_REACH * size.width) / box.width : HANDLE_REACH;
+  }
+
+  /** A press in the object mode: a handle resizes (or crops), an object is selected and dragged. */
+  private pressObject(event: PointerEvent, point: PagePoint): void {
+    const start = (kind: "move" | "resize" | "crop", corner: BoxCorner | null, rect: ViewRect) => {
+      this.reshaping = {
+        pointerId: event.pointerId,
+        page: point.page,
+        kind,
+        target: "object",
+        corner,
+        start: rect,
+        rect,
+        from: { x: point.x, y: point.y },
+        clientX: event.clientX,
+        clientY: event.clientY,
+        moved: false,
+      };
+      this.content.setPointerCapture?.(event.pointerId);
+    };
+    const selected = this.objectOf(this.selectedObject);
+    const reach = this.handleReach(point.page);
+    if (selected && this.selectedObject?.page === point.page) {
+      if (this.objectCrop) {
+        const corner = cornerAt(this.objectCrop, point, reach);
+        if (corner) start("crop", corner, this.objectCrop);
+        return;
+      }
+      const corner = cornerAt(selected.rect, point, reach);
+      if (corner) {
+        start("resize", corner, selected.rect);
+        return;
+      }
+    }
+    const list = this.objects.get(point.page);
+    if (!list) {
+      void this.loadObjects(point.page);
+      return;
+    }
+    const hit = objectAt(list, point, reach / 2);
+    const previous = this.selectedObject?.page;
+    this.selectedObject = hit ? { page: point.page, index: hit.index } : null;
+    this.objectCrop = null;
+    this.repaint(previous, point.page);
+    this.callbacks.onObjectSelect?.(point.page, hit);
+    if (hit) start("move", null, hit.rect);
+  }
+
+  /** A press in the link mode: a handle resizes, a link is selected and dragged, elsewhere a new one is drawn. */
+  private pressLink(event: PointerEvent, point: PagePoint): void {
+    const start = (kind: "move" | "resize" | "draw", corner: BoxCorner | null, rect: ViewRect) => {
+      this.reshaping = {
+        pointerId: event.pointerId,
+        page: point.page,
+        kind,
+        target: "link",
+        corner,
+        start: rect,
+        rect,
+        from: { x: point.x, y: point.y },
+        clientX: event.clientX,
+        clientY: event.clientY,
+        moved: false,
+      };
+      this.content.setPointerCapture?.(event.pointerId);
+    };
+    const selected = this.linkOf(this.selectedLink);
+    if (selected && this.selectedLink?.page === point.page) {
+      const corner = cornerAt(boundsOf(selected.rects), point, this.handleReach(point.page));
+      if (corner) {
+        start("resize", corner, boundsOf(selected.rects));
+        return;
+      }
+    }
+    const list = this.links.get(point.page);
+    if (!list) {
+      void this.loadLinks(point.page);
+      return;
+    }
+    const hit = linkAt(list, point);
+    const previous = this.selectedLink?.page;
+    this.selectedLink = hit ? { page: point.page, index: hit.index } : null;
+    this.repaint(previous, point.page);
+    this.callbacks.onLinkSelect?.(point.page, hit);
+    start(
+      hit ? "move" : "draw",
+      null,
+      hit ? boundsOf(hit.rects) : { x: point.x, y: point.y, width: 0, height: 0 },
+    );
+  }
+
+  /** Follows a drag in the object or link mode: the box moves, grows, or is drawn. */
+  private reshape(event: PointerEvent): void {
+    const reshaping = this.reshaping;
+    const size = reshaping ? this.sizes?.[reshaping.page] : undefined;
+    if (!reshaping || !size) return;
+    if (!reshaping.moved) {
+      const travelled = Math.hypot(
+        event.clientX - reshaping.clientX,
+        event.clientY - reshaping.clientY,
+      );
+      if (travelled < MOVE_SLOP) return;
+      reshaping.moved = true;
+    }
+    const point = this.pointOnPage(reshaping.page, event.clientX, event.clientY);
+    if (!point) return;
+    const page = { x: 0, y: 0, width: size.width, height: size.height };
+    switch (reshaping.kind) {
+      case "move":
+        reshaping.rect = movedRect(
+          reshaping.start,
+          point.x - reshaping.from.x,
+          point.y - reshaping.from.y,
+        );
+        break;
+      case "resize":
+        if (reshaping.corner)
+          reshaping.rect = reshaped(
+            reshaping.start,
+            reshaping.corner,
+            point,
+            // Images and objects keep their proportions (Shift frees them); links are free.
+            reshaping.target === "object" && !event.shiftKey,
+            reshaping.target === "link" ? page : null,
+          );
+        break;
+      case "crop": {
+        const object = this.objectOf(this.selectedObject);
+        if (reshaping.corner && object)
+          reshaping.rect = reshaped(reshaping.start, reshaping.corner, point, false, object.rect);
+        break;
+      }
+      case "draw": {
+        const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v));
+        reshaping.rect = spanned(reshaping.from, {
+          x: clamp(point.x, size.width),
+          y: clamp(point.y, size.height),
+        });
+        break;
+      }
+    }
+    this.repaint(reshaping.page);
+  }
+
+  /** Ends a drag in the object or link mode and says what it did. */
+  private finishReshape(event: PointerEvent): void {
+    const reshaping = this.reshaping;
+    if (!reshaping) return;
+    this.reshaping = null;
+    this.content.releasePointerCapture?.(event.pointerId);
+    this.repaint(reshaping.page);
+    if (event.type === "pointercancel") return;
+    const { page, rect, moved } = reshaping;
+    if (reshaping.target === "object") {
+      const object = this.objectOf(this.selectedObject);
+      if (!moved || !object) return;
+      if (reshaping.kind === "crop") {
+        this.objectCrop = rect;
+        this.callbacks.onCropChange?.(rect);
+      } else {
+        this.callbacks.onObjectReshape?.(page, object, rect);
+      }
+      return;
+    }
+    if (reshaping.kind === "draw") {
+      if (moved && rect.width >= MIN_SIDE && rect.height >= MIN_SIDE)
+        this.callbacks.onLinkDraw?.(page, rect);
+      return;
+    }
+    const link = this.linkOf(this.selectedLink);
+    if (moved && link) this.callbacks.onLinkReshape?.(page, link, rect);
+  }
+
+  /** Shows the link under the pointer (outside the link mode): its outline and its tip. */
+  private hoverLink(point: PagePoint | null): void {
+    let next: { page: number; index: number } | null = null;
+    if (point) {
+      const list = this.links.get(point.page);
+      if (!list) void this.loadLinks(point.page);
+      const hit = list ? linkAt(list, point) : null;
+      if (hit) next = { page: point.page, index: hit.index };
+    }
+    const previous = this.hoveredLink;
+    if (previous?.page === next?.page && previous?.index === next?.index) return;
+    this.hoveredLink = next;
+    this.repaint(previous?.page, next?.page);
+    const link = this.linkOf(next);
+    if (next && link) this.placeLinkTip(next.page, link);
+    else this.linkTipHost.hidden = true;
+    this.callbacks.onLinkHover?.(next?.page ?? previous?.page ?? 0, link);
+    if (link) this.content.dataset.overLink = "";
+    else delete this.content.dataset.overLink;
+  }
+
+  /** Puts the link tip's host above the top of a link's first area. */
+  private placeLinkTip(page: number, link: LinkInfo): void {
+    const box = this.layout?.boxes[page];
+    const size = this.sizes?.[page];
+    const first = link.rects[0];
+    if (!box || !size || !first) {
+      this.linkTipHost.hidden = true;
+      return;
+    }
+    this.linkTipHost.hidden = false;
+    this.linkTipHost.style.insetInlineStart = `${box.x + (first.x + first.width / 2) * (box.width / size.width)}px`;
+    this.linkTipHost.style.insetBlockStart = `${box.y + first.y * (box.height / size.height)}px`;
   }
 
   /**
@@ -1556,7 +1989,8 @@ export class ViewerController {
     if (
       event.target instanceof Node &&
       (this.selectionToolbarHost.contains(event.target) ||
-        this.noteEditorHost.contains(event.target))
+        this.noteEditorHost.contains(event.target) ||
+        this.linkTipHost.contains(event.target))
     ) {
       return;
     }
@@ -1578,6 +2012,13 @@ export class ViewerController {
       this.setSelectedAnnotation(null);
       this.marking = { pointerId: event.pointerId, page: point.page, from: point, to: point };
       this.content.setPointerCapture?.(event.pointerId);
+      return;
+    }
+    if (mode === "objects" || mode === "links") {
+      this.setSelection(null);
+      this.setSelectedAnnotation(null);
+      if (mode === "objects") this.pressObject(event, point);
+      else this.pressLink(event, point);
       return;
     }
     if (mode === "design" || mode === "draw") {
@@ -1707,9 +2148,18 @@ export class ViewerController {
       this.resizeItem(event);
       return;
     }
+    if (this.reshaping && event.pointerId === this.reshaping.pointerId) {
+      this.reshape(event);
+      return;
+    }
     const dragging = this.dragging;
     if (!dragging) {
-      if (event.target instanceof Node && this.selectionToolbarHost.contains(event.target)) return;
+      if (
+        event.target instanceof Node &&
+        (this.selectionToolbarHost.contains(event.target) ||
+          this.linkTipHost.contains(event.target))
+      )
+        return;
       this.updateCursor(event);
       return;
     }
@@ -1768,6 +2218,10 @@ export class ViewerController {
         this.callbacks.onMoveItem?.(item, rect, item.page);
       return;
     }
+    if (this.reshaping && event.pointerId === this.reshaping.pointerId) {
+      this.finishReshape(event);
+      return;
+    }
     if (this.marking && event.pointerId === this.marking.pointerId) {
       const { page, from, to } = this.marking;
       this.marking = null;
@@ -1806,6 +2260,17 @@ export class ViewerController {
         else this.callbacks.onPlace?.(pressed.page, pressed.x, pressed.y);
       } else if (mode !== "note" && mode !== "textBox" && mode !== "text") {
         if (hit) this.setSelectedAnnotation(hit);
+        else if (mode === "select") {
+          // A press on a link follows it, once its target has been shown (ADR 0051).
+          void this.loadLinks(pressed.page).then(() => {
+            if (this.destroyed || press !== this.presses || this.selection !== null) return;
+            const link = linkAt(this.links.get(pressed.page) ?? [], pressed);
+            if (link) {
+              this.placeLinkTip(pressed.page, link);
+              this.callbacks.onLinkPress?.(pressed.page, link);
+            }
+          });
+        }
       } else if (hit?.kind === mode) {
         this.setSelectedAnnotation(hit);
       } else if (mode === "text") {
@@ -2037,6 +2502,43 @@ export class ViewerController {
       else delete this.content.dataset.overItem;
       return;
     }
+    if (mode === "objects" || mode === "links") {
+      delete this.content.dataset.overText;
+      delete this.content.dataset.overLink;
+      const point = this.pointAt(event.clientX, event.clientY);
+      if (!point) return;
+      const reach = this.handleReach(point.page);
+      let over = false;
+      let corner: BoxCorner | null = null;
+      if (mode === "objects") {
+        void this.loadObjects(point.page);
+        const selected =
+          this.selectedObject?.page === point.page ? this.objectOf(this.selectedObject) : null;
+        const box = this.objectCrop ?? selected?.rect;
+        corner = box ? cornerAt(box, point, reach) : null;
+        const hit = objectAt(this.objects.get(point.page) ?? [], point, reach / 2);
+        over = hit !== null;
+        const next = hit ? { page: point.page, index: hit.index } : null;
+        const previous = this.hoveredObject;
+        if (previous?.page !== next?.page || previous?.index !== next?.index) {
+          this.hoveredObject = next;
+          this.repaint(previous?.page, next?.page);
+        }
+      } else {
+        void this.loadLinks(point.page);
+        const selected =
+          this.selectedLink?.page === point.page ? this.linkOf(this.selectedLink) : null;
+        corner = selected ? cornerAt(boundsOf(selected.rects), point, reach) : null;
+        over = linkAt(this.links.get(point.page) ?? [], point) !== null;
+      }
+      if (over) this.content.dataset.overItem = "";
+      else delete this.content.dataset.overItem;
+      if (corner)
+        this.content.dataset.overHandle = corner === "nw" || corner === "se" ? "nwse" : "nesw";
+      else delete this.content.dataset.overHandle;
+      return;
+    }
+    if (mode === "select") this.hoverLink(this.pointAt(event.clientX, event.clientY));
     if (mode !== "select") {
       delete this.content.dataset.overText;
       const point = mode === "none" ? null : this.pointAt(event.clientX, event.clientY);
@@ -2197,6 +2699,7 @@ export class ViewerController {
         slot.overlay.append(element);
       }
     }
+    this.paintObjectsAndLinks(slot, place);
     if (this.marking?.page === slot.page) {
       const { from, to } = this.marking;
       const element = document.createElement("div");
@@ -2232,6 +2735,91 @@ export class ViewerController {
         }
       }
     }
+  }
+
+  /** The object and link mode's marks on a page (ADR 0051), and the link under the pointer. */
+  private paintObjectsAndLinks(
+    slot: Slot,
+    place: (element: HTMLElement, rect: ViewRect) => void,
+  ): void {
+    const size = this.sizes?.[slot.page];
+    if (!size) return;
+    const mode = this.mode();
+    const box = (className: string | undefined, rect: ViewRect) => {
+      if (!className) return;
+      const element = document.createElement("div");
+      element.className = className;
+      place(element, rect);
+      slot.overlay.append(element);
+    };
+    const handles = (rect: ViewRect) => {
+      if (!this.classNames.fillHandle) return;
+      for (const corner of BOX_CORNERS) {
+        const at = cornerPoint(rect, corner);
+        const element = document.createElement("div");
+        element.className = this.classNames.fillHandle;
+        element.dataset.corner = corner;
+        element.style.insetInlineStart = `${(100 * at.x) / size.width}%`;
+        element.style.insetBlockStart = `${(100 * at.y) / size.height}%`;
+        slot.overlay.append(element);
+      }
+    };
+    const reshaping =
+      this.reshaping?.page === slot.page && this.reshaping.moved ? this.reshaping : null;
+    if (mode === "objects") {
+      if (!this.objects.has(slot.page)) void this.loadObjects(slot.page);
+      const hovered =
+        this.hoveredObject?.page === slot.page ? this.objectOf(this.hoveredObject) : null;
+      const selected =
+        this.selectedObject?.page === slot.page ? this.objectOf(this.selectedObject) : null;
+      if (hovered && hovered.index !== selected?.index)
+        box(this.classNames.objectHover, hovered.rect);
+      if (selected) {
+        box(this.classNames.objectSelected, selected.rect);
+        const crop = reshaping?.kind === "crop" ? reshaping.rect : this.objectCrop;
+        if (crop) {
+          box(this.classNames.objectCrop, crop);
+          handles(crop);
+        } else if (reshaping) {
+          box(this.classNames.fillMoving, reshaping.rect);
+          if (reshaping.kind === "resize") handles(reshaping.rect);
+        } else {
+          handles(selected.rect);
+        }
+      }
+      return;
+    }
+    if (mode === "links") {
+      // Every link of a page is outlined in this mode, read when the page is painted.
+      if (!this.links.has(slot.page)) void this.loadLinks(slot.page);
+      const selected =
+        this.selectedLink?.page === slot.page ? this.linkOf(this.selectedLink) : null;
+      for (const link of this.links.get(slot.page) ?? []) {
+        for (const rect of link.rects) {
+          box(
+            link.index === selected?.index
+              ? this.classNames.linkSelected
+              : this.classNames.linkArea,
+            rect,
+          );
+        }
+      }
+      if (this.linkDraft?.page === slot.page) {
+        for (const rect of this.linkDraft.rects) box(this.classNames.linkDraft, rect);
+      }
+      if (reshaping) {
+        box(
+          reshaping.kind === "draw" ? this.classNames.linkDraft : this.classNames.fillMoving,
+          reshaping.rect,
+        );
+        if (reshaping.kind === "resize") handles(reshaping.rect);
+      } else if (selected) {
+        handles(boundsOf(selected.rects));
+      }
+      return;
+    }
+    const hovered = this.hoveredLink?.page === slot.page ? this.linkOf(this.hoveredLink) : null;
+    for (const rect of hovered?.rects ?? []) box(this.classNames.linkHover, rect);
   }
 
   /** The form designer's field boxes, tab numbers, handles, and the field being drawn (ADR 0047). */

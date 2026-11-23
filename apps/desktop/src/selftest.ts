@@ -143,6 +143,9 @@ async function navigationChecks(documentId: number) {
   // New page text (ADR 0021): Arabic written into the page's content with the
   // Edit tool, painted, read back as the page's own text, then undone.
   const addedText = await addedTextChecks(documentId);
+  // Page objects and links (ADR 0051): a text block moved and undone, its words
+  // unchanged; a link to an Arabic address added, read back, and undone.
+  const objectsAndLinks = await objectsAndLinksChecks(documentId);
 
   // Editing (ADR 0014): duplicate the page, see the new revision painted,
   // then undo back to the file as opened.
@@ -244,8 +247,70 @@ async function navigationChecks(documentId: number) {
     markup,
     notesAndInk,
     addedText,
+    objectsAndLinks,
     editing,
     windows,
+  };
+}
+
+async function objectsAndLinksChecks(documentId: number) {
+  const words = async () =>
+    (await backend.pageText(documentId, 0)).blocks
+      .flatMap((block) => block.lines.flatMap((line) => line.text.split(/\s+/u)))
+      .filter((word) => word !== "")
+      .sort()
+      .join(" ");
+  await runCommand("edit.objectsMode");
+  const before = await backend.pageObjects(documentId, 0);
+  // The first block (a heading on the fixtures), a little up, clear of the text below it.
+  const text = before.find((object) => object.kind === "text");
+  let moved = false;
+  let textKept = false;
+  let undone = false;
+  if (text) {
+    const wordsBefore = await words();
+    await runCommand("object.select", { page: 0, object: text });
+    await runCommand("object.reshape", {
+      page: 0,
+      object: text,
+      rect: { ...text.rect, y: text.rect.y - 4 },
+    });
+    const bottom = (rect: { y: number; height: number }) => rect.y + rect.height;
+    moved = (await backend.pageObjects(documentId, 0)).some(
+      (object) =>
+        object.kind === "text" &&
+        Math.abs(bottom(object.rect) - bottom(text.rect) + 4) < 0.5 &&
+        Math.abs(object.rect.x - text.rect.x) < 0.5,
+    );
+    textKept = (await words()) === wordsBefore;
+    await runCommand("edit.undo");
+    undone = (await backend.pageObjects(documentId, 0)).some(
+      (object) => object.fingerprint === text.fingerprint,
+    );
+  }
+  await runCommand("edit.linksMode");
+  const linksBefore = (await backend.pageLinks(documentId, 0)).length;
+  await runCommand("link.draw", { page: 0, rect: { x: 40, y: 40, width: 120, height: 16 } });
+  await runCommand("link.save", { linkTarget: { kind: "url", url: "example.org/مرسام" } });
+  const links = await backend.pageLinks(documentId, 0);
+  const added = links.at(-1);
+  const linkAdded =
+    links.length === linksBefore + 1 &&
+    added?.target.kind === "url" &&
+    added.target.url === "https://example.org/%D9%85%D8%B1%D8%B3%D8%A7%D9%85";
+  await runCommand("edit.undo");
+  const linkUndone = (await backend.pageLinks(documentId, 0)).length === linksBefore;
+  await runCommand("edit.textMode");
+  useAppStore.getState().setActiveTool("select");
+  return {
+    objects: before.length,
+    kinds: [...new Set(before.map((object) => object.kind))],
+    moved,
+    textKept,
+    undone,
+    linkAdded,
+    linkUndone,
+    errorCode: useAppStore.getState().errorCode,
   };
 }
 

@@ -1,0 +1,42 @@
+/* Centred over a zero-size anchor above the link, as the selection toolbar is. */
+.band {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline: calc(var(--size-selection-toolbar-span) / -2);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.tip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-inline-size: var(--size-selection-toolbar-span);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-sm);
+  pointer-events: auto;
+}
+
+.target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.note {
+  color: var(--color-text-muted);
+}

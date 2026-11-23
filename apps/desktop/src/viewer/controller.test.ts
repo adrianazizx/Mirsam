@@ -102,6 +102,40 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
             { index: 1, x: 20, y: 100, width: 200, height: 30, editable: false, reason: "font" },
           ]
         : [],
+    // Page 0's objects (ADR 0051): a shape under an image, and a link.
+    pageObjects: async (_doc: number, page: number) =>
+      page === 0
+        ? [
+            {
+              index: 0,
+              fingerprint: 10,
+              kind: "path",
+              rect: { x: 40, y: 200, width: 100, height: 50 },
+              image: null,
+              cropped: false,
+              refusal: null,
+            },
+            {
+              index: 1,
+              fingerprint: 11,
+              kind: "image",
+              rect: { x: 100, y: 220, width: 80, height: 40 },
+              image: { width: 160, height: 80 },
+              cropped: false,
+              refusal: null,
+            },
+          ]
+        : [],
+    pageLinks: async (_doc: number, page: number) =>
+      page === 0
+        ? [
+            {
+              index: 7,
+              rects: [{ x: 20, y: 160, width: 100, height: 14 }],
+              target: { kind: "page", page: 3 },
+            },
+          ]
+        : [],
   } as unknown as Backend;
 
   const container = document.createElement("div");
@@ -122,6 +156,14 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onPlaceText: vi.fn(),
     onEditBlock: vi.fn(),
     onBlockRefused: vi.fn(),
+    onObjectSelect: vi.fn(),
+    onObjectReshape: vi.fn(),
+    onCropChange: vi.fn(),
+    onLinkSelect: vi.fn(),
+    onLinkDraw: vi.fn(),
+    onLinkReshape: vi.fn(),
+    onLinkHover: vi.fn(),
+    onLinkPress: vi.fn(),
     onDrawField: vi.fn(),
     onSelectField: vi.fn(),
     onMoveField: vi.fn(),
@@ -149,6 +191,14 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
       gesture: "gesture",
       fillMoving: "fill-moving",
       fillHandle: "fill-handle",
+      objectHover: "object-hover",
+      objectSelected: "object-selected",
+      objectCrop: "object-crop",
+      linkArea: "link-area",
+      linkSelected: "link-selected",
+      linkHover: "link-hover",
+      linkDraft: "link-draft",
+      linkTip: "link-tip",
       fieldBox: "field-box",
       fieldBoxSelected: "field-selected",
       fieldTab: "field-tab",
@@ -816,5 +866,156 @@ describe("resizing a Fill & Sign item (ADR 0045)", () => {
     // Dragged off a 200 × 800 page: as large as fits.
     expect(resizedRect(rect, "ne", { x: 400, y: 0 }, 200, 800).width).toBeCloseTo(100);
     expect(resizedRect(rect, "ne", { x: 400, y: 0 }, 200, 800).y).toBeCloseTo(120 - 100 / 3);
+  });
+});
+
+describe("page objects and links (ADR 0051)", () => {
+  const near = (r: { x: number; y: number; width: number; height: number }) => ({
+    x: expect.closeTo(r.x, 5),
+    y: expect.closeTo(r.y, 5),
+    width: expect.closeTo(r.width, 5),
+    height: expect.closeTo(r.height, 5),
+  });
+  const pointer = (container: HTMLElement) => {
+    const content = container.firstElementChild as HTMLElement;
+    return (type: string, x: number, y: number, shiftKey = false) =>
+      content.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          clientX: 350 + x,
+          clientY: 20 + y,
+          button: 0,
+          shiftKey,
+        }),
+      );
+  };
+
+  it("selects the topmost object pressed, drags it, and resizes it by a corner in proportion", async () => {
+    mode = "objects";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const at = pointer(container);
+    // The objects arrive on first hover.
+    at("pointermove", 120, 230);
+    await settle();
+    at("pointermove", 120, 230);
+    expect(container.querySelectorAll(".object-hover")).toHaveLength(1);
+
+    // Where the image covers the shape, the image (drawn last) is taken.
+    at("pointerdown", 120, 230);
+    expect(callbacks.onObjectSelect).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 1 }),
+    );
+    at("pointermove", 130, 230);
+    at("pointermove", 140, 250);
+    expect(container.querySelectorAll(".fill-moving")).toHaveLength(1);
+    at("pointerup", 140, 250);
+    expect(callbacks.onObjectReshape).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 1 }),
+      near({ x: 120, y: 240, width: 80, height: 40 }),
+    );
+    expect(container.querySelectorAll(".fill-handle")).toHaveLength(4);
+
+    // The bottom-right corner, dragged out: twice the size, the top-left kept.
+    at("pointerdown", 180, 260);
+    at("pointermove", 200, 270);
+    at("pointermove", 260, 300);
+    at("pointerup", 260, 300);
+    expect(callbacks.onObjectReshape).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 1 }),
+      near({ x: 100, y: 220, width: 160, height: 80 }),
+    );
+
+    // Elsewhere: nothing selected.
+    at("pointerdown", 280, 20);
+    at("pointerup", 280, 20);
+    expect(callbacks.onObjectSelect).toHaveBeenLastCalledWith(0, null);
+    viewer.destroy();
+  });
+
+  it("crops inside the object by its handles", async () => {
+    mode = "objects";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const at = pointer(container);
+    at("pointermove", 120, 230);
+    await settle();
+    at("pointerdown", 120, 230);
+    at("pointerup", 120, 230);
+    viewer.setObjectCrop({ x: 100, y: 220, width: 80, height: 40 });
+    expect(container.querySelectorAll(".object-crop")).toHaveLength(1);
+    // The top-left crop handle, dragged in and past the image: kept inside it.
+    at("pointerdown", 100, 220);
+    at("pointermove", 110, 230);
+    at("pointermove", 120, 225);
+    at("pointerup", 120, 225);
+    expect(callbacks.onCropChange).toHaveBeenLastCalledWith(
+      near({ x: 120, y: 225, width: 60, height: 35 }),
+    );
+    expect(callbacks.onObjectReshape).not.toHaveBeenCalled();
+    viewer.destroy();
+  });
+
+  it("draws a new link, selects one, and moves it in the link mode", async () => {
+    mode = "links";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const at = pointer(container);
+    at("pointermove", 50, 165);
+    await settle();
+    expect(container.querySelectorAll(".link-area")).toHaveLength(1);
+
+    at("pointerdown", 30, 20);
+    at("pointermove", 60, 30);
+    at("pointermove", 130, 40);
+    expect(container.querySelectorAll(".link-draft")).toHaveLength(1);
+    at("pointerup", 130, 40);
+    expect(callbacks.onLinkDraw).toHaveBeenLastCalledWith(
+      0,
+      near({ x: 30, y: 20, width: 100, height: 20 }),
+    );
+
+    at("pointerdown", 50, 165);
+    expect(callbacks.onLinkSelect).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 7 }),
+    );
+    at("pointermove", 60, 170);
+    at("pointermove", 70, 175);
+    at("pointerup", 70, 175);
+    expect(callbacks.onLinkReshape).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 7 }),
+      near({ x: 40, y: 170, width: 100, height: 14 }),
+    );
+    viewer.destroy();
+  });
+
+  it("shows where a link goes on hover and follows it when pressed, with the Select tool", async () => {
+    mode = "select";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const at = pointer(container);
+    at("pointermove", 50, 165);
+    await settle();
+    at("pointermove", 51, 165);
+    expect(callbacks.onLinkHover).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 7 }),
+    );
+    expect(container.querySelectorAll(".link-hover")).toHaveLength(1);
+    at("pointerdown", 50, 165);
+    at("pointerup", 50, 165);
+    await settle();
+    expect(callbacks.onLinkPress).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 7 }),
+    );
+    at("pointermove", 250, 20);
+    expect(callbacks.onLinkHover).toHaveBeenLastCalledWith(0, null);
+    viewer.destroy();
   });
 });
