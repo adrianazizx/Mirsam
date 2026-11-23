@@ -9,6 +9,7 @@ mod commands;
 mod diagnostics;
 mod editing;
 mod error;
+mod form_design;
 mod forms;
 mod instance;
 mod models;
@@ -49,6 +50,8 @@ macro_rules! product_commands {
             editing::add_ink,
             editing::add_note,
             editing::add_text_box,
+            form_design::design_form,
+            form_design::detect_form_fields,
             forms::form_fields,
             forms::set_form_field,
             forms::add_fill_text,

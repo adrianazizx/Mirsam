@@ -855,7 +855,7 @@ impl<'a, 'f> Writer<'a, 'f> {
 /// A page's `/Annots`, and where it lives.
 pub(crate) struct Annots {
     /// The array's own object, when it is not in the page dictionary.
-    own: Option<(u32, u16)>,
+    pub(crate) own: Option<(u32, u16)>,
     pub(crate) items: Vec<Object>,
 }
 
