@@ -12,6 +12,8 @@ import {
   type LinkTarget,
   type MarkupKind,
   type ObjectEdit,
+  type OcrAction,
+  type OcrLanguage,
   type OpenOutcome,
   type PageEdit,
   type PageObject,
@@ -47,7 +49,16 @@ import { useCertSign, VISIBLE_SIZE } from "../state/certSign";
 import { DOCUMENT_COLORS, type DocumentColorId, rgbOf } from "../state/colors";
 import type { CommentFilter, CommentSort } from "../state/comments";
 import { isOpenable, mapBetween, quarterTurn } from "../state/objects";
-import { flaggedWords, useOcrJobs, wordAt, wordRect } from "../state/ocrJobs";
+import {
+  flaggedWords,
+  nextItem,
+  positionOf,
+  type ReviewItem,
+  reviewQueue,
+  useOcrJobs,
+  wordAt,
+  wordRect,
+} from "../state/ocrJobs";
 import { missingRequired, ocrReady, useOcrModels } from "../state/ocrModels";
 import {
   addMark,
@@ -203,6 +214,14 @@ export interface CommandArg {
   jobId?: number;
   /** `ocr.showWord`: a flagged word of the review list, `[page index, word index]`. */
   reviewAt?: [number, number];
+  /** `ocr.reviewConfirm`, `ocr.reviewChoose`: the word's text as typed or chosen (ADR 0037). */
+  reviewText?: string;
+  /** `ocr.setRegionOptions`: the language an area is read in, and "numbers only" (ADR 0038). */
+  language?: OcrLanguage;
+  numbers?: boolean;
+  /** `ocr.setConvertOptions` (ADR 0039): keep the scan behind the text, and the family. */
+  keepScan?: boolean;
+  convertFamily?: "naskh" | "sans";
   /** `object.select`, `object.reshape`: a page object (ADR 0051) (`page`, and `rect` its new box). */
   object?: PageObject | null;
   /** `link.select`, `link.reshape`, `link.follow`, `link.hover`: a link (`page`, `rect`). */
@@ -455,6 +474,23 @@ export type CommandId =
   | "ocr.showWord"
   | "ocr.nextFlag"
   | "ocr.previousFlag"
+  | "ocr.startReview"
+  | "ocr.stopReview"
+  | "ocr.reviewConfirm"
+  | "ocr.reviewChoose"
+  | "ocr.reviewCheck"
+  | "ocr.reviewCheckPage"
+  | "ocr.reviewNumbers"
+  | "ocr.drawRegion"
+  | "ocr.setRegion"
+  | "ocr.setRegionOptions"
+  | "ocr.readRegion"
+  | "ocr.cancelRegion"
+  | "ocr.checkLayers"
+  | "ocr.replaceLayers"
+  | "ocr.setConvertOptions"
+  | "ocr.convertPage"
+  | "ocr.convertDocument"
   | "ocrModels.downloadRequired"
   | "ocrModels.dismissPrompt"
   | "ocrModels.download"
@@ -921,6 +957,8 @@ async function stepActive(step: "undo" | "redo"): Promise<void> {
   const outcome =
     step === "undo" ? await backend.undoEdit(active.id) : await backend.redoEdit(active.id);
   store().applyEdit(active.id, outcome);
+  // A correction undone or redone moves the review with it (ADR 0037).
+  if (outcome.textChanged && ocrJobs().review[active.id]) await refreshReview(active.id);
 }
 
 /** Makes `page` current and scrolls the viewer to it. */
@@ -1111,6 +1149,11 @@ const KNOWN_ERRORS = [
   "ocr_signed_document",
   "ocr_job_running",
   "ocr_unknown_job",
+  "ocr_review_no_word",
+  "ocr_review_too_long",
+  "ocr_review_converted",
+  "ocr_review_stale",
+  "ocr_convert_unrecognized",
 ];
 
 /** Why an OCR job stopped (`OcrJob.error`): codes with their own message under `errors.`. */
@@ -1123,6 +1166,8 @@ export const OCR_JOB_ERRORS = [
   "ocr_bad_response",
   "ocr_image_invalid",
   "ocr_document_changed",
+  "ocr_region_converted",
+  "ocr_region_unknown_layer",
 ];
 
 function reportError(error: unknown) {
@@ -1365,33 +1410,133 @@ function markHits(active: OpenDocument, indices: number[]) {
 const ocr = () => useOcrModels.getState();
 const ocrJobs = () => useOcrJobs.getState();
 
-/** Loads a document's OCR jobs and review list from the shell (ADR 0035). */
+/** Loads a document's OCR jobs, review list and layer checks from the shell (ADR 0035, 0038). */
 export async function refreshOcrJobs(documentId: number): Promise<void> {
-  const [jobs, review] = await Promise.all([
+  const [jobs, review, checks] = await Promise.all([
     backend.ocrJobs(documentId),
-    backend.ocrReview(documentId),
+    backend.ocrReview(documentId, ocrJobs().numbers),
+    backend.ocrLayerChecks(documentId),
   ]);
   ocrJobs().setJobs(jobs);
   ocrJobs().setReview(documentId, review);
+  ocrJobs().setChecks(documentId, checks);
+  refocus(documentId);
 }
 
-/** Starts OCR of the active document's `pages` (all when absent), once its models are in. */
-async function recognize(pages?: number[]): Promise<void> {
-  const active = selectActiveDocument(store());
-  if (!active) return;
+/** Reloads a document's review list (every number too when asked), keeping the word shown. */
+export async function refreshReview(documentId: number): Promise<void> {
+  ocrJobs().setReview(documentId, await backend.ocrReview(documentId, ocrJobs().numbers));
+  refocus(documentId);
+}
+
+/** After the list changed, the shown word's place in it is found again (or it is let go). */
+function refocus(documentId: number) {
+  const focus = ocrJobs().focus;
+  if (!focus || focus.documentId !== documentId || focus.word === null) return;
+  const pages = ocrJobs().review[documentId] ?? [];
+  const at = positionOf(pages, focus.page, focus.word);
+  ocrJobs().setFocus(at ? { ...focus, at } : null);
+}
+
+/** Whether the models OCR needs are in; otherwise asks to download them. */
+async function modelsReady(): Promise<boolean> {
   if (!ocr().models) await refreshOcrModels();
   const { models } = ocr();
   if (!models?.available) {
     store().setError("model_unavailable");
-    return;
+    return false;
   }
   if (!ocrReady(models)) {
     ocr().setPrompt(true);
-    return;
+    return false;
   }
-  ocrJobs().setJob(await backend.startOcr(active.id, pages));
+  return true;
+}
+
+/** Starts OCR of the active document's `pages` (all when absent), once its models are in. */
+async function recognize(pages?: number[], replace = false): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active || !(await modelsReady())) return;
+  ocrJobs().setJob(await backend.startOcr(active.id, pages, replace));
   // The OCR panel shows the job's progress and, as pages finish, what to review.
   store().setActiveTool("ocr");
+}
+
+/** Shows a review item: a word (its page, its box marked) or a page to check. */
+function showItem(item: ReviewItem | null) {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  if (!item) {
+    ocrJobs().setFocus(null);
+    return;
+  }
+  if (item.at) {
+    showFlag(item.at);
+    return;
+  }
+  ocrJobs().setFocus({ documentId: active.id, page: item.page, word: null, at: null, rect: null });
+  store().updateDocument(active.id, { page: item.page });
+  getViewer(active.id)?.goToPage(item.page);
+}
+
+/** The word (or page) review mode is on, in the active document. */
+function reviewed(): { documentId: number; page: number; word: number | null } | null {
+  const active = selectActiveDocument(store());
+  const focus = ocrJobs().focus;
+  if (!active || !focus || focus.documentId !== active.id) return null;
+  return { documentId: active.id, page: focus.page, word: focus.word };
+}
+
+/**
+ * Takes a review decision on the word (or page) shown, then, in review mode,
+ * shows the next item still open (ADR 0037).
+ */
+async function decide(action: OcrAction): Promise<void> {
+  const current = reviewed();
+  if (!current) return;
+  const result = await backend.ocrDecide(
+    current.documentId,
+    current.page,
+    action.kind === "checkPage" ? null : current.word,
+    action,
+    ocrJobs().numbers,
+  );
+  if (result.outcome) store().applyEdit(current.documentId, result.outcome);
+  ocrJobs().setReview(current.documentId, result.review);
+  if (ocrJobs().reviewing) showItem(nextItem(reviewQueue(result.review), current, result.review));
+  else refocus(current.documentId);
+}
+
+/** The shown word as the review list has it. */
+function reviewedWord() {
+  const current = reviewed();
+  if (!current || current.word === null) return undefined;
+  const pages = ocrJobs().review[current.documentId] ?? [];
+  const at = positionOf(pages, current.page, current.word);
+  return at ? wordAt(pages, at) : undefined;
+}
+
+/** Converts recognised pages of the active document into page text (ADR 0039). */
+async function convert(pages: number[] | null): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active) return;
+  const { keepScan, family } = ocrJobs();
+  try {
+    const outcome = await backend.ocrConvert(active.id, pages, keepScan, family);
+    store().applyEdit(active.id, outcome);
+  } catch (error) {
+    if (isBackendError(error) && error.code === "ocr_convert_unreviewed") {
+      const locale = store().locale;
+      const list = error.detail
+        .split(",")
+        .map((page) => formatNumber(Number(page), locale))
+        .join(i18n.t("ocrPanel.convert.listSeparator"));
+      store().setNotice({ key: "ocrConvertUnreviewed", values: { pages: list } });
+      return;
+    }
+    throw error;
+  }
+  await refreshReview(active.id);
 }
 
 async function controlJob(arg: CommandArg | undefined, action: "pause" | "resume" | "cancel") {
@@ -1408,23 +1553,39 @@ function showFlag(at: [number, number]) {
   const page = pages[at[0]];
   if (!word || !page) return;
   const rect = wordRect(word);
-  ocrJobs().setFocus({ documentId: active.id, page: page.page, at, rect });
+  ocrJobs().setFocus({ documentId: active.id, page: page.page, word: word.index, at, rect });
   const viewer = getViewer(active.id);
   store().updateDocument(active.id, { page: page.page });
   if (viewer && rect) viewer.revealHit({ page: page.page, rects: [rect] });
   else viewer?.goToPage(page.page);
 }
 
-/** The next or previous flagged word after the one shown. */
+/** The next or previous flagged word after the one shown (in review mode: still open). */
 function stepFlag(direction: 1 | -1) {
   const active = selectActiveDocument(store());
   if (!active) return;
+  if (ocrJobs().reviewing) {
+    const pages = ocrJobs().review[active.id] ?? [];
+    const queue = reviewQueue(pages);
+    if (direction === 1) {
+      showItem(nextItem(queue, reviewed(), pages));
+    } else {
+      const current = reviewed();
+      const at = current
+        ? queue.findIndex((item) => item.page === current.page && item.word === current.word)
+        : -1;
+      // Before the current item (wrapping), or the last when the current one was decided.
+      const index = at < 0 ? queue.length - 1 : (at - 1 + queue.length) % queue.length;
+      showItem(queue[index] ?? null);
+    }
+    return;
+  }
   const flags = flaggedWords(ocrJobs().review[active.id] ?? []);
   if (flags.length === 0) return;
   const focus = ocrJobs().focus;
   const current =
-    focus?.documentId === active.id
-      ? flags.findIndex(([p, w]) => p === focus.at[0] && w === focus.at[1])
+    focus?.documentId === active.id && focus.at
+      ? flags.findIndex(([p, w]) => p === focus.at?.[0] && w === focus.at?.[1])
       : -1;
   const next =
     current < 0
@@ -1440,6 +1601,28 @@ const hasFlags = (state: AppState) => {
   const active = selectActiveDocument(state);
   return active !== null && flaggedWords(useOcrJobs.getState().review[active.id] ?? []).length > 0;
 };
+
+/** Review mode is on, with a word (or a page) shown in the active document. */
+const reviewingItem = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  const { reviewing, focus } = useOcrJobs.getState();
+  return reviewing && active !== null && focus?.documentId === active.id;
+};
+
+/** An area is drawn on the active document. */
+const hasRegion = (state: AppState) => {
+  const active = selectActiveDocument(state);
+  return active !== null && useOcrJobs.getState().region?.documentId === active.id;
+};
+
+/** Pages of the active document whose existing text layer the check found poor. */
+function poorPages(state: AppState): number[] {
+  const active = selectActiveDocument(state);
+  if (!active) return [];
+  return (useOcrJobs.getState().checks[active.id] ?? [])
+    .filter((check) => check.verdict === "poor")
+    .map((check) => check.page);
+}
 
 /** Loads the OCR models' listing from the shell (ADR 0034). */
 export async function refreshOcrModels(): Promise<void> {
@@ -3401,13 +3584,183 @@ const DECLARED: Command[] = [
   },
   {
     id: "ocr.nextFlag",
+    shortcut: { key: "F8" },
     isEnabled: hasFlags,
     run: () => stepFlag(1),
   },
   {
     id: "ocr.previousFlag",
+    shortcut: { key: "F8", shift: true },
     isEnabled: hasFlags,
     run: () => stepFlag(-1),
+  },
+  {
+    // Review mode (ADR 0037): the card steps through what is still open.
+    id: "ocr.startReview",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      store().setActiveTool("ocr");
+      ocrJobs().setDrawingRegion(false);
+      await refreshOcrJobs(active.id);
+      ocrJobs().setReviewing(true);
+      const pages = ocrJobs().review[active.id] ?? [];
+      showItem(nextItem(reviewQueue(pages), null, pages));
+    },
+  },
+  {
+    id: "ocr.stopReview",
+    isEnabled: () => useOcrJobs.getState().reviewing,
+    run: () => ocrJobs().setReviewing(false),
+  },
+  {
+    // Enter in the card: the text as recognised is right, or as typed.
+    id: "ocr.reviewConfirm",
+    paletteHidden: true,
+    isEnabled: reviewingItem,
+    async run(arg) {
+      const word = reviewedWord();
+      if (!word) return;
+      const text = arg?.reviewText;
+      await decide(
+        text !== undefined && text.trim() !== word.text
+          ? { kind: "edit", text }
+          : { kind: "accept" },
+      );
+    },
+  },
+  {
+    // One of the other readings, chosen.
+    id: "ocr.reviewChoose",
+    paletteHidden: true,
+    isEnabled: reviewingItem,
+    async run(arg) {
+      if (arg?.reviewText !== undefined) await decide({ kind: "edit", text: arg.reviewText });
+    },
+  },
+  {
+    id: "ocr.reviewCheck",
+    shortcut: { key: "Enter", mod: true },
+    isEnabled: (state) => reviewingItem(state) && useOcrJobs.getState().focus?.word !== null,
+    run: () => decide({ kind: "check" }),
+  },
+  {
+    id: "ocr.reviewCheckPage",
+    shortcut: { key: "Enter", mod: true, shift: true },
+    isEnabled: reviewingItem,
+    run: () => decide({ kind: "checkPage" }),
+  },
+  {
+    // Every number, date and ID on the list too, not only the flagged ones.
+    id: "ocr.reviewNumbers",
+    isEnabled: hasDocument,
+    async run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      ocrJobs().setNumbers(arg?.numbers ?? !ocrJobs().numbers);
+      await refreshReview(active.id);
+    },
+  },
+  {
+    // An area read again (ADR 0038): drawn on the page first.
+    id: "ocr.drawRegion",
+    isEnabled: hasDocument,
+    run() {
+      const drawing = !ocrJobs().drawingRegion;
+      store().setActiveTool("ocr");
+      ocrJobs().setReviewing(false);
+      ocrJobs().setDrawingRegion(drawing);
+      if (drawing) ocrJobs().setRegion(null);
+    },
+  },
+  {
+    id: "ocr.setRegion",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    run(arg) {
+      const active = selectActiveDocument(store());
+      if (!active || arg?.page === undefined || !arg.rect) return;
+      if (arg.rect.width < 2 || arg.rect.height < 2) return;
+      ocrJobs().setRegion({ documentId: active.id, page: arg.page, rect: arg.rect });
+      ocrJobs().setDrawingRegion(false);
+    },
+  },
+  {
+    id: "ocr.setRegionOptions",
+    paletteHidden: true,
+    run(arg) {
+      ocrJobs().setRegionOptions({ language: arg?.language, numbers: arg?.numbers });
+    },
+  },
+  {
+    id: "ocr.readRegion",
+    isEnabled: hasRegion,
+    async run() {
+      const region = ocrJobs().region;
+      if (!region || !(await modelsReady())) return;
+      const { x, y, width, height } = region.rect;
+      const { regionLanguage, regionNumbers } = ocrJobs();
+      ocrJobs().setJob(
+        await backend.startOcrRegion(
+          region.documentId,
+          region.page,
+          [x, y, x + width, y + height],
+          regionLanguage,
+          regionNumbers,
+        ),
+      );
+      ocrJobs().setRegion(null);
+    },
+  },
+  {
+    id: "ocr.cancelRegion",
+    isEnabled: () => useOcrJobs.getState().drawingRegion || useOcrJobs.getState().region !== null,
+    run() {
+      ocrJobs().setRegion(null);
+      ocrJobs().setDrawingRegion(false);
+    },
+  },
+  {
+    // Another tool's text layers checked against a quick draft (ADR 0038); no models needed.
+    id: "ocr.checkLayers",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (!active) return;
+      store().setActiveTool("ocr");
+      ocrJobs().setJob(await backend.checkTextLayers(active.id));
+    },
+  },
+  {
+    // The pages found poor (or `pages`) read again, their old layer removed.
+    id: "ocr.replaceLayers",
+    isEnabled: (state) => poorPages(state).length > 0,
+    async run(arg) {
+      const pages = arg?.pages ?? poorPages(store());
+      if (pages.length > 0) await recognize(pages, true);
+    },
+  },
+  {
+    id: "ocr.setConvertOptions",
+    paletteHidden: true,
+    run(arg) {
+      ocrJobs().setConvertOptions({ keepScan: arg?.keepScan, family: arg?.convertFamily });
+    },
+  },
+  {
+    // Scan to editable text (ADR 0039): this page, or every recognised page.
+    id: "ocr.convertPage",
+    isEnabled: hasDocument,
+    async run() {
+      const active = selectActiveDocument(store());
+      if (active) await convert([active.page]);
+    },
+  },
+  {
+    id: "ocr.convertDocument",
+    isEnabled: hasDocument,
+    run: () => convert(null),
   },
   {
     // The first-use prompt's answer: whatever OCR still needs, shown downloading in Settings.
@@ -3999,6 +4352,7 @@ export function shortcutLabel(id: CommandId, mac = isMac): string | null {
     PageDown: "PgDn",
     PageUp: "PgUp",
     Escape: "Esc",
+    Enter: mac ? "↩" : "Enter",
     // A Mac's delete key sends Backspace.
     Delete: mac ? "⌫" : "Del",
     Tab: mac ? "⇥" : "Tab",

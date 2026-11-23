@@ -261,7 +261,24 @@
       "review": "Pages needing review (OCR)",
       "showWord": "Show flagged word",
       "nextFlag": "Next flagged OCR word",
-      "previousFlag": "Previous flagged OCR word"
+      "previousFlag": "Previous flagged OCR word",
+      "startReview": "Review flagged OCR words",
+      "stopReview": "Stop reviewing OCR words",
+      "reviewConfirm": "Accept or correct the OCR word",
+      "reviewChoose": "Use another reading of the OCR word",
+      "reviewCheck": "Mark the OCR word as checked",
+      "reviewCheckPage": "Mark the page as checked (OCR review)",
+      "reviewNumbers": "Also review every number and ID (OCR)",
+      "drawRegion": "Read an area again (OCR)…",
+      "setRegion": "Set the area to read again",
+      "setRegionOptions": "Set how the area is read",
+      "readRegion": "Read the drawn area again (OCR)",
+      "cancelRegion": "Cancel reading an area again",
+      "checkLayers": "Check existing text layers (OCR)",
+      "replaceLayers": "Replace poor text layers (OCR)",
+      "setConvertOptions": "Set how pages are converted to editable text",
+      "convertPage": "Convert this page to editable text",
+      "convertDocument": "Convert recognised pages to editable text"
     },
     "ocrModels": {
       "downloadRequired": "Download the OCR model",
@@ -437,7 +454,14 @@
     "signing_failed": "The document could not be signed. If the keychain asked, allow Mirsam to use the key.",
     "signature_too_large": "The signature is too large to fit in the document.",
     "keychain_unavailable": "The keychain could not be read.",
-    "save_as_required": "The original file changed since it was opened. Choose “as…” to save to a new file."
+    "save_as_required": "The original file changed since it was opened. Choose “as…” to save to a new file.",
+    "ocr_review_no_word": "That word is no longer on the review list.",
+    "ocr_review_too_long": "A word is corrected to at most 200 characters.",
+    "ocr_review_converted": "This page is page text now: fix it with the Edit tool.",
+    "ocr_review_stale": "This page's text changed outside the review. Recognize the page again to correct it.",
+    "ocr_convert_unrecognized": "Recognize the page first: there is no recognised text to convert.",
+    "ocr_region_converted": "This page is page text now: an area of it cannot be read again.",
+    "ocr_region_unknown_layer": "This page's recognised text has no review record (its job was removed). Recognize the page again first."
   },
   "gallery": {
     "title": "Design gallery",
@@ -549,7 +573,8 @@
     "exportedImages": "{{count}} image files were written.",
     "exportedText": "The text was saved as {{name}}.",
     "compressedSaved": "The compressed copy was saved as {{name}}.",
-    "fieldsMade": "Fields made: {{n}}."
+    "fieldsMade": "Fields made: {{n}}.",
+    "ocrConvertUnreviewed": "Decide the unsure words first, then convert. Pages: {{pages}}."
   },
   "split": {
     "title": "Split into files",
@@ -1012,7 +1037,13 @@
       "pause": "Pause",
       "resume": "Resume",
       "cancel": "Cancel",
-      "remove": "Remove"
+      "remove": "Remove",
+      "labelRegion": "Area of {{name}} read again",
+      "labelCheck": "Text layers of {{name}} checked",
+      "labelReplace": "Text layer of {{name}} replaced",
+      "region": "Reading an area of page {{page}} in quality mode…",
+      "check": "Checking the text layer of page {{page}}…",
+      "checked": "{{finished}} of {{pages}} pages checked"
     },
     "draftNote": "Pages show a quick draft until the quality reading replaces it.",
     "review": {
@@ -1031,8 +1062,87 @@
         "uncertain": "Unsure; also read as {{alternatives}}",
         "uncertainNone": "Unsure",
         "corrected": "Corrected; first read as {{read}}",
-        "reordered": "Order fixed; read as {{read}}"
+        "reordered": "Order fixed; read as {{read}}",
+        "lowConfidence": "Low confidence",
+        "number": "Number or ID"
+      },
+      "open": "To look at: {{count}}",
+      "allDecided": "All decided",
+      "converted": "Converted to page text",
+      "numbers": "Also every number, date and ID",
+      "start": "Review",
+      "decided": {
+        "accepted": "accepted",
+        "edited": "corrected by you; read as {{read}}",
+        "checked": "checked"
       }
+    },
+    "reviewCard": {
+      "heading": "Review",
+      "exit": "Done reviewing",
+      "done": "Nothing left to review.",
+      "position": "{{at}} of {{count}} left to look at",
+      "left": "{{count}} left to look at",
+      "truncated": "The reading of page {{page}} may be cut off. Compare it with the page, then mark the page as checked.",
+      "checkPage": "Check page",
+      "skip": "Skip",
+      "converted": "This page is page text now: fix its words with the Edit tool.",
+      "stale": "This page's text changed outside the review. Recognize the page again to correct it.",
+      "text": "Text of the word",
+      "correct": "Correct",
+      "accept": "Accept",
+      "check": "Mark checked",
+      "readings": "Other readings",
+      "use": "Use {{text}}",
+      "keys": "Enter accepts or corrects. {{check}} marks checked, {{page}} checks the page, {{skip}} skips.",
+      "image": "The page around {{text}}"
+    },
+    "region": {
+      "heading": "Read an area again",
+      "draw": "Draw an area",
+      "drawing": "Drag a rectangle on the page around the text to read again.",
+      "note": "The area is read in quality mode with every word checked; its text replaces what the area had.",
+      "drawn": "Area on page {{page}}",
+      "language": "Language of the area",
+      "languages": {
+        "auto": "Automatic",
+        "arabic": "Arabic",
+        "english": "English"
+      },
+      "numbers": "Numbers only",
+      "read": "Read area",
+      "cancel": "Cancel"
+    },
+    "layers": {
+      "heading": "Existing text layers",
+      "check": "Check text layers",
+      "note": "Scans with text from another tool are compared with a quick reading of each page.",
+      "found": "Poor text layer on {{poor}} pages; {{good}} look right.",
+      "none": "No poor text layer found; {{good}} look right.",
+      "problem": {
+        "mojibake": "Garbled characters",
+        "missingUnicode": "No character mapping",
+        "reversedArabic": "Arabic letters reversed",
+        "misordered": "Words out of order",
+        "mismatch": "Does not match the page",
+        "brokenMapping": "Letters mapped wrongly"
+      },
+      "similarity": "{{value}} like the page",
+      "sample": "Reads as",
+      "replace": "Replace {{count}} poor layers"
+    },
+    "convert": {
+      "heading": "Editable text",
+      "scan": "The scan",
+      "keep": "Keep the scan behind the text",
+      "remove": "Remove the scan",
+      "family": "Typeface",
+      "naskh": "Naskh",
+      "sans": "Sans",
+      "page": "Convert this page",
+      "document": "Convert all recognised pages",
+      "note": "Recognised text becomes paragraphs you can edit. Pages with unsure words are converted once you have decided them.",
+      "listSeparator": ", "
     }
   },
   "formDesign": {

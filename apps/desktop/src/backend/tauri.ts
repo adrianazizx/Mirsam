@@ -19,7 +19,9 @@ import {
   type NamedDestination,
   type ObjectEditOutcome,
   type OcrApplied,
+  type OcrDecideOutcome,
   type OcrJob,
+  type OcrLayerCheck,
   type OcrModelEvent,
   type OcrModels,
   type OcrReviewPage,
@@ -58,6 +60,8 @@ import {
 const TILE_TIMEOUT_MS = 10_000;
 
 let tileUrl: string | null = null;
+/** The shell's review crops: `safha://localhost/ocr-crop` (ADR 0037). */
+let cropUrl: string | null = null;
 /**
  * The shell's tile protocol: `safha://localhost/tile` (`http://safha.localhost/tile`
  * on Windows). Asked of Tauri on first use: the module also loads outside Tauri.
@@ -332,12 +336,33 @@ export const tauriBackend: Backend = {
   // Sent to every window: a download started in one shows in all.
   onOcrModelProgress: (listener) =>
     listen<OcrModelEvent>("ocr-model-progress", (event) => listener(event.payload)),
-  startOcr: (documentId, pages) =>
-    invoke<OcrJob>("start_ocr", { documentId, pages: pages ?? null }),
+  startOcr: (documentId, pages, replace) =>
+    invoke<OcrJob>("start_ocr", { documentId, pages: pages ?? null, replace: replace ?? false }),
+  startOcrRegion: (documentId, page, rect, language, numbers) =>
+    invoke<OcrJob>("start_ocr_region", { documentId, page, rect, language, numbers }),
+  checkTextLayers: (documentId, pages) =>
+    invoke<OcrJob>("check_text_layers", { documentId, pages: pages ?? null }),
+  ocrLayerChecks: (documentId) => invoke<OcrLayerCheck[]>("ocr_layer_checks", { documentId }),
   ocrJobs: (documentId) => invoke<OcrJob[]>("ocr_jobs", { documentId }),
   controlOcrJob: (jobId, action) => invoke<OcrJob>("control_ocr_job", { jobId, action }),
   removeOcrJob: (jobId) => invoke<void>("remove_ocr_job", { jobId }),
-  ocrReview: (documentId) => invoke<OcrReviewPage[]>("ocr_review", { documentId }),
+  ocrReview: (documentId, numbers) =>
+    invoke<OcrReviewPage[]>("ocr_review", { documentId, numbers: numbers ?? false }),
+  ocrDecide: (documentId, page, word, action, numbers) =>
+    invoke<OcrDecideOutcome>("ocr_decide", {
+      documentId,
+      page,
+      word,
+      action,
+      numbers: numbers ?? false,
+    }),
+  ocrConvert: (documentId, pages, keepScan, family) =>
+    invoke<EditOutcome>("ocr_convert", { documentId, pages, keepScan, family }),
+  ocrCropUrl: (documentId, page, rect, height) => {
+    const [x0, y0, x1, y1] = rect.map((v) => v.toFixed(2));
+    cropUrl ??= convertFileSrc("ocr-crop", "safha");
+    return `${cropUrl}?doc=${documentId}&page=${page}&x0=${x0}&y0=${y0}&x1=${x1}&y1=${y1}&h=${Math.round(height)}`;
+  },
   onOcrJob: (listener) => listen<OcrJob>("ocr-job", (event) => listener(event.payload)),
   // Addressed to one window: listen on this window only.
   onOcrApplied: (listener) =>

@@ -452,7 +452,7 @@ pub async fn ocr_convert(
     app: AppHandle,
     state: State<'_, AppState>,
     document_id: u32,
-    pages: Vec<usize>,
+    pages: Option<Vec<usize>>,
     keep_scan: bool,
     family: Option<FontFamily>,
 ) -> CommandResult<EditOutcome> {
@@ -470,6 +470,13 @@ pub async fn ocr_convert(
             return Err(CommandError::new("ocr_signed_document", "the document is signed"));
         }
         let states = document.text_layer_states()?;
+        // Every page with a recognised layer, when no pages are named.
+        let strict = pages.is_some();
+        let pages = pages.unwrap_or_else(|| {
+            (0..document.page_count())
+                .filter(|&p| states.get(p).is_some_and(|s| s.quality == Some(LayerQuality::Final)))
+                .collect()
+        });
         let mut conversions = Vec::new();
         let (mut unreviewed, mut unrecognized) = (Vec::new(), Vec::new());
         for &page in &pages {
@@ -490,7 +497,7 @@ pub async fn ocr_convert(
         if !unreviewed.is_empty() {
             return Err(CommandError::new("ocr_convert_unreviewed", list(&unreviewed)));
         }
-        if !unrecognized.is_empty() || conversions.is_empty() {
+        if (strict && !unrecognized.is_empty()) || conversions.is_empty() {
             return Err(CommandError::new("ocr_convert_unrecognized", list(&unrecognized)));
         }
         let (revision, update) = document.with_conversion(&conversions)?;

@@ -134,6 +134,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         searchHit: styles.searchHit ?? "",
         searchHitActive: styles.searchHitActive ?? "",
         reviewMark: styles.reviewMark ?? "",
+        regionMark: styles.regionMark ?? "",
         selection: styles.selection ?? "",
         markupSelected: styles.markupSelected ?? "",
         inkPreview: styles.inkPreview ?? "",
@@ -178,6 +179,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         if (activeTool === "select" || activeTool === "forms") return "select";
         if (activeTool === "sign") return fillTool ? "place" : "select";
         if (activeTool === "protect") return "redact";
+        if (activeTool === "ocr" && useOcrJobs.getState().drawingRegion) return "region";
         if (activeTool === "edit") return editMode === "text" ? "text" : editMode;
         return activeTool === "comment" ? commentTool : "none";
       },
@@ -194,6 +196,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         onPlaceTextBox: (page, x, y, width) =>
           void runCommand("textBox.place", { page, x, y, width }),
         onMarkArea: (page, rect) => void runCommand("redact.addArea", { page, rect }),
+        onRegion: (page, rect) => void runCommand("ocr.setRegion", { page, rect }),
         onDrawField: (page, rect) => void runCommand("formDesign.draw", { page, rect }),
         onSelectField: (field, widget) =>
           void runCommand("formDesign.selectField", { field: field ?? undefined, index: widget }),
@@ -306,6 +309,13 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   useEffect(() => {
     viewerRef.current?.setRedactionMarks(redactMarks ?? []);
   }, [redactMarks, revision]);
+
+  // The area drawn to be read again (ADR 0038).
+  const region = useOcrJobs((state) => (state.region?.documentId === id ? state.region : null));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows it again
+  useEffect(() => {
+    viewerRef.current?.setRegionMark(region ? { page: region.page, rect: region.rect } : null);
+  }, [region, revision]);
 
   // The tool or the Edit tool's mode changed: the object and link marks are painted again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tool changes

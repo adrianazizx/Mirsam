@@ -1068,8 +1068,30 @@ export type OcrModelEvent = { id: string } & OcrModelUpdate;
 
 /** Where a background OCR job is (ADR 0035). */
 export type OcrJobState = "queued" | "running" | "paused" | "done" | "cancelled" | "failed";
-/** The quick draft (platform OCR) or the quality pipeline. */
-export type OcrPass = "draft" | "quality";
+/** The quick draft (platform OCR), the quality pipeline, or checking an existing text layer. */
+export type OcrPass = "draft" | "quality" | "check";
+
+/** The language an area is read in again (ADR 0038). */
+export type OcrLanguage = "auto" | "arabic" | "english";
+
+/** What a job does (ADR 0038). */
+export type OcrJobKind =
+  | { kind: "recognize" }
+  /** One area of one page read again: `rect` in displayed points (left, top, right, bottom). */
+  | {
+      kind: "region";
+      rect: [number, number, number, number];
+      language: OcrLanguage;
+      numbers: boolean;
+    }
+  /** The pages' existing text layers compared with a quick draft. */
+  | { kind: "check" };
+
+export interface OcrJobOptions {
+  kind: OcrJobKind;
+  /** The layers written take the place of another tool's poor text layer. */
+  replace: boolean;
+}
 
 /** A background OCR job: a document's pages, drafted first, then read in quality mode. */
 export interface OcrJob {
@@ -1087,6 +1109,7 @@ export interface OcrJob {
   finished: number;
   /** The page being read now (zero-based) and by which pass. */
   current: [number, OcrPass] | null;
+  options: OcrJobOptions;
   /** The open documents showing the job's file. */
   documentIds: number[];
 }
@@ -1104,9 +1127,30 @@ export type OcrWordStatus =
   /** A number–unit compound put in logical order ("bit-64" to "64-bit"). */
   | { kind: "reordered"; read: string };
 
+/** What a person decided about a word in review (ADR 0037). */
+export type OcrWordReview =
+  | { kind: "open" }
+  | { kind: "accepted" }
+  /** Typed or chosen by a person; `read` is what the pipeline wrote. */
+  | { kind: "edited"; read: string }
+  /** Looked at and left as it is, without vouching for it. */
+  | { kind: "checked" };
+
+/** Why a word is on the review list. */
+export type OcrReason = "uncertain" | "corrected" | "reordered" | "lowConfidence" | "number";
+
+/** A review decision (ADR 0037). */
+export type OcrAction =
+  | { kind: "accept" }
+  | { kind: "check" }
+  /** The word's text as typed; empty when it is not text (a speck). */
+  | { kind: "edit"; text: string }
+  /** Every word still open on the page, and the page itself. */
+  | { kind: "checkPage" };
+
 /** A word on the pages-needing-review list. */
 export interface OcrReviewWord {
-  /** Its place among the page's words. */
+  /** Its place among the page's words (what a decision names). */
   index: number;
   text: string;
   /** The engine's probability for it, 0–1. */
@@ -1114,6 +1158,10 @@ export interface OcrReviewWord {
   status: OcrWordStatus;
   /** Its box on the displayed page in points (left, top, right, bottom). */
   bounds: [number, number, number, number] | null;
+  /** Its line's box, for the image beside it. */
+  line: [number, number, number, number] | null;
+  review: OcrWordReview;
+  reasons: OcrReason[];
 }
 
 /** A page on the pages-needing-review list (spec §5.8). */
@@ -1127,7 +1175,45 @@ export interface OcrReviewPage {
   /** Mean and lowest word probability, 0–1. */
   confidence: number;
   lowest: number;
+  /** Uncertain words nobody has decided yet. */
+  undecided: number;
+  /** Listed words nobody has looked at yet. */
+  open: number;
+  /** A person checked the page as a whole. */
+  checked: boolean;
+  /** Converted to page text (ADR 0039): its words are fixed with the Edit tool. */
+  converted: boolean;
+  /** The document's layer is not one the review knows: corrections are refused. */
+  stale: boolean;
   words: OcrReviewWord[];
+}
+
+/** A review decision's result: the list after it, and the edit when a word's text changed. */
+export interface OcrDecideOutcome {
+  review: OcrReviewPage[];
+  outcome: EditOutcome | null;
+}
+
+/** What text a page has, for checking another tool's text layer (ADR 0038). */
+export type OcrLayerKind = "none" | "ours" | "visible" | "invisible";
+export type OcrLayerProblem =
+  | "mojibake"
+  | "missingUnicode"
+  | "reversedArabic"
+  | "misordered"
+  | "mismatch"
+  | "brokenMapping";
+
+/** A page's existing text layer, checked against a quick draft of its image. */
+export interface OcrLayerCheck {
+  page: number;
+  kind: OcrLayerKind;
+  verdict: "good" | "poor" | "notChecked";
+  problems: OcrLayerProblem[];
+  /** How much the layer says what the image shows, 0–1, when compared. */
+  similarity: number | null;
+  /** The start of what the layer says (not translated). */
+  sample: string;
 }
 
 /** OCR text was written into a document (an edit, undoable like any other). */
@@ -1531,14 +1617,59 @@ export interface Backend {
    * background job (ADR 0035). Rejects with `ocr_model_missing`,
    * `ocr_signed_document` or `ocr_unavailable`.
    */
-  startOcr(documentId: number, pages?: number[]): Promise<OcrJob>;
+  startOcr(documentId: number, pages?: number[], replace?: boolean): Promise<OcrJob>;
+  /**
+   * Reads an area of a page again (ADR 0038): `rect` in displayed points
+   * (left, top, right, bottom). Rejects as `startOcr` does.
+   */
+  startOcrRegion(
+    documentId: number,
+    page: number,
+    rect: [number, number, number, number],
+    language: OcrLanguage,
+    numbers: boolean,
+  ): Promise<OcrJob>;
+  /** Checks the existing text layers of `pages` (all when absent) against a quick draft. */
+  checkTextLayers(documentId: number, pages?: number[]): Promise<OcrJob>;
+  /** The latest verdict on each checked page. */
+  ocrLayerChecks(documentId: number): Promise<OcrLayerCheck[]>;
   /** The OCR jobs of a document, oldest first. */
   ocrJobs(documentId: number): Promise<OcrJob[]>;
   controlOcrJob(jobId: number, action: OcrJobAction): Promise<OcrJob>;
   /** Forgets a job that is not running, and its part of the review list. */
   removeOcrJob(jobId: number): Promise<void>;
-  /** The pages-needing-review list of a document: decisions first. */
-  ocrReview(documentId: number): Promise<OcrReviewPage[]>;
+  /** The pages-needing-review list of a document: decisions first; every number too when `numbers`. */
+  ocrReview(documentId: number, numbers?: boolean): Promise<OcrReviewPage[]>;
+  /**
+   * A review decision on a word of a page (`word` its index; null: the page).
+   * A correction is an undoable edit (ADR 0037). Rejects with
+   * `ocr_review_converted`, `ocr_review_stale`, `ocr_review_too_long`.
+   */
+  ocrDecide(
+    documentId: number,
+    page: number,
+    word: number | null,
+    action: OcrAction,
+    numbers?: boolean,
+  ): Promise<OcrDecideOutcome>;
+  /**
+   * Converts recognised pages into page text (ADR 0039): `pages`, or every page
+   * with a recognised layer when null. Rejects with `ocr_convert_unreviewed`
+   * (pages with words to decide, in `detail`) or `ocr_convert_unrecognized`.
+   */
+  ocrConvert(
+    documentId: number,
+    pages: number[] | null,
+    keepScan: boolean,
+    family: "sans" | "naskh" | null,
+  ): Promise<EditOutcome>;
+  /** The URL of an area of a page as an image (displayed points), `height` pixels tall at most. */
+  ocrCropUrl(
+    documentId: number,
+    page: number,
+    rect: [number, number, number, number],
+    height: number,
+  ): string;
   /** Jobs moving on (every window). */
   onOcrJob(listener: (job: OcrJob) => void): Promise<() => void>;
   /** OCR text written into a document shown in this window. */
