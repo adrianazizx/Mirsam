@@ -368,9 +368,13 @@ impl Document {
                 crate::ocr::Clear::Page => None,
                 crate::ocr::Clear::Region { rect } => Some(self.page_space(layer.page, rect)?),
             };
-            if let Some(update) =
-                crate::objects::invisible_text_update(&bytes, password, layer.page, self.page_area(layer.page)?, within)?
-            {
+            if let Some(update) = crate::objects::invisible_text_update(
+                &bytes,
+                password,
+                layer.page,
+                self.page_area(layer.page)?,
+                within,
+            )? {
                 bytes.extend_from_slice(&update);
             }
         }
@@ -393,7 +397,8 @@ impl Document {
 
     /// A page's existing text, for checking another tool's text layer (ADR 0038).
     pub fn text_info(&self, page: usize) -> Result<crate::ocr::TextInfo> {
-        let census = crate::objects::text_census(&self.bytes, self.password.as_deref(), page, self.page_area(page)?)?;
+        let census =
+            crate::objects::text_census(&self.bytes, self.password.as_deref(), page, self.page_area(page)?)?;
         let text = self.page_text(page)?;
         let lines: Vec<&str> =
             text.blocks.iter().flat_map(|block| block.lines.iter().map(|line| line.text.as_str())).collect();
@@ -409,7 +414,10 @@ impl Document {
     /// This document with pages' recognised text made into page text (ADR
     /// 0039): where a page's scan is not kept, its page-sized images are
     /// removed first; another tool's invisible text goes too. One update.
-    pub fn with_conversion(&self, pages: &[crate::ocr::convert::PageConversion]) -> Result<(Document, Vec<u8>)> {
+    pub fn with_conversion(
+        &self,
+        pages: &[crate::ocr::convert::PageConversion],
+    ) -> Result<(Document, Vec<u8>)> {
         let password = self.password.as_deref();
         let mut current = self.clone_revision()?;
         for conversion in pages {
@@ -427,14 +435,19 @@ impl Document {
                     };
                     let change = crate::objects::ObjectChange {
                         page,
-                        object: crate::objects::ObjectRef { index: scan.index, fingerprint: scan.fingerprint },
+                        object: crate::objects::ObjectRef {
+                            index: scan.index,
+                            fingerprint: scan.fingerprint,
+                        },
                         edit: crate::objects::ObjectEdit::Delete,
                     };
                     current = current.with_object_edit(&change)?.0;
                 }
             }
             let area = current.page_area(page)?;
-            if let Some(update) = crate::objects::invisible_text_update(&current.bytes, password, page, area, None)? {
+            if let Some(update) =
+                crate::objects::invisible_text_update(&current.bytes, password, page, area, None)?
+            {
                 let mut bytes = current.bytes.to_vec();
                 bytes.extend_from_slice(&update);
                 current = current.revision(Arc::from(bytes))?;

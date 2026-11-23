@@ -53,7 +53,20 @@ fn is_latin_letter(c: char) -> bool {
 fn is_number_mark(c: char) -> bool {
     matches!(
         c,
-        '.' | ',' | '/' | '-' | '–' | ':' | '+' | '(' | ')' | '%' | '#' | '\u{066B}' | '\u{066C}' | '\u{060C}' | '\u{066A}'
+        '.' | ','
+            | '/'
+            | '-'
+            | '–'
+            | ':'
+            | '+'
+            | '('
+            | ')'
+            | '%'
+            | '#'
+            | '\u{066B}'
+            | '\u{066C}'
+            | '\u{060C}'
+            | '\u{066A}'
     )
 }
 
@@ -61,7 +74,8 @@ impl Constraint {
     /// Whether `text` is what the area is expected to hold.
     pub fn fits(&self, text: &str) -> bool {
         if self.numbers
-            && !(text.chars().any(char::is_numeric) && text.chars().all(|c| c.is_numeric() || is_number_mark(c)))
+            && !(text.chars().any(char::is_numeric)
+                && text.chars().all(|c| c.is_numeric() || is_number_mark(c)))
         {
             return false;
         }
@@ -180,7 +194,8 @@ pub fn merge_region(base: Option<&PageView>, area: PageOcr, rect: [f32; 4]) -> P
             // of it when the area is on the side it starts from, else after.
             let after = !out.words.is_empty() && {
                 let centre = |l: f32, r: f32| (l + r) / 2.0;
-                let left = out.words.iter().map(|w| centre(w.left, w.right)).sum::<f32>() / out.words.len() as f32;
+                let left =
+                    out.words.iter().map(|w| centre(w.left, w.right)).sum::<f32>() / out.words.len() as f32;
                 let area_x = centre(rect[0], rect[2]);
                 if line.rtl { area_x < left } else { area_x > left }
             };
@@ -253,7 +268,12 @@ mod tests {
     #[test]
     fn numbers_only_chooses_among_readings_and_never_invents() {
         let numbers = Constraint { language: Language::Auto, numbers: true };
-        assert!(numbers.fits("1234") && numbers.fits("١٢٣٤") && numbers.fits("12/05/2025") && numbers.fits("+966"));
+        assert!(
+            numbers.fits("1234")
+                && numbers.fits("١٢٣٤")
+                && numbers.fits("12/05/2025")
+                && numbers.fits("+966")
+        );
         assert!(!numbers.fits("I234") && !numbers.fits("-") && !numbers.fits("رقم"));
         let mut words = vec![
             reviewed("1234", WordStatus::Confirmed),
@@ -263,9 +283,15 @@ mod tests {
         ];
         constrain(&mut words, numbers);
         assert_eq!(words[0].status, WordStatus::Confirmed);
-        assert_eq!((words[1].text.as_str(), &words[1].status), ("1234", &WordStatus::Corrected { read: "I234".into() }));
+        assert_eq!(
+            (words[1].text.as_str(), &words[1].status),
+            ("1234", &WordStatus::Corrected { read: "I234".into() })
+        );
         // No reading fits: kept as read, flagged.
-        assert_eq!((words[2].text.as_str(), &words[2].status), ("O5", &WordStatus::Uncertain { alternatives: vec![] }));
+        assert_eq!(
+            (words[2].text.as_str(), &words[2].status),
+            ("O5", &WordStatus::Uncertain { alternatives: vec![] })
+        );
         // Two readings fit: the readers still disagree.
         assert_eq!(words[3].text, "S0");
         assert!(matches!(words[3].status, WordStatus::Uncertain { .. }));
@@ -283,7 +309,10 @@ mod tests {
         ];
         constrain(&mut words, arabic);
         assert_eq!(words[0].status, WordStatus::Unchecked);
-        assert_eq!((words[1].text.as_str(), &words[1].status), ("ايفون", &WordStatus::Corrected { read: "iPhone".into() }));
+        assert_eq!(
+            (words[1].text.as_str(), &words[1].status),
+            ("ايفون", &WordStatus::Corrected { read: "iPhone".into() })
+        );
     }
 
     #[test]
@@ -313,7 +342,12 @@ mod tests {
     #[test]
     fn an_area_takes_its_words_place_and_the_rest_keeps_its_decisions() {
         // Three lines; the middle line's number is read again.
-        let (a, b, c, d) = ([300.0, 100.0, 400.0, 112.0], [100.0, 130.0, 160.0, 142.0], [200.0, 130.0, 260.0, 142.0], [300.0, 160.0, 400.0, 172.0]);
+        let (a, b, c, d) = (
+            [300.0, 100.0, 400.0, 112.0],
+            [100.0, 130.0, 160.0, 142.0],
+            [200.0, 130.0, 260.0, 142.0],
+            [300.0, 160.0, 400.0, 172.0],
+        );
         let mut first = ow("العقد", a, [0, 0]);
         first.review = WordReview::Accepted;
         let base = PageView {
@@ -356,8 +390,12 @@ mod tests {
             merged.layer.lines.iter().map(|l| l.words.iter().map(|w| w.text.as_str()).collect()).collect();
         assert_eq!(texts, [vec!["العقد"], vec!["رقم"], vec!["1234"], vec!["Lease"]]);
         assert_eq!(merged.layer.clear, Clear::Region { rect: area_box });
-        let words: Vec<(&str, Option<[u32; 2]>)> = merged.words.iter().map(|w| (w.text.as_str(), w.at)).collect();
-        assert_eq!(words, [("العقد", Some([0, 0])), ("رقم", Some([1, 0])), ("1234", Some([2, 0])), ("Lease", Some([3, 0]))]);
+        let words: Vec<(&str, Option<[u32; 2]>)> =
+            merged.words.iter().map(|w| (w.text.as_str(), w.at)).collect();
+        assert_eq!(
+            words,
+            [("العقد", Some([0, 0])), ("رقم", Some([1, 0])), ("1234", Some([2, 0])), ("Lease", Some([3, 0]))]
+        );
         assert_eq!(merged.words[0].review, WordReview::Accepted);
         assert_eq!(merged.digest, Some(merged.layer.digest()));
         // Every word's place points at its own text.

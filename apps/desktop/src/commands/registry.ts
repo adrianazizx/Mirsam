@@ -1168,6 +1168,7 @@ export const OCR_JOB_ERRORS = [
   "ocr_document_changed",
   "ocr_region_converted",
   "ocr_region_unknown_layer",
+  "ocr_region_draft",
 ];
 
 function reportError(error: unknown) {

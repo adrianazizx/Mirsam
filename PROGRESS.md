@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-23 (Session M6-c: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; after M4's remaining items and exit test, Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -799,7 +799,43 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       text/Markdown export (logical order, RTL blocks marked) — ADR 0050. Gaps: JPEG images are not
       downsampled (needs a decoder, owner item 15); no font re-subsetting or duplicate merging;
       no progress bar or cancel for long exports
-- [ ] OCR review mode, region re-OCR, replacing poor text layers, scan-to-editable-text
+- [~] OCR review mode, region re-OCR, replacing poor text layers, scan-to-editable-text
+      (session M6-c; ADR 0037, 0038, 0039; state store schema 6):
+  - **Review mode** (ADR 0037):
+    - **Flags:** uncertain (needs a decision), corrected, reordered, low confidence, and on
+      request every number, date and ID.
+    - **The card:** the scan around the word with its box marked, beside the text.
+    - **Keys:** Enter accepts or corrects, ⌘/Ctrl+Enter marks checked, ⌘/Ctrl+Shift+Enter
+      checks the page, F8 / Shift+F8 skip; other readings are buttons.
+    - **Corrections** rewrite the page's layer as an undoable incremental update (about 2 KB,
+      the font reused).
+    - **Undo:** decisions form a tree keyed by `/MirsamDigest`, so undoing and redoing a
+      correction moves the review with it.
+  - **Reading an area again** (ADR 0038):
+    - **The read:** a drawn rectangle, rendered at up to 600 dpi, every word re-read by both
+      models.
+    - **Constraints:** language (Arabic or English) and "numbers only" choose among the
+      engines' readings, never the prompt. A word that does not fit stays flagged.
+    - **The result** replaces the area's words, the rest keeping their decisions; another
+      tool's invisible text in the area goes by byte range.
+  - **Replacing a poor layer** (ADR 0038):
+    - **The check:** another tool's invisible layer is compared with a quick draft (Vision or
+      Tesseract). It finds mojibake (Windows-1256 and UTF-8), missing Unicode mapping, reversed
+      Arabic, misordered words, and text that does not match the page.
+    - **The replacement:** a job of the poor pages, whose layers remove the old text by byte
+      range in the same edit.
+  - **Scan to editable text** (ADR 0039):
+    - **Paragraphs:** rebuilt from the layer's lines (direction, alignment, size and pitch from
+      the scan) and typeset in Naskh or Sans, one subset per page. The M3 editor opens and edits
+      them; they read back in logical order.
+    - **The scan:** kept behind (patched in the paper's colour where the text is) or removed.
+    - **Refused:** a page with an undecided uncertain word.
+  - **Gaps:**
+    - The thresholds come from synthetic tests: no real third-party layers or scans (item 9).
+    - The typeface is not matched, only Naskh or Sans and the size.
+    - Text in form XObjects and text hidden under an image are not removed.
+    - The Tauri window was not run with real models: the engine, the shell's glue and the
+      browser UI were tested separately.
 
 ## M7 — v1.0 polish
 
@@ -814,6 +850,58 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - [ ] Performance hardening
 
 ## Session log
+
+### Session M6-c — 2026-11-23 (Milestone 6: OCR review mode, areas read again, poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`)
+
+- **ADR 0037, 0038, 0039.** State store **schema 6**: `ocr_jobs.options` (job kinds); check
+  verdicts kept in `ocr_pages` with quality `check`.
+- **Engine (`safha_core::ocr`):**
+  - `review`: reasons a word is flagged, decisions (accept, correct, check, check the page), the
+    decision tree and `resolve` (the state the document's layer digest names).
+  - `region`: language and "numbers only" constraints, area scale, merging an area's result.
+  - `check`: mojibake (Windows-1256 and UTF-8), missing mapping, reversed Arabic, misorder and
+    mismatch against a draft.
+  - `convert`: paragraphs from layer lines, colours, and the converted stream.
+  - `jobs`: job kinds (recognize, replace, region, check), `review`, `page_view`, `decide`,
+    `checks`.
+  - `layer`: `Clear`, `/MirsamDigest`, `layer_states`, the font reused by corrections.
+  - `objects::invisible_text_update` and `text_census`.
+  - `Document::text_layer_states`, `text_info`, `with_conversion`, and `with_text_layers`
+    clearing another tool's text.
+- **Shell (`ocr.rs`):**
+  - **Commands:** `start_ocr` (`replace`), `start_ocr_region`, `check_text_layers`,
+    `ocr_layer_checks`, `ocr_review` (`numbers`), `ocr_decide`, `ocr_convert`.
+  - **Images:** the `safha://localhost/ocr-crop` path for the review card's image.
+  - **The job host:** `states`, `render_area`, `text_info`.
+- **UI:**
+  - **The OCR panel:** review mode's card, a numbers check box on the list, reading an area
+    again, existing text layers, and editable text.
+  - **The viewer:** a `region` pointer mode and its mark.
+  - **Commands:** 17 in the registry (F8 / Shift+F8 on next and previous flag).
+  - **Errors:** 8 codes, with en and ar strings.
+  - **The browser mock** covers every flow; checked in English light and Arabic dark.
+- **Benchmark gate** (`ocr_bench --replay`, scored as CI does): unchanged.
+  - **Pipeline text:** 0.60% CER, all five gates pass.
+  - **The searchable PDF's read-back:** 5.72%, both equal to the baselines.
+- **Tests:**
+  - **Rust,** unit: `review` 5, `region` 4, `check` 5, `jobs` 3 new (review and undo, an area
+    read again, check then replace).
+  - **Rust,** integration: `tests/ocr_review.rs` 3, a correction, a poor layer replaced, a page
+    converted (keep and remove), on real files with `qpdf --check`.
+  - **UI:** `commands/ocrReview.test.tsx` 5, Arabic RTL included; 301 UI tests pass.
+  - **Clean:** clippy (workspace), fmt, biome, typecheck.
+- **Not checked here:**
+  - **The Tauri window with real models:** the engine was tested with scripted engines and real
+    files, the UI against the mock.
+  - **Real scans with other tools' text layers** (owner item 9).
+  - **Acrobat.**
+- **For other sessions:**
+  - **Schema:** state store schema 6 is taken; a later bump renumbers to 7.
+  - **`JobBook`:** `create_job` takes `JobOptions`, and the trait gains `page`, `save_check`
+    and `checks`.
+  - **`JobHost`:** gains `states`, `render_area` and `text_info`, all with defaults.
+  - **`PageLayer` and `OcrWord`:** `PageLayer` has `clear`; `OcrWord` has `at` and `review`.
+
 
 ### M4 close — 2026-11-23 (background jobs, searchable PDF, review list, CI gate, exit test; branch `pomidor/m4-jobs-searchable-fe4973`)
 

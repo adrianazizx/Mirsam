@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use safha_core::ocr::convert::{Colors, PageConversion, paragraphs};
-use safha_core::ocr::{Clear, LayerKind, LayerLine, LayerQuality, LayerWord, PageLayer, Problem, Verdict, check_page};
+use safha_core::ocr::{
+    Clear, LayerKind, LayerLine, LayerQuality, LayerWord, PageLayer, Problem, Verdict, check_page,
+};
 use safha_core::{Document, Engine, PdfiumSource};
 use unicode_bidi::{BidiInfo, Level};
 use unicode_normalization::UnicodeNormalization as _;
@@ -74,7 +76,8 @@ fn pdf(resources: &str, contents: &str, more: &[Vec<u8>]) -> Vec<u8> {
         out.extend_from_slice(format!("{offset:010} 00000 n\r\n").as_bytes());
     }
     out.extend_from_slice(
-        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes(),
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1)
+            .as_bytes(),
     );
     out
 }
@@ -160,7 +163,13 @@ fn layer(document: &Document, texts: &[(&str, bool, f32)]) -> PageLayer {
                 words: words
                     .iter()
                     .zip(boxes)
-                    .map(|(w, (left, right))| LayerWord { text: (*w).into(), left, top, right, bottom: top + 14.0 })
+                    .map(|(w, (left, right))| LayerWord {
+                        text: (*w).into(),
+                        left,
+                        top,
+                        right,
+                        bottom: top + 14.0,
+                    })
                     .collect(),
             }
         })
@@ -234,7 +243,8 @@ fn another_tools_poor_layer_is_found_and_replaced() {
     let info = replaced.text_info(0).expect("info");
     assert_eq!((info.invisible, info.visible, info.ours), (0, 0, true));
     // Nothing visible changed: both layers are invisible, the scan stays.
-    let (before, after) = (document.render_page(0, 0.5).expect("renders"), replaced.render_page(0, 0.5).expect("renders"));
+    let (before, after) =
+        (document.render_page(0, 0.5).expect("renders"), replaced.render_page(0, 0.5).expect("renders"));
     assert!(before.as_bgra() == after.as_bgra());
 
     // An area read again clears only the other tool's text inside it.

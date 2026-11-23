@@ -34,18 +34,19 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use super::boxes::{visual_order, word_boxes};
+use super::check::{PageCheck, TextInfo, check_page};
 use super::draft::{
     DraftPage, DraftReader, PixelBox, TesseractReader, VisionReader, first_strong_rtl, vision_helper,
 };
 use super::layer::{Clear, LayerLine, LayerQuality, LayerState, LayerWord, PageLayer};
 use super::llama::{Device, NuqtaEngine, NuqtaModel, ServerConfig};
 use super::pipeline::{PageResult, QualityReader, Settings};
-use super::check::{PageCheck, TextInfo, check_page};
 use super::reconcile::WordStatus;
 pub use super::region::Language;
 use super::region::{Constraint, constrain, merge_region, region_scale, shift_page};
 use super::review::{
-    Action, DecideError, Decision, PageView, ReviewFilter, WordReview, decide, resolve, review_page, sort_review,
+    Action, DecideError, Decision, PageView, ReviewFilter, WordReview, decide, resolve, review_page,
+    sort_review,
 };
 pub use super::review::{ReviewPage, ReviewWord};
 use super::{OcrEngine, OcrError, OcrImage};
@@ -341,7 +342,13 @@ pub trait JobHost: Send + Sync {
     }
     /// Renders an area of `page` (`rect`: displayed points, left, top, right,
     /// bottom) at `scale`: the image is the area alone.
-    fn render_area(&self, path: &Path, page: usize, rect: [f32; 4], scale: f32) -> Result<RenderedPage, String> {
+    fn render_area(
+        &self,
+        path: &Path,
+        page: usize,
+        rect: [f32; 4],
+        scale: f32,
+    ) -> Result<RenderedPage, String> {
         let full = self.render(path, page, scale)?;
         let s = full.scale;
         let px = |v: f32| (v * s).round().max(0.0) as u32;
@@ -539,7 +546,8 @@ impl JobRunner {
             return Err("no pages".into());
         }
         if let JobKind::Region { rect, .. } = &options.kind
-            && (pages.len() != 1 || !(rect.iter().all(|v| v.is_finite()) && rect[2] > rect[0] && rect[3] > rect[1]))
+            && (pages.len() != 1
+                || !(rect.iter().all(|v| v.is_finite()) && rect[2] > rect[0] && rect[3] > rect[1]))
         {
             return Err("an area of one page".into());
         }
@@ -665,12 +673,20 @@ impl JobRunner {
     /// Page `page` as the document from `path` shows it (`states`): its result
     /// with the decisions on its branch applied, and whether it was converted
     /// to page text. `None` when the page has no result of ours.
-    pub fn page_view(&self, path: &Path, states: &[LayerState], page: usize) -> Result<Option<PageState>, String> {
+    pub fn page_view(
+        &self,
+        path: &Path,
+        states: &[LayerState],
+        page: usize,
+    ) -> Result<Option<PageState>, String> {
         let rows = final_rows(&self.shared, path, Some(page))?;
         let Some(rows) = rows.get(&page) else { return Ok(None) };
         let rows: Vec<(JobId, &PageOcr)> = rows.iter().map(|(id, row)| (*id, row)).collect();
-        Ok(resolve(&rows, states.get(page).copied().unwrap_or_default())
-            .map(|r| PageState { view: r.view, converted: r.converted, stale: r.stale }))
+        Ok(resolve(&rows, states.get(page).copied().unwrap_or_default()).map(|r| PageState {
+            view: r.view,
+            converted: r.converted,
+            stale: r.stale,
+        }))
     }
 
     /// Takes a review decision on `word` (`None`: the page) of page `page` of
@@ -702,7 +718,8 @@ impl JobRunner {
             .find(|(id, _)| *id == resolved.job)
             .ok_or_else(|| DecideError::NoWord.code().to_owned())?;
         let mut row = row.clone();
-        let (view, layer) = decide(&mut row, resolved.node, word, action).map_err(|err| err.code().to_owned())?;
+        let (view, layer) =
+            decide(&mut row, resolved.node, word, action).map_err(|err| err.code().to_owned())?;
         self.shared.book.save_page(resolved.job, &row)?;
         Ok(Decided { view, layer })
     }
@@ -1026,6 +1043,10 @@ fn run_region(
     if state.quality.is_none() && state.converted.is_some() {
         return Err("ocr_region_converted".into());
     }
+    // A draft has no words to merge with: the page is still being read.
+    if state.quality == Some(LayerQuality::Draft) {
+        return Err("ocr_region_draft".into());
+    }
     match (&base, state.quality) {
         // A layer of ours with no record of its words: merging would lose them.
         (None, Some(_)) => return Err("ocr_region_unknown_layer".into()),
@@ -1079,7 +1100,12 @@ fn run_region(
 
 /// Compares each page's existing text layer with a quick draft of its image,
 /// and keeps a verdict per page (ADR 0038). Nothing is written.
-fn run_check(shared: &Shared, engines: &mut dyn JobEngines, id: JobId, path: &Path) -> Result<Finish, String> {
+fn run_check(
+    shared: &Shared,
+    engines: &mut dyn JobEngines,
+    id: JobId,
+    path: &Path,
+) -> Result<Finish, String> {
     let waiting: Vec<usize> = match shared.jobs().get(&id) {
         Some(job) => job.record.pages.iter().copied().filter(|p| !job.finished.contains(p)).collect(),
         None => return Ok(Finish::Done),

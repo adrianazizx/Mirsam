@@ -113,9 +113,17 @@ const SAMPLE: usize = 80;
 /// image when there is one.
 pub fn check_page(page: usize, info: &TextInfo, draft: Option<&str>) -> PageCheck {
     let kind = info.kind();
-    let sample: String = info.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(SAMPLE).collect();
+    let sample: String =
+        info.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(SAMPLE).collect();
     if kind != LayerKind::Invisible {
-        return PageCheck { page, kind, verdict: Verdict::NotChecked, problems: Vec::new(), similarity: None, sample };
+        return PageCheck {
+            page,
+            kind,
+            verdict: Verdict::NotChecked,
+            problems: Vec::new(),
+            similarity: None,
+            sample,
+        };
     }
     let mut problems = Vec::new();
     let text = &info.text;
@@ -180,19 +188,19 @@ fn is_arabic_letter(c: char) -> bool {
 
 /// Windows-1252's bytes 0x80–0x9F (where it differs from Latin-1).
 const CP1252_HIGH: [char; 32] = [
-    '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž', '\u{8F}', '\u{90}', '‘',
-    '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}', 'ž', 'Ÿ',
+    '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž', '\u{8F}', '\u{90}',
+    '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}', 'ž', 'Ÿ',
 ];
 
 /// Windows-1256 (Arabic) for bytes 0x80–0xFF.
 const CP1256_HIGH: [char; 128] = [
-    '€', 'پ', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'ٹ', '‹', 'Œ', 'چ', 'ژ', 'ڈ', 'گ', '‘', '’', '“', '”', '•',
-    '–', '—', 'ک', '™', 'ڑ', '›', 'œ', '\u{200C}', '\u{200D}', 'ں', '\u{A0}', '،', '¢', '£', '¤', '¥', '¦', '§',
-    '¨', '©', 'ھ', '«', '¬', '\u{AD}', '®', '¯', '°', '±', '²', '³', '´', 'µ', '¶', '·', '¸', '¹', '؛', '»', '¼',
-    '½', '¾', '؟', 'ہ', 'ء', 'آ', 'أ', 'ؤ', 'إ', 'ئ', 'ا', 'ب', 'ة', 'ت', 'ث', 'ج', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز',
-    'س', 'ش', 'ص', 'ض', '×', 'ط', 'ظ', 'ع', 'غ', 'ـ', 'ف', 'ق', 'ك', 'à', 'ل', 'â', 'م', 'ن', 'ه', 'و', 'ç', 'è',
-    'é', 'ê', 'ë', 'ى', 'ي', 'î', 'ï', '\u{64B}', '\u{64C}', '\u{64D}', '\u{64E}', 'ô', '\u{64F}', '\u{650}', '÷',
-    '\u{651}', 'ù', '\u{652}', 'û', 'ü', '\u{200E}', '\u{200F}', 'ے',
+    '€', 'پ', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'ٹ', '‹', 'Œ', 'چ', 'ژ', 'ڈ', 'گ', '‘', '’', '“', '”',
+    '•', '–', '—', 'ک', '™', 'ڑ', '›', 'œ', '\u{200C}', '\u{200D}', 'ں', '\u{A0}', '،', '¢', '£', '¤', '¥',
+    '¦', '§', '¨', '©', 'ھ', '«', '¬', '\u{AD}', '®', '¯', '°', '±', '²', '³', '´', 'µ', '¶', '·', '¸', '¹',
+    '؛', '»', '¼', '½', '¾', '؟', 'ہ', 'ء', 'آ', 'أ', 'ؤ', 'إ', 'ئ', 'ا', 'ب', 'ة', 'ت', 'ث', 'ج', 'ح', 'خ',
+    'د', 'ذ', 'ر', 'ز', 'س', 'ش', 'ص', 'ض', '×', 'ط', 'ظ', 'ع', 'غ', 'ـ', 'ف', 'ق', 'ك', 'à', 'ل', 'â', 'م',
+    'ن', 'ه', 'و', 'ç', 'è', 'é', 'ê', 'ë', 'ى', 'ي', 'î', 'ï', '\u{64B}', '\u{64C}', '\u{64D}', '\u{64E}',
+    'ô', '\u{64F}', '\u{650}', '÷', '\u{651}', 'ù', '\u{652}', 'û', 'ü', '\u{200E}', '\u{200F}', 'ے',
 ];
 
 /// The byte Windows-1252 writes `c` as.
@@ -209,7 +217,10 @@ fn cp1252_byte(c: char) -> Option<u8> {
 pub fn redecode(text: &str) -> Option<String> {
     let letters = text.chars().filter(|c| c.is_alphabetic()).count();
     let latin_high = text.chars().filter(|&c| matches!(c, '\u{00C0}'..='\u{00FF}')).count();
-    if letters < 4 || text.chars().filter(|&c| is_arabic_letter(c)).count() * 10 > letters || latin_high * 3 < letters {
+    if letters < 4
+        || text.chars().filter(|&c| is_arabic_letter(c)).count() * 10 > letters
+        || latin_high * 3 < letters
+    {
         return None;
     }
     let bytes: Option<Vec<u8>> = text.chars().map(cp1252_byte).collect();
@@ -219,8 +230,10 @@ pub fn redecode(text: &str) -> Option<String> {
         s.chars().filter(|&c| is_arabic_letter(c)).count() as f32 / letters as f32
     };
     let utf8 = String::from_utf8(bytes.clone()).ok();
-    let cp1256: String =
-        bytes.iter().map(|&b| if b < 0x80 { char::from(b) } else { CP1256_HIGH[usize::from(b - 0x80)] }).collect();
+    let cp1256: String = bytes
+        .iter()
+        .map(|&b| if b < 0x80 { char::from(b) } else { CP1256_HIGH[usize::from(b - 0x80)] })
+        .collect();
     [utf8, Some(cp1256)]
         .into_iter()
         .flatten()
@@ -284,7 +297,8 @@ fn dice(a: &[String], b: &[String]) -> f32 {
     let grams = |words: &[String]| {
         let mut map: HashMap<[char; 3], usize> = HashMap::new();
         for word in words {
-            let chars: Vec<char> = std::iter::once('^').chain(word.chars()).chain(std::iter::once('$')).collect();
+            let chars: Vec<char> =
+                std::iter::once('^').chain(word.chars()).chain(std::iter::once('$')).collect();
             for w in chars.windows(3) {
                 *map.entry([w[0], w[1], w[2]]).or_default() += 1;
             }
@@ -304,7 +318,8 @@ fn dice(a: &[String], b: &[String]) -> f32 {
 /// common subsequence of the shared words over their count.
 fn order(seen: &[String], layer: &[String]) -> f32 {
     use std::collections::HashSet;
-    let (in_seen, in_layer): (HashSet<&String>, HashSet<&String>) = (seen.iter().collect(), layer.iter().collect());
+    let (in_seen, in_layer): (HashSet<&String>, HashSet<&String>) =
+        (seen.iter().collect(), layer.iter().collect());
     let a: Vec<&String> = seen.iter().filter(|w| in_layer.contains(w)).take(2000).collect();
     let b: Vec<&String> = layer.iter().filter(|w| in_seen.contains(w)).take(2000).collect();
     if a.len() < 4 || b.len() < 4 {
@@ -335,7 +350,11 @@ mod tests {
 
     /// A draft reader's errors: a letter dropped here and there.
     fn draft(text: &str) -> String {
-        text.split(' ').enumerate().map(|(i, w)| if i % 5 == 2 { w.chars().skip(1).collect() } else { w.to_owned() }).collect::<Vec<_>>().join(" ")
+        text.split(' ')
+            .enumerate()
+            .map(|(i, w)| if i % 5 == 2 { w.chars().skip(1).collect() } else { w.to_owned() })
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     fn cp1256_mojibake(text: &str) -> String {
@@ -343,7 +362,11 @@ mod tests {
             .map(|c| match CP1256_HIGH.iter().position(|&h| h == c) {
                 Some(i) => {
                     let byte = 0x80 + i as u8;
-                    if (0xA0..=0xFF).contains(&byte) { char::from(byte) } else { CP1252_HIGH[usize::from(byte - 0x80)] }
+                    if (0xA0..=0xFF).contains(&byte) {
+                        char::from(byte)
+                    } else {
+                        CP1252_HIGH[usize::from(byte - 0x80)]
+                    }
                 }
                 None => c,
             })
@@ -351,7 +374,13 @@ mod tests {
     }
 
     fn utf8_mojibake(text: &str) -> String {
-        text.bytes().map(|b| if (0x80..0xA0).contains(&b) { CP1252_HIGH[usize::from(b - 0x80)] } else { char::from(b) }).collect()
+        text.bytes()
+            .map(
+                |b| {
+                    if (0x80..0xA0).contains(&b) { CP1252_HIGH[usize::from(b - 0x80)] } else { char::from(b) }
+                },
+            )
+            .collect()
     }
 
     #[test]
@@ -381,13 +410,19 @@ mod tests {
 
     #[test]
     fn reversed_arabic_is_found_and_confirmed_by_the_image() {
-        let reversed: String = ARABIC.split(' ').map(|w| w.chars().rev().collect::<String>()).collect::<Vec<_>>().join(" ");
+        let reversed: String =
+            ARABIC.split(' ').map(|w| w.chars().rev().collect::<String>()).collect::<Vec<_>>().join(" ");
         let check = check_page(0, &layer(&reversed), Some(&draft(ARABIC)));
         assert!(check.problems.contains(&Problem::ReversedArabic), "{:?}", check.problems);
         assert_eq!(check.verdict, Verdict::Poor);
         // English is never "reversed Arabic".
-        let english: String = ENGLISH.split(' ').map(|w| w.chars().rev().collect::<String>()).collect::<Vec<_>>().join(" ");
-        assert!(!check_page(0, &layer(&english), Some(&draft(ENGLISH))).problems.contains(&Problem::ReversedArabic));
+        let english: String =
+            ENGLISH.split(' ').map(|w| w.chars().rev().collect::<String>()).collect::<Vec<_>>().join(" ");
+        assert!(
+            !check_page(0, &layer(&english), Some(&draft(ENGLISH)))
+                .problems
+                .contains(&Problem::ReversedArabic)
+        );
     }
 
     #[test]
@@ -409,13 +444,17 @@ mod tests {
         let ours = TextInfo { ours: true, ..layer(ARABIC) };
         let visible = TextInfo { visible: 10, ..layer(ARABIC) };
         let none = TextInfo { invisible: 0, ..layer("") };
-        for (info, kind) in [(ours, LayerKind::Ours), (visible, LayerKind::Visible), (none, LayerKind::None)] {
+        for (info, kind) in [(ours, LayerKind::Ours), (visible, LayerKind::Visible), (none, LayerKind::None)]
+        {
             assert!(!info.needs_draft());
             let check = check_page(3, &info, None);
             assert_eq!((check.kind, check.verdict), (kind, Verdict::NotChecked));
         }
         let check = check_page(3, &layer(ARABIC), None);
-        assert_eq!((check.kind, check.verdict, check.similarity), (LayerKind::Invisible, Verdict::Good, None));
+        assert_eq!(
+            (check.kind, check.verdict, check.similarity),
+            (LayerKind::Invisible, Verdict::Good, None)
+        );
         assert!(check.sample.starts_with("نص العقد"));
     }
 }

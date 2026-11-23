@@ -439,7 +439,8 @@ pub(crate) fn layer_states(bytes: &[u8]) -> Result<Vec<LayerState>> {
                     Some(Object::Int(n)) => u32::try_from(*n).ok(),
                     _ => None,
                 };
-                if let Some(quality) = dict.get(LAYER_KEY).and_then(Object::as_name).and_then(LayerQuality::from_name)
+                if let Some(quality) =
+                    dict.get(LAYER_KEY).and_then(Object::as_name).and_then(LayerQuality::from_name)
                     && state.quality.is_none_or(|q| quality >= q)
                 {
                     state.quality = Some(quality);

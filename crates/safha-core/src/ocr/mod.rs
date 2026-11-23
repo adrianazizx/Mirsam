@@ -42,16 +42,16 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub use boxes::{BoxedLine, BoxedWord, word_boxes};
+pub use check::{LayerKind, PageCheck, Problem, TextInfo, Verdict, check_page};
 pub use command::CommandEngine;
 pub use draft::{
     DraftLine, DraftPage, DraftReader, DraftWord, PixelBox, TesseractReader, VISION_SOURCE, VisionReader,
     first_strong_rtl, parse_tesseract_tsv, vision_helper,
 };
 pub use image::{NUQTA_PIXELS, OcrImage, nuqta_size, prepare_nuqta};
-pub use check::{LayerKind, PageCheck, Problem, TextInfo, Verdict, check_page};
 pub use layer::{
-    CONVERTED_KEY, Clear, DIGEST_KEY, LAYER_KEY, LayerLine, LayerQuality, LayerState, LayerWord, ORDER, Order,
-    PageLayer, text_layer_update_with,
+    CONVERTED_KEY, Clear, DIGEST_KEY, LAYER_KEY, LayerLine, LayerQuality, LayerState, LayerWord, ORDER,
+    Order, PageLayer, text_layer_update_with,
 };
 pub(crate) use layer::{layer_qualities, layer_states, text_layer_update};
 pub use layout::{LineBox, PageLayout, analyze, deskew};

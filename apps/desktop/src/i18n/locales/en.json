@@ -461,7 +461,8 @@
     "ocr_review_stale": "This page's text changed outside the review. Recognize the page again to correct it.",
     "ocr_convert_unrecognized": "Recognize the page first: there is no recognised text to convert.",
     "ocr_region_converted": "This page is page text now: an area of it cannot be read again.",
-    "ocr_region_unknown_layer": "This page's recognised text has no review record (its job was removed). Recognize the page again first."
+    "ocr_region_unknown_layer": "This page's recognised text has no review record (its job was removed). Recognize the page again first.",
+    "ocr_region_draft": "This page is still being recognised. Read an area of it once its quality reading is done."
   },
   "gallery": {
     "title": "Design gallery",

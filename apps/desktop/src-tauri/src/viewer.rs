@@ -87,7 +87,11 @@ pub fn tile_protocol<R: tauri::Runtime>(
                     .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                     .body(body)
                     .unwrap_or_else(|err| {
-                        error_response(http::StatusCode::INTERNAL_SERVER_ERROR, "engine_error", &err.to_string())
+                        error_response(
+                            http::StatusCode::INTERNAL_SERVER_ERROR,
+                            "engine_error",
+                            &err.to_string(),
+                        )
                     }),
                 Err((status, code)) => error_response(status, code, "the area could not be rendered"),
             };

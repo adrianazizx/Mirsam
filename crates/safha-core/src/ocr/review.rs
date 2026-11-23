@@ -62,7 +62,9 @@ pub enum Action {
     Accept,
     Check,
     /// The word's text, as typed; empty when it is not text at all (a speck).
-    Edit { text: String },
+    Edit {
+        text: String,
+    },
     /// Every word still open on the page is checked, and so is the page.
     CheckPage,
 }
@@ -137,12 +139,18 @@ impl PageView {
     /// be trusted: a word the readers disagree on, or a reading cut off.
     pub fn needs_decision(&self) -> bool {
         (self.truncated && !self.checked)
-            || self.words.iter().any(|w| matches!(w.status, WordStatus::Uncertain { .. }) && w.review.is_open())
+            || self
+                .words
+                .iter()
+                .any(|w| matches!(w.status, WordStatus::Uncertain { .. }) && w.review.is_open())
     }
 
     /// The words still needing a decision.
     pub fn undecided(&self) -> usize {
-        self.words.iter().filter(|w| matches!(w.status, WordStatus::Uncertain { .. }) && w.review.is_open()).count()
+        self.words
+            .iter()
+            .filter(|w| matches!(w.status, WordStatus::Uncertain { .. }) && w.review.is_open())
+            .count()
     }
 }
 
@@ -255,7 +263,8 @@ fn apply(view: &mut PageView, word: Option<usize>, action: &Action) {
             w.text = text.clone();
             w.review = WordReview::Edited { read };
             if let Some([l, p]) = w.at
-                && let Some(lw) = view.layer.lines.get_mut(l as usize).and_then(|line| line.words.get_mut(p as usize))
+                && let Some(lw) =
+                    view.layer.lines.get_mut(l as usize).and_then(|line| line.words.get_mut(p as usize))
             {
                 lw.text = text.clone();
             }
@@ -508,7 +517,12 @@ mod tests {
             text: text.into(),
             probability,
             status,
-            bounds: Some([at[1] as f32 * 10.0, at[0] as f32 * 20.0, at[1] as f32 * 10.0 + 8.0, at[0] as f32 * 20.0 + 12.0]),
+            bounds: Some([
+                at[1] as f32 * 10.0,
+                at[0] as f32 * 20.0,
+                at[1] as f32 * 10.0 + 8.0,
+                at[0] as f32 * 20.0 + 12.0,
+            ]),
             placed_by_width: false,
             at: Some(at),
             review: WordReview::Open,
@@ -561,12 +575,16 @@ mod tests {
         let view = row.view(None);
         let resolved = Resolved { job: 1, node: None, view, converted: false, stale: false };
         let page = review_page(&resolved, ReviewFilter::default()).expect("listed");
-        let listed: Vec<(&str, &[Reason])> = page.words.iter().map(|w| (w.text.as_str(), &w.reasons[..])).collect();
+        let listed: Vec<(&str, &[Reason])> =
+            page.words.iter().map(|w| (w.text.as_str(), &w.reasons[..])).collect();
         assert_eq!(listed, [("١٣٣٤", &[Reason::Uncertain][..]), ("Invoice", &[Reason::LowConfidence][..])]);
         assert!(page.needs_decision());
         assert_eq!((page.undecided, page.open), (1, 2));
         let page = review_page(&resolved, ReviewFilter { numbers: true }).expect("listed");
-        assert_eq!(page.words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>(), ["١٣٣٤", "Invoice", "2025"]);
+        assert_eq!(
+            page.words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>(),
+            ["١٣٣٤", "Invoice", "2025"]
+        );
         assert_eq!(page.words[0].reasons, [Reason::Uncertain, Reason::Number]);
         assert_eq!(page.words[0].line, Some([0.0, 0.0, 18.0, 12.0]));
     }
@@ -575,14 +593,16 @@ mod tests {
     fn an_edit_goes_into_the_layer_and_keeps_what_was_read() {
         let mut row = row();
         let base = row.base_digest();
-        let (view, layer) = decide(&mut row, None, Some(1), Action::Edit { text: " ١٢٣٤ ".into() }).expect("edit");
+        let (view, layer) =
+            decide(&mut row, None, Some(1), Action::Edit { text: " ١٢٣٤ ".into() }).expect("edit");
         let layer = layer.expect("the text changed");
         assert_eq!(layer.lines[0].words[1].text, "١٢٣٤");
         assert_ne!(layer.digest(), base);
         assert_eq!(view.words[1].review, WordReview::Edited { read: "١٣٣٤".into() });
         assert!(!view.needs_decision());
         // Typing what is there already is accepting it: nothing to write.
-        let (view, layer) = decide(&mut row, Some(0), Some(2), Action::Edit { text: "Invoice".into() }).expect("same");
+        let (view, layer) =
+            decide(&mut row, Some(0), Some(2), Action::Edit { text: "Invoice".into() }).expect("same");
         assert!(layer.is_none());
         assert_eq!(view.words[2].review, WordReview::Accepted);
         assert_eq!(view.words[1].text, "١٢٣٤", "on the edited branch");
@@ -641,12 +661,10 @@ mod tests {
             w.at = None;
         }
         let view = old.view(None);
-        assert_eq!(view.words.iter().map(|w| w.at).collect::<Vec<_>>(), [
-            Some([0, 0]),
-            Some([0, 1]),
-            Some([1, 0]),
-            Some([1, 1])
-        ]);
+        assert_eq!(
+            view.words.iter().map(|w| w.at).collect::<Vec<_>>(),
+            [Some([0, 0]), Some([0, 1]), Some([1, 0]), Some([1, 1])]
+        );
         let mut newer = row();
         newer.words[1].text = "١٢٣٤".into();
         newer.layer.lines[0].words[1].text = "١٢٣٤".into();

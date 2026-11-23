@@ -103,7 +103,8 @@ pub fn paragraphs(layer: &PageLayer) -> Vec<Paragraph> {
         .lines
         .iter()
         .filter_map(|line| {
-            let words: Vec<_> = line.words.iter().filter(|w| !w.text.trim().is_empty() && w.right > w.left).collect();
+            let words: Vec<_> =
+                line.words.iter().filter(|w| !w.text.trim().is_empty() && w.right > w.left).collect();
             let top = median(words.iter().map(|w| w.top).collect())?;
             let bottom = median(words.iter().map(|w| w.bottom).collect())?;
             let left = words.iter().map(|w| w.left).fold(f32::INFINITY, f32::min);
@@ -137,8 +138,8 @@ fn continues(group: &[&Band], next: &Band) -> bool {
     let overlap = next.b[2].min(right) - next.b[0].max(left);
     let narrower = (next.b[2] - next.b[0]).min(right - left);
     // The last line ended well short of the paragraph's end: it closed it.
-    let ended = group.len() >= 2
-        && if last.rtl { last.b[0] > left + 3.0 * h } else { last.b[2] < right - 3.0 * h };
+    let ended =
+        group.len() >= 2 && if last.rtl { last.b[0] > left + 3.0 * h } else { last.b[2] < right - 3.0 * h };
     next.rtl == last.rtl
         && (0.7 * h..=1.4 * h).contains(&nh)
         && (-0.3 * h..=1.1 * h).contains(&gap)
@@ -152,7 +153,9 @@ fn paragraph(group: &[&Band]) -> Paragraph {
     let top = group.iter().map(|b| b.b[1]).fold(f32::INFINITY, f32::min);
     let bottom = group.iter().map(|b| b.b[3]).fold(f32::NEG_INFINITY, f32::max);
     let height = median(group.iter().map(|b| b.b[3] - b.b[1]).collect()).unwrap_or(1.0).max(1.0);
-    let pitch = (group.len() >= 2).then(|| median(group.windows(2).map(|w| w[1].b[3] - w[0].b[3]).collect())).flatten();
+    let pitch = (group.len() >= 2)
+        .then(|| median(group.windows(2).map(|w| w[1].b[3] - w[0].b[3]).collect()))
+        .flatten();
     let rtl = group[0].rtl;
     let tol = 0.6 * height;
     let align = if group.len() < 2 {
@@ -313,7 +316,11 @@ fn take(next: &mut u32) -> Result<u32> {
 /// layer goes, a stream with the scan's patches and the paragraphs comes.
 /// Another tool's invisible text and the scan image are removed beforehand
 /// by the caller (`Document::with_conversion`).
-pub(crate) fn convert_update(bytes: &[u8], password: Option<&str>, pages: &[PageConversion]) -> Result<Vec<u8>> {
+pub(crate) fn convert_update(
+    bytes: &[u8],
+    password: Option<&str>,
+    pages: &[PageConversion],
+) -> Result<Vec<u8>> {
     let Start { file, section, form, mut next_number } = Start::read(bytes)?;
     let tree = PageTree::read(&file)?;
     let crypt = Crypt::of(&file, password)?;
@@ -337,8 +344,10 @@ pub(crate) fn convert_update(bytes: &[u8], password: Option<&str>, pages: &[Page
         let all: String = paragraphs.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n");
         let fonts: Vec<NamedFont> = for_text(family, &all)?;
         let faces: Vec<FontFace> = fonts.iter().map(|f| f.face.clone()).collect();
-        let sets: Vec<Set> =
-            paragraphs.iter().map(|p| set_paragraph(p, &faces, conversion.colors.ink)).collect::<Result<_>>()?;
+        let sets: Vec<Set> = paragraphs
+            .iter()
+            .map(|p| set_paragraph(p, &faces, conversion.colors.ink))
+            .collect::<Result<_>>()?;
         let (text, combined) = joined(
             &sets.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
             &sets.iter().map(|s| &s.laid).collect::<Vec<_>>(),
@@ -362,7 +371,9 @@ pub(crate) fn convert_update(bytes: &[u8], password: Option<&str>, pages: &[Page
         }
         set(&mut resources, b"Font", Object::Dict(font_names));
         if crypt.is_some() && contains_string(&Object::Dict(resources.clone())) {
-            return Err(Error::EditUnsupported("this page's resources in an encrypted file cannot be copied yet"));
+            return Err(Error::EditUnsupported(
+                "this page's resources in an encrypted file cannot be copied yet",
+            ));
         }
 
         // The stream: patches over the scan's lines, then the paragraphs.

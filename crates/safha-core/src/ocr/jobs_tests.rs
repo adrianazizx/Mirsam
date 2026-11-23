@@ -280,7 +280,10 @@ fn a_job_drafts_every_page_then_replaces_each_with_the_quality_result() {
     assert!(page.words.iter().all(|w| (w.probability - 0.99).abs() < 1e-6 && !w.status.needs_review()));
     assert!(page.words.iter().all(|w| w.bounds.is_some()));
     let states = host.states_of(&path);
-    assert!(runner.review(&path, &states, ReviewFilter::default()).expect("review").is_empty(), "nothing to review");
+    assert!(
+        runner.review(&path, &states, ReviewFilter::default()).expect("review").is_empty(),
+        "nothing to review"
+    );
     let numbers = runner.review(&path, &states, ReviewFilter { numbers: true }).expect("review");
     assert_eq!(numbers.iter().map(|p| p.page).collect::<Vec<_>>(), [0, 1, 2], "every number, on request");
     // The events said where it was.
@@ -435,7 +438,11 @@ fn the_review_list_puts_decisions_first() {
 }
 
 /// Runs a recognize job over a one-page document and waits for it.
-fn recognized(name: &str, text: &str, probability: f32) -> (Arc<Store>, Arc<Host>, Engines, JobRunner, PathBuf) {
+fn recognized(
+    name: &str,
+    text: &str,
+    probability: f32,
+) -> (Arc<Store>, Arc<Host>, Engines, JobRunner, PathBuf) {
     let (book, host, engines) =
         (Arc::new(Store::in_memory().expect("store")), Arc::new(Host::default()), Engines::new(text));
     engines.answer(text, probability);
@@ -460,15 +467,19 @@ fn review_decisions_write_the_layer_and_follow_undo() {
     let invoice = list[0].words.iter().find(|w| w.text == "Invoice").expect("listed").index;
 
     // A correction comes back as a layer to write; the shell writes it.
-    let decided =
-        runner.decide(&path, &states, 0, Some(invoice), Action::Edit { text: "Invoice:".into() }).expect("edit");
+    let decided = runner
+        .decide(&path, &states, 0, Some(invoice), Action::Edit { text: "Invoice:".into() })
+        .expect("edit");
     let layer = decided.layer.expect("the text changed");
     assert!(layer.lines.iter().flat_map(|l| &l.words).any(|w| w.text == "Invoice:"));
     assert!(host.apply(&canonical_path(&path), &[layer]).expect("applied"));
     let states = host.states_of(&path);
     let page = runner.review(&path, &states, ReviewFilter::default()).expect("review").remove(0);
     let word = page.words.iter().find(|w| w.index == invoice).expect("still listed");
-    assert_eq!((word.text.as_str(), &word.review), ("Invoice:", &WordReview::Edited { read: "Invoice".into() }));
+    assert_eq!(
+        (word.text.as_str(), &word.review),
+        ("Invoice:", &WordReview::Edited { read: "Invoice".into() })
+    );
     assert_eq!(page.open, 2);
 
     // Undo puts the recognised layer back: the word is open again.
@@ -509,7 +520,9 @@ fn an_area_read_again_replaces_its_words_only() {
         replace: false,
     };
     let job = runner.submit(&path, "f.pdf", 1, &[0], options).expect("submits");
-    wait_for("done", || state(&runner, job.id) != JobState::Queued && state(&runner, job.id) != JobState::Running);
+    wait_for("done", || {
+        state(&runner, job.id) != JobState::Queued && state(&runner, job.id) != JobState::Running
+    });
     assert_eq!(state(&runner, job.id), JobState::Done, "{:?}", runner.status(job.id));
 
     let written = host.written();
@@ -543,7 +556,10 @@ fn a_check_finds_a_poor_layer_and_a_replacing_job_clears_it() {
         ..TextInfo::default()
     };
     host.texts.lock().expect("lock").insert(0, poor);
-    host.texts.lock().expect("lock").insert(1, TextInfo { ours: true, text: "نص".into(), ..TextInfo::default() });
+    host.texts
+        .lock()
+        .expect("lock")
+        .insert(1, TextInfo { ours: true, text: "نص".into(), ..TextInfo::default() });
     let runner = JobRunner::start(book, host.clone(), Box::new(engines)).expect("starts");
     let check = JobOptions { kind: JobKind::Check, replace: false };
     let job = runner.submit(&path, "g.pdf", 3, &[0, 1, 2], check).expect("submits");
@@ -555,14 +571,19 @@ fn a_check_finds_a_poor_layer_and_a_replacing_job_clears_it() {
     assert!(checks[0].problems.contains(&super::super::check::Problem::Mojibake));
     assert_eq!(runner.status(job.id).map(|s| (s.finished, s.options.kind)), Some((3, JobKind::Check)));
     // A check job's verdicts are not review results.
-    assert!(runner.review(&path, &host.states_of(&path), ReviewFilter { numbers: true }).expect("review").is_empty());
+    assert!(
+        runner
+            .review(&path, &host.states_of(&path), ReviewFilter { numbers: true })
+            .expect("review")
+            .is_empty()
+    );
 
     let replace = JobOptions { kind: JobKind::Recognize, replace: true };
     let job = runner.submit(&path, "g.pdf", 3, &[0], replace).expect("submits");
     wait_for("replaced", || state(&runner, job.id) == JobState::Done);
     let written = host.written();
-    assert_eq!(written.iter().map(|l| (l.quality, l.clear)).collect::<Vec<_>>(), [
-        (LayerQuality::Draft, Clear::Page),
-        (LayerQuality::Final, Clear::Page)
-    ]);
+    assert_eq!(
+        written.iter().map(|l| (l.quality, l.clear)).collect::<Vec<_>>(),
+        [(LayerQuality::Draft, Clear::Page), (LayerQuality::Final, Clear::Page)]
+    );
 }

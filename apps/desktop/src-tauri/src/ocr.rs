@@ -160,7 +160,13 @@ impl JobHost for Host {
         self.document(path)?.1.text_layer_states().ok()
     }
 
-    fn render_area(&self, path: &Path, page: usize, rect: [f32; 4], scale: f32) -> Result<RenderedPage, String> {
+    fn render_area(
+        &self,
+        path: &Path,
+        page: usize,
+        rect: [f32; 4],
+        scale: f32,
+    ) -> Result<RenderedPage, String> {
         let (_, document) = self.document(path).ok_or("the document is not open")?;
         let bitmap = render_rect(&document, page, rect, scale).map_err(|err| err.to_string())?;
         let placement = document.ocr_placement(page).map_err(|err| err.to_string())?;
@@ -237,7 +243,11 @@ pub async fn start_ocr_region(
     numbers: Option<bool>,
 ) -> CommandResult<JobWire> {
     let options = JobOptions {
-        kind: JobKind::Region { rect, language: language.unwrap_or_default(), numbers: numbers.unwrap_or(false) },
+        kind: JobKind::Region {
+            rect,
+            language: language.unwrap_or_default(),
+            numbers: numbers.unwrap_or(false),
+        },
         replace: false,
     };
     submit(&state, &ocr, document_id, Some(vec![page]), options)
@@ -424,7 +434,8 @@ pub async fn ocr_decide(
             None => (None, states),
         };
         drop(history);
-        let review = runner.review(&path, &states, filter).map_err(|err| CommandError::new("io_error", err))?;
+        let review =
+            runner.review(&path, &states, filter).map_err(|err| CommandError::new("io_error", err))?;
         Ok(DecideOutcome { review, outcome })
     })
     .await
@@ -480,9 +491,11 @@ pub async fn ocr_convert(
         let mut conversions = Vec::new();
         let (mut unreviewed, mut unrecognized) = (Vec::new(), Vec::new());
         for &page in &pages {
-            let view = runner.page_view(&path, &states, page).map_err(|err| CommandError::new("io_error", err))?;
+            let view =
+                runner.page_view(&path, &states, page).map_err(|err| CommandError::new("io_error", err))?;
             let doc = states.get(page).copied().unwrap_or_default();
-            let Some(view) = view.filter(|v| !v.converted && !v.stale && doc.quality == Some(LayerQuality::Final))
+            let Some(view) =
+                view.filter(|v| !v.converted && !v.stale && doc.quality == Some(LayerQuality::Final))
             else {
                 unrecognized.push(page + 1);
                 continue;
@@ -522,11 +535,23 @@ fn conversion(
     let scale = 100.0 / 72.0;
     let image = OcrImage::from_bitmap(&document.render_page(page, scale)?);
     let found = paragraphs(&layer);
-    let area = found.iter().fold([f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY], |a, p| {
-        [a[0].min(p.bounds[0]), a[1].min(p.bounds[1]), a[2].max(p.bounds[2]), a[3].max(p.bounds[3])]
-    });
-    let colors = if area.iter().all(|v| v.is_finite()) { sample_colors(&image, scale, area) } else { Default::default() };
-    Ok(PageConversion { page, from: digest.unwrap_or_else(|| layer.digest()), layer, keep_scan, family, colors })
+    let area =
+        found.iter().fold([f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY], |a, p| {
+            [a[0].min(p.bounds[0]), a[1].min(p.bounds[1]), a[2].max(p.bounds[2]), a[3].max(p.bounds[3])]
+        });
+    let colors = if area.iter().all(|v| v.is_finite()) {
+        sample_colors(&image, scale, area)
+    } else {
+        Default::default()
+    };
+    Ok(PageConversion {
+        page,
+        from: digest.unwrap_or_else(|| layer.digest()),
+        layer,
+        keep_scan,
+        family,
+        colors,
+    })
 }
 
 /// `rect` of page `page` (displayed points: left, top, right, bottom) rendered
@@ -543,7 +568,13 @@ pub(crate) fn render_rect(
     let (x1, y1) = (px(rect[2], size.width), px(rect[3], size.height));
     document.render_tile(
         page,
-        TileRequest { scale, x: x0, y: y0, width: x1.saturating_sub(x0).max(1), height: y1.saturating_sub(y0).max(1) },
+        TileRequest {
+            scale,
+            x: x0,
+            y: y0,
+            width: x1.saturating_sub(x0).max(1),
+            height: y1.saturating_sub(y0).max(1),
+        },
     )
 }
 
@@ -560,15 +591,18 @@ pub fn crop_response<R: tauri::Runtime>(
     let bad = (http::StatusCode::BAD_REQUEST, "invalid_render_request");
     let doc = query.get("doc").and_then(|v| v.parse::<u32>().ok()).ok_or(bad)?;
     let page = query.get("page").and_then(|v| v.parse::<usize>().ok()).ok_or(bad)?;
-    let rect = [number("x0").ok_or(bad)?, number("y0").ok_or(bad)?, number("x1").ok_or(bad)?, number("y1").ok_or(bad)?];
+    let rect = [
+        number("x0").ok_or(bad)?,
+        number("y0").ok_or(bad)?,
+        number("x1").ok_or(bad)?,
+        number("y1").ok_or(bad)?,
+    ];
     let height = number("h").unwrap_or(120.0).clamp(16.0, 600.0);
     if rect[2] <= rect[0] || rect[3] <= rect[1] {
         return Err(bad);
     }
-    let document = app
-        .state::<AppState>()
-        .document(doc)
-        .ok_or((http::StatusCode::NOT_FOUND, "unknown_document"))?;
+    let document =
+        app.state::<AppState>().document(doc).ok_or((http::StatusCode::NOT_FOUND, "unknown_document"))?;
     // Tall enough to read; never more than 12 pixels a point, nor 4,000 pixels wide.
     let scale = (height / (rect[3] - rect[1])).min(12.0).min(4000.0 / (rect[2] - rect[0]));
     let bitmap = render_rect(&document, page, rect, scale)
