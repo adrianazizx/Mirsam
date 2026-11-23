@@ -52,6 +52,8 @@ fn engine_error_code(err: &safha_core::Error) -> &'static str {
         E::Redaction(_) => "redaction_failed",
         E::PasswordNotEncodable => "password_not_encodable",
         E::NotPermitted => "not_permitted",
+        // Signing's own codes (`certificate_password`, `timestamp_failed`, …).
+        E::Signing(code) => code,
         E::Io(_) => "io_error",
         E::Pdfium(_) => "engine_error",
     }

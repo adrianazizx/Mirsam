@@ -54,6 +54,35 @@ flate2 = "1.1.11"
 tar = { version = "0.4.46", default-features = false }
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 serde_json = { workspace = true }
+# Certificate signatures (PAdES, ADRs 0044 and 0047): RustCrypto's CMS, X.509,
+# RFC 3161 and key crates, all MIT OR Apache-2.0. `cms` and `x509-tsp` are
+# release candidates, pinned: the stable cms 0.2 line needs rsa 0.9, whose
+# private-key operations leak timing (RUSTSEC-2023-0071); rsa 0.10 does not.
+cms = { version = "=0.3.0-rc.2", features = ["builder", "std"] }
+x509-cert = { version = "0.3.1", default-features = false, features = ["builder", "std"] }
+x509-tsp = "=0.2.0-rc.0"
+# Checks a signature with a certificate's key; only the algorithms PDF signers
+# use (RSA, ECDSA P-256 and P-384), not every curve its defaults bring.
+x509-verify = { version = "0.4.10", default-features = false, features = ["std", "x509", "sha2", "rsa", "p256", "p384"] }
+der = { version = "0.8", features = ["std", "oid"] }
+spki = { version = "0.8", features = ["std"] }
+pkcs8 = { version = "0.11", features = ["std"] }
+const-oid = { version = "0.10", features = ["db"] }
+signature = "3"
+# Only to compare an older signer's ESS v1 certificate hash (already in the tree
+# through x509-cert's builder); nothing is signed or trusted on SHA-1.
+sha1 = "0.11"
+rsa ={ version = "0.10", features = ["encoding", "pkcs1v15"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
+# PKCS#12 (.p12/.pfx) files: PBES2 (AES) and the legacy 3DES/RC2 schemes that
+# Windows and older macOS exports still use; the MAC tells a wrong password.
+p12-keystore = "0.4.1"
+
+# The macOS keychain's signing identities (ADR 0047): the key stays in the
+# keychain, which signs. Already in the tree through rustls-native-certs.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
 
 [lints]
 workspace = true
