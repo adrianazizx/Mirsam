@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
 import styles from "./Button.module.css";
 
@@ -7,6 +7,7 @@ export interface ButtonProps extends Omit<AriaButtonProps, "className" | "childr
   /** Optional leading icon; decorative, the label carries the meaning. */
   icon?: ReactNode;
   children: ReactNode;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({ variant = "secondary", icon, children, ...props }: ButtonProps) {

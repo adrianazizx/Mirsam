@@ -119,11 +119,17 @@ describe("names", () => {
 
   it("the language switch is named in its own language", async () => {
     render(<App />);
-    const toArabic = screen.getByRole("button", { name: "العربية" });
-    expect(toArabic.querySelector('[lang="ar"]')?.textContent).toBe("العربية");
+    // The status bar's switch, and the start screen's (M7 onboarding).
+    const toArabic = screen.getAllByRole("button", { name: "العربية" });
+    expect(toArabic.length).toBeGreaterThan(0);
+    for (const button of toArabic) {
+      expect(button.querySelector('[lang="ar"]')?.textContent).toBe("العربية");
+    }
     act(() => useAppStore.getState().setLocale("ar"));
-    const toEnglish = await screen.findByRole("button", { name: "English" });
-    expect(toEnglish.querySelector('[lang="en"]')?.textContent).toBe("English");
+    const toEnglish = await screen.findAllByRole("button", { name: "English" });
+    for (const button of toEnglish) {
+      expect(button.querySelector('[lang="en"]')?.textContent).toBe("English");
+    }
   });
 });
 

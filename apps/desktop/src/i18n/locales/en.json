@@ -74,7 +74,9 @@
       "uiDefaultSize": "Default interface text size",
       "nextRegion": "Next area of the window",
       "previousRegion": "Previous area of the window",
-      "reloadWindow": "Reload window"
+      "reloadWindow": "Reload window",
+      "languageEnglish": "Interface language: English",
+      "languageArabic": "Interface language: Arabic"
     },
     "tabs": {
       "next": "Next tab",
@@ -392,6 +394,16 @@
       "dismiss": "Not now",
       "ask": "Crash reports: ask after a crash",
       "off": "Crash reports: don't keep them"
+    },
+    "help": {
+      "guide": "Welcome guide"
+    },
+    "onboarding": {
+      "next": "Next step of the welcome guide",
+      "back": "Previous step of the welcome guide",
+      "finish": "Finish the welcome guide",
+      "skip": "Skip the welcome guide",
+      "dismissHint": "Dismiss the tip"
     }
   },
   "viewer": {
@@ -1531,5 +1543,67 @@
     "message": "Mirsam hit an error it could not recover from. Your open documents are still open: reload the window to continue.",
     "reported": "A crash report was kept. You will be asked about it after the reload.",
     "reload": "Reload window"
+  },
+  "onboarding": {
+    "title": "Welcome to Mirsam",
+    "stepOf": "Step {{step}} of {{count}}",
+    "stepAnnounce": "Step {{step}} of {{count}}: {{title}}",
+    "skip": "Skip",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "gotIt": "Got it",
+    "steps": {
+      "open": {
+        "title": "Open a PDF",
+        "open": "Choose Open PDF… ({{shortcut}}) on the start screen, or open a PDF with Mirsam from your files.",
+        "recent": "Your recent files are listed on the start screen, and each document reopens where you left it.",
+        "tabs": "Each document opens in its own tab. Tabs you leave open come back the next time."
+      },
+      "tools": {
+        "title": "The tool rail",
+        "body": "Every tool sits in the rail at the side of the window, always in the same order. Choose one, and its options appear in the panel on the other side.",
+        "palette": "Looking for something? Press {{shortcut}} and type what you want to do."
+      },
+      "language": {
+        "title": "Arabic and English",
+        "body": "Mirsam works fully in both. In Arabic the whole window mirrors, right to left; pages keep their own direction.",
+        "language": "Interface language",
+        "digits": "Digits in the Arabic interface",
+        "later": "Change the digits any time in Settings ({{shortcut}}), and the language on the start screen or in the command palette."
+      },
+      "ocr": {
+        "title": "OCR stays on this computer",
+        "what": "OCR reads scanned pages, Arabic and English, so you can search, copy and edit their text.",
+        "download": "The first time you use it, Mirsam asks to download its recognition models. That happens once.",
+        "local": "Recognition runs on this computer, and works offline once the models are in.",
+        "private": "Your documents never leave this computer."
+      }
+    },
+    "hints": {
+      "ocr": {
+        "title": "Make scans searchable",
+        "body": "Recognize the text of scanned pages, check the words OCR was unsure of, or convert a scan into editable text. The models download once, the first time. Your documents never leave this computer.",
+        "models": "OCR models…"
+      },
+      "sign": {
+        "title": "Fill in and sign",
+        "body": "Click on the page to add text, today's date, a tick or your signature. Draw, type or choose a picture of your signature once, and Mirsam keeps it for next time. Signing with a certificate is here too."
+      },
+      "edit": {
+        "title": "Edit the page",
+        "body": "Click text on the page to change it in place, or click elsewhere to add new text. Switch to Objects to move and resize images, or to Links to add and change links."
+      }
+    },
+    "start": {
+      "heading": "Get started",
+      "guide": "Take the tour",
+      "guideAbout": "Four short steps on what Mirsam does.",
+      "palette": "Find any command",
+      "paletteAbout": "Type what you want to do.",
+      "languageAbout": "Switch the interface to Arabic.",
+      "settings": "Settings",
+      "settingsAbout": "Interface size, digits, OCR models."
+    }
   }
 }
