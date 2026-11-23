@@ -132,7 +132,8 @@ fn rsa_keys_and_arabic_names_sign_on_every_cross_reference_form() {
     let pki = Pki::new();
     for (fixture_name, issued, expected) in [
         ("qpdf/rtl-book-objstm", &pki.rsa, "Test Signer (RSA)"),
-        ("coretext/ar-plain", &pki.arabic, "الموقّع التجريبي"),
+        // Fixtures every platform generates (CoreText ones exist on macOS only).
+        ("chrome/table-bilingual", &pki.arabic, "الموقّع التجريبي"),
         ("qpdf/linearized", &pki.signer, "Test Signer"),
     ] {
         let (original, _) = fixture(fixture_name);
