@@ -138,7 +138,7 @@ fn continues(group: &[&Band], next: &Band) -> bool {
     let narrower = (next.b[2] - next.b[0]).min(right - left);
     // The last line ended well short of the paragraph's end: it closed it.
     let ended = group.len() >= 2
-        && if last.rtl { last.b[0] > left + 2.0 * h } else { last.b[2] < right - 2.0 * h };
+        && if last.rtl { last.b[0] > left + 3.0 * h } else { last.b[2] < right - 3.0 * h };
     next.rtl == last.rtl
         && (0.7 * h..=1.4 * h).contains(&nh)
         && (-0.3 * h..=1.1 * h).contains(&gap)

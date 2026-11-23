@@ -76,6 +76,25 @@ pub fn tile_protocol<R: tauri::Runtime>(
         document_response(ctx.app_handle(), request.uri(), responder);
         return;
     }
+    if request.uri().path().trim_matches('/') == "ocr-crop" {
+        let app = ctx.app_handle().clone();
+        let uri = request.uri().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let response = match crate::ocr::crop_response(&app, &uri) {
+                Ok(body) => http::Response::builder()
+                    .header(http::header::CONTENT_TYPE, "image/bmp")
+                    .header(http::header::CACHE_CONTROL, "no-store")
+                    .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(body)
+                    .unwrap_or_else(|err| {
+                        error_response(http::StatusCode::INTERNAL_SERVER_ERROR, "engine_error", &err.to_string())
+                    }),
+                Err((status, code)) => error_response(status, code, "the area could not be rendered"),
+            };
+            responder.respond(response);
+        });
+        return;
+    }
     if request.uri().path().trim_matches('/') == "signature" {
         let response =
             match crate::forms::signature_image(&ctx.app_handle().state::<AppState>(), request.uri()) {

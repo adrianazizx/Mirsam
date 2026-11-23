@@ -1267,6 +1267,8 @@ pub fn text_census(bytes: &[u8], password: Option<&str>, page: usize, page_area:
     let mut census = TextCensus { ours: ours.iter().any(|&o| o), ..TextCensus::default() };
     for piece in &read.traced.pieces {
         match piece.kind {
+            // A spacer left where text was removed draws nothing.
+            PieceKind::Text if piece.bounds.is_none() => {}
             PieceKind::Text if ours.get(piece.stream).copied().unwrap_or(false) => {}
             PieceKind::Text if piece.text.as_ref().is_some_and(|t| t.invisible) => census.invisible += 1,
             PieceKind::Text => census.visible += 1,
@@ -1306,6 +1308,8 @@ pub fn invisible_text_update(
             p.kind == PieceKind::Text
                 && p.text.as_ref().is_some_and(|t| t.invisible)
                 && !ours.get(p.stream).copied().unwrap_or(false)
+                // Glyphs to remove (not a spacer left by an earlier removal).
+                && p.bounds.is_some()
                 && within.is_none_or(|w| {
                     p.bounds.is_some_and(|b| {
                         let (x, y) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
