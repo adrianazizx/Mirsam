@@ -484,6 +484,7 @@ async function addedTextChecks(documentId: number) {
     blockEdited,
     blockReadBack,
     boldApplied: bold.applied,
+    boldDiagnostics: bold.diagnostics,
     boldReadBack: bold.readBack,
     typingMedianMs: bold.typingMedianMs,
     typingP95Ms: bold.typingP95Ms,
@@ -537,6 +538,8 @@ async function boldFromTheEditor(documentId: number, text: string, word: string)
     // The window got no animation frames (hidden or occluded): each keystroke
     // then "takes" the 250 ms fallback, which says nothing about typing.
     typingWithoutFrames: false,
+    /** Where focus and the selection were around the bold command, when it did not apply. */
+    diagnostics: null as Record<string, unknown> | null,
   };
   const holds = (candidate: { text: string }) =>
     candidate.text.replace(/\s+/gu, " ").includes(text);
@@ -582,9 +585,32 @@ async function boldFromTheEditor(documentId: number, text: string, word: string)
     document.getSelection()?.addRange(range);
     break;
   }
+  const where = () => {
+    const active = document.activeElement as HTMLElement | null;
+    return {
+      active: active?.dataset.testid ?? active?.tagName ?? null,
+      inField: editor.contains(active),
+      selection: document.getSelection()?.toString() ?? null,
+      selectionInField: editor.contains(document.getSelection()?.anchorNode ?? null),
+      connected: editor.isConnected,
+    };
+  };
+  const before = where();
   await runCommand("text.bold");
   const bolded = [...editor.querySelectorAll<HTMLElement>("b, strong, [style*='font-weight']")];
   result.applied = bolded.some((element) => element.textContent?.includes(word));
+  if (!result.applied) {
+    result.diagnostics = {
+      before,
+      after: where(),
+      fields: document.querySelectorAll('[data-testid="block-field"]').length,
+      hint: document.querySelector('[data-testid="tool-hint"]') !== null,
+      guide: document.querySelector('[data-testid="onboarding-guide"]') !== null,
+      hasFocus: document.hasFocus(),
+      visibility: document.visibilityState,
+      html: editor.innerHTML.slice(0, 300),
+    };
+  }
   editor.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }),
   );
