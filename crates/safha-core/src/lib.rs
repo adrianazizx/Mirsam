@@ -23,6 +23,7 @@ pub mod block_edit;
 pub mod blocks;
 pub mod catalog;
 pub mod compress;
+pub mod crash;
 mod document;
 pub mod edit;
 mod engine;

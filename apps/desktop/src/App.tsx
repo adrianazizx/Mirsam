@@ -18,6 +18,7 @@ import { RedactDialog } from "./components/protect/RedactDialog";
 import { SecurityDialog } from "./components/protect/SecurityDialog";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { AppShell } from "./components/shell/AppShell";
+import { CrashReportDialog } from "./components/shell/CrashReportDialog";
 import { LiveRegions } from "./components/shell/LiveRegions";
 import { RecoveryDialog } from "./components/shell/RecoveryDialog";
 import { UnsavedChangesDialog } from "./components/shell/UnsavedChangesDialog";
@@ -29,6 +30,7 @@ import {
   setSettingsWriter,
   useAppStore,
 } from "./state/appStore";
+import { CRASH_SETTING, refreshCrashReports, useCrashReports } from "./state/crashReports";
 import { useOcrJobs } from "./state/ocrJobs";
 import { useOcrModels } from "./state/ocrModels";
 import { getViewer } from "./viewer/registry";
@@ -39,6 +41,24 @@ function acceptArrivals({ documents, error }: DocumentsArrived) {
     acceptOutcome(outcome, { activate: index === documents.length - 1 });
   });
   if (error) useAppStore.getState().setError(error);
+}
+
+/**
+ * Offers crash reports the user was not asked about yet (ADR 0061). The
+ * shell hands each report out once, so reports are passed on even by an
+ * effect run since cleaned up: the prompt is app-wide.
+ */
+function offerNewCrashReports(): Promise<void> {
+  return backend.newCrashReports().then(
+    async (reports) => {
+      if (reports.length === 0) return;
+      const crash = useCrashReports.getState();
+      crash.setPrompt([...crash.prompt, ...reports]);
+      // Where a report can be filed (the GitHub button).
+      await refreshCrashReports();
+    },
+    (error: unknown) => console.warn("crash reports unavailable", error),
+  );
 }
 
 /**
@@ -117,7 +137,10 @@ export function App() {
     let stop = () => {};
     let live = true;
     backend
-      .onSettingChanged((key, value) => useAppStore.getState().applySetting(key, value))
+      .onSettingChanged((key, value) => {
+        useAppStore.getState().applySetting(key, value);
+        if (key === CRASH_SETTING) useCrashReports.getState().applySetting(value);
+      })
       .then((unlisten) => {
         if (live) stop = unlisten;
         else unlisten();
@@ -216,7 +239,10 @@ export function App() {
         .catch((error: unknown) => console.warn("could not save a setting", key, error));
     });
     backend.settings().then(
-      (settings) => useAppStore.getState().hydrate(settings),
+      (settings) => {
+        useAppStore.getState().hydrate(settings);
+        useCrashReports.getState().applySetting(settings[CRASH_SETTING]);
+      },
       (error: unknown) => console.warn("settings unavailable", error),
     );
     let unsubscribe = () => {};
@@ -250,6 +276,8 @@ export function App() {
         if (!arrivedWhileStarting && target !== undefined && target !== null) {
           store.activateDocument(target);
         }
+        // A crash since the last start: ask about its report, once (ADR 0061).
+        return offerNewCrashReports();
       })
       .catch((error: unknown) => {
         starting = false;
@@ -262,6 +290,23 @@ export function App() {
       cancelled = true;
       unsubscribe();
       stopArrivals();
+    };
+  }, []);
+
+  // A crash log the system wrote late (ADR 0061) became a report while running.
+  useEffect(() => {
+    let stop = () => {};
+    let live = true;
+    backend
+      .onCrashReportsAdded(() => void offerNewCrashReports())
+      .then((unlisten) => {
+        if (live) stop = unlisten;
+        else unlisten();
+      })
+      .catch((error: unknown) => console.warn("cannot follow crash reports", error));
+    return () => {
+      live = false;
+      stop();
     };
   }, []);
 
@@ -294,6 +339,7 @@ export function App() {
       <LiveRegions />
       <UnsavedChangesDialog />
       <RecoveryDialog />
+      <CrashReportDialog />
       <SplitDialog />
       <SignatureDialog />
       <RedactDialog />

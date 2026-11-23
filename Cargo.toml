@@ -32,4 +32,6 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 codegen-units = 1
-strip = true
+# Debug information goes; the symbol table stays, so a crash report's stack
+# names functions (ADR 0061). It adds 0.6 MB to the macOS installer.
+strip = "debuginfo"

@@ -70,6 +70,47 @@ pub fn selftest_log(message: String) {
     eprintln!("[selftest] {message}");
 }
 
+/// Moments of the start-up the UI reports (`uiReady`, `firstPage`), in
+/// milliseconds since the shell's `run()` began, for the cold-start budget
+/// (spec section 11).
+static MARKS: std::sync::Mutex<Vec<(String, u128)>> = std::sync::Mutex::new(Vec::new());
+
+#[tauri::command]
+pub fn selftest_mark(state: State<'_, AppState>, name: String) {
+    if let Ok(mut marks) = MARKS.lock() {
+        marks.push((name, state.started.elapsed().as_millis()));
+    }
+}
+
+/// Makes the app fail on purpose, for the crash report self-test
+/// (`scripts/crash-selftest.sh`, ADR 0061): `panic` (on the main thread, which
+/// ends the app), `thread-panic` (on another thread; the app keeps running),
+/// `abort` (the process ends without a panic, as a native crash does). The
+/// panic's message names a file and quotes Arabic text, which the report
+/// must not contain.
+#[tauri::command]
+pub fn selftest_crash(kind: String) {
+    const MESSAGE: &str = "self-test panic opening /Users/someone/Secret Contract.pdf: 'عقد'";
+    match kind.as_str() {
+        "panic" => panic!("{MESSAGE}"),
+        "thread-panic" => {
+            let worker =
+                std::thread::Builder::new().name("safha-selftest".into()).spawn(|| panic!("{MESSAGE}"));
+            if let Ok(worker) = worker {
+                let _ = worker.join();
+            }
+        }
+        "abort" => std::process::abort(),
+        _ => {}
+    }
+}
+
+/// The crash reporter's state, for the crash self-test.
+#[tauri::command]
+pub fn selftest_crash_state() -> serde_json::Value {
+    crate::crash::selftest_snapshot()
+}
+
 /// Asks to close the calling window, as its close button would: with unsaved
 /// changes the shell stops and asks the UI (ADR 0015). The webview itself
 /// has no permission to close windows.
@@ -202,8 +243,24 @@ pub fn selftest_report(
     let pdfium = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)
         .ok()
         .map(|engine| engine.library_path().display().to_string());
+    // Cold start (spec section 11): from the harness's launch of the process
+    // (`SAFHA_SELFTEST_LAUNCHED_MS`, Unix milliseconds) to the shell's `run()`,
+    // then the UI's marks since `run()`.
+    let since_run = state.started.elapsed();
+    let run_began = std::time::SystemTime::now()
+        .checked_sub(since_run)
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|at| at.as_millis());
+    let launched: Option<u128> =
+        std::env::var("SAFHA_SELFTEST_LAUNCHED_MS").ok().and_then(|ms| ms.trim().parse().ok());
+    let launch_to_run = launched.zip(run_began).map(|(launched, began)| began.saturating_sub(launched));
+    let marks: serde_json::Map<String, serde_json::Value> = MARKS
+        .lock()
+        .map(|marks| marks.iter().map(|(name, ms)| (name.clone(), serde_json::json!(ms))).collect())
+        .unwrap_or_default();
     let report = serde_json::json!({
-        "reportedAfterMs": state.started.elapsed().as_millis(),
+        "reportedAfterMs": since_run.as_millis(),
+        "startup": { "launchToRunMs": launch_to_run, "sinceRunMs": marks },
         "pdfiumLibrary": pdfium,
         // The architecture this process runs as (a universal app's Intel
         // slice under Rosetta reports x86_64).

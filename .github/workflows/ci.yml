@@ -180,6 +180,14 @@ jobs:
       # time budgets only warn here; the shell's memory still fails the run.
       - name: Scroll and zoom budgets, 1,000-page document (spec section 11)
         run: scripts/scroll-benchmark.sh selftest-out/scroll debug --ci
+      # Spec section 11's first-page budget names a 100-page text document.
+      - name: First page of a 100-page document
+        run: |
+          scripts/selftest.sh fixtures/out/derived/bilingual-100-pages.pdf selftest-out/hundred en light
+          node scripts/check-selftest.mjs selftest-out/hundred ltr --ci
+      # A Rust panic becomes a redacted report, offered at the next start (ADR 0061).
+      - name: Crash report after a panic
+        run: scripts/crash-selftest.sh selftest-out/crash panic
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -244,6 +252,8 @@ jobs:
         run: scripts/selftest.sh fixtures/out/derived/page-labels.pdf selftest-out/ar ar dark
       - name: Check the reports
         run: node scripts/check-selftest.mjs selftest-out/en ltr --ci && node scripts/check-selftest.mjs selftest-out/ar rtl --ci
+      - name: Crash report after a panic
+        run: scripts/crash-selftest.sh selftest-out/crash panic
       # GTK's print path, exported to a file instead of the dialog (ADR 0013):
       # four pages turned 0, 90, 180 and 270 degrees must all come out.
       - name: Print through GTK to a file (Linux)
@@ -268,3 +278,24 @@ jobs:
         with:
           name: shell-selftest-${{ matrix.os }}
           path: selftest-out
+
+  search-budget:
+    name: Search budget, 500 pages (Linux)
+    runs-on: ubuntu-latest
+    # Spec section 11: in-document search within 1 s on 500 pages once the
+    # index exists, measured on a release build. A laptop takes about 10 ms,
+    # so unlike the frame budgets this one fails the run on a virtual machine.
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y qpdf
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/fetch-pdfium.sh
+      - run: node fixtures/generate.mjs
+      - name: Search 500 pages (release build)
+        run: |
+          export SAFHA_PDFIUM_DIR="$PWD/third_party/pdfium/linux-x64/lib"
+          cargo run --release --locked -p safha-core --example search_bench -- \
+            fixtures/out/derived/bilingual-500-pages.pdf --budget-ms 1000 \
+            Agreement الإيجار 4,500 the مختلط

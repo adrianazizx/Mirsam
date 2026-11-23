@@ -987,6 +987,29 @@ export interface SelftestConfig {
 }
 
 /** Error payload of a rejected command. `code` maps to a localized message. */
+/** What failed (ADR 0061). */
+export type CrashKind = "panic" | "native" | "interface";
+
+/** A crash report kept on this computer until it is sent or deleted (ADR 0061). */
+export interface CrashReportInfo {
+  /** Names it in the crash report calls. */
+  id: string;
+  kind: CrashKind;
+  /** Unix seconds. */
+  created: number;
+  /** The start of its message, for a list. */
+  summary: string;
+  /** Exactly what is copied, saved or sent: no documents, file names or paths. */
+  text: string;
+}
+
+export interface CrashReports {
+  /** Newest first. */
+  reports: CrashReportInfo[];
+  /** The GitHub repository reports can be filed on (`owner/name`), if any. */
+  github: string | null;
+}
+
 export interface BackendError {
   code: string;
   detail: string;
@@ -1513,6 +1536,34 @@ export interface Backend {
   webviewRssKb(): Promise<number | null>;
   /** Writes a progress line to the shell's log during a self-test; devtools builds only. */
   selftestLog(message: string): Promise<void>;
+  /** A moment of the start-up, for the cold-start budget; devtools builds only. */
+  selftestMark(name: string): Promise<void>;
+  /** Fails on purpose, for the crash report self-test; devtools builds only. */
+  selftestCrash(kind: "panic" | "thread-panic" | "abort"): Promise<void>;
+  /** The crash reporter's state, for the crash report self-test; devtools builds only. */
+  selftestCrashState(): Promise<unknown>;
+  /** Kept crash reports and where they can be filed (ADR 0061). */
+  crashReports(): Promise<CrashReports>;
+  /**
+   * Reports the user has not been asked about yet. Each is offered once, so
+   * they are marked as offered now. Empty when crash reports are off.
+   */
+  newCrashReports(): Promise<CrashReportInfo[]>;
+  /** Reports were added while the app runs (a system crash log found late). */
+  onCrashReportsAdded(listener: () => void): Promise<() => void>;
+  deleteCrashReport(id: string): Promise<void>;
+  /** Saves a report as a text file where the user chooses; false when they cancel. */
+  saveCrashReport(id: string): Promise<boolean>;
+  /**
+   * Opens a new GitHub issue with the report filled in, in the browser. True
+   * when the stack was shortened to fit the link.
+   */
+  openCrashIssue(id: string): Promise<boolean>;
+  /**
+   * Keeps an error the UI did not handle as a report (redacted by the shell).
+   * Its id, or null when none was kept (reports off, or enough this run).
+   */
+  recordUiError(message: string, stack: string, commands: string[]): Promise<string | null>;
   /** The OCR models offered here, what is installed, and the hardware (ADR 0034). */
   ocrModels(): Promise<OcrModels>;
   /**

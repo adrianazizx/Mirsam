@@ -36,6 +36,11 @@ base64 = { version = "0.22", optional = true }
 # Windows, so no command interpreter reads the address.
 open = { version = "5.3", features = ["shellexecute-on-windows"] }
 
+# The Windows version in crash reports (ADR 0061); already in the tree
+# through Tauri's window toolkit (MIT OR Apache-2.0).
+[target.'cfg(windows)'.dependencies]
+windows-version = "0.1.7"
+
 # Printing on Linux (ADR 0013). Tauri already builds on GTK 3 there; this is the
 # same crate and version its window toolkit uses.
 [target.'cfg(target_os = "linux")'.dependencies]

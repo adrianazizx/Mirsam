@@ -215,13 +215,20 @@ if (qpdf && !onlyId && base("en-paragraphs") && base("contract-two-column") && b
   // `@file` argument list is not read by every qpdf build (Ubuntu's).
   const pair = derived("bilingual-pair.tmp.pdf");
   execFileSync(qpdf, ["--empty", "--pages", src("contract-two-column"), "1", src("mixed-inline"), "1", "--", pair]);
-  const range = Array.from({ length: 500 }, () => "1-2").join(",");
-  execFileSync(qpdf, ["--empty", "--pages", pair, range, "--", derived("bilingual-1000-pages.pdf")]);
+  const range = (pairs) => Array.from({ length: pairs }, () => "1-2").join(",");
+  execFileSync(qpdf, ["--empty", "--pages", pair, range(500), "--", derived("bilingual-1000-pages.pdf")]);
+  // The spec's other sizes (section 11): the first page of a 100-page text
+  // PDF, and search in 500 pages.
+  execFileSync(qpdf, ["--empty", "--pages", pair, range(250), "--", derived("bilingual-500-pages.pdf")]);
+  execFileSync(qpdf, ["--empty", "--pages", pair, range(50), "--", derived("bilingual-100-pages.pdf")]);
   rmSync(pair);
-  add("bilingual-1000-pages.pdf", {
-    pages: pageCount(derived("bilingual-1000-pages.pdf")),
-    description: "1,000 pages alternating chrome/contract-two-column and chrome/mixed-inline.",
-  });
+  for (const pages of [1000, 500, 100]) {
+    const name = `bilingual-${pages}-pages.pdf`;
+    add(name, {
+      pages: pageCount(derived(name)),
+      description: `${pages.toLocaleString("en")} pages alternating chrome/contract-two-column and chrome/mixed-inline.`,
+    });
+  }
 
   // Page labels: roman front matter, then arabic numbering from 1.
   const three = derived("three-pages.tmp.pdf");
