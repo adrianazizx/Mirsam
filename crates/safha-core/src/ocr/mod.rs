@@ -45,8 +45,8 @@ pub use boxes::{BoxedLine, BoxedWord, word_boxes};
 pub use check::{LayerKind, PageCheck, Problem, TextInfo, Verdict, check_page};
 pub use command::CommandEngine;
 pub use draft::{
-    DraftLine, DraftPage, DraftReader, DraftWord, PixelBox, TesseractReader, VISION_SOURCE, VisionReader,
-    first_strong_rtl, parse_tesseract_tsv, vision_helper,
+    DraftLine, DraftPage, DraftReader, DraftWord, PixelBox, TESSERACT_MODELS, TesseractReader, VISION_SOURCE,
+    VisionReader, find_tesseract, first_strong_rtl, parse_tesseract_tsv, tesseract_programs, vision_helper,
 };
 pub use image::{NUQTA_PIXELS, OcrImage, nuqta_size, prepare_nuqta};
 pub use layer::{

@@ -41,8 +41,10 @@ showed Poppler and OpenSSL accept its output. This records how the feature is bu
 - **B-T:** with a time-stamping authority, an RFC 3161 request (SHA-256 of the signature value, a random
   nonce, `certReq`) goes out over HTTP(S) (`ureq`, the OS trust store for HTTPS, 30 s, 1 MiB reply cap);
   the reply must be granted, over that imprint, with that nonce, and the token goes in as the
-  `signatureTimeStampToken` unsigned attribute. **The authority is a setting (`signing.tsaUrl`), empty by
-  default**; nothing is sent anywhere unless the user enters one. An unreachable authority fails the
+  `signatureTimeStampToken` unsigned attribute. **The authority is a setting (`signing.tsaUrl`).** Since the
+  owner's decision of 2026-11-23 (item 21; amendment below), the dialog suggests DigiCert's
+  `http://timestamp.digicert.com`, with the time-stamp **off** until the user turns it on. Nothing
+  is sent anywhere by default. An unreachable authority fails the
   signing with a message; it never silently produces a B-B signature the user did not ask for. What is
   sent is a hash of the signature and a nonce, nothing of the document.
 - **Placeholder:** certificates + 4 KiB, + 16 KiB with a time-stamp; if the CMS is larger, the update is
@@ -151,3 +153,29 @@ document-signing identity on this Mac; listing works). The signing and import fl
   signatures and their permission checks, signing an existing empty signature field, trusting a
   certificate inside the app (today only the system's roots), PKCS#12 identities that survive a restart,
   the Windows store and smart cards.
+
+## Amendment (2026-11-23): DigiCert as the suggested time-stamping server
+
+The owner chose DigiCert's free public server as the suggestion (owner item 21).
+
+- **The suggestion:** `SUGGESTED_TSA_URL = "http://timestamp.digicert.com"` (UI,
+  `commands/registry.ts`). It fills the address while `signing.tsaUrl` is unset. The hint names
+  it as a suggestion that the user may replace.
+- **Off by default:** the time-stamp checkbox is off until the user turns it on, so nothing is
+  sent by default. With it off, the address field is not shown and the request says
+  `timestamp: false`; the shell contacts an authority only when that is true.
+- **The user's choice is kept:**
+  - A new setting, `signing.timestamp` (`on`/`off`), holds the on/off choice. Before, turning
+    the time-stamp off was forgotten whenever an address was saved.
+  - The address is saved as the user leaves it, changed or cleared. A cleared address stays
+    cleared and is not refilled.
+  - A file signed before this change has `signing.tsaUrl` set and no choice saved. Its saved
+    address still means on.
+- **HTTP is fine for RFC 3161:** the reply is a signed token checked against its imprint and
+  nonce, and what goes out is a hash.
+- **Tests:** `commands/signing.test.tsx`:
+  - the suggestion shown, off, and a signature with no time-stamp;
+  - turning it on with the suggestion, clearing it, and entering another;
+  - off remembered after being on;
+  - a cleared address kept;
+  - the earlier settings.

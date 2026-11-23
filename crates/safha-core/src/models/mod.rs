@@ -33,7 +33,8 @@ mod test_server;
 use std::io;
 
 pub use catalog::{
-    Arch, Asset, Catalog, ENSEMBLE, Os, PRIMARY, Package, Platform, RUNTIME, Role, Unpack, runtime_package,
+    Arch, Asset, Catalog, DRAFT, ENSEMBLE, Os, PRIMARY, Package, Platform, RUNTIME, Role, Unpack,
+    draft_package, runtime_package,
 };
 pub use download::{DownloadConfig, Downloader};
 pub use hardware::{Accelerator, Hardware};

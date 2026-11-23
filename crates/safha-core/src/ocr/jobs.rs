@@ -36,7 +36,8 @@ use serde::{Deserialize, Serialize};
 use super::boxes::{visual_order, word_boxes};
 use super::check::{PageCheck, TextInfo, check_page};
 use super::draft::{
-    DraftPage, DraftReader, PixelBox, TesseractReader, VisionReader, first_strong_rtl, vision_helper,
+    DraftPage, DraftReader, PixelBox, VisionReader, find_tesseract, first_strong_rtl, tesseract_programs,
+    vision_helper,
 };
 use super::layer::{Clear, LayerLine, LayerQuality, LayerState, LayerWord, PageLayer};
 use super::llama::{Device, NuqtaEngine, NuqtaModel, ServerConfig};
@@ -50,7 +51,7 @@ use super::review::{
 };
 pub use super::review::{ReviewPage, ReviewWord};
 use super::{OcrEngine, OcrError, OcrImage};
-use crate::models::{ENSEMBLE, Hardware, ModelStore, PRIMARY, RUNTIME};
+use crate::models::{DRAFT, ENSEMBLE, Hardware, ModelStore, PRIMARY, RUNTIME};
 use crate::store::canonical_path;
 
 pub type JobId = i64;
@@ -1371,7 +1372,7 @@ impl JobEngines for LocalEngines {
     fn draft(&mut self) -> Option<&mut dyn DraftReader> {
         if !self.draft_tried {
             self.draft_tried = true;
-            self.draft = local_draft_reader(&self.helpers);
+            self.draft = local_draft_reader(&self.helpers, &self.models);
         }
         self.draft.as_deref_mut().map(|reader| reader as &mut dyn DraftReader)
     }
@@ -1418,24 +1419,21 @@ impl JobEngines for LocalEngines {
 }
 
 /// The draft reader for this machine: Apple Vision on macOS (its helper built in
-/// `helpers` on first use), else Tesseract with Arabic and English data if it is
-/// installed (`SAFHA_TESSERACT` names the program). `None` when there is neither.
-pub fn local_draft_reader(helpers: &Path) -> Option<Box<dyn DraftReader>> {
+/// `helpers` on first use). Elsewhere (and on a Mac where Vision fails),
+/// Tesseract ([`tesseract_programs`]) reading the downloaded `tessdata_best`
+/// models when the `tesseract-best` package is installed (owner item 23), or
+/// its own Arabic and English data. `None` when there is neither: the job
+/// skips the draft (ADR 0035).
+pub fn local_draft_reader(helpers: &Path, models: &ModelStore) -> Option<Box<dyn DraftReader>> {
     if cfg!(target_os = "macos") {
         match vision_helper(helpers).and_then(|program| VisionReader::start(&program)) {
             Ok(reader) => return Some(Box::new(reader)),
             Err(err) => eprintln!("safha: Apple Vision is not available for drafts: {err}"),
         }
     }
-    let program =
-        std::env::var_os("SAFHA_TESSERACT").map_or_else(|| PathBuf::from("tesseract"), PathBuf::from);
-    let languages = std::process::Command::new(&program).arg("--list-langs").output().ok()?;
-    let listed = String::from_utf8_lossy(&languages.stdout).into_owned();
-    let has = |code: &str| listed.lines().any(|line| line.trim() == code);
-    (has("ara") && has("eng")).then(|| {
-        Box::new(TesseractReader { program, languages: "ara+eng".into(), data: None, dpi: 200 })
-            as Box<dyn DraftReader>
-    })
+    let installed = models.installed(DRAFT).map(|package| package.dir);
+    find_tesseract(&tesseract_programs(), installed.as_deref())
+        .map(|reader| Box::new(reader) as Box<dyn DraftReader>)
 }
 
 #[cfg(test)]

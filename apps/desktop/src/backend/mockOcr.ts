@@ -27,8 +27,22 @@ type OcrMethods = Pick<
   | "onOcrModelProgress"
 >;
 
-function catalog(): OcrPackage[] {
+/** The quick draft's models, offered where Apple Vision is not there to draft (owner item 23). */
+const DRAFT_PACKAGE: Omit<OcrPackage, "state" | "downloading"> = {
+  id: "tesseract-best",
+  role: "draft",
+  name: "Tesseract tessdata_best (ara + eng)",
+  version: "4.1.0",
+  licence: "Apache-2.0",
+  homepage: "https://github.com/tesseract-ocr/tessdata_best",
+  downloadSize: 28_004_325,
+  installedSize: 28_004_325,
+  required: false,
+};
+
+function catalog(os: OcrHardware["os"] = "macos"): OcrPackage[] {
   const base = { state: { kind: "notInstalled" } as OcrPackageState, downloading: false };
+  const draft = os === "windows" || os === "linux" ? [{ ...base, ...DRAFT_PACKAGE }] : [];
   return [
     {
       ...base,
@@ -54,6 +68,7 @@ function catalog(): OcrPackage[] {
       installedSize: 1_077_594_432,
       required: false,
     },
+    ...draft,
     {
       ...base,
       id: "llama-cpp",
@@ -104,8 +119,11 @@ export function resetMockOcr(options?: {
   for (const timer of running.values()) clearTimeout(timer);
   running.clear();
   failNext = null;
-  packages = catalog().map((pkg) => ({ ...pkg, state: options?.states?.[pkg.id] ?? pkg.state }));
   hardware = { ...APPLE_SILICON, ...options?.hardware };
+  packages = catalog(hardware.os).map((pkg) => ({
+    ...pkg,
+    state: options?.states?.[pkg.id] ?? pkg.state,
+  }));
 }
 
 /** Test hook: the next download fails at its first piece with this error. */

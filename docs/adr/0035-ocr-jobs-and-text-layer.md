@@ -310,9 +310,12 @@ headless: see the M4 exit test (`docs/demos/m4.md`).
   only when the page count changes.
 - **Review data is kept by file.** It follows Save As, but not a file renamed or moved
   outside the app.
-- **No draft reader on Windows and Linux** until Tesseract is packaged (or installed by the
-  user, with `ara` and `eng` data). Without one, the quality pass runs alone, and boxes come
-  from the page's own line strips with no guide: wider boxes on two-column pages.
+- **The draft reader on Windows and Linux** is Tesseract with the optional `tesseract-best`
+  models (owner item 23, decided 2026-11-23; ADR 0034's amendment). The `tesseract` program
+  itself is the user's: the distribution's package on Linux, or Tesseract's installer on Windows
+  (owner item 26, decided 2026-11-23: the user installs it). With no program, the quality pass runs
+  alone, and boxes come from the page's own line strips with no guide: wider boxes on two-column
+  pages.
 - **The Vision helper is built on first use,** and needs Xcode's command-line tools. A
   prebuilt, signed helper is M7.
 - **Both models stay in memory during a job:** 14 GiB on a CPU-only machine. The 0.8B-only

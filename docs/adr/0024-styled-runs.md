@@ -62,8 +62,8 @@ suffix are cut, and past that the middle counts as replaced. Then:
   - A span starts a new style: a digit after a bold word is no longer drawn in the bold word's
     font.
 - **Italic:** no italic face is bundled, so a run is slanted 12° in the drawing (`pdf::text`'s
-  paints). It is written under an oblique name (`IBMPlexSans-Oblique`, …), so the page reads
-  back italic and the next edit slants it again.
+  paints). It is written under an oblique name, so the page reads back italic and the next edit
+  slants it again. The names are neutral (amendment below): `MirsamSans-Oblique`, ….
 - **Colour** is per run, in both paths.
 
 ## Consequences
@@ -100,3 +100,43 @@ suffix are cut, and past that the middle counts as replaced. Then:
   - Arabic typed over the bold word is set in a bold Arabic face.
 - ADR 0023's tests all still pass: typo, re-wrap, Arabic insert, mixed sentence, round trip,
   turned pages, z-order and clip, kerning.
+
+## Amendment (2026-11-23): neutral names for the obliques
+
+**Why:** "Plex" is a Reserved Font Name under the OFL. The owner kept IBM Plex for subsets
+embedded under the fonts' own names (owner item 14). Names we make must not carry it.
+
+**The new names.** Every slanted run is embedded under a `Mirsam…` name (`fonts::oblique_of`).
+The name says the weight and that the run is oblique, and contains no family's own name:
+
+| Bundled face | Its oblique |
+|---|---|
+| IBM Plex Sans (and Bold) | `MirsamSans-Oblique`, `MirsamSans-BoldOblique` |
+| IBM Plex Sans Arabic (and SemiBold) | `MirsamSansArabic-Oblique`, `MirsamSansArabic-SemiBoldOblique` |
+| Amiri (and Bold) | `MirsamNaskh-Oblique`, `MirsamNaskh-BoldOblique` |
+| Noto Naskh Arabic (and Bold) | `MirsamNaskhArabic-Oblique`, `MirsamNaskhArabic-BoldOblique` |
+| Noto Sans Arabic (and Bold) | `MirsamKufi-Oblique`, `MirsamKufi-BoldOblique` |
+
+Only Plex's licence reserves a name. The others are renamed too, so that no name we make looks
+like a family's own.
+
+**What does not change:** the font programs, the 12° slant, and so the look. Only `/BaseFont`
+and `/FontName` change.
+
+**Edit again (`fonts::upright_of_oblique`):**
+- **Matching.** A neutral name does not say its family. A page font with one of these names, or
+  one of the earlier `IBMPlexSans-Oblique`-style names, is matched as the bundled face it was
+  drawn from. The run stays in that face instead of the closest one by its widths.
+- **Fixed on the way.** Such a font holds the upright program, so it is no longer reused by its
+  codes (`FontSource::Page`) or its embedded program (`FontSource::Embedded`). Both drew the
+  run upright: an edit that only removed a word lost the italic look and kept the italic name.
+  The run is set again from the bundled face, and slanted.
+
+**Verified (`tests/block_edit.rs`).** A substituted paragraph is saved, reopened and edited twice
+(a word added, then one removed). Each time:
+- the italic run reads back as `MirsamSans-Oblique`;
+- it is drawn sheared (`1 0 0.213 1 … Tm`);
+- the rewritten file holds as many font programs as after the first edit;
+- no font name contains "PlexSans-Oblique".
+
+Unit tests check every bundled face's and bold's oblique name, and both ways of the lookup.

@@ -32,6 +32,11 @@ use crate::state::{AppState, lock};
 /// The setting that holds the time-stamping authority's address.
 pub const TSA_SETTING: &str = "signing.tsaUrl";
 
+/// The setting that holds whether the user time-stamps signatures: "on" or
+/// "off". Unset, the dialog leaves it off (owner item 21): it suggests
+/// DigiCert's server but sends nothing until the user turns it on.
+pub const TIMESTAMP_SETTING: &str = "signing.timestamp";
+
 /// Identities read from PKCS#12 files this run, and files waiting for their
 /// password. Never written anywhere.
 #[derive(Default)]

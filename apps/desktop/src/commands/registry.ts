@@ -832,6 +832,17 @@ export function fillDate(locale: AppState["locale"], date = new Date()): string 
 /** The setting holding the time-stamping authority's address (ADR 0048). */
 export const TSA_SETTING = "signing.tsaUrl";
 
+/** The setting holding whether to time-stamp: "on" or "off" (the default). */
+export const TIMESTAMP_SETTING = "signing.timestamp";
+
+/**
+ * The time-stamping authority suggested until the user sets one (owner item
+ * 21, 2026-11-23): DigiCert's free public server. Only a suggestion: the
+ * time-stamp stays off until the user turns it on, so nothing is sent by
+ * default, and the user can change or clear the address.
+ */
+export const SUGGESTED_TSA_URL = "http://timestamp.digicert.com";
+
 /** Errors opening a PKCS#12 file that the dialog shows itself. */
 const CERTIFICATE_ERRORS = ["certificate_password", "certificate_unreadable", "key_unsupported"];
 
@@ -2587,8 +2598,14 @@ const DECLARED: Command[] = [
       sign.setError(null);
       sign.setDialogOpen(true);
       const settings = await backend.settings();
-      const tsaUrl = settings[TSA_SETTING] ?? "";
-      sign.updateForm({ tsaUrl, timestamp: tsaUrl.trim() !== "" });
+      const saved = settings[TSA_SETTING];
+      const choice = settings[TIMESTAMP_SETTING];
+      sign.updateForm({
+        tsaUrl: saved ?? SUGGESTED_TSA_URL,
+        // Off unless the user turned it on. Before the choice was kept, a
+        // saved address meant it was on.
+        timestamp: choice === undefined ? (saved ?? "").trim() !== "" : choice === "on",
+      });
       sign.setIdentities(await backend.signingIdentities());
       if (store().signatures === null) await loadSignatures();
     },
@@ -2675,7 +2692,9 @@ const DECLARED: Command[] = [
         timestamp: form.timestamp,
       };
       const saveAs = arg?.saveAs ?? false;
-      if (form.timestamp) await backend.setSetting(TSA_SETTING, form.tsaUrl.trim());
+      // The choice and the address are kept as the user left them, cleared or changed.
+      await backend.setSetting(TIMESTAMP_SETTING, form.timestamp ? "on" : "off");
+      await backend.setSetting(TSA_SETTING, form.tsaUrl.trim());
       if (form.visible) {
         sign.setPlacing({ documentId: active.id, request, graphic: form.graphic, saveAs });
         sign.setDialogOpen(false);

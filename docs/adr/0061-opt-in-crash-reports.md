@@ -1,7 +1,7 @@
 # 0061 — Opt-in crash reports, kept on the computer
 
-Status: Accepted. Date: 2026-11-23. Whether to run a crash server is the owner's decision
-(`PROGRESS.md`, owner item 25); nothing here needs one.
+Status: Accepted. Date: 2026-11-23. **Decided by the owner (2026-11-23): no crash server;
+reports stay manual** (`PROGRESS.md`, owner item 25; note at the end).
 
 ## Context
 
@@ -154,3 +154,18 @@ follow-up with the release pipeline (owner item 17).
   issue, off, Settings in Arabic, command trail, capture, error boundary);
   `scripts/crash-selftest.sh <out> panic|abort|thread-panic` on the real app (macOS: all three;
   CI: `panic` on macOS, Windows and Linux).
+
+## Note (2026-11-23): no crash server
+
+The owner decided against a crash server (owner item 25). The options were GlitchTip, self-hosted
+Sentry, or a hosted service.
+
+**What stays as built:**
+- Reports are kept on the computer, redacted, and offered once after a crash.
+- They leave only when the user copies one, saves it, or opens a pre-filled GitHub issue in
+  their own browser.
+- D4's "no backend" holds.
+- `https://…` destinations stay refused at parse time, and no sending code is added.
+
+Revisiting this means a new ADR. It would need the privacy-policy change, a retention period,
+and the consent rules above.

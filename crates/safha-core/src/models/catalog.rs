@@ -15,6 +15,9 @@ pub const PRIMARY: &str = "nuqta-4b";
 pub const ENSEMBLE: &str = "nuqta-0.8b";
 /// llama.cpp's `llama-server`, which runs the models (ADR 0032).
 pub const RUNTIME: &str = "llama-cpp";
+/// Tesseract's best Arabic and English models, for the quick draft on Windows
+/// and Linux (owner item 23, ADR 0035). Optional.
+pub const DRAFT: &str = "tesseract-best";
 
 /// What a package does in the OCR pipeline (spec §8, ADR 0030).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -25,7 +28,7 @@ pub enum Role {
     /// The second reader: re-reads low-confidence lines and every number.
     Ensemble,
     /// The quick draft pass. Built into macOS (Apple Vision); elsewhere
-    /// Tesseract, which is not packaged yet.
+    /// Tesseract, with the `tesseract-best` models ([`draft_package`]).
     Draft,
     /// The program that runs the models.
     Runtime,
@@ -155,10 +158,13 @@ impl Catalog {
         Self::for_platform(Platform::current())
     }
 
-    /// The models, which are the same everywhere, then the llama.cpp runtime
-    /// built for `platform` ([`runtime_package`]) where it publishes one.
+    /// The models, which are the same everywhere, the quick draft's models
+    /// where Apple Vision is not there to draft ([`draft_package`]), then the
+    /// llama.cpp runtime built for `platform` ([`runtime_package`]) where it
+    /// publishes one.
     pub fn for_platform(platform: Platform) -> Self {
         let mut packages = vec![nuqta_4b(), nuqta_0_8b()];
+        packages.extend(draft_package(platform));
         packages.extend(runtime_package(platform));
         Self::new(packages)
     }
@@ -259,6 +265,62 @@ fn nuqta_0_8b() -> Package {
             ),
         ],
     )
+}
+
+/// `tessdata_best` at its last release tag, `4.1.0` (the commit the tag
+/// points to; `ara` and `eng` are unchanged on `main` since). Apache-2.0: the
+/// repository's LICENSE (checked 2026-11-23). Each file's SHA-256 was taken
+/// from the download, whose git blob hash matched GitHub's for the tag.
+const TESSDATA_BEST_COMMIT: &str = "e2aad9b983032bb1beff9133104a67cdbb87ca4d";
+
+/// The quick draft's models on Windows and Linux (owner item 23, decided
+/// 2026-11-23): Tesseract's `tessdata_best` Arabic and English LSTM models,
+/// read by a `tesseract` program 4.0 or later. macOS drafts with Apple Vision
+/// and is offered none.
+///
+/// **The `tesseract` program is not in the catalog:** the user installs it
+/// (owner item 26, decided 2026-11-23). The reasons:
+/// - **Linux:** Tesseract publishes no Linux builds, only source; the
+///   distributions package it (`tesseract-ocr`, `tesseract`), and the draft
+///   uses that program.
+/// - **Windows:** the one official build (release `5.5.3`,
+///   `tesseract-ocr-w64-setup-5.5.3.20260724.exe`, SHA-256
+///   `bee9e343…0ae4`) is an NSIS installer, not an archive, and it installs
+///   every DLL its tools need: GLib, Pango, Cairo, FriBidi, gettext's libintl,
+///   libiconv, libidn2 and libunistring are LGPL, and the GCC runtime is
+///   GPL-3.0 with the runtime exception. Spec §10 asks before any of those,
+///   and the owner gave no approval. The draft uses a `tesseract.exe` the user
+///   installed. Tesseract itself (Apache-2.0) and Leptonica (BSD-2-Clause)
+///   would be fine.
+pub fn draft_package(platform: Platform) -> Option<Package> {
+    if !matches!(platform.os, Os::Windows | Os::Linux) {
+        return None;
+    }
+    let files = [
+        ("ara.traineddata", 12_603_724, "ab9d157d8e38ca00e7e39c7d5363a5239e053f5b0dbdb3167dde9d8124335896"),
+        ("eng.traineddata", 15_400_601, "8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba"),
+    ];
+    Some(Package {
+        id: DRAFT.to_owned(),
+        role: Role::Draft,
+        name: "Tesseract tessdata_best (ara + eng)".to_owned(),
+        version: "4.1.0".to_owned(),
+        licence: "Apache-2.0".to_owned(),
+        homepage: "https://github.com/tesseract-ocr/tessdata_best".to_owned(),
+        files: files
+            .into_iter()
+            .map(|(file, size, sha256)| Asset {
+                name: file.to_owned(),
+                url: format!(
+                    "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/{TESSDATA_BEST_COMMIT}/{file}"
+                ),
+                size,
+                sha256: sha256.to_owned(),
+                unpack: Unpack::None,
+            })
+            .collect(),
+        program: None,
+    })
 }
 
 /// The pinned llama.cpp release (ADR 0032): the same build the benchmark ran
@@ -388,6 +450,13 @@ mod tests {
             let required: Vec<&str> = catalog.required().iter().map(|p| p.id.as_str()).collect();
             assert!(required.contains(&PRIMARY));
             assert!(!required.contains(&ENSEMBLE));
+            // The quick draft's models: optional, after the models, and not on macOS.
+            assert!(!required.contains(&DRAFT));
+            let drafts = matches!(platform.os, Os::Windows | Os::Linux);
+            assert_eq!(catalog.get(DRAFT).is_some(), drafts, "{platform:?}");
+            if drafts {
+                assert_eq!(ids[2], DRAFT);
+            }
             // The runtime comes last, and only where llama.cpp publishes a build.
             let runtime = runtime_package(platform);
             assert_eq!(catalog.get(RUNTIME).cloned(), runtime);
@@ -425,6 +494,33 @@ mod tests {
             let arguments = config.arguments(8080, "key");
             assert!(arguments.iter().any(|arg| arg == "--no-webui"), "{device:?}: {arguments:?}");
         }
+    }
+
+    #[test]
+    fn the_draft_models_are_tessdata_best_pinned_to_its_release() {
+        let platform = Platform { os: Os::Windows, arch: Arch::X86_64 };
+        let package = draft_package(platform).expect("Windows drafts with Tesseract");
+        check(&package);
+        assert_eq!(package.role, Role::Draft);
+        assert_eq!(package.licence, "Apache-2.0");
+        assert_eq!(package.version, "4.1.0");
+        assert_eq!(package.program, None, "the program is the user's (owner item 26)");
+        let names: Vec<&str> = package.files.iter().map(|f| f.name.as_str()).collect();
+        // `TesseractReader` reads `ara+eng` from this folder.
+        assert_eq!(names, ["ara.traineddata", "eng.traineddata"]);
+        for file in &package.files {
+            assert!(file.url.contains(TESSDATA_BEST_COMMIT), "{}", file.url);
+            assert!(file.url.starts_with("https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/"));
+            assert_eq!(file.unpack, Unpack::None);
+        }
+        assert_eq!(package.download_size(), 28_004_325);
+        assert_eq!(draft_package(Platform { os: Os::Linux, arch: Arch::Aarch64 }).as_ref(), Some(&package));
+        assert_eq!(
+            draft_package(Platform { os: Os::MacOs, arch: Arch::Aarch64 }),
+            None,
+            "Apple Vision drafts"
+        );
+        assert_eq!(draft_package(Platform { os: Os::Other, arch: Arch::X86_64 }), None);
     }
 
     #[test]

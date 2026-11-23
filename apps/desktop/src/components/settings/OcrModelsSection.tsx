@@ -9,6 +9,9 @@ import { type OcrFailure, type OcrJob, useOcrModels } from "../../state/ocrModel
 import { Button } from "../ui/Button";
 import styles from "./OcrModelsSection.module.css";
 
+/** Where Tesseract's official Windows installer is published, shown as text (not a link). */
+const TESSERACT_RELEASES = "github.com/tesseract-ocr/tesseract/releases";
+
 /**
  * The OCR models in Settings (ADR 0034): each with its role, size, licence and
  * state, and the download, cancel, resume and delete actions, all commands.
@@ -131,6 +134,16 @@ function PackageRow({
         {/* A proper name in Latin script, whatever the UI's direction. */}
         <bdi className={styles.name}>{pkg.name}</bdi>
         <span className={styles.role}>{t(`ocrModels.role.${pkg.role}`)}</span>
+        {pkg.role === "draft" ? (
+          // The program is the user's to install (owner item 26): say where it comes from.
+          <span className={styles.meta} data-testid="ocr-tesseract-note">
+            {t("ocrModels.tesseractNote", {
+              releases: isolate(TESSERACT_RELEASES),
+              apt: isolate("tesseract-ocr"),
+              dnf: isolate("tesseract"),
+            })}
+          </span>
+        ) : null}
         <span className={styles.meta}>
           {t("ocrModels.size", { size: size(pkg.downloadSize) })}
           {" · "}
