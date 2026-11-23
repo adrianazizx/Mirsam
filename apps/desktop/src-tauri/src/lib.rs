@@ -14,6 +14,7 @@ mod forms;
 mod instance;
 mod models;
 mod navigation;
+mod objects;
 mod ocr;
 mod output;
 #[cfg(target_os = "linux")]
@@ -86,6 +87,14 @@ macro_rules! product_commands {
             editing::split_document,
             editing::bookmark_parts,
             editing::quit_discarding,
+            objects::page_objects,
+            objects::edit_object,
+            objects::replace_image,
+            objects::insert_image,
+            objects::page_links,
+            objects::named_destinations,
+            objects::edit_link,
+            objects::open_link,
             output::stamp_pages,
             output::pick_watermark_image,
             output::export_page_images,

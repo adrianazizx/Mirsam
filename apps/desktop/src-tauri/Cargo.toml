@@ -32,6 +32,9 @@ thiserror = { workspace = true }
 getrandom = "0.3"
 dirs = "7"
 base64 = { version = "0.22", optional = true }
+# Opens a link's web address in the system browser (ADR 0051); ShellExecute on
+# Windows, so no command interpreter reads the address.
+open = { version = "5.3", features = ["shellexecute-on-windows"] }
 
 # Printing on Linux (ADR 0013). Tauri already builds on GTK 3 there; this is the
 # same crate and version its window toolkit uses.

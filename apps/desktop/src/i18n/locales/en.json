@@ -82,7 +82,10 @@
       "selectAll": "Select all text on the page",
       "deselect": "Clear selection",
       "undo": "Undo",
-      "redo": "Redo"
+      "redo": "Redo",
+      "textMode": "Text",
+      "objectsMode": "Objects",
+      "linksMode": "Links"
     },
     "markup": {
       "highlight": "Highlight",
@@ -295,6 +298,46 @@
       "moveRightMore": "Move the field right 10 points",
       "moveUpMore": "Move the field up 10 points",
       "moveDownMore": "Move the field down 10 points"
+    },
+    "object": {
+      "select": "Select an object",
+      "reshape": "Move or resize an object",
+      "insertImage": "Insert image…",
+      "replaceImage": "Replace image…",
+      "delete": "Delete object",
+      "rotateClockwise": "Rotate clockwise",
+      "rotateCounterclockwise": "Rotate counterclockwise",
+      "bringToFront": "Bring to front",
+      "bringForward": "Bring forward",
+      "sendBackward": "Send backward",
+      "sendToBack": "Send to back",
+      "crop": "Crop",
+      "setCrop": "Set the crop",
+      "applyCrop": "Apply crop",
+      "cancelCrop": "Cancel crop",
+      "uncrop": "Remove crop",
+      "deselect": "Deselect object",
+      "moveLeft": "Move object left",
+      "moveRight": "Move object right",
+      "moveUp": "Move object up",
+      "moveDown": "Move object down",
+      "moveLeftMore": "Move object left 10 points",
+      "moveRightMore": "Move object right 10 points",
+      "moveUpMore": "Move object up 10 points",
+      "moveDownMore": "Move object down 10 points"
+    },
+    "link": {
+      "fromSelection": "Link…",
+      "draw": "Draw a link",
+      "select": "Select a link",
+      "save": "Save link",
+      "reshape": "Move or resize a link",
+      "delete": "Delete link",
+      "cancel": "Cancel",
+      "hover": "Show where a link goes",
+      "follow": "Follow link",
+      "open": "Open link",
+      "dismiss": "Close"
     }
   },
   "viewer": {
@@ -369,7 +412,9 @@
     "ocr_timeout": "The OCR engine did not answer in time.",
     "ocr_bad_response": "The OCR engine gave an answer that could not be read.",
     "ocr_image_invalid": "A page could not be prepared for recognition.",
-    "ocr_document_changed": "The document's pages changed since recognition started. Start it again."
+    "ocr_document_changed": "The document's pages changed since recognition started. Start it again.",
+    "image_too_large": "That image file is too large: 64 MB at most.",
+    "link_refused": "Only web and e-mail links are opened."
   },
   "gallery": {
     "title": "Design gallery",
@@ -1054,5 +1099,76 @@
     },
     "choice": "Choice {{n}}",
     "defaultCaption": "Button"
+  },
+  "editMode": {
+    "label": "What a press on the page does",
+    "hint": {
+      "objects": "Press an image, shape or text block to select it, then drag it or its corners.",
+      "links": "Drag on the page to add a link, or press a link to change it."
+    },
+    "titles": {
+      "objects": "Objects",
+      "links": "Links"
+    }
+  },
+  "objects": {
+    "hint": "Press an object on the page to select it.",
+    "selectedHint": "Drag to move it, drag a corner to resize it (Shift: freely). Arrow keys move it a point, Shift ten.",
+    "kind": {
+      "image": "Image",
+      "path": "Shape",
+      "text": "Text block",
+      "form": "Group",
+      "shading": "Shading"
+    },
+    "position": "Position",
+    "size": "Size",
+    "pointsPair": "{{a}} × {{b}} pt",
+    "positionPair": "{{a}}, {{b}} pt",
+    "pixels": "Pixels",
+    "pixelsValue": "{{width}} × {{height}}",
+    "refusal": {
+      "textState": "This text changes its own position mid-way and cannot be moved."
+    },
+    "cropHint": "Drag the corners to choose what to keep. Enter applies, Escape cancels.",
+    "arrange": "Order",
+    "change": "Change"
+  },
+  "links": {
+    "hint": "Drag on the page to draw a link, or select text and choose Link. Press a link to change where it goes.",
+    "newHeading": "New link",
+    "editHeading": "Link",
+    "kind": "Goes to",
+    "kinds": {
+      "url": "Web or e-mail address",
+      "page": "Page",
+      "named": "Named destination"
+    },
+    "url": "Address",
+    "page": "Page (1 to {{last}})",
+    "named": "Destination",
+    "chooseNamed": "Choose…",
+    "add": "Add link",
+    "save": "Save",
+    "invalid": {
+      "url": "Enter a web or e-mail address without spaces.",
+      "page": "Enter a page number in the document.",
+      "named": "Choose a destination."
+    },
+    "toPage": "Page {{page}}",
+    "toNamedNowhere": "Destination not found:",
+    "actions": {
+      "javascript": "Runs a script (not followed)",
+      "launch": "Opens a file (not followed)",
+      "remote": "Goes to another document (not followed)",
+      "named": "A viewer command (not followed)",
+      "destination": "A destination that cannot be read",
+      "none": "Goes nowhere",
+      "unknown": "An action this app does not follow"
+    },
+    "otherReplace": "Choose where it should go instead.",
+    "open": "Open",
+    "notOpened": "Mirsam does not open this link.",
+    "tipLabel": "Link"
   }
 }

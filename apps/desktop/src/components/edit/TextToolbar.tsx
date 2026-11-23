@@ -1,11 +1,14 @@
 import {
+  Link,
   Pilcrow,
   PilcrowLeft,
   PilcrowRight,
+  Shapes,
   TextAlignCenter,
   TextAlignEnd,
   TextAlignJustify,
   TextAlignStart,
+  Type,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -23,10 +26,11 @@ import {
 } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import type { TextStyle } from "../../backend";
-import { runCommand } from "../../commands/registry";
+import { type CommandId, runCommand } from "../../commands/registry";
 import { formatNumber } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
 import { DOCUMENT_COLORS } from "../../state/colors";
+import type { EditMode } from "../../state/objects";
 import selectStyles from "../ui/CommandSelect.module.css";
 import { Tooltip } from "../ui/Tooltip";
 import styles from "./TextToolbar.module.css";
@@ -51,24 +55,65 @@ const DIRECTIONS: { id: TextStyle["direction"]; icon: ReactNode }[] = [
   { id: "ltr", icon: <PilcrowRight /> },
 ];
 
+/** The Edit tool's modes (ADR 0051): text, page objects, links. */
+const MODES: { id: EditMode; command: CommandId; icon: ReactNode }[] = [
+  { id: "text", command: "edit.textMode", icon: <Type /> },
+  { id: "objects", command: "edit.objectsMode", icon: <Shapes /> },
+  { id: "links", command: "edit.linksMode", icon: <Link /> },
+];
+
 const setStyle = (textStyle: Partial<TextStyle>) => void runCommand("text.setStyle", { textStyle });
 const same = (a: readonly number[], b: readonly number[]) =>
   a.every((value, i) => Math.abs(value - (b[i] ?? 0)) < 1e-6);
 
 /**
- * The Edit tool's strip (ADR 0021): how new page text is set. A press on the
- * page places it; the font, size, colour, alignment and direction here apply
- * to text added next.
+ * The Edit tool's strip (ADR 0021, ADR 0051): what a press on the page does —
+ * text, page objects, or links — and, for text, how new page text is set:
+ * the font, size, colour, alignment and direction apply to text added next.
  */
 export function TextToolbar() {
   const { t } = useTranslation();
   const locale = useAppStore((state) => state.locale);
   const style = useAppStore((state) => state.textStyle);
+  const editMode = useAppStore((state) => state.editMode);
   const color = TEXT_COLORS.find((choice) => same(choice.rgb, style.color))?.id ?? "black";
   const single = (keys: Set<Key>) => [...keys][0];
 
+  const modes = (
+    <ToggleButtonGroup
+      className={styles.group}
+      selectionMode="single"
+      disallowEmptySelection
+      aria-label={t("editMode.label")}
+      selectedKeys={[editMode]}
+      onSelectionChange={(keys: Set<Key>) => {
+        const next = MODES.find((mode) => mode.id === single(keys));
+        if (next) void runCommand(next.command);
+      }}
+      data-testid="edit-modes"
+    >
+      {MODES.map(({ id, command, icon }) => (
+        <ToggleButton key={id} id={id} className={`${styles.tool} ${styles.word}`}>
+          <span className={styles.glyph} aria-hidden="true">
+            {icon}
+          </span>
+          {t(`commands.${command}`)}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
+  if (editMode !== "text") {
+    return (
+      <div className={styles.bar} data-testid="text-toolbar">
+        {modes}
+        <p className={styles.hint}>{t(`editMode.hint.${editMode}`)}</p>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.bar} data-testid="text-toolbar">
+      {modes}
       <ToggleButtonGroup
         className={styles.group}
         selectionMode="single"

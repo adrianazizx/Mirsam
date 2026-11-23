@@ -462,6 +462,82 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, outcome))
     }
 
+    /// The objects of a page (ADR 0051): images, paths, text blocks and
+    /// forms, in drawing order, with their bounds on the displayed page.
+    pub fn page_objects(&self, page: usize) -> Result<Vec<crate::objects::PageObject>> {
+        let view = self.view_transform(page)?;
+        let size = self.page_size(page)?;
+        crate::objects::page_objects(
+            &self.bytes,
+            self.password.as_deref(),
+            &view,
+            page,
+            f64::from(size.width) * f64::from(size.height),
+        )
+    }
+
+    /// This document with one object of a page changed (ADR 0051), the
+    /// update that does it, and the object's index afterwards (none once removed).
+    pub fn with_object_edit(
+        &self,
+        change: &crate::objects::ObjectChange,
+    ) -> Result<(Document, Vec<u8>, Option<usize>)> {
+        let view = self.view_transform(change.page)?;
+        let size = self.page_size(change.page)?;
+        let area = f64::from(size.width) * f64::from(size.height);
+        let (update, kept) =
+            crate::objects::object_update(&self.bytes, self.password.as_deref(), &view, area, change)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        let index = match kept {
+            crate::objects::Kept::Group(group) => {
+                crate::objects::object_with_group(&bytes, self.password.as_deref(), change.page, area, group)?
+            }
+            crate::objects::Kept::Index(index) => Some(index),
+            crate::objects::Kept::Gone => None,
+        };
+        Ok((self.revision(Arc::from(bytes))?, update, index))
+    }
+
+    /// This document with a new image on a page (ADR 0051), the update, and
+    /// the image's index among the page's objects.
+    pub fn with_new_image(
+        &self,
+        image: &crate::objects::NewImage,
+    ) -> Result<(Document, Vec<u8>, Option<usize>)> {
+        let view = self.view_transform(image.page)?;
+        let size = self.page_size(image.page)?;
+        let area = f64::from(size.width) * f64::from(size.height);
+        let (update, group) =
+            crate::objects::insert_image_update(&self.bytes, self.password.as_deref(), &view, area, image)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        let index =
+            crate::objects::object_with_group(&bytes, self.password.as_deref(), image.page, area, group)?;
+        Ok((self.revision(Arc::from(bytes))?, update, index))
+    }
+
+    /// A page's links and where they go (ADR 0051).
+    pub fn page_links(&self, page: usize) -> Result<Vec<crate::links::LinkInfo>> {
+        let view = self.view_transform(page)?;
+        crate::links::page_links(&self.bytes, self.password.as_deref(), &view, page)
+    }
+
+    /// The document's named destinations, for links to them.
+    pub fn named_destinations(&self) -> Result<Vec<crate::links::NamedDestination>> {
+        crate::links::named_destinations(&self.bytes, self.password.as_deref())
+    }
+
+    /// This document with a link added, pointed elsewhere, moved, or
+    /// removed (ADR 0051), and the update that does it.
+    pub fn with_link_edit(&self, edit: &crate::links::LinkEdit) -> Result<(Document, Vec<u8>)> {
+        let view_of = |page: usize| self.view_transform(page);
+        let update = crate::links::link_update(&self.bytes, self.password.as_deref(), &view_of, edit)?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
     /// The page's annotations of the kinds this app writes (markup, ink,
     /// notes, text boxes), and the map from page space to the page as
     /// displayed. Replies and review states are left out: they belong to

@@ -18,6 +18,7 @@ import {
 import { registerViewer, unregisterViewer } from "../../viewer/registry";
 import { NoteEditor } from "../comments/NoteEditor";
 import styles from "./DocumentView.module.css";
+import { LinkTip } from "./LinkTip";
 import { SelectionToolbar } from "./SelectionToolbar";
 
 /** Reads the viewer's spacing tokens (tokens.css); 0 where CSS is unavailable (tests). */
@@ -55,6 +56,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const viewerRef = useRef<ViewerController | null>(null);
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
   const [noteHost, setNoteHost] = useState<HTMLElement | null>(null);
+  const [linkTipHost, setLinkTipHost] = useState<HTMLElement | null>(null);
   // The view settings only: page changes (reported by the viewer itself) do not re-render this.
   const { name, zoomMode, zoom, viewMode, pageOrder, hasSelection, selectedKind } = useAppStore(
     useShallow((state) => {
@@ -89,6 +91,18 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   const redactMarks = useAppStore(
     (state) => state.documents.find((open) => open.id === id)?.redaction.marks ?? null,
   );
+  // The Edit tool's object and link modes (ADR 0051).
+  const toolMode = useAppStore((state) => `${state.activeTool}:${state.editMode}`);
+  const selectedObject = useAppStore((state) =>
+    state.selectedObject?.documentId === id ? state.selectedObject : null,
+  );
+  const objectCrop = useAppStore((state) =>
+    state.selectedObject?.documentId === id ? state.objectCrop : null,
+  );
+  const linkDraft = useAppStore((state) =>
+    state.linkDraft?.documentId === id ? state.linkDraft : null,
+  );
+  const showsLinkTip = useAppStore((state) => state.linkTip?.documentId === id);
   // The form designer's fields and suggestions (ADR 0047), only while it is open on this document.
   const formDesign = useAppStore((state) =>
     state.activeTool === "forms" &&
@@ -133,6 +147,14 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
         gesture: styles.gesture ?? "",
         fillMoving: styles.fillMoving ?? "",
         fillHandle: styles.fillHandle ?? "",
+        objectHover: styles.objectHover ?? "",
+        objectSelected: styles.objectSelected ?? "",
+        objectCrop: styles.objectCrop ?? "",
+        linkArea: styles.linkArea ?? "",
+        linkSelected: styles.linkSelected ?? "",
+        linkHover: styles.linkHover ?? "",
+        linkDraft: styles.linkDraft ?? "",
+        linkTip: styles.linkTip ?? "",
         fieldBox: styles.fieldBox ?? "",
         fieldBoxSelected: styles.fieldBoxSelected ?? "",
         fieldTab: styles.fieldTab ?? "",
@@ -150,12 +172,13 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       isMac,
       pageLabel: (page) => pageLabel.current(page),
       mode: (): ViewerMode => {
-        const { activeTool, commentTool, fillTool, formsMode, designTool } = useAppStore.getState();
+        const { activeTool, commentTool, fillTool, editMode, formsMode, designTool } =
+          useAppStore.getState();
         if (activeTool === "forms" && formsMode === "design") return designTool ? "draw" : "design";
         if (activeTool === "select" || activeTool === "forms") return "select";
         if (activeTool === "sign") return fillTool ? "place" : "select";
         if (activeTool === "protect") return "redact";
-        if (activeTool === "edit") return "text";
+        if (activeTool === "edit") return editMode === "text" ? "text" : editMode;
         return activeTool === "comment" ? commentTool : "none";
       },
       callbacks: {
@@ -185,12 +208,22 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
           useAppStore
             .getState()
             .setNotice({ key: `textNotEditable.${block.reason ?? "unsupported"}` }),
+        onObjectSelect: (page, object) => void runCommand("object.select", { page, object }),
+        onObjectReshape: (page, object, rect) =>
+          void runCommand("object.reshape", { page, object, rect }),
+        onCropChange: (rect) => void runCommand("object.setCrop", { rect }),
+        onLinkSelect: (page, link) => void runCommand("link.select", { page, link }),
+        onLinkDraw: (page, rect) => void runCommand("link.draw", { page, rect }),
+        onLinkReshape: (page, link, rect) => void runCommand("link.reshape", { page, link, rect }),
+        onLinkHover: (page, link) => void runCommand("link.hover", { page, link }),
+        onLinkPress: (page, link) => void runCommand("link.follow", { page, link }),
       },
     });
     viewerRef.current = viewer;
     registerViewer(id, viewer);
     setToolbarHost(viewer.selectionToolbarHost);
     setNoteHost(viewer.noteEditorHost);
+    setLinkTipHost(viewer.linkTipHost);
 
     // Remember where the reader is, a moment after they stop moving.
     let timer: number | null = null;
@@ -237,6 +270,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       viewerRef.current = null;
       setToolbarHost(null);
       setNoteHost(null);
+      setLinkTipHost(null);
     };
   }, [id, revision]);
 
@@ -272,6 +306,37 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
   useEffect(() => {
     viewerRef.current?.setRedactionMarks(redactMarks ?? []);
   }, [redactMarks, revision]);
+
+  // The tool or the Edit tool's mode changed: the object and link marks are painted again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tool changes
+  useEffect(() => {
+    viewerRef.current?.repaintOverlays();
+  }, [toolMode]);
+
+  // The store's object selection, crop, and link being edited, shown by the viewer.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows them again
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    if (selectedObject) viewer.selectObject(selectedObject.page, selectedObject.object.index);
+    else viewer.selectObject(0, null);
+  }, [selectedObject, revision]);
+
+  useEffect(() => {
+    viewerRef.current?.setObjectCrop(objectCrop);
+  }, [objectCrop]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows them again
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    viewer.selectLink(linkDraft?.page ?? 0, linkDraft?.index ?? null);
+    viewer.setLinkDraft(
+      linkDraft && linkDraft.index === null
+        ? { page: linkDraft.page, rects: linkDraft.rects }
+        : null,
+    );
+  }, [linkDraft, revision]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new viewer shows them again
   useEffect(() => {
@@ -331,6 +396,7 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
       (pendingNote || (EDITED_IN_PLACE as readonly string[]).includes(selectedKind ?? ""))
         ? createPortal(<NoteEditor documentId={id} />, noteHost)
         : null}
+      {linkTipHost && showsLinkTip ? createPortal(<LinkTip documentId={id} />, linkTipHost) : null}
     </section>
   );
 }

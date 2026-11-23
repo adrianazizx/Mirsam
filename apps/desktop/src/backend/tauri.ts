@@ -15,6 +15,9 @@ import {
   type FormInfo,
   type InsertOutcome,
   isBackendError,
+  type LinkInfo,
+  type NamedDestination,
+  type ObjectEditOutcome,
   type OcrApplied,
   type OcrJob,
   type OcrModelEvent,
@@ -23,6 +26,7 @@ import {
   type OpenOutcome,
   type OutlineItem,
   type PageAnnotation,
+  type PageObject,
   type PageSize,
   type ParagraphBlock,
   type RecentFile,
@@ -274,6 +278,18 @@ export const tauriBackend: Backend = {
   windowLabels: async () => ((await hasDevtools()) ? invoke<string[]>("window_labels") : null),
   addText: (documentId, page, x, y, width, text, style) =>
     invoke<EditOutcome>("add_text", { documentId, text: { page, x, y, width, text, ...style } }),
+  pageObjects: (documentId, page) => invoke<PageObject[]>("page_objects", { documentId, page }),
+  editObject: (documentId, page, object, edit) =>
+    invoke<ObjectEditOutcome>("edit_object", { documentId, page, object, edit }),
+  replaceImage: (documentId, page, object) =>
+    invoke<ObjectEditOutcome | null>("replace_image", { documentId, page, object }),
+  insertImage: (documentId, page, at) =>
+    invoke<ObjectEditOutcome | null>("insert_image", { documentId, page, at }),
+  pageLinks: (documentId, page) => invoke<LinkInfo[]>("page_links", { documentId, page }),
+  namedDestinations: (documentId) =>
+    invoke<NamedDestination[]>("named_destinations", { documentId }),
+  editLink: (documentId, edit) => invoke<EditOutcome>("edit_link", { documentId, edit }),
+  openLink: (url) => invoke<void>("open_link", { url }),
   pageTextBlocks: (documentId, page) =>
     invoke<ParagraphBlock[]>("page_text_blocks", { documentId, page }),
   editTextBlock: (documentId, edit) =>
