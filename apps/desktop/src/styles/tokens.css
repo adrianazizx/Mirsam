@@ -71,6 +71,9 @@
   --size-palette-row: calc(36px * var(--ui-scale));
   --size-unlock-panel: calc(400px * var(--ui-scale));
   --size-settings: calc(640px * var(--ui-scale)); /* the settings dialog's width */
+  --size-onboarding: calc(560px * var(--ui-scale)); /* the first-run guide's width */
+  --size-onboarding-tool: calc(150px * var(--ui-scale)); /* a tool in the guide's list */
+  --size-tool-hint: calc(360px * var(--ui-scale)); /* a tool's one-time hint */
   --size-crash-report: calc(
     240px *
     var(--ui-scale)
@@ -119,6 +122,7 @@
   /* Layers */
   --layer-page-overlay: 1; /* highlights above a page's tiles */
   --layer-selection-toolbar: 10;
+  --layer-hint: 20; /* a tool's one-time hint, over the page area */
   --layer-overlay: 100;
   --layer-tooltip: 200;
 

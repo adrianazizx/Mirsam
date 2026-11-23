@@ -22,6 +22,8 @@
 
 .main {
   grid-area: main;
+  /* A tool's one-time hint floats over its corner (ToolHint). */
+  position: relative;
   display: flex;
   flex-direction: column;
   min-inline-size: 0;

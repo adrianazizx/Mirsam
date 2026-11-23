@@ -526,6 +526,10 @@ const SETTINGS: &[&str] = &[
     crate::signing::TIMESTAMP_SETTING,
     // Crash reports (ADR 0061): "ask" (the default) or "off".
     crate::crash::SETTING,
+    // Onboarding (M7): the first-run guide, "done" or "skipped" (absent: never
+    // seen), and the tools whose one-time hint was shown ("ocr,sign,edit").
+    "onboarding.guide",
+    "onboarding.hints",
 ];
 
 /// Opens `path` in a tab of `window`, or switches to it if that window has it
@@ -593,6 +597,18 @@ mod tests {
         let state = AppState::new(std::time::Instant::now(), None);
         state.set_store(safha_core::store::Store::in_memory().expect("store"));
         state
+    }
+
+    #[test]
+    fn the_onboarding_state_may_be_stored() {
+        // apps/desktop/src/state/onboarding.ts: GUIDE_SETTING, HINTS_SETTING.
+        for key in ["onboarding.guide", "onboarding.hints"] {
+            assert!(SETTINGS.contains(&key), "{key} is not on the settings allowlist");
+        }
+        let state = state_with_store();
+        let store = state.store().expect("store");
+        store.set_setting("onboarding.guide", "done").expect("stored");
+        assert_eq!(store.setting("onboarding.guide").expect("read").as_deref(), Some("done"));
     }
 
     #[test]

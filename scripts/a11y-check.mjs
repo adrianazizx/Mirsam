@@ -6,7 +6,7 @@
 //
 // The UI runs on Vite's dev server with the mock backend (as `pnpm dev`), and
 // the script drives it from inside the page through the app's own store and
-// command registry. Screens, per combination: the empty window; the viewer
+// command registry. Screens, per combination: the first-run guide's steps; the empty window; the viewer
 // with a document (and its sepia and night reading themes); the left panels;
 // the search panel and replace preview; the tools; the OCR tool's states (a
 // job, the review list, review mode, an area, layer checks, the model prompt);
@@ -55,7 +55,10 @@ const PANELS = [
   "view.showComments",
   "view.showSignatures",
 ];
+/** The first-run guide's steps (src/state/onboarding.ts, GUIDE_STEPS). */
+const GUIDE_STEPS = 4;
 // The OCR tool is checked with its jobs, review mode and areas (checkOcr, below).
+// Edit and Sign show their one-time hint.
 const TOOLS = ["edit", "comment", "pages", "forms", "sign", "protect"];
 const DIALOGS = [
   "app.settings",
@@ -692,6 +695,14 @@ async function checkCombo(cdp, combo, { url, axeSource, uiScale }) {
     ],
   });
   await step("combo", { locale, theme });
+  // A fresh start opens the first-run guide (M7 onboarding): each step, then skip it.
+  const guideOpen = () => Boolean(document.querySelector('[data-testid="onboarding-guide"]'));
+  if (!(await call(cdp, guideOpen))) throw new Error("the first-run guide did not open");
+  for (let index = 0; index < GUIDE_STEPS; index += 1) {
+    if (index > 0) await step("command", { id: "onboarding.next" });
+    await check(`first-run guide, step ${index + 1}`);
+  }
+  await step("command", { id: "onboarding.skip" });
   await check("empty");
 
   await step("open");
@@ -745,6 +756,12 @@ async function checkCombo(cdp, combo, { url, axeSource, uiScale }) {
     await check("interface size 2: tool ocr", { clipped: true });
     await step("ocr", { action: "reset" });
     await step("tool", { tool: "select" });
+    // The first-run guide, opened again from Help, at its largest.
+    for (let index = 0; index < GUIDE_STEPS; index += 1) {
+      await step("command", { id: index === 0 ? "help.guide" : "onboarding.next" });
+      await check(`interface size 2: first-run guide, step ${index + 1}`, { clipped: true });
+    }
+    await step("command", { id: "onboarding.skip" });
     const outcome = await step("command", { id: "app.settings" });
     if (outcome.skipped) skip("interface size 2: dialog app.settings", outcome.skipped);
     else await check("interface size 2: dialog app.settings", { clipped: true });

@@ -16,7 +16,7 @@ import { Tooltip } from "../ui/Tooltip";
 import styles from "./ToolRail.module.css";
 
 // Fixed order and fixed icons: tools never move between releases (docs/SPEC.md section 1).
-const ICONS: Record<ToolId, LucideIcon> = {
+export const TOOL_ICONS: Record<ToolId, LucideIcon> = {
   select: MousePointer2,
   edit: PenLine,
   comment: MessageSquare,
@@ -52,7 +52,7 @@ export function ToolRail() {
         }}
       >
         {TOOLS.map((tool) => {
-          const Icon = ICONS[tool];
+          const Icon = TOOL_ICONS[tool];
           return (
             <Tooltip key={tool} label={t(`tools.${tool}`)} placement="end">
               <ToggleButton id={tool} aria-label={t(`tools.${tool}`)} className={styles.tool}>

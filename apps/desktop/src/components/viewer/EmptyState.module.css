@@ -129,3 +129,77 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
 }
+
+/* First steps (M7 onboarding): a row of small cards that wraps. */
+.first {
+  inline-size: min(var(--size-settings), 100%);
+  margin-block-start: var(--space-6);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--size-onboarding-tool), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.action {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: default;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+
+.action[data-hovered] {
+  background: var(--color-bg-hover);
+}
+
+.action[data-pressed] {
+  background: var(--color-bg-pressed);
+}
+
+.action[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}
+
+.actionIcon {
+  flex: none;
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+  color: var(--color-accent);
+}
+
+.actionText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.actionLabel {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.actionAbout {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.kbd {
+  font-family: inherit;
+  white-space: nowrap;
+}
