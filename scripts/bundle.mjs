@@ -319,7 +319,9 @@ function checkRoot(root, libraryPath, resources, bin = null, { sameBuild = false
   const problem = [];
   if (sha256(found) !== expectedHash) {
     const id = sameBuild ? elfBuildId(found) : null;
+    const signed = spec.os === "macos" ? resignedSameBuild(found) : null;
     if (id && id === elfBuildId(library)) result.note = `rewritten by the bundler; same build (build ID ${id})`;
+    else if (signed) result.note = `re-signed (${signed.signer}); same build (UUID ${signed.uuids.join(", ")})`;
     else problem.push("PDFium differs from the pinned build");
   }
   if (spec.archs) {
@@ -376,6 +378,28 @@ function elfBuildId(file) {
     }
   }
   return null;
+}
+
+/**
+ * A Developer ID build signs PDFium again (release.yml), which rewrites its
+ * signature and so its bytes. The copy passes as the pinned build when its
+ * Mach-O UUIDs (one per architecture, set by the linker, untouched by codesign)
+ * are the pinned library's and its new signature verifies, so nothing but the
+ * signature changed. Returns the UUIDs and the signer, or null.
+ */
+function resignedSameBuild(file) {
+  if (!have("dwarfdump") || !have("codesign")) return null;
+  const uuids = (f) =>
+    [...run("dwarfdump", ["--uuid", f], { capture: true }).matchAll(/^UUID: (\S+) \((\S+)\)/gm)]
+      .map((m) => `${m[1]} (${m[2]})`)
+      .sort();
+  const found = uuids(file);
+  if (found.length === 0 || found.join() !== uuids(library).join()) return null;
+  const verify = spawnSync("codesign", ["--verify", "--strict", file], { stdio: "ignore" });
+  if (verify.status !== 0) return null;
+  const details = spawnSync("codesign", ["-dv", "--verbose=2", file], { encoding: "utf8" }).stderr ?? "";
+  const signer = details.match(/^Authority=(.+)$/m)?.[1] ?? (/Signature=adhoc/.test(details) ? "ad hoc" : "unknown");
+  return { uuids: found, signer };
 }
 
 function archs(file) {
