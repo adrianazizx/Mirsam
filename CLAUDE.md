@@ -33,6 +33,7 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | End-to-end shell check | `cargo build -p mirsam-desktop --features devtools && scripts/selftest.sh <pdf> <out> [en\|ar] [light\|dark]` then `node scripts/check-selftest.mjs <out> <ltr\|rtl>` |
 | Installers (PDFium inside, checked) | `node scripts/bundle.mjs [--target <triple>] [--features devtools]` (never bare `tauri build`; ADR 0060) |
 | Crash reports end to end (ADR 0061) | `scripts/crash-selftest.sh <out> [panic\|abort\|thread-panic]` (debug devtools build, or `MIRSAM_SELFTEST_APP` + `MIRSAM_SELFTEST_UI=bundled`) |
+| Release (download links, signing; docs/RELEASING.md) | `node scripts/set-version.mjs <x.y.z>` → merge → `git tag v<x.y.z> origin/main && git push origin v<x.y.z>` → publish the draft |
 | Self-test an installer | `scripts/bundle-selftest.sh <dmg\|deb\|rpm\|AppImage\|setup.exe\|msi> <out>` (bundle built with `--features devtools`) |
 | Fuzz the open/parse path | `node fuzz/seed.mjs && cp Cargo.lock fuzz/ && cd fuzz && cargo fuzz run <open\|file\|objects\|content\|cmap>` (fuzz/README.md) |
 | Accessibility in Chrome (axe, en/ar × light/dark, contrast) | `node scripts/a11y-check.mjs [--out <dir>] [--only en-light,ar-dark]` (jsdom checks run in `pnpm test`, `src/a11y/`) |

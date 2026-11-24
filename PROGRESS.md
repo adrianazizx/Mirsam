@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-23 (code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -109,11 +109,17 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     the frame numbers rest on that one run: re-run it a few times with the window in front
     (`node scripts/bundle.mjs --features devtools --bundles app && scripts/scroll-benchmark.sh <out> release`).
 
-17. **Code signing and auto-update (M7) need your certificates and accounts:** an Apple Developer ID
-    (signing and notarizing the `.app`/`.dmg`), a Windows code-signing certificate (the exe, the
-    installers, and `pdfium.dll`, which ships as a resource and needs its own signing step), and an
-    update server or GitHub Releases plus Tauri's updater key. Installers build and pass their checks
-    unsigned (ADR 0060); macOS Gatekeeper and Windows SmartScreen will warn until they are signed.
+17. **Code signing and auto-update (M7) need your certificates and accounts:**
+    - **macOS: ready for your secrets (2026-11-24).** You have an Apple Developer account. The
+      release workflow signs, notarizes and staples the app and the disk image once five repository
+      secrets exist: `docs/RELEASING.md` → "Setting up Apple signing" (a Developer ID Application
+      certificate as `.p12`, and an App Store Connect API key). Then run Actions → Release → Run
+      workflow once as a dry run. Not yet run with a real certificate: this Mac has no Developer ID
+      identity, so the signing path is untested until that dry run.
+    - **Windows:** a code-signing certificate (the exe, the installers, and `pdfium.dll`, which ships
+      as a resource and needs its own signing step). Until then SmartScreen warns; the release notes
+      say how to get past it.
+    - **Auto-update:** Tauri's updater key; GitHub Releases now exist to serve updates from.
 18. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
     spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
     shipped, and not in the licence report. **Approved (2026-11-23)** for development tools that
@@ -946,7 +952,12 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       light/dark, reduced motion; axe in jsdom and Chrome; cold start unchanged (session log)
 - [x] Installers with PDFium for every platform (ADR 0060): `node scripts/bundle.mjs`; each installer
       opened and checked, the installed app self-tested in English and Arabic (`bundle.yml`)
-- [ ] Code signing and auto-update (owner item 17: certificates)
+- [~] Releases and signing (ADR 0072, `docs/RELEASING.md`): a `v*` tag on `main` drafts a GitHub
+      Release with the universal macOS DMG, Windows setup and MSI, Linux deb/rpm/AppImage under
+      version-free names (`releases/latest/download/Mirsam-macOS.dmg`, …) and checksums;
+      `scripts/set-version.mjs` keeps the version in step. macOS signed and notarized in CI when the
+      Apple secrets are set. **Open:** the secrets and a first dry run (owner item 17); Windows
+      signing; auto-update
 - [x] Fuzzing of the open/parse path (spec §11 testing): `fuzz/`, weekly in `fuzz.yml`
 - [~] Opt-in crash reporting (ADR 0061): Rust panics, native crashes (macOS and Windows, from the
       system's crash log) and UI errors become redacted reports kept on the computer, offered once
@@ -959,6 +970,32 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### M7 releases — 2026-11-24 (branch `pomidor/download-links-code-d0ea00`; ADR 0072)
+
+How people download Mirsam. Nothing was released; no secrets were set.
+
+- **`.github/workflows/release.yml`:** a tag `vX.Y.Z` on `main` (checked against the app's version
+  and `main`) builds the universal macOS DMG, the Windows setup program and MSI, and the Linux
+  deb, rpm and AppImage with `scripts/bundle.mjs` (no devtools), renames them without the version,
+  writes `SHA256SUMS.txt`, and drafts a release with notes from `.github/release-notes.md` (English
+  and Arabic; the Mac paragraph depends on whether the DMG was signed). "Run workflow", and pull
+  requests touching the release files, build without publishing.
+- **macOS signing:** the run's own keychain; `tauri build` signs and notarizes the app; the
+  workflow checks the Developer ID on the executables and PDFium, the hardened runtime, the
+  staple and `spctl`, then signs, notarizes (`notarytool`, status checked) and staples the DMG and
+  checks the app inside it. Certificate without notarization credentials fails the run.
+- **`scripts/bundle.mjs`:** a macOS PDFium whose bytes differ passes when its Mach-O UUIDs equal the
+  pinned library's and `codesign --verify --strict` accepts it (signing rewrites the bytes, never
+  the UUIDs). Checked on a fake bundle: the pinned copy and a re-signed copy pass (the latter noted
+  "re-signed (ad hoc); same build"), a re-signed copy with one byte changed fails.
+- **`scripts/set-version.mjs <version> | --check`:** Tauri config, `package.json`, `Cargo.toml` and
+  the workspace crates in `Cargo.lock` (`cargo update --workspace --offline`). Checked: a no-op
+  run leaves every file byte-identical; 0.1.0 updates all four; `-beta` and `-70000` refused
+  (Windows Installer takes numeric pre-releases only); a mismatch is listed.
+- **Not run:** the workflow itself (GitHub runs it on the pull request); the `run:` scripts pass
+  `bash -n` and the YAML parses, but there is no actionlint here. Biome does not cover `scripts/`.
+  Not run with a real Developer ID (none on this Mac).
 
 ### Identifier rename safha → mirsam — 2026-11-23 (branch `pomidor/rename-safha-to-mirsam-5a225d`)
 
