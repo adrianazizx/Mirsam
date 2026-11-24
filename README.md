@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/mirsam-logo-dark.svg">
+    <img src="docs/brand/mirsam-logo.svg" alt="Mirsam" width="160">
+  </picture>
+</p>
+
 # Mirsam (مرسام) — PDF viewer & editor
 
 A desktop PDF viewer and editor aiming at Acrobat-class capability with three differences: it is
@@ -32,6 +39,8 @@ What is still open is in [PROGRESS.md](PROGRESS.md).
 
 Mirsam was called Safha (صفحة) while it had a working name. Code identifiers were renamed to
 `mirsam` on 2026-11-23; older ADRs and session notes still say `safha`.
+
+The logo, the app icon and the pen-nib mark are in [docs/brand/](docs/brand/README.md).
 
 ## Download
 
