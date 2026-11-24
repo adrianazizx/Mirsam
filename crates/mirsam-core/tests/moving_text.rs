@@ -227,7 +227,11 @@ fn a_paragraph_of_the_pages_own_text_moves_and_the_rest_stays() {
     // CoreText's paragraphs can be edited; Chrome's cannot (their fonts are
     // not reused), and move all the same: by their boxes, their bytes kept.
     for name in ["coretext/en-paragraphs", "coretext/ar-plain", "chrome/en-paragraphs", "chrome/ar-plain"] {
-        let (bytes, _) = fixture(name);
+        // CoreText's pages are made on macOS only; elsewhere the corpus says so and they are not
+        // checked there (Chrome's are made everywhere and always are).
+        let manifest = manifest();
+        let Some(fixture) = manifest.fixture_or_unavailable(name) else { continue };
+        let bytes = std::fs::read(fixture.file()).expect("fixture readable");
         let document = engine().open_bytes(bytes, None).expect("opens");
         let page_text = normalize(&document.page_text(0).expect("text").text());
         let blocks = document.text_blocks(0).expect("blocks");
