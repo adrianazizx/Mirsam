@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -874,6 +874,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
     always; one step where the clip and `gs` allow), by byte-range edits as incremental updates —
     z-order and clip kept, nothing regenerated; text taken out of its text object in runs, marked
     content (`/ActualText`) kept whole; one undo step each.
+  - **Page text in the Text mode** (2026-11-24, ADR 0051's amendment): text added with the Edit tool
+    and the page's own paragraphs are dragged by the paragraph and nudged with the arrow keys, the
+    same wrapper underneath; a paragraph moved past its clip is cut there.
   - **Images:** inserted (PNG/JPEG through the shell's dialog) and replaced (fitted in the old box).
   - **Links:** to web/mail addresses, pages, and named destinations; added over a drawn rectangle or
     selected text, pointed elsewhere, moved, resized, deleted; targets shown on hover; page links
@@ -988,6 +991,25 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### Moving page text — 2026-11-24 (branch `pomidor/move-page-text`; ADR 0051's amendment)
+
+The owner, after PR #42: "i cant move this text when i add it" — text added with the Edit tool
+(page content, ADR 0021), not a text box. It was movable only from Objects mode.
+
+- **Engine:** `objects::text_region_update` / `Document::with_text_moved` move the visible text
+  pieces inside a paragraph's box through Objects mode's wrapper: bytes and fonts kept, one
+  incremental update, one undo step, still editable in place where it went. Shell:
+  `move_page_text`, gated by `modify`.
+- **UI:** in the Text mode a press on a paragraph that travels drags it (kept on its page); one
+  that stays opens the editor as before. The moved paragraph stays selected and the arrow keys
+  (`fill.move*`) move it; Escape in the paragraph editor selects it to move.
+- **Fixed:** Escape in the paragraph editor also reached the window's shortcuts (its field already
+  removed) and deselected what it had just selected; the editor now keeps its keys.
+- **Limit:** a paragraph of the page's own text keeps its clip; moved past it (Chrome's content
+  area edge) it is cut. Text added with the Edit tool has no such clip.
+- **Tests:** `tests/moving_text.rs` (6), viewer (2) and command (4 × English/Arabic) tests; the
+  shell self-test drags the added paragraph; checked by hand in the real app in Arabic.
 
 ### Moving what was placed — 2026-11-24 (branch `pomidor/exciting-wing-769f6a`; ADR 0045's amendment)
 

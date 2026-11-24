@@ -240,9 +240,15 @@ describe.each(["en", "ar"] as const)("moving placed items in %s", (locale) => {
     );
     const field = screen.getByTestId("block-field");
     const edit = vi.spyOn(backend, "editTextBlock");
+    // The window's shortcuts never see the editor's Escape: the field is gone by then, and
+    // they would take it for a second one that deselects the paragraph again.
+    const windowKeys = vi.fn();
+    window.addEventListener("keydown", windowKeys);
     await act(async () => {
       fireEvent.keyDown(field, { key: "Escape" });
     });
+    window.removeEventListener("keydown", windowKeys);
+    expect(windowKeys).not.toHaveBeenCalled();
     expect(useAppStore.getState().pendingNote).toBeNull();
     expect(edit).not.toHaveBeenCalled();
     expect(active()?.selectedBlock).toEqual({

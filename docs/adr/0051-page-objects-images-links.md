@@ -216,3 +216,73 @@ The Edit tool has three modes in its strip: **Text** (ADR 0021/0023), **Objects*
   1–8 ms (6 objects on Chrome's Arabic page, 57 on the bilingual table: 40 paths, 17 blocks);
   moving or reordering a block takes 0.3–3 ms, 9–10 ms on the 1,000-page file (its bytes are
   copied to reopen, ADR 0014).
+
+## Amendment (2026-11-24): moving page text from the Edit tool's Text mode
+
+After PR #42 (ADR 0045's amendment) made placed items movable, the owner reported: "i cant move
+this text when i add it". The text was page text written with the Edit tool (ADR 0021), shown in
+the Text mode's paragraph editor. It could only be moved by switching to Objects mode, where it is
+one of the page's text blocks, and only as Objects groups it (with a title beside it, for example).
+Now the Text mode moves it where the user works: by the paragraph the user sees.
+
+### Engine: `objects::text_region_update` (`Document::with_text_moved`)
+
+- **What moves:** every visible text-showing piece whose box has its centre inside the paragraph's
+  box (the Text mode's `TextBlock`), and nothing else. A paragraph is cut out of whatever block or
+  text object it shares by where it is, not by how `group` joined pieces. Invisible text (OCR
+  layers) stays.
+- **How:** the pieces are wrapped exactly as a moved text block is (§2): runs taken out of their
+  text object, `/MirsamObj` wrapper with a `cm`, marked content kept balanced. The text keeps its
+  bytes, fonts, clip and z-order. One incremental update, one undo step (`Change::Content`); no
+  font or resource is written. Moved again, its wrappers' `cm` is rewritten (no second wrapper).
+- **Text stays text:** the moved paragraph is read back where it went, and the in-place editor
+  (ADR 0023) still finds and edits it there — tested for text this app added.
+- **Nothing there** (a box with no visible text) is refused (`invalid_edit`).
+- **Shell:** `move_page_text(document, page, rect, dx, dy)`; the `modify` permission gates it
+  (ADR 0043), as editing page text.
+
+### UI: the Text mode drags paragraphs
+
+- The viewer reads the page's paragraphs (`pageTextBlocks`) on hover and after each edit, as it
+  reads annotations. A press on a paragraph that travels 3 px drags it with the drag Fill & Sign
+  items use (ADR 0045: the dashed outline, kept on its page); one that does not travel opens the
+  paragraph editor or says why it cannot, as before. Text whose font cannot be reused (Chrome's,
+  `Refusal::Font`) cannot be edited but moves all the same.
+- Letting go runs `text.move` (one undo step). The moved paragraph stays selected (dashed outline;
+  `OpenDocument.selectedBlock`), and the arrow keys move it — the same `fill.move*` commands, now
+  also for a selected paragraph (gated by `modify`; placed items by `annotate`). Held keys add up.
+- **Escape** in the paragraph editor closes it unsaved and selects the paragraph, so the arrow
+  keys move it (`note.toPage`); Escape again deselects it.
+- **Fixed on the way:** the editor's Escape and Cmd/Ctrl+Enter no longer reach the window's
+  shortcuts. The paragraph editor closes on Escape and React removes its field before the window
+  sees the key, so it no longer counted as typed in a field and also ran `edit.deselect`.
+
+### Limits
+
+- **The clip is kept** (§2, on purpose). A paragraph of the page's own text moved out of the area
+  it was clipped to is cut there: Chrome clips page text to its content area, so text moved into
+  the page's margin loses what lies past the edge. Text this app added has no clip of ours.
+- **Grouping by boxes:** a piece belongs to the paragraph whose box holds its centre. CoreText's
+  Arabic dots (glyphs with no text, listed as narrow paragraphs of their own) move with the
+  paragraph around them; pressed on their own, they move alone.
+- A paragraph moves on its own page only, and is not resized (it is not reflowed).
+
+### Verified
+
+- **`tests/moving_text.rs`:** English and Arabic text added with the Edit tool moved right after
+  adding, saved, reopened, moved again, saved again (`qpdf --check`), read back where it went and
+  edited in place there; the last paragraph of CoreText's and Chrome's own English and Arabic
+  pages moved with the other paragraphs where they were and every word read back (pixels only on
+  CoreText's Arabic page, whose dots the extractor regroups); on pages turned 0°, 90°, 180°, 270°
+  the moved text draws the same pixels in its new place; one undo step back to the bytes before;
+  nothing there refused; an AES-256 file.
+- **UI:** `viewer/controller.test.ts` (dragging an editable and a refused paragraph, kept on its
+  page, a press that stays edits it, the selection outline, reselection after a refresh);
+  `commands/moving.test.tsx` in English and Arabic (`text.move`, nudges adding up, Escape from the
+  editor selecting the paragraph without the window seeing the key, `modify` denied).
+- **Real shell self-test:** the added Arabic paragraph dragged 90 pt down through `text.move` and
+  the IPC, read back there, selected, and undone; English/light and Arabic/dark.
+- **By hand in the real app** (Arabic UI, Chrome's Arabic page): "Gggg" added with the Edit tool,
+  dragged, nudged three times with Shift+←, saved, dragged again; a page paragraph dragged (and
+  cut where it went past the content area's edge, as above); clicked to open the editor, Escape,
+  Shift+↓ twice.

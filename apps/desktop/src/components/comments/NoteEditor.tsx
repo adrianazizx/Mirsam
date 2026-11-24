@@ -118,6 +118,9 @@ export function NoteEditor({ documentId }: { documentId: number }) {
   const onKeys = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      // The key is the editor's: the field may be gone by the time the window's
+      // shortcuts see it, and they would take it for a second Escape (`edit.deselect`).
+      event.stopPropagation();
       if ((note && !pending) || block) {
         // A placed one: what was typed is dropped, and the page takes the keys, the
         // item still selected, so the arrow keys move it; Escape again deselects it.
@@ -128,6 +131,7 @@ export function NoteEditor({ documentId }: { documentId: number }) {
       }
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
+      event.stopPropagation();
       void runCommand("note.save", saved());
     }
   };
