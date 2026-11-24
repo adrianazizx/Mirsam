@@ -1010,9 +1010,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 - The app icon is now the page with the pen stroke: `src-tauri/icons/icon.svg` is the page centred
   on a square canvas, and every PNG, `icon.icns` and `icon.ico` was regenerated from it with
   `tauri icon` (its Android and iOS output removed; the app is desktop only).
-- The README's launch page (#53, merged in) shows the logo above its title in place of the icon
-  image, the dark variant in dark mode; the screenshots in `docs/screenshots/` were taken before
-  the new icon.
+- The README's launch page (#53, merged in) shows the page alone (`mirsam-envelope.svg`) above its
+  title, without the wordmark, since the title already names the app (owner's choice). The
+  screenshots in `docs/screenshots/` were taken before the new icon.
 - Checked: the generated PNGs at 512 and 32 px by eye; the `.icns` holds 16–1024 px. Not checked
   in a built bundle on Windows or Linux in this session; CI's bundle job runs on icon changes.
 

@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/mirsam-logo-dark.svg">
-    <img src="docs/brand/mirsam-logo.svg" width="140" alt="Mirsam logo">
-  </picture>
+  <img src="docs/brand/mirsam-envelope.svg" width="120" alt="Mirsam icon">
 </p>
 
 <h1 align="center">Mirsam · مرسام</h1>
