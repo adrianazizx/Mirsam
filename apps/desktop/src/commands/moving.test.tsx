@@ -255,6 +255,9 @@ describe.each(["en", "ar"] as const)("moving placed items in %s", (locale) => {
       page: 0,
       rect: { x: block.x, y: block.y, width: block.width, height: block.height },
     });
+    // The app gives the page view the focus (`focusPage`); there is none here, so the
+    // keys go to the document, which the arrow-key commands accept as the page's.
+    (document.activeElement as HTMLElement | null)?.blur();
     expect(isCommandEnabled("fill.moveLeft")).toBe(true);
   });
 
