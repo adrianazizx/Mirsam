@@ -1,12 +1,15 @@
 import {
   type AnnotationKind,
   type Backend,
+  FILL_KINDS,
   type LinkInfo,
   type MarkedPage,
+  MOVABLE_KINDS,
   type PageAnnotation,
   type PageObject,
   type PageSize,
   type ParagraphBlock,
+  RESIZABLE_KINDS,
   type RenderedPage,
   releaseRendered,
   renderedCanvas,
@@ -245,8 +248,42 @@ export function freelyResizedRect(
 }
 
 /** Fill & Sign items, which a press with the Sign tool selects rather than places over. */
-const FILL_ITEMS: readonly string[] = ["fillText", "mark", "signature"];
-/** A press on a Fill & Sign item that travels this far (CSS px) is a drag, not a click. */
+const FILL_ITEMS: readonly string[] = FILL_KINDS;
+
+/**
+ * Whether a press in `mode` on an item of `kind` drags it (ADR 0045 and its
+ * amendment): the Select tool moves whatever the user placed, the Sign tool
+ * its own items, the Comment tool's note and text box modes their own kind.
+ */
+export function dragsIn(mode: ViewerMode, kind: AnnotationKind): boolean {
+  if (mode === "select") return MOVABLE_KINDS.includes(kind);
+  if (mode === "place") return FILL_KINDS.includes(kind);
+  return (mode === "note" || mode === "textBox") && kind === mode;
+}
+
+/**
+ * The box a text box's corner handle gives it: as wide as the pointer
+ * reaches from the opposite side (at least `MIN_TEXT_BOX_WIDTH`, inside a
+ * page `width` points wide), its top and height kept. The engine sets the
+ * text again at that width and fits the height to it.
+ */
+export function widenedRect(
+  rect: ViewRect,
+  corner: Corner,
+  point: { x: number; y: number },
+  width: number,
+): ViewRect {
+  const east = corner === "ne" || corner === "se";
+  const anchor = east ? rect.x : rect.x + rect.width;
+  const x = Math.max(0, Math.min(width, point.x));
+  const reach = Math.max(MIN_TEXT_BOX_WIDTH, east ? x - anchor : anchor - x);
+  const w = Math.min(reach, east ? width - anchor : anchor);
+  return { x: east ? anchor : anchor - w, y: rect.y, width: w, height: rect.height };
+}
+
+/** The narrowest a text box's handles make it, in points. */
+const MIN_TEXT_BOX_WIDTH = 24;
+/** A press on a placed item that travels this far (CSS px) is a drag, not a click. */
 const MOVE_SLOP = 3;
 /** How near a corner handle (CSS px) a press grabs it. */
 const HANDLE_REACH = 7;
@@ -293,7 +330,11 @@ export function resizedRect(
     (east ? width - anchor.x : anchor.x) / rect.width,
     (south ? height - anchor.y : anchor.y) / rect.height,
   );
-  const smallest = Math.max(MIN_ITEM_SIDE / rect.width, MIN_ITEM_SIDE / rect.height);
+  // Its shorter side at least `MIN_ITEM_SIDE`; a thinner one (a drawn line) keeps its longer side so.
+  const thin = Math.min(rect.width, rect.height) < MIN_ITEM_SIDE;
+  const smallest = thin
+    ? MIN_ITEM_SIDE / Math.max(rect.width, rect.height)
+    : Math.max(MIN_ITEM_SIDE / rect.width, MIN_ITEM_SIDE / rect.height);
   const scale = Math.max(smallest, Math.min(room, reach));
   const w = rect.width * scale;
   const h = rect.height * scale;
@@ -1650,6 +1691,25 @@ export class ViewerController {
     return this.selection ? selectedText(this.selection, this.layerLookup) : "";
   }
 
+  /** Gives the page view the keyboard focus (the arrow keys move a selected item there). */
+  focusPage(): void {
+    this.container.focus({ preventScroll: true });
+  }
+
+  /**
+   * Whether a press at (`clientX`, `clientY`) grabs the selected annotation
+   * or one of its handles, to move or resize it: the note editor then keeps
+   * it selected as it saves.
+   */
+  grabsSelected(clientX: number, clientY: number): boolean {
+    const selected = this.selectedAnnotation;
+    const point = this.pointAt(clientX, clientY);
+    if (!selected || !point || !dragsIn(this.mode(), selected.kind)) return false;
+    if (this.handleAt(point)) return true;
+    const hit = this.annotationAt(point);
+    return hit?.page === selected.page && hit.index === selected.index;
+  }
+
   clearSelection(): void {
     this.pendingAnchor = null;
     this.setSelection(null);
@@ -2087,7 +2147,7 @@ export class ViewerController {
       this.startFieldGesture(event, point, mode);
       return;
     }
-    if (mode === "select" || mode === "place") {
+    if (mode === "select" || mode === "place" || mode === "note" || mode === "textBox") {
       // A press on a selected item's corner handle resizes it (ADR 0045).
       const corner = this.handleAt(point);
       const selected = this.selectedAnnotation;
@@ -2105,9 +2165,9 @@ export class ViewerController {
         this.content.setPointerCapture?.(event.pointerId);
         return;
       }
-      // A press on a Fill & Sign item drags it; one that does not travel selects it (ADR 0045).
+      // A press on a placed item drags it; one that does not travel selects it (ADR 0045).
       const item = this.annotationAt(point);
-      if (item && FILL_ITEMS.includes(item.kind)) {
+      if (item && dragsIn(mode, item.kind)) {
         this.setSelection(null);
         this.moving = {
           pointerId: event.pointerId,
@@ -2455,7 +2515,10 @@ export class ViewerController {
   private dragItemTo(clientX: number, clientY: number): void {
     const moving = this.moving;
     if (!moving) return;
-    const over = this.pointAt(clientX, clientY);
+    // Fill & Sign items go to the page under the pointer; comments, with
+    // their replies on their page, stay on theirs.
+    const across = FILL_ITEMS.includes(moving.item.kind);
+    const over = across ? this.pointAt(clientX, clientY) : null;
     const page = over?.page ?? moving.page;
     const point = over ?? this.pointOnPage(page, clientX, clientY);
     const size = this.sizes?.[page];
@@ -2491,26 +2554,18 @@ export class ViewerController {
     }
     const point = this.pointOnPage(resizing.item.page, event.clientX, event.clientY);
     if (!point) return;
-    resizing.rect = resizedRect(
-      resizing.item.rect,
-      resizing.corner,
-      point,
-      size.width,
-      size.height,
-    );
+    resizing.rect =
+      resizing.item.kind === "textBox"
+        ? widenedRect(resizing.item.rect, resizing.corner, point, size.width)
+        : resizedRect(resizing.item.rect, resizing.corner, point, size.width, size.height);
     const slot = this.slots.get(resizing.item.page);
     if (slot) this.paintOverlay(slot);
   }
 
-  /** The corner handle of the selected Fill & Sign item a press at `point` grabs, if any. */
+  /** The corner handle of the selected item a press at `point` grabs, if any. */
   private handleAt(point: PagePoint | null): Corner | null {
     const selected = this.selectedAnnotation;
-    if (
-      !point ||
-      !selected ||
-      selected.page !== point.page ||
-      !FILL_ITEMS.includes(selected.kind)
-    ) {
+    if (!point || !selected || selected.page !== point.page || !this.showsHandles(selected)) {
       return null;
     }
     const box = this.layout?.boxes[point.page];
@@ -2541,10 +2596,15 @@ export class ViewerController {
     else delete this.content.dataset.overHandle;
   }
 
-  /** Whether a press here would drag a Fill & Sign item (the cursor says so). */
+  /** Whether a press here would drag a placed item (the cursor says so). */
   private overFillItem(point: PagePoint | null): boolean {
     const item = point ? this.annotationAt(point) : null;
-    return item !== null && FILL_ITEMS.includes(item.kind);
+    return item !== null && dragsIn(this.mode(), item.kind);
+  }
+
+  /** Whether `selected` shows corner handles: one the current tool resizes. */
+  private showsHandles(selected: SelectedAnnotation): boolean {
+    return RESIZABLE_KINDS.includes(selected.kind) && dragsIn(this.mode(), selected.kind);
   }
 
   /**
@@ -2607,10 +2667,9 @@ export class ViewerController {
       delete this.content.dataset.overText;
       const point = mode === "none" ? null : this.pointAt(event.clientX, event.clientY);
       if (point) void this.loadAnnotations(point.page);
-      if (mode === "place" && this.overFillItem(point)) this.content.dataset.overItem = "";
+      if (this.overFillItem(point)) this.content.dataset.overItem = "";
       else delete this.content.dataset.overItem;
-      if (mode === "place") this.showHandleCursor(point);
-      else delete this.content.dataset.overHandle;
+      this.showHandleCursor(point);
       return;
     }
     const point = this.pointAt(event.clientX, event.clientY);
@@ -2763,7 +2822,7 @@ export class ViewerController {
     if (
       this.classNames.fillHandle &&
       selected?.page === slot.page &&
-      FILL_ITEMS.includes(selected.kind) &&
+      this.showsHandles(selected) &&
       !this.moving?.moved
     ) {
       const rect = this.resizing?.moved ? this.resizing.rect : selected.rect;

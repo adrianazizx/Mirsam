@@ -89,6 +89,14 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
               contents: null,
               strokes: [],
             },
+            // A text box at (200, 120), 80 × 30.
+            {
+              index: 8,
+              kind: "textBox",
+              rects: [{ x: 200, y: 120, width: 80, height: 30 }],
+              contents: "مربع نص",
+              strokes: [],
+            },
           ]
         : [],
     updateViewport: async (_doc: number, _gen: number, keep: KeptRequest[]) => {
@@ -655,6 +663,167 @@ describe("viewer controller", () => {
       1,
     );
     expect(container.querySelectorAll(".fill-moving")).toHaveLength(0);
+    viewer.destroy();
+  });
+
+  it("drags text boxes, notes and drawings with the Select tool, each kept on its own page", async () => {
+    mode = "select";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    at("pointerdown", 5, 390);
+    at("pointerup", 5, 390);
+    await settle();
+
+    // The text box, grabbed at (210, 130) and let go 60 pt left and 40 pt down.
+    at("pointerdown", 210, 130);
+    at("pointermove", 190, 150);
+    at("pointermove", 150, 170);
+    expect(container.querySelectorAll(".fill-moving")).toHaveLength(1);
+    at("pointerup", 150, 170);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 8, kind: "textBox" }),
+      { x: 140, y: 160, width: 80, height: 30 },
+      0,
+    );
+
+    // The note, to the inline start.
+    at("pointerdown", 255, 15);
+    at("pointermove", 205, 25);
+    at("pointerup", 205, 25);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 5, kind: "note" }),
+      { x: 200, y: 20, width: 20, height: 20 },
+      0,
+    );
+
+    // The drawing, dragged onto the next page: it stops at its own page's bottom edge.
+    at("pointerdown", 100, 300);
+    at("pointermove", 100, 360);
+    at("pointermove", 100, 410 + 50);
+    const previews = [...container.querySelectorAll(".fill-moving")];
+    expect(previews).toHaveLength(1);
+    expect(previews[0]?.closest(".page")).toBe(container.querySelectorAll(".page")[0]);
+    at("pointerup", 100, 410 + 50);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 4, kind: "ink" }),
+      { x: 8, y: 396, width: 194, height: 4 },
+      0,
+    );
+
+    // A highlight stays on its words: a press on it selects it and drags nothing.
+    at("pointerdown", 50, 20);
+    at("pointermove", 90, 60);
+    at("pointerup", 90, 60);
+    expect(callbacks.onMoveItem).toHaveBeenCalledTimes(3);
+    viewer.destroy();
+  });
+
+  it("drags only the Comment tool's own kind, and only Fill & Sign items with the Sign tool", async () => {
+    mode = "note";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    const drag = (from: [number, number], to: [number, number]) => {
+      at("pointerdown", ...from);
+      at("pointermove", (from[0] + to[0]) / 2, (from[1] + to[1]) / 2);
+      at("pointermove", ...to);
+      at("pointerup", ...to);
+    };
+    at("pointerdown", 5, 390);
+    at("pointerup", 5, 390);
+    await settle();
+
+    drag([255, 15], [255, 65]);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "note" }),
+      { x: 250, y: 60, width: 20, height: 20 },
+      0,
+    );
+    // The note tool leaves the text box alone; the text box tool moves it.
+    drag([210, 130], [210, 180]);
+    expect(callbacks.onMoveItem).toHaveBeenCalledTimes(1);
+    mode = "textBox";
+    drag([210, 130], [210, 180]);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "textBox" }),
+      { x: 200, y: 170, width: 80, height: 30 },
+      0,
+    );
+    // The Sign tool, armed, moves its own items only.
+    mode = "place";
+    drag([255, 15], [255, 65]);
+    expect(callbacks.onMoveItem).toHaveBeenCalledTimes(2);
+    viewer.destroy();
+  });
+
+  it("gives a text box's handles its width, a drawing's its scale, and a note none", async () => {
+    mode = "select";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    const handles = () =>
+      [...container.querySelectorAll<HTMLElement>(".fill-handle")].map((h) => h.dataset.corner);
+    at("pointerdown", 5, 390);
+    at("pointerup", 5, 390);
+    await settle();
+
+    // A note's icon keeps its size: selected, it shows no handles.
+    at("pointerdown", 255, 15);
+    at("pointerup", 255, 15);
+    await settle();
+    expect(callbacks.onAnnotationSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "note" }),
+    );
+    expect(handles()).toEqual([]);
+
+    // The text box: four handles; its inline-start handle dragged out by 40 widens it to the
+    // inline start, its top and height kept (the text is set again at the new width).
+    at("pointerdown", 210, 130);
+    at("pointerup", 210, 130);
+    await settle();
+    expect(handles()).toEqual(["nw", "ne", "sw", "se"]);
+    expect(viewer.grabsSelected(350 + 240, 20 + 135)).toBe(true);
+    expect(viewer.grabsSelected(350 + 120, 20 + 135)).toBe(false);
+    at("pointerdown", 200, 150);
+    at("pointermove", 180, 160);
+    at("pointermove", 160, 200);
+    at("pointerup", 160, 200);
+    expect(callbacks.onMoveItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "textBox" }),
+      { x: 160, y: 120, width: 120, height: 30 },
+      0,
+    );
+
+    // The drawing scales in proportion about its opposite corner.
+    at("pointerdown", 100, 300);
+    at("pointerup", 100, 300);
+    await settle();
+    expect(handles()).toEqual(["nw", "ne", "sw", "se"]);
+    expect(viewer.grabsSelected(350 + 202, 20 + 302)).toBe(true);
+    at("pointerdown", 202, 302);
+    at("pointermove", 100, 302);
+    at("pointermove", 105, 300);
+    at("pointerup", 105, 300);
+    const [, rect] = callbacks.onMoveItem.mock.lastCall ?? [];
+    expect(rect.x).toBe(8);
+    expect(rect.y).toBe(298);
+    expect(rect.width).toBeCloseTo(97);
+    expect(rect.height).toBeCloseTo(2);
+    // A drawn line thinner than an item's least side may still shrink, its length kept at 6 pt.
+    expect(resizedRect(rect, "se", { x: 0, y: 0 }, 300, 400).width).toBeCloseTo(6);
     viewer.destroy();
   });
 

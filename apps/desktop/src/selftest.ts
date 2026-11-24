@@ -1,6 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { backend } from "./backend";
+import { backend, type PageAnnotation, type ViewRect } from "./backend";
 import { runCommand } from "./commands/registry";
 import { useAppStore } from "./state/appStore";
 import { useCrashReports } from "./state/crashReports";
@@ -683,6 +683,11 @@ async function notesAndInkChecks(documentId: number) {
   const inkPainted = inkPixels > enough;
   const ink = (await backend.pageAnnotations(documentId, 0)).find((a) => a.kind === "ink");
 
+  // Moving (ADR 0045's amendment), through the commands and the shell: the text box dragged
+  // down and nudged right with the arrow-key command, the stroke dragged; each read back
+  // where it went, its text and strokes kept. Three undo steps.
+  const moved = await moveChecks(documentId, box, ink);
+
   // The comments panel (ADR 0041): the three listed, a reply and a resolve
   // read back from the file, then both undone (two of the undos below).
   await runCommand("view.showComments");
@@ -703,8 +708,8 @@ async function notesAndInkChecks(documentId: number) {
 
   await runCommand("ink.erase", { page: 0, indices: ink ? [ink.index] : [] });
   const erased = !(await backend.pageAnnotations(documentId, 0)).some((a) => a.kind === "ink");
-  // The erase, the resolve, the reply, the stroke, the text box, the note.
-  for (let i = 0; i < 6; i += 1) await runCommand("edit.undo");
+  // The erase, the resolve, the reply, the three moves, the stroke, the text box, the note.
+  for (let i = 0; i < 9; i += 1) await runCommand("edit.undo");
   const cleared = (await backend.pageAnnotations(documentId, 0)).length === 0;
   return {
     scale,
@@ -721,6 +726,69 @@ async function notesAndInkChecks(documentId: number) {
     erased,
     cleared,
     comments,
+    moved,
+  };
+}
+
+/** Drags `item` to `rect` through `fill.move`, and reads back where it went. */
+async function dragTo(documentId: number, item: PageAnnotation, rect: ViewRect) {
+  const from = item.rects[0];
+  if (!from) return null;
+  const annotation = {
+    page: 0,
+    index: item.index,
+    kind: item.kind,
+    contents: item.contents,
+    rect: from,
+  };
+  await runCommand("fill.move", { annotation, rect });
+  return (await backend.pageAnnotations(documentId, 0)).find((a) => a.index === item.index);
+}
+
+const near = (a: number | undefined, b: number) => a !== undefined && Math.abs(a - b) < 0.1;
+
+async function moveChecks(
+  documentId: number,
+  box: PageAnnotation | undefined,
+  ink: PageAnnotation | undefined,
+) {
+  const boxFrom = box?.rects[0];
+  const inkFrom = ink?.rects[0];
+  if (!box || !ink || !boxFrom || !inkFrom) return null;
+  const boxTo = { ...boxFrom, y: boxFrom.y + 90 };
+  const boxDragged = await dragTo(documentId, box, boxTo);
+  // The arrow keys' command, with the box selected and the page view focused (after the
+  // note editor that selecting opens has taken the focus on its next frame).
+  useAppStore.getState().updateDocument(documentId, {
+    selectedAnnotation: {
+      page: 0,
+      index: box.index,
+      kind: "textBox",
+      contents: box.contents,
+      rect: boxTo,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  getViewer(documentId)?.focusPage();
+  await runCommand("fill.moveRightMore");
+  getViewer(documentId)?.clearSelection();
+  useAppStore.getState().updateDocument(documentId, { selectedAnnotation: null });
+  const boxNow = (await backend.pageAnnotations(documentId, 0)).find((a) => a.index === box.index);
+  const inkTo = { ...inkFrom, x: inkFrom.x + 20, y: inkFrom.y + 120 };
+  const inkNow = await dragTo(documentId, ink, inkTo);
+  getViewer(documentId)?.clearSelection();
+  const firstPoint = inkNow?.strokes[0]?.[0];
+  const firstBefore = ink.strokes[0]?.[0];
+  return {
+    boxDragged: near(boxDragged?.rects[0]?.y, boxTo.y) && near(boxDragged?.rects[0]?.x, boxTo.x),
+    boxNudged: near(boxNow?.rects[0]?.x, boxTo.x + 10) && near(boxNow?.rects[0]?.y, boxTo.y),
+    boxText: boxNow?.contents === box.contents,
+    inkDragged: near(inkNow?.rects[0]?.x, inkTo.x) && near(inkNow?.rects[0]?.y, inkTo.y),
+    inkStrokes:
+      firstPoint !== undefined &&
+      firstBefore !== undefined &&
+      near(firstPoint[0], firstBefore[0] + 20) &&
+      near(firstPoint[1], firstBefore[1] + 120),
   };
 }
 

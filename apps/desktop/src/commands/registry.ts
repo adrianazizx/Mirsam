@@ -12,6 +12,7 @@ import {
   type LinkInfo,
   type LinkTarget,
   type MarkupKind,
+  MOVABLE_KINDS,
   type ObjectEdit,
   type OcrAction,
   type OcrJob,
@@ -206,6 +207,11 @@ export interface CommandArg {
   block?: ParagraphBlock;
   /** `note.save` of a paragraph: the bundled family to set it in; absent, its own font where it can. */
   blockFamily?: "sans" | "naskh";
+  /**
+   * `note.save` of a selected note or text box: it stays selected (the press
+   * that saves it grabs it or its handle, to move or resize it).
+   */
+  keepSelected?: boolean;
   /** `output.stamp`: the header, footer, page numbers, or watermark (`pages` above). */
   stamp?: StampArg;
   /** `output.exportImages`: resolution and format (`pages` above). */
@@ -407,6 +413,7 @@ export type CommandId =
   | "note.place"
   | "note.save"
   | "note.cancel"
+  | "note.toPage"
   | "ink.add"
   | "ink.erase"
   | "edit.undo"
@@ -745,6 +752,11 @@ const hasFillSelected = (state: AppState) => {
   const kind = selectActiveDocument(state)?.selectedAnnotation?.kind;
   return kind !== undefined && FILL_KINDS.includes(kind);
 };
+/** Whether the selected annotation is one the user placed and can move (ADR 0045's amendment). */
+const hasMovableSelected = (state: AppState) => {
+  const kind = selectActiveDocument(state)?.selectedAnnotation?.kind;
+  return kind !== undefined && MOVABLE_KINDS.includes(kind);
+};
 /** While marking areas to redact, undo and redo step through the marks first (ADR 0042). */
 const stepsMarks = (state: AppState, direction: "undo" | "redo") => {
   const redaction = selectActiveDocument(state)?.redaction;
@@ -943,21 +955,32 @@ async function resizeFill(factor: number): Promise<void> {
   await placeFill(selected, next);
 }
 
-/** Moves the selected Fill & Sign item by (`dx`, `dy`) points, kept on the page. */
+/**
+ * Moves the selected item (Fill & Sign, a text box, a note, a drawing) by
+ * (`dx`, `dy`) points, kept on the page.
+ */
 async function nudgeFill(dx: number, dy: number): Promise<void> {
-  const selected = selectActiveDocument(store())?.selectedAnnotation;
-  if (!selected) return;
+  const active = selectActiveDocument(store());
+  const selected = active?.selectedAnnotation;
+  if (!active || !selected) return;
   const { rect } = selected;
-  await placeFill(selected, { ...rect, x: Math.max(0, rect.x + dx), y: Math.max(0, rect.y + dy) });
+  const size = getViewer(active.id)?.pageSize(selected.page) ?? null;
+  const clamp = (value: number, room: number | undefined) =>
+    Math.max(0, room === undefined ? value : Math.min(room, value));
+  await placeFill(selected, {
+    ...rect,
+    x: clamp(rect.x + dx, size ? size.width - rect.width : undefined),
+    y: clamp(rect.y + dy, size ? size.height - rect.height : undefined),
+  });
 }
 
 /**
- * Gives a Fill & Sign item a new box on the displayed page (moved or
- * resized, ADR 0045) as one undo step, and keeps it selected.
+ * Gives a placed item a new box on the displayed page (moved or resized,
+ * ADR 0045 and its amendment) as one undo step, and keeps it selected.
  */
 async function placeFill(item: SelectedAnnotation, rect: ViewRect): Promise<void> {
   const active = selectActiveDocument(store());
-  if (!active || !FILL_KINDS.includes(item.kind)) return;
+  if (!active || !MOVABLE_KINDS.includes(item.kind)) return;
   const outcome = await backend.setAnnotationRect(active.id, item.page, item.index, rect);
   getViewer(active.id)?.reselectAfterRefresh({ ...item, rect });
   store().applyEdit(active.id, outcome);
@@ -1015,11 +1038,12 @@ async function stepFillPage(step: -1 | 1): Promise<void> {
 }
 
 /**
- * Arrow keys move the selected Fill & Sign item only while the page view
- * has the focus: elsewhere (a toolbar, a list) they keep their own meaning.
+ * Arrow keys move the selected placed item (Fill & Sign, a text box, a
+ * note, a drawing) only while the page view has the focus: elsewhere (a
+ * toolbar, a list, the note editor) they keep their own meaning.
  */
 const nudgesFill = (state: AppState) =>
-  hasFillSelected(state) &&
+  hasMovableSelected(state) &&
   (typeof document === "undefined" ||
     document.activeElement === null ||
     document.activeElement === document.body ||
@@ -3143,7 +3167,8 @@ const DECLARED: Command[] = [
     },
   },
   {
-    // A Fill & Sign item dragged on its page, or onto another (`page`) (ADR 0045).
+    // A placed item dragged or resized on its page, or a Fill & Sign item dragged onto
+    // another (`page`) (ADR 0045 and its amendment).
     id: "fill.move",
     paletteHidden: true,
     isEnabled: hasDocument,
@@ -3434,7 +3459,7 @@ const DECLARED: Command[] = [
       }
       const note = active.selectedAnnotation;
       if (note?.kind !== "note" && note?.kind !== "textBox" && note?.kind !== "fillText") return;
-      getViewer(active.id)?.clearSelection();
+      if (!arg?.keepSelected) getViewer(active.id)?.clearSelection();
       if ((note.contents ?? "") === text) return;
       // A text box (or Fill & Sign text) emptied of its text goes.
       const outcome =
@@ -3442,6 +3467,17 @@ const DECLARED: Command[] = [
           ? await backend.removeAnnotations(active.id, note.page, [note.index])
           : await backend.setAnnotationContents(active.id, note.page, note.index, text);
       store().applyEdit(active.id, outcome);
+    },
+  },
+  {
+    // Escape in a placed note's or text box's editor: back to the page, the item still
+    // selected, so the arrow keys move it (ADR 0045's amendment).
+    id: "note.toPage",
+    paletteHidden: true,
+    isEnabled: (state) => isWritingNote(state) && hasMovableSelected(state),
+    run() {
+      const active = selectActiveDocument(store());
+      if (active) getViewer(active.id)?.focusPage();
     },
   },
   {

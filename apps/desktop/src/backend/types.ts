@@ -291,6 +291,20 @@ export type AnnotationKind =
 /** The Fill & Sign items (ADR 0045). */
 export const FILL_KINDS: readonly AnnotationKind[] = ["fillText", "mark", "signature"];
 
+/**
+ * What a user placed and can move afterwards on its page (ADR 0045's
+ * amendment): Fill & Sign items, text boxes, notes and drawings. Markup
+ * stays on the text it marks.
+ */
+export const MOVABLE_KINDS: readonly AnnotationKind[] = [...FILL_KINDS, "textBox", "note", "ink"];
+
+/**
+ * What corner handles resize: Fill & Sign items and drawings in proportion,
+ * text boxes in width (their text is set again, as tall as it needs). A
+ * note's icon keeps its size.
+ */
+export const RESIZABLE_KINDS: readonly AnnotationKind[] = [...FILL_KINDS, "textBox", "ink"];
+
 /** What a Fill & Sign mark draws. */
 export type MarkKind = "check" | "cross" | "dot";
 
@@ -1553,7 +1567,11 @@ export interface Backend {
     width: number,
     signature: number,
   ): Promise<EditOutcome>;
-  /** Moves or resizes a Fill & Sign item to a box on the displayed page. */
+  /**
+   * Moves or resizes a placed item to a box on the displayed page: one undo
+   * step. Fill & Sign items and drawings fit the box; a text box takes its
+   * width (its height follows its text, its top kept); a note only moves.
+   */
   setAnnotationRect(
     documentId: number,
     page: number,

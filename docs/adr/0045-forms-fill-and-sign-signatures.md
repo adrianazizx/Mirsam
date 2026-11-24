@@ -244,3 +244,90 @@ paper in both themes (`--color-ink` on `--color-page-paper`, a new contrast pair
     - Typed-signature previews use the webview's fonts (Amiri where the system has it). The PDF is
       set in the bundled Amiri.
     - The native image dialog and the signature image URL are untested in the real shell.
+
+## Amendment (2026-11-24): moving text boxes, notes and drawings too
+
+The owner asked to "move the signature and the text" after placing them. Signatures and Fill &
+Sign items already moved (§6: drag, arrow keys, corner handles, another page). Text boxes, notes
+and drawings — M2's annotations, whose "moving annotations" PROGRESS.md had left open — did not.
+They now move with the same machinery, not a second one.
+
+### Engine: `SetRect` takes them
+
+`AnnotationEdit::SetRect` (the shell's `set_annotation_rect`) accepts `TextBox`, `Note` and `Ink`
+as well as Fill & Sign items (`AnnotationKind::is_movable`, `is_comment_movable`). One incremental
+update, one undo step, as before; the annotation keeps its object and its number.
+
+- **A move** (the new box within 0.5 pt of the old one's size) is a translation: the old size is
+  kept exactly, so a move never stretches anything. The appearance stays as it was: viewers fit
+  its `/BBox` to the new `/Rect` (ISO 32000-2, 12.5.5), which a translation leaves unscaled.
+- **What else places it moves along**, so a viewer that redraws from the annotation's own data
+  agrees with ours: ink's `/InkList`, a callout's `/CL`, and the pop-up's `/Rect` (written under
+  its own number). Arrays reached through references are written into the annotation directly.
+- **A note** is only moved: its icon has one size, and a resize is refused (`invalid_edit`).
+- **A text box given a new size** is laid out again at the new displayed width, its height
+  fitted to its text and its displayed top kept — as changing its text does (ADR 0019). Its
+  text and `/DA` are decrypted to do so; the new appearance is a new stream.
+- **A drawing given a new size** is scaled: `/InkList` is mapped from the old box to the new one
+  and the appearance is fitted to the new `/Rect` (its strokes' width scales with it).
+- **Markup** (highlight, underline, strikethrough, squiggly) is refused: it belongs to the words
+  it marks.
+- **Not to another page.** `MoveToPage` stays for Fill & Sign items: a comment's replies and
+  review states are annotations of their own on its page (ADR 0041), and would be left behind.
+
+### UI: the same drag, handles and nudges
+
+- **Who drags what** (`dragsIn`): the Select tool drags everything the user placed (Fill & Sign
+  items, text boxes, notes, drawings); the Sign tool its own items, as before; the Comment
+  tool's Note and Text box modes their own kind (a press on a note in Text box mode still places
+  a text box). Markup is selected, never dragged. The move cursor shows where a press would drag.
+- **Kept on its page:** a comment dragged past its page's edge stops there; only Fill & Sign items
+  follow the pointer onto another page.
+- **Handles** (`RESIZABLE_KINDS`): a selected Fill & Sign item or drawing shows four, resizing in
+  proportion as before; a text box shows four that change its width only (`widenedRect`: the
+  opposite side stays, the height is the engine's); a note shows none. A drawn line thinner than
+  6 pt can still be made smaller: the 6 pt least side then applies to its longer side.
+- **Commands:** the drag and the handles go through `fill.move`, the arrow keys through
+  `fill.moveLeft` … `fill.moveDownMore` (1 pt, Shift 10 pt), now enabled for any movable
+  selection (`MOVABLE_KINDS`) and kept on the page. The ids are kept: they are what the
+  shortcuts list, the self-test, and earlier tests name. Arrows move in the page's own
+  directions in both languages (the page is drawn as it is, whatever the UI language).
+- **The note editor and the keyboard.** Selecting a note or a text box opens its editor, which
+  takes the focus, so the arrow keys move the caret. Escape in the editor of a *placed* one now
+  drops what was typed and returns to the page with the item still selected (`note.toPage`):
+  the arrow keys then move it, and Escape again deselects (`edit.deselect`). A new, unsaved one
+  is still cancelled by Escape.
+- **Fixed on the way:** the note editor saves on any press outside it, and saving deselected the
+  item synchronously, before the viewer saw the press. A press on a selected text box's (or Fill
+  & Sign text's) handle therefore found nothing selected and did not resize. The editor now asks
+  the viewer (`grabsSelected`) whether the press grabs the selected item or a handle; if so it
+  saves without deselecting (`note.save` with `keepSelected`).
+
+### Verified
+
+- **`tests/moving.rs`** (PDFium renders, `qpdf --check`): on Chrome's English and Arabic pages,
+  two signatures (drawn and typed), Fill & Sign text, a tick, a text box, a note and a drawing are
+  each moved right after placing, saved, reopened, moved again and saved again; each move changes
+  pixels only where the item was and where it went, the box moves exactly, kinds, text and strokes
+  read back. On pages turned 0°, 90°, 180° and 270°, a moved text box and signature draw the same
+  pixels in the new place as in the old. A text box narrowed wraps and grows down, its top-left
+  kept; a drawing doubled scales its strokes; a note's resize, markup moves and `MoveToPage` for
+  comments are refused; undo returns the bytes before the move; all of it in an AES-256 file with
+  Arabic strings read back.
+- **UI:** `viewer/controller.test.ts` (dragging each kind with the Select tool, kept on its page;
+  the Comment tool's modes and the Sign tool moving only their kinds; a text box's width handles,
+  a drawing's proportional ones, none for a note; `grabsSelected`); `commands/moving.test.tsx`, in
+  English and Arabic (each kind dragged, saved, nudged, kept on the page, undone back to the saved
+  position; a text box widened, a note's resize refused, no page change for comments; Escape from
+  the editor keeps the box selected and writes nothing).
+- **Real shell self-test** (`scripts/selftest.sh`, checked by `scripts/check-selftest.mjs`): the
+  text box dragged and nudged by the arrow-key command and the stroke dragged, through the
+  commands and IPC, each read back where it went with its text and points, then undone.
+
+### Limits
+
+- Comments do not change page; Fill & Sign items do.
+- A text box's handles change its width only; its height always follows its text.
+- A drawing's handles scale it in proportion; a free (stretching) resize is not offered.
+- Callouts (`/CL`) written by other apps move with their box; they are not drawn by us, and a
+  resize scales the line with the box.
