@@ -5,7 +5,7 @@ members = ["crates/mirsam-core", "crates/mirsam-ocr-eval", "apps/desktop/src-tau
 default-members = ["crates/mirsam-core", "crates/mirsam-ocr-eval", "apps/desktop/src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"

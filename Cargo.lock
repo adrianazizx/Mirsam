@@ -2802,7 +2802,7 @@ dependencies = [
 
 [[package]]
 name = "mirsam-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -2849,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "mirsam-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -2868,7 +2868,7 @@ dependencies = [
 
 [[package]]
 name = "mirsam-ocr-eval"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4680,7 +4680,7 @@ dependencies = [
 
 [[package]]
 name = "spike-editor-surface"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mirsam-core",
  "serde_json",
@@ -4688,7 +4688,7 @@ dependencies = [
 
 [[package]]
 name = "spike-pades"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cms",
  "const-oid",
@@ -4707,7 +4707,7 @@ dependencies = [
 
 [[package]]
 name = "spike-pdfium-edit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "harfrust",
  "lopdf",
@@ -4721,7 +4721,7 @@ dependencies = [
 
 [[package]]
 name = "spike-pdfium-regenerate"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lopdf",
  "mirsam-core",
