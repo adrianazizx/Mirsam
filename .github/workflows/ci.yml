@@ -71,15 +71,15 @@ jobs:
       - name: System packages (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev build-essential file qpdf
       - name: System packages (macOS)
         if: runner.os == 'macOS'
-        run: brew install qpdf
+        run: scripts/ci-install-qpdf.sh
       - name: System packages (Windows)
         if: runner.os == 'Windows'
-        run: choco install qpdf --no-progress -y
+        run: scripts/ci-install-qpdf.sh
 
       # rust-toolchain.toml pins the version and components.
       - run: rustup show
@@ -148,7 +148,7 @@ jobs:
     # both directions. A required check, green on every recent run.
     steps:
       - uses: actions/checkout@v4
-      - run: brew install qpdf
+      - run: scripts/ci-install-qpdf.sh
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
@@ -217,8 +217,8 @@ jobs:
       - name: System packages (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev build-essential file qpdf xvfb
       - name: Virtual display (Linux)
         if: runner.os == 'Linux'
@@ -227,7 +227,7 @@ jobs:
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
       - name: System packages (Windows)
         if: runner.os == 'Windows'
-        run: choco install qpdf --no-progress -y
+        run: scripts/ci-install-qpdf.sh
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
@@ -288,7 +288,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: System packages
-        run: sudo apt-get update && sudo apt-get install -y qpdf
+        run: scripts/ci-install-qpdf.sh
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: scripts/fetch-pdfium.sh
