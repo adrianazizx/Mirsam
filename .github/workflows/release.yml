@@ -15,8 +15,11 @@ name: Release
 # every push to main, and a tag must point at a commit on main.
 #
 # macOS: signed with your Developer ID and notarized when the APPLE_* secrets are
-# set, unsigned (with a warning) when none are. Windows and Linux: unsigned until
-# a Windows certificate exists (PROGRESS.md, item 17).
+# set, unsigned (with a warning) when none are. Windows: signed through the
+# SignPath Foundation (free for open source, ADR 0073) when SIGNPATH_API_TOKEN is
+# set, in two passes so the app inside the installers is signed too; each pass
+# waits for a person to approve it on signpath.io. Pull requests never ask for a
+# signature. Linux: unsigned by convention.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
@@ -73,6 +76,10 @@ jobs:
     name: Build (${{ matrix.name }})
     needs: prepare
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      # SignPath's action reads this run's details and downloads its artifacts.
+      actions: read
     strategy:
       fail-fast: true
       matrix:
@@ -178,8 +185,78 @@ jobs:
           { echo "APPLE_SIGNING_IDENTITY=$identity"; echo "SIGNING_KEYCHAIN=$keychain"; } >> "$GITHUB_ENV"
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
+      # Every signing request waits for a person's approval on signpath.io, so
+      # pull requests build unsigned; tags and "Run workflow" sign.
+      - name: SignPath (Windows)
+        id: signpath
+        if: runner.os == 'Windows'
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          ORGANIZATION: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [[ -z "$TOKEN" ]]; then
+            echo "::warning::No SIGNPATH_API_TOKEN secret: the Windows installers are unsigned and SmartScreen will warn (docs/RELEASING.md)."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$EVENT" == pull_request ]]; then
+            echo "A pull request: built unsigned (signing needs a person's approval on signpath.io)."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "$ORGANIZATION" ]]; then
+            echo "::error::SIGNPATH_API_TOKEN is set but the SIGNPATH_ORGANIZATION_ID repository variable is not (docs/RELEASING.md)."
+            exit 1
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Build and check the installers
+        if: steps.signpath.outputs.signed != 'true'
         run: node scripts/bundle.mjs --target "$TARGET"
+
+      # Windows, signed: build the executable, have SignPath sign it, then make
+      # the installers around the signed copy (scripts/bundle.mjs --bundle-only).
+      - name: Build the app to be signed (Windows)
+        id: app
+        if: steps.signpath.outputs.signed == 'true'
+        run: |
+          node scripts/bundle.mjs --target "$TARGET" --no-bundle
+          name="$(sed -n '/^\[package\]/,/^\[/{s/^name *= *"\(.*\)"/\1/p;}' apps/desktop/src-tauri/Cargo.toml | head -n 1)"
+          exe="target/$TARGET/release/$name.exe"
+          [[ -f "$exe" ]] || { echo "::error::no $exe after the build"; exit 1; }
+          echo "exe=$exe" >> "$GITHUB_OUTPUT"
+      - name: Keep the unsigned executable for SignPath
+        id: unsigned-app
+        if: steps.signpath.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app-unsigned
+          path: ${{ steps.app.outputs.exe }}
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign the executable (SignPath; approve it on signpath.io)
+        if: steps.signpath.outputs.signed == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Mirsam' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-app
+      - name: Make the installers around the signed executable (Windows)
+        if: steps.signpath.outputs.signed == 'true'
+        env:
+          EXE: ${{ steps.app.outputs.exe }}
+        run: |
+          signed="signed-app/$(basename "$EXE")"
+          [[ -f "$signed" ]] || { echo "::error::SignPath returned no $(basename "$EXE")"; ls -R signed-app; exit 1; }
+          cp "$signed" "$EXE"
+          FILE="$EXE" scripts/check-authenticode.sh
+          node scripts/bundle.mjs --target "$TARGET" --bundle-only
 
       # Tauri signs, notarizes and staples the .app; check that it did all of
       # it, PDFium included, then do the same for the disk image around it.
@@ -247,13 +324,47 @@ jobs:
               echo "${{ steps.signing.outputs.signed }}" > dist/macos-signed.txt ;;
             *-windows-msvc)
               one "$bundle/nsis/*-setup.exe" Mirsam-Windows-Setup.exe
-              one "$bundle/msi/*.msi" Mirsam-Windows.msi ;;
+              one "$bundle/msi/*.msi" Mirsam-Windows.msi
+              # Signed below when true; the job fails if that fails.
+              echo "${{ steps.signpath.outputs.signed }}" > dist/windows-signed.txt ;;
             *-linux-gnu)
               one "$bundle/deb/*.deb" Mirsam-Linux-x86_64.deb
               one "$bundle/rpm/*.rpm" Mirsam-Linux-x86_64.rpm
               one "$bundle/appimage/*.AppImage" Mirsam-Linux-x86_64.AppImage ;;
           esac
           ls -l dist
+
+      - name: Keep the unsigned installers for SignPath
+        id: unsigned-installers
+        if: steps.signpath.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-unsigned
+          path: |
+            dist/Mirsam-Windows-Setup.exe
+            dist/Mirsam-Windows.msi
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign the installers (SignPath; approve it on signpath.io)
+        if: steps.signpath.outputs.signed == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Mirsam' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: installers
+          github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installers
+      - name: Check the installers' signatures (Windows)
+        if: steps.signpath.outputs.signed == 'true'
+        run: |
+          for name in Mirsam-Windows-Setup.exe Mirsam-Windows.msi; do
+            [[ -f "signed-installers/$name" ]] || { echo "::error::SignPath returned no $name"; ls -R signed-installers; exit 1; }
+            cp "signed-installers/$name" "dist/$name"
+            FILE="dist/$name" scripts/check-authenticode.sh
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -288,19 +399,23 @@ jobs:
       - name: Checksums and notes
         run: |
           macos_signed="$(cat dist/macos-signed.txt)"
-          rm dist/macos-signed.txt
+          windows_signed="$(cat dist/windows-signed.txt)"
+          rm dist/macos-signed.txt dist/windows-signed.txt
           (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
           node -e '
             const fs = require("node:fs");
-            const [template, version, signed, repo] = process.argv.slice(1);
-            const drop = signed === "true" ? "unsigned" : "signed";
-            let notes = fs.readFileSync(template, "utf8")
-              .replace(new RegExp(`<!-- macos:${drop} -->[\\s\\S]*?<!-- /macos:${drop} -->\\n?`, "g"), "")
-              .replace(/<!-- \/?macos:(signed|unsigned) -->\n?/g, "")
-              .replaceAll("{{VERSION}}", version)
-              .replaceAll("{{REPO}}", repo);
+            const [template, version, macos, windows, repo] = process.argv.slice(1);
+            let notes = fs.readFileSync(template, "utf8");
+            // Keep the signed or the unsigned paragraph of each platform, whichever is true.
+            for (const [platform, signed] of [["macos", macos], ["windows", windows]]) {
+              const drop = signed === "true" ? "unsigned" : "signed";
+              notes = notes
+                .replace(new RegExp(`<!-- ${platform}:${drop} -->[\\s\\S]*?<!-- /${platform}:${drop} -->\\n?`, "g"), "")
+                .replace(new RegExp(`<!-- /?${platform}:(signed|unsigned) -->\\n?`, "g"), "");
+            }
+            notes = notes.replaceAll("{{VERSION}}", version).replaceAll("{{REPO}}", repo);
             fs.writeFileSync("release-notes.md", notes);
-          ' .github/release-notes.md "$VERSION" "$macos_signed" "$GITHUB_REPOSITORY"
+          ' .github/release-notes.md "$VERSION" "$macos_signed" "$windows_signed" "$GITHUB_REPOSITORY"
           cat release-notes.md
       - name: Create or update the draft
         run: |
