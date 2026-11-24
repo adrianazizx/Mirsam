@@ -12,7 +12,7 @@ for lang in en ar; do shot "$PUBLIC/og-$lang.png" 1200,630 "file://$HERE/og.html
 TMP="$(mktemp -d)"
 cat > "$TMP/icon.html" <<HTML
 <html><body style="margin:0;width:180px;height:180px;display:grid;place-items:center;background:#f7f6ff">
-<img src="file://$HERE/../brand/mirsam-envelope.svg" style="height:136px"></body></html>
+<img src="file://$HERE/../../docs/brand/mirsam-envelope.svg" style="height:136px"></body></html>
 HTML
 shot "$PUBLIC/apple-touch-icon.png" 180,180 "file://$TMP/icon.html"
 echo "wrote og-en.png, og-ar.png, apple-touch-icon.png"

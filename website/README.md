@@ -12,12 +12,13 @@ pnpm build            # astro check + static build into dist/
 ```
 
 - **Strings:** `src/i18n/en.json` and `src/i18n/ar.json` (same keys; the test enforces it).
-- **Brand:** `brand/` holds the logo SVGs; colours and type are in `src/styles/tokens.css`
+- **Brand:** the logo SVGs are the repository's `docs/brand/` (`src/generated/brand.json` holds its paths, `public/favicon.svg` is the page alone); colours and type are in `src/styles/tokens.css`
   (indigo ink, lavender, pale lavender; Readex Pro headings, IBM Plex body).
-- **Version and downloads:** the version label comes from `apps/desktop/package.json` (set by
-  `scripts/set-version.mjs`); download links use `releases/latest/download/<asset>`, so a new
-  release needs no change here. Sizes are read from the GitHub release at build time when it
-  matches that version, and left out otherwise.
+- **Version and downloads:** the version label and installer sizes come from the latest
+  *published* GitHub release at build time (falling back to `apps/desktop/package.json`, without
+  sizes, if GitHub can't be reached); download links use `releases/latest/download/<asset>`, so
+  they never need changing. Publishing a release doesn't rebuild the site: redeploy it on Vercel
+  (Deployments → Redeploy) so the label shows the new version.
 - **Screenshots:** real captures of the app with the fictional sample document in
   `screenshots/showcase.html` (`screenshots/make-showcase.sh out.pdf`), encoded by
   `scripts/encode-screens.sh <dir>` into `public/screens/<shot>-<en|ar>.webp`. A missing Arabic

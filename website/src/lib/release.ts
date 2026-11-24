@@ -25,27 +25,36 @@ interface GithubAsset {
   size: number;
 }
 
+interface PublishedRelease {
+  version: string;
+  sizes: Record<string, number>;
+}
+
 /**
- * Installer sizes from the latest GitHub release, when that release is the
- * version on main. Shown only when known: a failed or rate-limited lookup
- * leaves the sizes out rather than guessing them.
+ * The latest published GitHub release: what the download links serve. Main can
+ * be ahead of it (the version is bumped before the tag is pushed and the draft
+ * published), so the page labels what visitors actually get.
  */
-async function assetSizes(version: string): Promise<Record<string, number>> {
+async function latestRelease(): Promise<PublishedRelease | null> {
   try {
     const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json", "User-Agent": "mirsam-website-build" },
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return {};
+    if (!response.ok) return null;
     const release = (await response.json()) as { tag_name?: string; assets?: GithubAsset[] };
-    if (release.tag_name?.replace(/^v/, "") !== version) return {};
-    return Object.fromEntries((release.assets ?? []).map((asset) => [asset.name, asset.size]));
+    if (!release.tag_name) return null;
+    return {
+      version: release.tag_name.replace(/^v/, ""),
+      sizes: Object.fromEntries((release.assets ?? []).map((asset) => [asset.name, asset.size])),
+    };
   } catch {
-    return {};
+    return null;
   }
 }
 
-const version = appVersion();
-const sizes = await assetSizes(version);
+// If GitHub cannot be reached (offline, rate-limited), fall back to the version
+// on main and leave the sizes out rather than guess them.
+const published = await latestRelease();
 
-export const release = { version, sizes };
+export const release: PublishedRelease = published ?? { version: appVersion(), sizes: {} };

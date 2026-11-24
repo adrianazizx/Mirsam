@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/desktop/src-tauri/icons/128x128@2x.png" width="112" alt="Mirsam icon">
+  <img src="docs/brand/mirsam-envelope.svg" width="120" alt="Mirsam icon">
 </p>
 
 <h1 align="center">Mirsam · مرسام</h1>
@@ -226,6 +226,8 @@ and Arabic (right to left)** before it is done.
 
 Mirsam was called Safha (صفحة) while it had a working name. Code identifiers were renamed to
 `mirsam` on 2026-11-23; older decision records and session notes still say `safha`.
+
+The logo, the app icon and the pen-nib mark are in [docs/brand/](docs/brand/README.md).
 
 ## Licence
 
