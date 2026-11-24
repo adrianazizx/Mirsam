@@ -1482,6 +1482,19 @@ export interface Backend {
   /** The paragraphs of a page's text, in reading order (ADR 0023). */
   pageTextBlocks(documentId: number, page: number): Promise<ParagraphBlock[]>;
   /**
+   * Moves the page text drawn inside `rect` (a paragraph's box on the
+   * displayed page) by (`dx`, `dy`) displayed points: text added with the
+   * Edit tool or the page's own, its bytes kept (ADR 0051's amendment). One
+   * undo step.
+   */
+  movePageText(
+    documentId: number,
+    page: number,
+    rect: ViewRect,
+    dx: number,
+    dy: number,
+  ): Promise<EditOutcome>;
+  /**
    * Replaces a paragraph's text in place, reflowed inside its box (ADR 0023).
    * `family` forces a bundled substitute; absent, the paragraph's own font is
    * kept when it can set the text. An empty text removes the paragraph.

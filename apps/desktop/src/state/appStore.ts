@@ -142,6 +142,11 @@ export interface OpenDocument extends DocumentInfo {
   hasSelection: boolean;
   /** The annotation selected (clicked) in the page view: markup, ink, or a note. */
   selectedAnnotation: SelectedAnnotation | null;
+  /**
+   * The paragraph of page text the arrow keys move (the Edit tool's Text
+   * mode, ADR 0051's amendment): its page and its box on the displayed page.
+   */
+  selectedBlock: { page: number; rect: ViewRect } | null;
   /** Bumped by every edit, undo, and redo that changes pages: views showing pages start over. */
   revision: number;
   /**
@@ -732,6 +737,7 @@ export const useAppStore = create<AppState>((set, get) => {
         redaction: IDLE_REDACTION,
         hasSelection: false,
         selectedAnnotation: null,
+        selectedBlock: null,
         revision: 0,
         paint: 0,
         canUndo: info.canUndo ?? false,

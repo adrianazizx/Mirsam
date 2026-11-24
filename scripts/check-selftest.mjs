@@ -141,6 +141,15 @@ if (nav) {
   if (added) {
     check(added.painted, `the added text was not painted (${added.pixels} px, ${added.enough} needed)`);
     check(added.readBack, "the added Arabic text did not read back as page text");
+    // Moving the added paragraph (ADR 0051's amendment), through the commands and the shell.
+    const mv = added.moved;
+    check(mv !== undefined && mv !== null, "no results for moving the added paragraph");
+    if (mv) {
+      check(mv.dragged, "the dragged paragraph did not read back where it went");
+      check(mv.textKept, "the moved paragraph lost its text");
+      check(mv.selected, "the moved paragraph was not selected for the arrow keys");
+      check(mv.undone, "undo did not put the moved paragraph back");
+    }
     // Find and replace (ADR 0052): previewed, replaced through the shell, read back, one undo.
     const r = added.replace;
     check(r !== undefined && r !== null, "no find-and-replace results");
@@ -258,6 +267,11 @@ if (nav) {
         `replaced: ${a.replace?.ready} ready, read back ${a.replace?.readBack}, undone ${a.replace?.undone}; ` +
         `edited in place: found ${a.blockFound}, read back ${a.blockReadBack}; bold in the field ${a.boldApplied}, read back ${a.boldReadBack}; typing ${a.typingMedianMs} ms (p95 ${a.typingP95Ms})${a.typingWithoutFrames ? ", without animation frames: not judged" : ""}`,
     );
+    if (a.moved) {
+      console.log(
+        `  moved paragraph: dragged ${a.moved.dragged}, text kept ${a.moved.textKept}, selected ${a.moved.selected}, undone ${a.moved.undone}`,
+      );
+    }
   }
   if (nav.objectsAndLinks) {
     const o = nav.objectsAndLinks;

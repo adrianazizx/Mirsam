@@ -118,7 +118,7 @@ export function NoteEditor({ documentId }: { documentId: number }) {
   const onKeys = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      if (note && !pending) {
+      if ((note && !pending) || block) {
         // A placed one: what was typed is dropped, and the page takes the keys, the
         // item still selected, so the arrow keys move it; Escape again deselects it.
         setText(initial);

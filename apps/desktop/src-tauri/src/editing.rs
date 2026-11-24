@@ -255,6 +255,28 @@ pub async fn edit_text_block(
     })
 }
 
+/// Moves the page text drawn inside `rect` (a paragraph's box on the
+/// displayed page) by (`dx`, `dy`) displayed points: added text or the
+/// page's own, its bytes kept (ADR 0051's amendment). One undo step.
+#[tauri::command]
+pub async fn move_page_text(
+    state: State<'_, AppState>,
+    document_id: u32,
+    page: usize,
+    rect: ViewRect,
+    dx: f32,
+    dy: f32,
+) -> CommandResult<EditOutcome> {
+    let history = state.history(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let mut history = lock(&history);
+    let document = state.document(document_id).ok_or_else(|| CommandError::unknown_document(document_id))?;
+    let (revision, update) = document.with_text_moved(page, rect, dx, dy)?;
+    history.push_content(update);
+    let page_count = revision.page_count();
+    state.replace_revision(document_id, revision);
+    Ok(EditOutcome::new(page_count, &history, Change::Content))
+}
+
 /// Marked text on one page: the displayed-page rectangles of its runs.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MarkedPage {
