@@ -35,6 +35,10 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+# Least privilege: these jobs only read the repo and use artifacts and caches.
+permissions:
+  contents: read
+
 jobs:
   fuzz:
     name: Fuzz the open and parse path
