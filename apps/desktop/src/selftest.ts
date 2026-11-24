@@ -742,6 +742,13 @@ async function dragTo(documentId: number, item: PageAnnotation, rect: ViewRect) 
     rect: from,
   };
   await runCommand("fill.move", { annotation, rect });
+  // The viewer selects it again once the page is read again; then it is let go, so no
+  // editor stays open for the steps after.
+  const selected = () =>
+    useAppStore.getState().documents.find((open) => open.id === documentId)?.selectedAnnotation;
+  await waitFor(() => selected()?.index === item.index, 3_000);
+  getViewer(documentId)?.clearSelection();
+  await waitFor(() => !selected(), 1_000);
   return (await backend.pageAnnotations(documentId, 0)).find((a) => a.index === item.index);
 }
 
@@ -773,10 +780,15 @@ async function moveChecks(
   await runCommand("fill.moveRightMore");
   getViewer(documentId)?.clearSelection();
   useAppStore.getState().updateDocument(documentId, { selectedAnnotation: null });
+  // The nudge, too, selects the box again after the refresh.
+  await waitFor(() => {
+    const open = useAppStore.getState().documents.find((o) => o.id === documentId);
+    return open?.selectedAnnotation?.index === box.index;
+  }, 3_000);
+  getViewer(documentId)?.clearSelection();
   const boxNow = (await backend.pageAnnotations(documentId, 0)).find((a) => a.index === box.index);
   const inkTo = { ...inkFrom, x: inkFrom.x + 20, y: inkFrom.y + 120 };
   const inkNow = await dragTo(documentId, ink, inkTo);
-  getViewer(documentId)?.clearSelection();
   const firstPoint = inkNow?.strokes[0]?.[0];
   const firstBefore = ink.strokes[0]?.[0];
   return {

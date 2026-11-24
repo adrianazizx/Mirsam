@@ -302,6 +302,10 @@ update, one undo step, as before; the annotation keeps its object and its number
   & Sign text's) handle therefore found nothing selected and did not resize. The editor now asks
   the viewer (`grabsSelected`) whether the press grabs the selected item or a handle; if so it
   saves without deselecting (`note.save` with `keepSelected`).
+- **Also fixed: a held arrow key.** Each nudge read the selection's box from the store, which an
+  edit clears until the viewer, refreshed, selects the item again. Keys pressed faster than that
+  moved the item once, or not at all. A move now gives the selection its new box at once, and
+  keeps it selected across `applyEdit`, so nudges add up (Fill & Sign items included).
 
 ### Verified
 
@@ -322,7 +326,12 @@ update, one undo step, as before; the annotation keeps its object and its number
   the editor keeps the box selected and writes nothing).
 - **Real shell self-test** (`scripts/selftest.sh`, checked by `scripts/check-selftest.mjs`): the
   text box dragged and nudged by the arrow-key command and the stroke dragged, through the
-  commands and IPC, each read back where it went with its text and points, then undone.
+  commands and IPC, each read back where it went with its text and points, then undone. Passes in
+  English/light (Chrome's mixed page) and Arabic/dark (CoreText's contract).
+- **By hand in the real app** (debug shell, Arabic UI, Chrome's Arabic page): an Arabic text box
+  placed with the Comment tool, dragged with the Select tool (kept at the page's edge), Escape from
+  its editor then Shift+→ three times (all three applied), saved with Cmd+S, dragged again after
+  the save; the saved file passes `qpdf --check`.
 
 ### Limits
 

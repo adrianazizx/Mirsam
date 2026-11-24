@@ -243,6 +243,13 @@ if (nav) {
         `erased ${n.erased}, undone ${n.cleared}; comments ${JSON.stringify(n.comments?.kinds)}, ` +
         `reply ${n.comments?.replied}, resolved ${n.comments?.resolved}, ${n.comments?.panelItems} in the panel`,
     );
+    const m = n.moved;
+    if (m) {
+      console.log(
+        `  moved: text box dragged ${m.boxDragged}, nudged ${m.boxNudged}, text kept ${m.boxText}; ` +
+          `stroke dragged ${m.inkDragged}, points moved ${m.inkStrokes}`,
+      );
+    }
   }
   if (nav.addedText) {
     const a = nav.addedText;

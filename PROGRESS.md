@@ -1003,7 +1003,10 @@ doc."
 - **Tests:** `crates/mirsam-core/tests/moving.rs` (6 tests: every kind on English and Arabic
   pages before and after save → reopen → save, turned pages, re-flow and scaling, refusals, undo,
   an AES-256 file); `viewer/controller.test.ts` (3 new); `commands/moving.test.tsx` (12, English
-  and Arabic). The shell self-test drags and nudges a text box and drags a stroke.
+  and Arabic). The shell self-test drags and nudges a text box and drags a stroke (English/light
+  and Arabic/dark pass); checked by hand in the real app in Arabic, including after a save.
+- **Also fixed:** arrow keys pressed faster than each move was written were lost (the store let go
+  of the selection until the viewer's refresh); nudges now add up, Fill & Sign items included.
 
 ### M7 releases — 2026-11-24 (branch `pomidor/download-links-code-d0ea00`; ADR 0072)
 

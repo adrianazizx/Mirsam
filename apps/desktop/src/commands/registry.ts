@@ -981,9 +981,26 @@ async function nudgeFill(dx: number, dy: number): Promise<void> {
 async function placeFill(item: SelectedAnnotation, rect: ViewRect): Promise<void> {
   const active = selectActiveDocument(store());
   if (!active || !MOVABLE_KINDS.includes(item.kind)) return;
-  const outcome = await backend.setAnnotationRect(active.id, item.page, item.index, rect);
+  // The selection takes its new box at once, so the next nudge (a held arrow key) starts
+  // from here, not from where it was before this move's refresh comes back.
+  const selected = active.selectedAnnotation;
+  const isSelected = selected?.page === item.page && selected.index === item.index;
+  if (selected && isSelected)
+    store().updateDocument(active.id, { selectedAnnotation: { ...selected, rect } });
+  let outcome: EditOutcome;
+  try {
+    outcome = await backend.setAnnotationRect(active.id, item.page, item.index, rect);
+  } catch (error) {
+    if (isSelected) store().updateDocument(active.id, { selectedAnnotation: selected });
+    throw error;
+  }
   getViewer(active.id)?.reselectAfterRefresh({ ...item, rect });
   store().applyEdit(active.id, outcome);
+  // `applyEdit` lets go of the selection until the viewer, refreshed, selects it again: keep
+  // it in between, so an arrow key pressed then still moves it.
+  const latest = selectActiveDocument(store())?.selectedAnnotation;
+  if (isSelected && !latest)
+    store().updateDocument(active.id, { selectedAnnotation: { ...item, rect } });
 }
 
 /**

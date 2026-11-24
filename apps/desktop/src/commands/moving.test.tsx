@@ -108,6 +108,19 @@ describe.each(["en", "ar"] as const)("moving placed items in %s", (locale) => {
     },
   );
 
+  it("adds up arrow keys pressed faster than the file is written", async () => {
+    await backend.addTextBox(1, 0, 60, 500, 160, "مربع");
+    const box = await boxOf("textBox");
+    select("textBox", box.found.index, box.rect, "مربع");
+    // A held key: three nudges before the first is written.
+    await Promise.all([
+      runCommand("fill.moveRightMore"),
+      runCommand("fill.moveRightMore"),
+      runCommand("fill.moveRightMore"),
+    ]);
+    expect((await boxOf("textBox")).rect.x).toBe(box.rect.x + 30);
+  });
+
   it("widens a text box, scales a drawing, and keeps a note's icon its size", async () => {
     await backend.addTextBox(1, 0, 60, 500, 160, "نص طويل يلتف على عدة أسطر");
     await backend.addNote(1, 0, 300, 500, "ملاحظة");
