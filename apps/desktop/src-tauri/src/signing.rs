@@ -1,4 +1,4 @@
-//! Certificate signatures (ADR 0048): thin commands over `safha_core::sign`.
+//! Certificate signatures (ADR 0048): thin commands over `mirsam_core::sign`.
 //!
 //! - **Identities.** A PKCS#12 file is picked through a native dialog (the
 //!   UI gets its name, never its path), its password asked for, and the
@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::edit::EditHistory;
-use safha_core::sign::{
+use mirsam_core::edit::EditHistory;
+use mirsam_core::sign::{
     CertificateSummary, HttpTimeStamper, Identity, MAX_PKCS12_BYTES, SignOptions, SignatureReport,
     TimeStamper, TrustStore, VisibleSignature,
 };
@@ -80,7 +80,7 @@ pub async fn signing_identities(signing: State<'_, SigningState>) -> CommandResu
 
 #[cfg(target_os = "macos")]
 async fn keychain_identities() -> CommandResult<Vec<IdentityInfo>> {
-    let found = tauri::async_runtime::spawn_blocking(safha_core::sign::keychain::identities)
+    let found = tauri::async_runtime::spawn_blocking(mirsam_core::sign::keychain::identities)
         .await
         .map_err(|err| CommandError::new("engine_error", err.to_string()))?;
     // A keychain that cannot be searched leaves the files.
@@ -244,7 +244,7 @@ pub async fn sign_document(
                 &view,
                 graphic,
                 arg.caption.clone(),
-                safha_core::annotate::Signature::DEFAULT_COLOR,
+                mirsam_core::annotate::Signature::DEFAULT_COLOR,
             )?)
         }
     };
@@ -317,7 +317,7 @@ fn finish(
             "the signed file would have a different number of pages",
         ));
     }
-    safha_core::save::write_atomically(&path, &signed)?;
+    mirsam_core::save::write_atomically(&path, &signed)?;
     let signatures = reopened.signatures(TrustStore::system());
     let page_count = reopened.page_count();
     *history = EditHistory::new(signed);
@@ -326,7 +326,7 @@ fn finish(
     if let Some(store) = state.store()
         && let Err(err) = store.record_open(&path)
     {
-        eprintln!("safha: could not record a recent file: {err}");
+        eprintln!("mirsam: could not record a recent file: {err}");
     }
     drop(history);
     // Saved: its recovery file goes (ADR 0040).
@@ -343,7 +343,7 @@ fn identity_for(signing: &SigningState, id: &str) -> CommandResult<Identity> {
     }
     #[cfg(target_os = "macos")]
     if let Some(fingerprint) = id.strip_prefix("keychain:") {
-        return Ok(safha_core::sign::keychain::identity(fingerprint)?);
+        return Ok(mirsam_core::sign::keychain::identity(fingerprint)?);
     }
     Err(CommandError::new("certificate_unreadable", format!("unknown identity {id:?}")))
 }

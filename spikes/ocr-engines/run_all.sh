@@ -9,7 +9,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CACHE="${SAFHA_OCR_BENCH_CACHE:-$HOME/Library/Caches/safha-dev/ocr-bench}"
+CACHE="${MIRSAM_OCR_BENCH_CACHE:-$HOME/Library/Caches/mirsam-dev/ocr-bench}"
 PY="$CACHE/venv/bin/python"
 export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
 cd "$HERE"

@@ -20,7 +20,7 @@ import {
 
 /** What the mock backend stored (it keeps settings in localStorage). */
 function stored(): Record<string, string> {
-  return JSON.parse(localStorage.getItem("safha.mock.settings") ?? "{}") as Record<string, string>;
+  return JSON.parse(localStorage.getItem("mirsam.mock.settings") ?? "{}") as Record<string, string>;
 }
 
 async function settle() {
@@ -132,7 +132,7 @@ describe("the first-run guide", () => {
   });
 
   it("is not shown again once finished or skipped", async () => {
-    localStorage.setItem("safha.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "skipped" }));
+    localStorage.setItem("mirsam.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "skipped" }));
     await startApp();
     expect(useOnboarding.getState().loaded).toBe(true);
     expect(screen.queryByTestId("onboarding-guide")).toBeNull();
@@ -159,7 +159,7 @@ describe("the first-run guide", () => {
   });
 
   it("is reachable from the command palette", async () => {
-    localStorage.setItem("safha.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "done" }));
+    localStorage.setItem("mirsam.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "done" }));
     await startApp();
     await act(() => runCommand("app.commandPalette"));
     const input = await screen.findByTestId("palette-input");
@@ -216,7 +216,7 @@ describe("the first-run guide", () => {
 
 describe("the tools' one-time hints", () => {
   async function withDocument() {
-    localStorage.setItem("safha.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "done" }));
+    localStorage.setItem("mirsam.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "done" }));
     await startApp();
     await act(() => runCommand("file.open"));
     await settle();
@@ -282,7 +282,7 @@ describe("the tools' one-time hints", () => {
 
 describe("the start screen", () => {
   it("offers first steps, each a command", async () => {
-    localStorage.setItem("safha.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "done" }));
+    localStorage.setItem("mirsam.mock.settings", JSON.stringify({ [GUIDE_SETTING]: "done" }));
     await startApp();
     const steps = screen.getByRole("region", { name: "Get started" });
     expect(await axeViolations()).toEqual([]);

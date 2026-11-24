@@ -25,7 +25,7 @@ case "$ROOT" in
     esac
     # Keyed by checkout path so two checkouts never share build outputs.
     KEY="$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)"
-    CACHE="$CACHE_HOME/safha-dev/$KEY"
+    CACHE="$CACHE_HOME/mirsam-dev/$KEY"
     mkdir -p "$CACHE/target" "$CACHE/pnpm-virtual-store" "$CACHE/fuzz/target" "$CACHE/fuzz/corpus" \
       "$CACHE/fuzz/artifacts"
 

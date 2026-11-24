@@ -1,13 +1,13 @@
 //! True redaction and sanitizing (ADR 0042): thin commands over
-//! `safha_core::redact`. Finding runs on the document's shared search index;
+//! `mirsam_core::redact`. Finding runs on the document's shared search index;
 //! applying is one edit (an update, or a rewritten file for a signed
 //! document), so undo takes it back like any other.
 
-use safha_core::redact::{self, Mark, Pattern, Preset, SanitizeOptions};
-use safha_core::search::{SearchError, SearchOptions};
-use safha_core::text::Rect;
-use safha_core::view::{ViewRect, ViewTransform};
-use safha_core::{RevisionStep, edit::Change};
+use mirsam_core::redact::{self, Mark, Pattern, Preset, SanitizeOptions};
+use mirsam_core::search::{SearchError, SearchOptions};
+use mirsam_core::text::Rect;
+use mirsam_core::view::{ViewRect, ViewTransform};
+use mirsam_core::{RevisionStep, edit::Change};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 

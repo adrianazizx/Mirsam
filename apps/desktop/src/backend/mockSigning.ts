@@ -115,7 +115,7 @@ export const mockSigningBackend: Pick<
       try {
         url =
           (
-            JSON.parse(localStorage.getItem("safha.mock.settings") ?? "{}") as Record<
+            JSON.parse(localStorage.getItem("mirsam.mock.settings") ?? "{}") as Record<
               string,
               string
             >

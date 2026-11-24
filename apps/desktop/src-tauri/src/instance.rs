@@ -14,7 +14,7 @@
 //! Loopback TCP and an OS file lock are the same on macOS, Windows and Linux
 //! and need nothing beyond `std`. The lock is keyed by directory rather than
 //! by bundle identifier, so self-tests and benchmarks (each with its own
-//! `SAFHA_STATE_DIR`) run beside each other and beside the owner's own copy.
+//! `MIRSAM_STATE_DIR`) run beside each other and beside the owner's own copy.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -139,12 +139,12 @@ impl Instance {
                     }
                     match stream.and_then(|stream| answer(stream, &token)) {
                         Ok(documents) => open(documents),
-                        Err(err) => eprintln!("safha: ignored a request from another copy: {err}"),
+                        Err(err) => eprintln!("mirsam: ignored a request from another copy: {err}"),
                     }
                 }
             })
             .map(drop)
-            .unwrap_or_else(|err| eprintln!("safha: cannot answer other copies: {err}"));
+            .unwrap_or_else(|err| eprintln!("mirsam: cannot answer other copies: {err}"));
     }
 }
 
@@ -231,7 +231,7 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("safha-instance-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mirsam-instance-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }

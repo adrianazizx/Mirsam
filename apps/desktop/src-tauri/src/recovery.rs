@@ -1,5 +1,5 @@
 //! Autosave and recovery (ADR 0040): thin commands over
-//! `safha_core::recovery` and the state store.
+//! `mirsam_core::recovery` and the state store.
 //!
 //! - **Autosave.** After every edit, undo, or redo, a document with unsaved
 //!   changes has its current revision written to its recovery file a moment
@@ -20,10 +20,10 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
-use safha_core::edit::EditHistory;
-use safha_core::recovery::{FileStamp, RecoveryFiles};
-use safha_core::store::RecoveryEntry;
-use safha_core::{Engine, PdfiumSource};
+use mirsam_core::edit::EditHistory;
+use mirsam_core::recovery::{FileStamp, RecoveryFiles};
+use mirsam_core::store::RecoveryEntry;
+use mirsam_core::{Engine, PdfiumSource};
 
 use crate::commands::{DocumentInfo, OpenOutcome};
 use crate::error::{CommandError, CommandResult};
@@ -49,7 +49,7 @@ pub fn changed(app: &AppHandle, id: u32) {
         if state.autosave_generation(id) == Some(generation)
             && let Err(err) = write_now(&state, id)
         {
-            eprintln!("safha: autosave failed: {}", err.detail);
+            eprintln!("mirsam: autosave failed: {}", err.detail);
         }
     });
 }
@@ -92,7 +92,7 @@ pub fn forget(state: &AppState, key: &str) {
     if let Some(store) = state.store()
         && let Err(err) = store.forget_recovery(key)
     {
-        eprintln!("safha: could not forget a recovery file: {err}");
+        eprintln!("mirsam: could not forget a recovery file: {err}");
     }
 }
 
@@ -122,7 +122,7 @@ pub fn list(state: &AppState) -> Vec<RecoveryInfo> {
     let entries = match store.recoveries() {
         Ok(entries) => entries,
         Err(err) => {
-            eprintln!("safha: could not list recovery files: {err}");
+            eprintln!("mirsam: could not list recovery files: {err}");
             return Vec::new();
         }
     };
@@ -214,7 +214,7 @@ pub fn restore(
     let engine = Engine::global(&PdfiumSource::Auto)?;
     let document = match engine.open_bytes(recovered.to_vec(), password) {
         Ok(document) => document,
-        Err(safha_core::Error::PasswordRequired) => {
+        Err(mirsam_core::Error::PasswordRequired) => {
             return Ok(RestoreOutcome {
                 outcome: OpenOutcome::NeedsPassword {
                     token: state.lock_pending_recovery(key.to_string()),
@@ -269,8 +269,8 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    use safha_core::edit::PageEdit;
-    use safha_core::store::Store;
+    use mirsam_core::edit::PageEdit;
+    use mirsam_core::store::Store;
 
     use super::*;
     use crate::state::MAIN_WINDOW;
@@ -286,7 +286,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "safha-recovery-shell-{}-{}",
+            "mirsam-recovery-shell-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -415,7 +415,7 @@ mod tests {
         let (dir, file) = scratch("derived/encrypted.pdf", "secret.pdf");
         let state = launch(&dir);
         let outcome =
-            crate::commands::open_path(&state, &file, Some("safha-test"), MAIN_WINDOW).expect("opens");
+            crate::commands::open_path(&state, &file, Some("mirsam-test"), MAIN_WINDOW).expect("opens");
         let (id, _) = opened(&outcome);
         rotate(&state, id);
         write_now(&state, id).expect("autosaves");
@@ -435,7 +435,7 @@ mod tests {
         assert_eq!(state.pending_recovery(token).as_deref(), Some(key.as_str()));
         let wrong = restore(&state, &key, Some("not it"), MAIN_WINDOW).expect("asks again");
         assert!(matches!(wrong.outcome, OpenOutcome::NeedsPassword { retry: true, .. }));
-        let right = restore(&state, &key, Some("safha-test"), MAIN_WINDOW).expect("restores");
+        let right = restore(&state, &key, Some("mirsam-test"), MAIN_WINDOW).expect("restores");
         assert!(matches!(right.outcome, OpenOutcome::Opened { .. }));
         let _ = std::fs::remove_dir_all(dir);
     }

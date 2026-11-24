@@ -729,7 +729,7 @@ async function notesAndInkChecks(documentId: number) {
  * When the shell says a self-test is requested, wait for the startup
  * document's first page to be sharp on screen, then report what is actually
  * there: layout geometry, directions, and the page's pixels themselves.
- * With `SAFHA_SELFTEST_SPIKE=scroll`, run the scroll benchmark instead
+ * With `MIRSAM_SELFTEST_SPIKE=scroll`, run the scroll benchmark instead
  * (`scroll:zoom`: its zoom gestures only, three times over, for quick work on
  * zooming; that report is not a budget check).
  */
@@ -835,7 +835,7 @@ export async function runSelftestIfRequested(): Promise<void> {
   }
   if (config.spike === "print" && painted) {
     // Print the open document. On Linux the shell resolves once GTK has
-    // finished (with SAFHA_PRINT_EXPORT, into a PDF file the harness checks;
+    // finished (with MIRSAM_PRINT_EXPORT, into a PDF file the harness checks;
     // ADR 0013). On macOS and Windows it resolves once the print window opens,
     // so the harness waits for screenshots (ADR 0012).
     const started = performance.now();

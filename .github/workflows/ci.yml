@@ -130,7 +130,7 @@ jobs:
       - name: Rust lint (release surface)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Rust lint (devtools surface)
-        run: cargo clippy --workspace --all-targets --locked --features safha-desktop/devtools -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked --features mirsam-desktop/devtools -- -D warnings
       - name: Rust tests
         run: cargo test --workspace --locked
       # Each platform's Chrome lays out the fixtures a little differently;
@@ -163,7 +163,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: apps/desktop
       - run: node fixtures/generate.mjs
-      - run: cargo build -p safha-desktop --features devtools --locked
+      - run: cargo build -p mirsam-desktop --features devtools --locked
       # The first launch of a freshly built binary on a fresh runner pays
       # one-time costs (macOS checks the new executable, caches are cold): on
       # the first CI run it took 461 ms to the first preview, the next launch
@@ -242,7 +242,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: apps/desktop
       - run: node fixtures/generate.mjs
-      - run: cargo build -p safha-desktop --features devtools --locked
+      - run: cargo build -p mirsam-desktop --features devtools --locked
       - name: Warm-up launch (not checked)
         run: scripts/selftest.sh fixtures/out/chrome/mixed-inline.pdf selftest-out/warmup en light || true
       - name: English, light
@@ -259,9 +259,9 @@ jobs:
       - name: Print through GTK to a file (Linux)
         if: runner.os == 'Linux'
         env:
-          SAFHA_SELFTEST_SPIKE: print
+          MIRSAM_SELFTEST_SPIKE: print
         run: |
-          SAFHA_PRINT_EXPORT="$PWD/selftest-out/print/printed.pdf" \
+          MIRSAM_PRINT_EXPORT="$PWD/selftest-out/print/printed.pdf" \
             scripts/selftest.sh fixtures/out/derived/rotated.pdf selftest-out/print en light
           cat selftest-out/print/report.json
           node -e 'const r = require("./selftest-out/print/report.json").results; if (r.error) { console.error(r.error); process.exit(1); }'
@@ -270,7 +270,7 @@ jobs:
           test "$pages" = 4
           # Small previews of what was printed, for the uploaded artifact.
           for page in 0 1 2 3; do
-            cargo run -q -p safha-core --example render_png -- \
+            cargo run -q -p mirsam-core --example render_png -- \
               selftest-out/print/printed.pdf "selftest-out/print/page-$page.png" "$page" 0.4
           done
       - uses: actions/upload-artifact@v4
@@ -295,7 +295,7 @@ jobs:
       - run: node fixtures/generate.mjs
       - name: Search 500 pages (release build)
         run: |
-          export SAFHA_PDFIUM_DIR="$PWD/third_party/pdfium/linux-x64/lib"
-          cargo run --release --locked -p safha-core --example search_bench -- \
+          export MIRSAM_PDFIUM_DIR="$PWD/third_party/pdfium/linux-x64/lib"
+          cargo run --release --locked -p mirsam-core --example search_bench -- \
             fixtures/out/derived/bilingual-500-pages.pdf --budget-ms 1000 \
             Agreement الإيجار 4,500 the مختلط

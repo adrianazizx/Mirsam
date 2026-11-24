@@ -8,7 +8,7 @@ the model gave any of its tokens (greedy decoding, so the chosen token's softmax
 
 Each model runs the way its card documents: its own prompt, its own input size,
 greedy decoding. Output markup is removed by `to_text.py`, identically for all.
-Weights come from the Hugging Face cache under SAFHA_OCR_BENCH_CACHE/hf.
+Weights come from the Hugging Face cache under MIRSAM_OCR_BENCH_CACHE/hf.
 """
 
 from __future__ import annotations

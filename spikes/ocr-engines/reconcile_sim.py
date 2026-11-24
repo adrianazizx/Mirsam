@@ -9,7 +9,7 @@ Readings per page:
   V    Apple Vision, whole page (the platform OCR: third reader for numbers)
 
 Writes one hypothesis directory per rule to spikes/out/ocr-engines/reconcile/<rule>/ and a
-flags summary; score each with safha-ocr-eval.
+flags summary; score each with mirsam-ocr-eval.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 OUT = REPO / "spikes" / "out" / "ocr-engines"
 HYP = OUT / "hyp"
-VISION = Path(os.environ.get("SAFHA_VISION_HYP", REPO.parent / "m4-ocr-benchmark-f94419" / "spikes/out/ocr-engines/hyp/apple-vision"))
+VISION = Path(os.environ.get("MIRSAM_VISION_HYP", REPO.parent / "m4-ocr-benchmark-f94419" / "spikes/out/ocr-engines/hyp/apple-vision"))
 
 BIDI = re.compile("[؜‎‏‪-‮⁦-⁩]")
 DIGIT = re.compile(r"[0-9٠-٩۰-۹]")

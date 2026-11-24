@@ -6,14 +6,14 @@
 # report.json and canvas.png (the canvas pixels as the webview holds them).
 #
 # Usage: scripts/selftest.sh <file.pdf> <out-dir> [en|ar] [light|dark]
-# Needs: cargo build -p safha-desktop --features devtools
-# Env:   SAFHA_SELFTEST_APP=<binary> runs another devtools build, e.g. the release
-#        bundle (target/release/bundle/macos/Mirsam.app/Contents/MacOS/safha-desktop);
-#        SAFHA_SELFTEST_SPIKE=<name> runs a benchmark (scroll, tile-transport);
-#        SAFHA_SELFTEST_TIMEOUT=<seconds> (default 60);
-#        SAFHA_SELFTEST_UI=bundled: the app carries its own UI (a release build or
+# Needs: cargo build -p mirsam-desktop --features devtools
+# Env:   MIRSAM_SELFTEST_APP=<binary> runs another devtools build, e.g. the release
+#        bundle (target/release/bundle/macos/Mirsam.app/Contents/MacOS/mirsam-desktop);
+#        MIRSAM_SELFTEST_SPIKE=<name> runs a benchmark (scroll, tile-transport);
+#        MIRSAM_SELFTEST_TIMEOUT=<seconds> (default 60);
+#        MIRSAM_SELFTEST_UI=bundled: the app carries its own UI (a release build or
 #        an installed bundle, scripts/bundle-selftest.sh), so no dev server is started;
-#        SAFHA_SELFTEST_STATE=<dir>: keep the app's state there, across runs
+#        MIRSAM_SELFTEST_STATE=<dir>: keep the app's state there, across runs
 #        (scripts/crash-selftest.sh), instead of a fresh <out-dir>/state.
 set -euo pipefail
 
@@ -23,19 +23,19 @@ mkdir -p "$2"
 OUT="$(cd "$2" && pwd)"
 LOCALE="${3:-en}"
 THEME="${4:-light}"
-APP="${SAFHA_SELFTEST_APP:-$ROOT/target/debug/safha-desktop}"
+APP="${MIRSAM_SELFTEST_APP:-$ROOT/target/debug/mirsam-desktop}"
 [[ -f "$APP.exe" ]] && APP="$APP.exe"
-TIMEOUT_SECONDS="${SAFHA_SELFTEST_TIMEOUT:-60}"
+TIMEOUT_SECONDS="${MIRSAM_SELFTEST_TIMEOUT:-60}"
 
-[[ -x "$APP" ]] || { echo "missing $APP: run cargo build -p safha-desktop --features devtools" >&2; exit 2; }
+[[ -x "$APP" ]] || { echo "missing $APP: run cargo build -p mirsam-desktop --features devtools" >&2; exit 2; }
 # Git Bash on Windows: the app is a native program and needs Windows paths.
 native() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 rm -f "$OUT/report.json" "$OUT/canvas.png"
 # A fresh state store per run: no recents or session from the user's own use,
 # and nothing written back to them.
-if [[ -n "${SAFHA_SELFTEST_STATE:-}" ]]; then
-  mkdir -p "$SAFHA_SELFTEST_STATE"
-  STATE="$(cd "$SAFHA_SELFTEST_STATE" && pwd)"
+if [[ -n "${MIRSAM_SELFTEST_STATE:-}" ]]; then
+  mkdir -p "$MIRSAM_SELFTEST_STATE"
+  STATE="$(cd "$MIRSAM_SELFTEST_STATE" && pwd)"
 else
   STATE="$OUT/state"
   rm -rf "$STATE"
@@ -45,7 +45,7 @@ VITE_PID=""
 cleanup() { [[ -z "$VITE_PID" ]] || kill "$VITE_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-if [[ "${SAFHA_SELFTEST_UI:-dev}" != "bundled" ]]; then
+if [[ "${MIRSAM_SELFTEST_UI:-dev}" != "bundled" ]]; then
   # The debug app loads its UI from http://localhost:1420 (tauri.conf.json). A
   # server already there (another checkout's, another session's) would be
   # tested instead of this checkout's UI, so refuse rather than test the wrong code.
@@ -67,8 +67,8 @@ fi
 # The launch time, in Unix milliseconds, for the cold-start budget (spec
 # section 11): the app reports how long after it its window was usable.
 launched_ms() { perl -MTime::HiRes=time -e 'printf("%.0f", time() * 1000)' 2>/dev/null || echo ""; }
-SAFHA_OPEN="$(native "$PDF")" SAFHA_STATE_DIR="$(native "$STATE")" SAFHA_SELFTEST_OUT="$(native "$OUT")" \
-  SAFHA_SELFTEST_LOCALE="$LOCALE" SAFHA_SELFTEST_THEME="$THEME" SAFHA_SELFTEST_LAUNCHED_MS="$(launched_ms)" \
+MIRSAM_OPEN="$(native "$PDF")" MIRSAM_STATE_DIR="$(native "$STATE")" MIRSAM_SELFTEST_OUT="$(native "$OUT")" \
+  MIRSAM_SELFTEST_LOCALE="$LOCALE" MIRSAM_SELFTEST_THEME="$THEME" MIRSAM_SELFTEST_LAUNCHED_MS="$(launched_ms)" \
   "$APP" >"$OUT/app.log" 2>&1 &
 APP_PID=$!
 ( sleep "$TIMEOUT_SECONDS"; kill "$APP_PID" 2>/dev/null || true ) &

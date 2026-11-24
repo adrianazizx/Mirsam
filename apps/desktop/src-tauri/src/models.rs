@@ -1,4 +1,4 @@
-//! OCR model downloads (ADR 0034): thin commands over `safha_core::models`.
+//! OCR model downloads (ADR 0034): thin commands over `mirsam_core::models`.
 //!
 //! A download runs on its own thread and reports to every window through
 //! [`PROGRESS_EVENT`]; the command that starts it returns at once. The UI gets
@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use safha_core::models::{
+use mirsam_core::models::{
     Catalog, Downloader, Hardware, InstalledPackage, ModelError, ModelStore, PackageStatus, Phase,
 };
 use serde::Serialize;
@@ -193,7 +193,7 @@ pub fn download_ocr_model(app: AppHandle, state: State<'_, ModelsState>, id: Str
                 Ok(_) => JobUpdate::Installed,
                 Err(ModelError::Cancelled) => JobUpdate::Cancelled,
                 Err(err) => {
-                    eprintln!("safha: installing the OCR model {id} failed: {err}");
+                    eprintln!("mirsam: installing the OCR model {id} failed: {err}");
                     let (needed, available) = match err {
                         ModelError::DiskFull { needed, available } if needed > 0 => {
                             (Some(needed), Some(available))
@@ -236,19 +236,19 @@ pub async fn delete_ocr_model(app: AppHandle, id: String) -> CommandResult<()> {
     .await
 }
 
-/// Where models are installed: `SAFHA_MODELS_DIR` (development), else
+/// Where models are installed: `MIRSAM_MODELS_DIR` (development), else
 /// `ocr-models` in the state directory this copy of the app holds (ADR 0046),
 /// so two copies never download into the same folder. `None` when this copy
 /// holds no state directory.
 pub fn models_root(state_dir: Option<&Path>) -> Option<PathBuf> {
-    std::env::var_os("SAFHA_MODELS_DIR")
+    std::env::var_os("MIRSAM_MODELS_DIR")
         .map(PathBuf::from)
         .or_else(|| state_dir.map(|dir| dir.join("ocr-models")))
 }
 
 #[cfg(test)]
 mod tests {
-    use safha_core::models::PackageState;
+    use mirsam_core::models::PackageState;
 
     use super::*;
 
@@ -272,7 +272,7 @@ mod tests {
         );
 
         let catalog = Catalog::builtin();
-        let store = ModelStore::new(std::env::temp_dir().join("safha-shell-models-none"));
+        let store = ModelStore::new(std::env::temp_dir().join("mirsam-shell-models-none"));
         let status = store.status(&catalog).remove(0);
         assert_eq!(status.state, PackageState::NotInstalled);
         let wire = PackageWire { status, required: true, downloading: false };

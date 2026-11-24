@@ -1,7 +1,7 @@
 //! Developer self-test harness.
 //!
 //! macOS has no WebDriver for WKWebView, so end-to-end checks of the real shell
-//! work the other way round: launched with `SAFHA_SELFTEST_OUT=<dir>`, the UI
+//! work the other way round: launched with `MIRSAM_SELFTEST_OUT=<dir>`, the UI
 //! drives itself (open the startup document, render, read the canvas back) and
 //! reports here; this module writes the evidence to `<dir>` and exits.
 //!
@@ -42,7 +42,8 @@ pub struct SelftestReport {
 /// screen (PROGRESS.md, M7 crash reports and performance). `None` outside a
 /// self-test: the product keeps WebKit's default.
 pub fn selftest_throttling() -> Option<tauri::utils::config::BackgroundThrottlingPolicy> {
-    std::env::var_os("SAFHA_SELFTEST_OUT").map(|_| tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+    std::env::var_os("MIRSAM_SELFTEST_OUT")
+        .map(|_| tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
 }
 
 /// During a self-test run, keeps the window above others so it is not
@@ -50,7 +51,7 @@ pub fn selftest_throttling() -> Option<tauri::utils::config::BackgroundThrottlin
 /// invalidate every frame-time measurement (ADR 0007).
 pub fn prepare_window(app: &tauri::App) {
     use tauri::Manager as _;
-    if std::env::var_os("SAFHA_SELFTEST_OUT").is_none() {
+    if std::env::var_os("MIRSAM_SELFTEST_OUT").is_none() {
         return;
     }
     if let Some(window) = app.get_webview_window("main") {
@@ -106,7 +107,7 @@ pub fn selftest_crash(kind: String) {
         "panic" => panic!("{MESSAGE}"),
         "thread-panic" => {
             let worker =
-                std::thread::Builder::new().name("safha-selftest".into()).spawn(|| panic!("{MESSAGE}"));
+                std::thread::Builder::new().name("mirsam-selftest".into()).spawn(|| panic!("{MESSAGE}"));
             if let Ok(worker) = worker {
                 let _ = worker.join();
             }
@@ -153,7 +154,7 @@ pub fn window_labels(app: AppHandle) -> Vec<String> {
 
 /// Render-queue and tile-cache counters, for the scroll benchmark.
 #[tauri::command]
-pub fn render_stats(state: State<'_, AppState>) -> safha_core::render::RenderStats {
+pub fn render_stats(state: State<'_, AppState>) -> mirsam_core::render::RenderStats {
     state.render.stats()
 }
 
@@ -221,11 +222,11 @@ mod tests {
 
 #[tauri::command]
 pub fn selftest_config() -> Option<SelftestConfig> {
-    std::env::var_os("SAFHA_SELFTEST_OUT")?;
+    std::env::var_os("MIRSAM_SELFTEST_OUT")?;
     Some(SelftestConfig {
-        locale: std::env::var("SAFHA_SELFTEST_LOCALE").unwrap_or_else(|_| "en".into()),
-        theme: std::env::var("SAFHA_SELFTEST_THEME").unwrap_or_else(|_| "light".into()),
-        spike: std::env::var("SAFHA_SELFTEST_SPIKE").ok().filter(|name| !name.is_empty()),
+        locale: std::env::var("MIRSAM_SELFTEST_LOCALE").unwrap_or_else(|_| "en".into()),
+        theme: std::env::var("MIRSAM_SELFTEST_THEME").unwrap_or_else(|_| "light".into()),
+        spike: std::env::var("MIRSAM_SELFTEST_SPIKE").ok().filter(|name| !name.is_empty()),
     })
 }
 
@@ -235,8 +236,8 @@ pub fn selftest_report(
     state: State<'_, AppState>,
     report: SelftestReport,
 ) -> CommandResult<()> {
-    let Some(out_dir) = std::env::var_os("SAFHA_SELFTEST_OUT").map(std::path::PathBuf::from) else {
-        return Err(CommandError::new("devtools_disabled", "SAFHA_SELFTEST_OUT is not set"));
+    let Some(out_dir) = std::env::var_os("MIRSAM_SELFTEST_OUT").map(std::path::PathBuf::from) else {
+        return Err(CommandError::new("devtools_disabled", "MIRSAM_SELFTEST_OUT is not set"));
     };
     let io = |err: std::io::Error| CommandError::new("io_error", err.to_string());
 
@@ -251,11 +252,11 @@ pub fn selftest_report(
     }
     // Which PDFium this process runs on: bundle checks assert that an installed
     // app loads the copy inside its own bundle (scripts/bundle-selftest.sh).
-    let pdfium = safha_core::Engine::global(&safha_core::PdfiumSource::Auto)
+    let pdfium = mirsam_core::Engine::global(&mirsam_core::PdfiumSource::Auto)
         .ok()
         .map(|engine| engine.library_path().display().to_string());
     // Cold start (spec section 11): from the harness's launch of the process
-    // (`SAFHA_SELFTEST_LAUNCHED_MS`, Unix milliseconds) to the shell's `run()`,
+    // (`MIRSAM_SELFTEST_LAUNCHED_MS`, Unix milliseconds) to the shell's `run()`,
     // then the UI's marks since `run()`.
     let since_run = state.started.elapsed();
     let run_began = std::time::SystemTime::now()
@@ -263,7 +264,7 @@ pub fn selftest_report(
         .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|at| at.as_millis());
     let launched: Option<u128> =
-        std::env::var("SAFHA_SELFTEST_LAUNCHED_MS").ok().and_then(|ms| ms.trim().parse().ok());
+        std::env::var("MIRSAM_SELFTEST_LAUNCHED_MS").ok().and_then(|ms| ms.trim().parse().ok());
     let launch_to_run = launched.zip(run_began).map(|(launched, began)| began.saturating_sub(launched));
     let marks: serde_json::Map<String, serde_json::Value> = MARKS
         .lock()

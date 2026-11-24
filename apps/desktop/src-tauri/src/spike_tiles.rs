@@ -9,7 +9,7 @@
 use std::time::Instant;
 
 use base64::Engine as _;
-use safha_core::TileRequest;
+use mirsam_core::TileRequest;
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::{Manager, State, UriSchemeContext, UriSchemeResponder, http};
 
@@ -19,11 +19,11 @@ use crate::state::AppState;
 /// Length of the little-endian header before the RGBA bytes of the spike's
 /// raw transports: width, height, render time in microseconds, flags (0).
 /// Read by `apps/desktop/src/backend/bitmap.ts`. The product's tiles travel
-/// as BMP images over the `safha` scheme instead (ADR 0011).
+/// as BMP images over the `mirsam` scheme instead (ADR 0011).
 pub const BITMAP_HEADER_LEN: usize = 16;
 
 /// A bitmap as raw bytes: a [`BITMAP_HEADER_LEN`]-byte header, then RGBA.
-pub fn encode_bitmap(bitmap: &safha_core::Bitmap, render_micros: u128) -> Vec<u8> {
+pub fn encode_bitmap(bitmap: &mirsam_core::Bitmap, render_micros: u128) -> Vec<u8> {
     let rgba = bitmap.to_rgba();
     let mut out = Vec::with_capacity(BITMAP_HEADER_LEN + rgba.len());
     out.extend_from_slice(&bitmap.width().to_le_bytes());
@@ -81,8 +81,8 @@ pub async fn spike_tile_base64(
 /// The startup document's bytes, for the PDFium-in-WebAssembly candidate.
 #[tauri::command]
 pub fn spike_pdf_bytes() -> CommandResult<Response> {
-    let path = std::env::var_os("SAFHA_OPEN")
-        .ok_or_else(|| CommandError::new("io_error", "SAFHA_OPEN is not set"))?;
+    let path = std::env::var_os("MIRSAM_OPEN")
+        .ok_or_else(|| CommandError::new("io_error", "MIRSAM_OPEN is not set"))?;
     std::fs::read(path).map(Response::new).map_err(|err| CommandError::new("io_error", err.to_string()))
 }
 
@@ -104,7 +104,7 @@ fn render_bmp(state: &AppState, document_id: u32, page: usize, tile: TileRequest
 }
 
 /// Transport 3: a custom URI scheme the webview can `fetch()`.
-/// `safha-tile://localhost/<document>/<page>?scale=&x=&y=&w=&h=[&format=bmp]`
+/// `mirsam-tile://localhost/<document>/<page>?scale=&x=&y=&w=&h=[&format=bmp]`
 pub fn protocol<R: tauri::Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: http::Request<Vec<u8>>,

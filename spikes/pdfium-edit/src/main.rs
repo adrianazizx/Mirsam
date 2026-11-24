@@ -320,7 +320,7 @@ fn generate_all() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = root.join("spikes/out/pdfium-edit");
     std::fs::create_dir_all(out_dir.join("qdf"))?;
 
-    // Route A needs the edit API, so bind PDFium directly (safha-core does not expose it).
+    // Route A needs the edit API, so bind PDFium directly (mirsam-core does not expose it).
     let lib_dir = root.join("third_party/pdfium/mac-arm64/lib");
     let pdfium = Pdfium::new(
         Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&lib_dir))
@@ -431,8 +431,8 @@ fn generate_all() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Render + extract through safha-core in a child process (one binding per process).
-    eprintln!("rendering and extracting {} PDFs with PDFium (safha-core)...", verify_args.len());
+    // Render + extract through mirsam-core in a child process (one binding per process).
+    eprintln!("rendering and extracting {} PDFs with PDFium (mirsam-core)...", verify_args.len());
     let child = Command::new(std::env::current_exe()?).arg("verify").args(&verify_args).output()?;
     if !child.status.success() {
         return Err(format!("verify child failed: {}", String::from_utf8_lossy(&child.stderr)).into());

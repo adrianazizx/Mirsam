@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use safha_core::typeset::{Align, BaseDirection, FontFace, ParagraphStyle, Span, layout};
+use mirsam_core::typeset::{Align, BaseDirection, FontFace, ParagraphStyle, Span, layout};
 use serde_json::json;
 
 const CASES: &[(&str, &str, f32, f32, bool)] = &[

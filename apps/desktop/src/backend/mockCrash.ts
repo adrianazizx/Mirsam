@@ -16,12 +16,12 @@ System: macOS 26.1 (25B78)
 
 What happened:
   index out of bounds: the len is 3 but the index is 7
-  at crates/safha-core/src/text/layout.rs:120:9, thread safha-render
+  at crates/mirsam-core/src/text/layout.rs:120:9, thread mirsam-render
 
 Stack (innermost first):
-  safha_core::text::layout::visual_order
-  safha_core::text::page_text
-  safha_core::render::worker
+  mirsam_core::text::layout::visual_order
+  mirsam_core::text::page_text
+  mirsam_core::render::worker
 
 Last commands (oldest first):
   open_document_dialog

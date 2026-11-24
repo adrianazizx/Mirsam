@@ -1,5 +1,5 @@
 [package]
-name = "safha-fuzz"
+name = "mirsam-fuzz"
 description = "Fuzz targets for Mirsam's open and parse path (cargo-fuzz; see fuzz/README.md)"
 version = "0.0.0"
 edition = "2024"
@@ -20,7 +20,7 @@ members = ["."]
 # licence, approved by the owner on 2026-11-23). A development tool only;
 # nothing here is in the app.
 libfuzzer-sys = "0.4.13"
-safha-core = { path = "../crates/safha-core" }
+mirsam-core = { path = "../crates/mirsam-core" }
 
 [lints.rust]
 unsafe_code = "deny"

@@ -48,7 +48,7 @@ const TRANSPORTS: Record<string, Transport> = {
 
   "custom-protocol": async (documentId, tile) => {
     const { scale, x, y, width, height } = tile;
-    const url = `safha-tile://localhost/${documentId}/${PAGE}?scale=${scale}&x=${x}&y=${y}&w=${width}&h=${height}`;
+    const url = `mirsam-tile://localhost/${documentId}/${PAGE}?scale=${scale}&x=${x}&y=${y}&w=${width}&h=${height}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`protocol ${response.status}`);
     return decodeBitmap(await response.arrayBuffer());

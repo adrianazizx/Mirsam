@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri", "spikes/pdfium-edit", "spikes/pdfium-regenerate", "spikes/editor-surface", "spikes/pades"]
+members = ["crates/mirsam-core", "crates/mirsam-ocr-eval", "apps/desktop/src-tauri", "spikes/pdfium-edit", "spikes/pdfium-regenerate", "spikes/editor-surface", "spikes/pades"]
 # Spikes are throwaway prototypes: built on demand, never part of the default build.
-default-members = ["crates/safha-core", "crates/safha-ocr-eval", "apps/desktop/src-tauri"]
+default-members = ["crates/mirsam-core", "crates/mirsam-ocr-eval", "apps/desktop/src-tauri"]
 
 [workspace.package]
 version = "0.0.1"
@@ -12,7 +12,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-safha-core = { path = "crates/safha-core" }
+mirsam-core = { path = "crates/mirsam-core" }
 # The pdfium_NNNN feature must match PDFIUM_BUILD in scripts/fetch-pdfium.sh.
 pdfium-render = { version = "=0.9.6", default-features = false, features = ["pdfium_8125", "thread_safe"] }
 thiserror = "2"

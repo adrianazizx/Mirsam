@@ -1,5 +1,5 @@
 //! Form filling, Fill & Sign, and the user's signatures (ADR 0045): thin
-//! commands over `safha_core::forms`, `safha_core::annotate`, and the
+//! commands over `mirsam_core::forms`, `mirsam_core::annotate`, and the
 //! state store. Positions come from the UI in displayed-page points and are
 //! mapped to page space here; signature images are picked through a native
 //! dialog, so the UI never sees a path.
@@ -8,15 +8,15 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use safha_core::annotate::{
+use mirsam_core::annotate::{
     AnnotationEdit, DrawnSignature, FillText, MAX_SIGNATURE_IMAGE_BYTES, Mark, MarkKind, Signature,
     SignaturePoint, SignatureStamp, TypedSignature,
 };
-use safha_core::edit::Change;
-use safha_core::fonts::FontFamily;
-use safha_core::forms::{FormEdit, FormInfo};
-use safha_core::store::{Store, StoredSignature};
-use safha_core::view::ViewRect;
+use mirsam_core::edit::Change;
+use mirsam_core::fonts::FontFamily;
+use mirsam_core::forms::{FormEdit, FormInfo};
+use mirsam_core::store::{Store, StoredSignature};
+use mirsam_core::view::ViewRect;
 
 use crate::editing::{EditOutcome, edit_annotations};
 use crate::error::{CommandError, CommandResult};
@@ -26,7 +26,7 @@ fn store(state: &AppState) -> CommandResult<&Store> {
     state.store().ok_or_else(|| CommandError::new("store_unavailable", "the state store is not open"))
 }
 
-fn store_error(err: safha_core::store::StoreError) -> CommandError {
+fn store_error(err: mirsam_core::store::StoreError) -> CommandError {
     CommandError::new("store_unavailable", err.to_string())
 }
 
@@ -179,7 +179,7 @@ pub async fn set_annotation_rect(
 }
 
 /// A kept signature as the UI lists and previews it. Images are shown from
-/// `safha://localhost/signature?id=N`.
+/// `mirsam://localhost/signature?id=N`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignatureWire {
@@ -302,7 +302,7 @@ pub async fn delete_signature(state: State<'_, AppState>, id: i64) -> CommandRes
     store(&state)?.delete_signature(id).map_err(store_error)
 }
 
-/// `safha://localhost/signature?id=N`: a kept image signature's own bytes,
+/// `mirsam://localhost/signature?id=N`: a kept image signature's own bytes,
 /// which the webview decodes itself (ADR 0011).
 pub fn signature_image(state: &AppState, uri: &tauri::http::Uri) -> Option<(&'static str, Vec<u8>)> {
     let id = uri.query()?.split('&').find_map(|pair| pair.strip_prefix("id="))?.parse::<i64>().ok()?;

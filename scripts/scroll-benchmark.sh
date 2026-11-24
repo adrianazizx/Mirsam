@@ -7,7 +7,7 @@
 # Usage: scripts/scroll-benchmark.sh <out-dir> [debug|release] [--ci]
 #   --ci: frame and webview-memory budgets warn instead of failing (hosted
 #         runners have no real GPU; see scripts/check-scroll-benchmark.mjs)
-#   debug:   needs cargo build -p safha-desktop --features devtools
+#   debug:   needs cargo build -p mirsam-desktop --features devtools
 #   release: needs node scripts/bundle.mjs --features devtools --bundles app
 #
 # The window must stay visible and the screen unlocked for the whole run: an
@@ -23,10 +23,10 @@ PDF="$ROOT/fixtures/out/derived/bilingual-1000-pages.pdf"
 [[ -f "$PDF" ]] || { echo "missing $PDF: run node fixtures/generate.mjs" >&2; exit 2; }
 case "$BUILD" in
   debug) ;;
-  release) export SAFHA_SELFTEST_APP="$ROOT/target/release/bundle/macos/Mirsam.app/Contents/MacOS/safha-desktop" ;;
+  release) export MIRSAM_SELFTEST_APP="$ROOT/target/release/bundle/macos/Mirsam.app/Contents/MacOS/mirsam-desktop" ;;
   *) echo "build must be debug or release" >&2; exit 2 ;;
 esac
 
-SAFHA_SELFTEST_SPIKE=scroll SAFHA_SELFTEST_TIMEOUT="${SAFHA_SELFTEST_TIMEOUT:-240}" \
+MIRSAM_SELFTEST_SPIKE=scroll MIRSAM_SELFTEST_TIMEOUT="${MIRSAM_SELFTEST_TIMEOUT:-240}" \
   "$ROOT/scripts/selftest.sh" "$PDF" "$OUT" en light
 node "$ROOT/scripts/check-scroll-benchmark.mjs" "$OUT" "${@:3}"

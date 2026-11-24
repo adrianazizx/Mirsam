@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "safha-ui",
+      "name": "mirsam-ui",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "--dir",
@@ -12,7 +12,7 @@
       "port": 1420
     },
     {
-      "name": "safha-ui-1421",
+      "name": "mirsam-ui-1421",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "--dir",

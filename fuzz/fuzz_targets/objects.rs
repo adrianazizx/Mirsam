@@ -7,6 +7,6 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let pdf = safha_fuzz::pdf_from_objects(&safha_fuzz::split_bodies(data));
-    safha_fuzz::exercise(&pdf);
+    let pdf = mirsam_fuzz::pdf_from_objects(&mirsam_fuzz::split_bodies(data));
+    mirsam_fuzz::exercise(&pdf);
 });

@@ -3,7 +3,7 @@
     python run_tesseract.py [--only <id substring>] [--psm 3]
 
 `tesseract` from Homebrew, with the tessdata_best `ara` and `eng` models from
-SAFHA_OCR_BENCH_CACHE/tessdata. LSTM engine, automatic page segmentation (its own
+MIRSAM_OCR_BENCH_CACHE/tessdata. LSTM engine, automatic page segmentation (its own
 layout analysis decides the reading order), the sample's true resolution.
 """
 
