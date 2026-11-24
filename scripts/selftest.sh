@@ -18,6 +18,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# A missing PDF must stop here: the path below would come out as /<name>, and
+# the app would report only an `io_error` (a Windows bundle run, 2026-11-24,
+# whose derived fixtures were skipped for want of qpdf).
+[[ -f "$1" ]] || {
+  echo "no PDF at $1 (a fixture? run node fixtures/generate.mjs; derived/ ones need qpdf)" >&2
+  exit 2
+}
 PDF="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 mkdir -p "$2"
 OUT="$(cd "$2" && pwd)"

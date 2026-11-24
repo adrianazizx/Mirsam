@@ -292,6 +292,12 @@ pub fn open_arrivals(app: &AppHandle, documents: Vec<std::path::PathBuf>) {
     }
 }
 
+/// Closes the calling window; one holding unsaved changes asks first (ADR 0015).
+#[tauri::command]
+pub fn close_window(window: WebviewWindow) -> CommandResult<()> {
+    window.close().map_err(|err| CommandError::new("window_error", err.to_string()))
+}
+
 /// Opens an empty window.
 #[tauri::command]
 pub async fn new_window(app: AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
