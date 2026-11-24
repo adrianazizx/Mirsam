@@ -800,6 +800,23 @@ export type OpenOutcome =
  * Documents that arrived while the app runs: a later copy of the app handed
  * them over (ADR 0046), or the platform asked to open them (Finder).
  */
+/** One of the menu bar's own items, as this window sees it now (ADR 0074). */
+export interface MenuItemText {
+  /** The registry command it runs. */
+  id: string;
+  title: string;
+  enabled: boolean;
+  /** Its shortcut for the menu ("CmdOrCtrl+Shift+S"). */
+  accelerator: string | null;
+}
+
+/** The menu bar in this window's language and state (ADR 0074). */
+export interface MenuText {
+  /** Submenu and system item titles, by key under `menu.` in the locales. */
+  titles: Record<string, string>;
+  items: MenuItemText[];
+}
+
 export interface DocumentsArrived {
   documents: OpenOutcome[];
   /** The error code of the first one that could not be opened. */
@@ -1403,6 +1420,12 @@ export interface Backend {
   closeDocument(documentId: number): Promise<void>;
   /** Opens an empty window. */
   newWindow(): Promise<void>;
+  /** Closes this window; one holding unsaved changes asks first (ADR 0015). */
+  closeWindow(): Promise<void>;
+  /** This window's menu for the macOS menu bar (ADR 0074); other platforms ignore it. */
+  setMenu(menu: MenuText): Promise<void>;
+  /** The menu bar asks this window to run one of its commands (a registry id). */
+  onMenuCommand(listener: (id: string) => void): Promise<() => void>;
   /**
    * Prints a document through the platform's own PDF viewer and print panel
    * (ADR 0012; unverified on screen so far).

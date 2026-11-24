@@ -2033,6 +2033,10 @@ export const mockBackend: Backend = {
   closeDocument: async () => {},
   // One window in the browser.
   newWindow: async () => {},
+  closeWindow: async () => {},
+  // No menu bar in the browser.
+  setMenu: async () => {},
+  onMenuCommand: async () => () => {},
   printDocument: async () => {},
   secureDocument: async (documentId, change) => ({
     name: documentId === LOCKED.id ? LOCKED.name : SAMPLE.name,

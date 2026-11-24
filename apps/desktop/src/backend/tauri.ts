@@ -181,6 +181,11 @@ export const tauriBackend: Backend = {
     await invoke<boolean>("close_document", { documentId });
   },
   newWindow: () => invoke<void>("new_window"),
+  closeWindow: () => invoke<void>("close_window"),
+  setMenu: (menu) => invoke<void>("set_menu", { menu }),
+  // Addressed to one window: listen on this window only.
+  onMenuCommand: (listener) =>
+    getCurrentWebviewWindow().listen<string>("menu-command", (event) => listener(event.payload)),
   printDocument: (documentId) => invoke<void>("print_document", { documentId }),
   editPages: (documentId, edit) => invoke<EditOutcome>("edit_pages", { documentId, edit }),
   undoEdit: (documentId) => invoke<EditOutcome>("undo_edit", { documentId }),

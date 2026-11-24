@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (the macOS menu bar: File holds New window, Open, Close, Save, Save as and Print, in English and Arabic, ADR 0074; branch `pomidor/file-menu-save-print-c669f3`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -988,6 +988,36 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### macOS menu bar — 2026-11-24 (branch `pomidor/file-menu-save-print-c669f3`; ADR 0074)
+
+The owner's report: "under file I cant save, save as, print". The app built no menu of its own,
+so macOS showed Tauri's default, whose File menu held only "Close Window".
+
+- **Shell (`src-tauri/src/menu.rs`):** on macOS a menu bar of our own, built when the first
+  window's UI sends its menu. App menu (About, Settings…, Services, Hide, Hide others, Show all,
+  Quit), File (New window, Open PDF…, Close, Save, Save as…, Print…), Edit, View and Window with
+  the system's native items, Help (Welcome guide, Keyboard shortcuts…). Each window's menu is
+  kept; the one in front is shown. A picked item is sent to that window's UI as `menu-command`.
+  Windows and Linux are unchanged (no menu bar).
+- **UI (`commands/menu.ts`):** sends titles (`menu.*` and the commands' own titles, en/ar), Mac
+  shortcuts from the registry, and enabled states, again only when the language or a state
+  changes; runs the picked item through `runCommand`. Save is greyed until the document changes;
+  Save as and Print until one is open.
+- **Close:** closes the document in front; with none it reads "Close window" and runs the new
+  `window.close` command (`close_window`; the unsaved prompt still applies). In a print preview
+  it closes the preview. ⌘W behaves as before.
+- **Tests:** `menu.rs` (5: which window's menu is shown, where commands go, print previews);
+  `commands/menu.test.ts` (10: the list matches the shell's, en/ar titles, enabled states,
+  Close's two forms, sending only on change, Save/Save as/Print/Close run). UI suite 468 pass;
+  shell crate 48 pass. **In the real app** (debug build, macOS): the menu bar, File's six items,
+  the app and Help menus in English and in Arabic after switching the language; Help → Keyboard
+  shortcuts… opened the dialog. Save, Print and Close were not picked from the menu there (the
+  build restored a personal document); their path is the same and the UI tests run them.
+- **Note:** the main checkout's `fixtures/out` predates the rename (its `encrypted.pdf` opens with
+  `safha-test`); regenerate it (`node fixtures/generate.mjs`) or two shell tests fail.
+- **Not done:** Open Recent in the menu; Edit's Undo/Redo still act on text fields (the
+  document's undo is ⌘Z and the toolbar).
 
 ### Moving what was placed — 2026-11-24 (branch `pomidor/exciting-wing-769f6a`; ADR 0045's amendment)
 

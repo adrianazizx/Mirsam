@@ -13,6 +13,7 @@ mod error;
 mod form_design;
 mod forms;
 mod instance;
+mod menu;
 mod models;
 mod navigation;
 mod objects;
@@ -50,6 +51,8 @@ macro_rules! product_commands {
             commands::open_document_dialog,
             commands::startup,
             commands::new_window,
+            commands::close_window,
+            menu::set_menu,
             commands::move_to_new_window,
             commands::print_document,
             editing::edit_pages,
@@ -195,6 +198,9 @@ pub fn run() {
         .manage(AppState::new(started, documents))
         .manage(output::OutputState::default())
         .manage(signing::SigningState::default())
+        .manage(menu::MenuState::default())
+        // The macOS menu bar's items run the UI's commands (ADR 0074).
+        .on_menu_event(|app, event| menu::picked(app, event.id().as_ref()))
         // Tiles: BMP images fetched by the webview (ADR 0011).
         .register_asynchronous_uri_scheme_protocol("mirsam", viewer::tile_protocol)
         .setup(move |app| {
@@ -225,7 +231,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            tauri::WindowEvent::Focused(true) => window.state::<AppState>().focused(window.label()),
+            tauri::WindowEvent::Focused(true) => {
+                window.state::<AppState>().focused(window.label());
+                menu::window_focused(window.app_handle(), window.label());
+            }
             // A window holding unsaved changes asks its UI first (ADR 0015);
             // the UI closes it again once the user confirms.
             tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -245,6 +254,7 @@ pub fn run() {
             // A window's documents close with it. Its tabs leave the saved
             // session too, unless the app is quitting or it was the last window.
             tauri::WindowEvent::Destroyed => {
+                menu::window_closed(window.app_handle(), window.label());
                 let state = window.state::<AppState>();
                 if state.close_window(window.label())
                     && let Err(err) = commands::write_session(&state)
