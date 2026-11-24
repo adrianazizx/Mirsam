@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { I18nProvider } from "react-aria-components";
 import { announceLayerChecks, announceOcrJob, announceOcrModel } from "./a11y/ocrAnnouncements";
 import { backend, type DocumentsArrived, isBackendError } from "./backend";
+import { runMenuCommand, syncMenuOnChange } from "./commands/menu";
 import {
   acceptOutcome,
   commandForEvent,
@@ -154,6 +155,26 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // The macOS menu bar (ADR 0074): it shows this window's state when it is in
+  // front, and its items run here as their shortcuts would.
+  useEffect(() => {
+    const stopSync = syncMenuOnChange();
+    let stop = () => {};
+    let live = true;
+    backend
+      .onMenuCommand((id) => void runMenuCommand(id))
+      .then((unlisten) => {
+        if (live) stop = unlisten;
+        else unlisten();
+      })
+      .catch((error: unknown) => console.warn("cannot follow the menu bar", error));
+    return () => {
+      live = false;
+      stop();
+      stopSync();
+    };
   }, []);
 
   // A setting changed in another window (language, theme, reading theme).

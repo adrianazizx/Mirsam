@@ -656,7 +656,8 @@ export class ViewerController {
 
   private readonly mode: () => ViewerMode;
   private readonly layers = new Map<number, TextLayer>();
-  private readonly layerRequests = new Set<number>();
+  /** Text requests still out, by page: every caller for a page waits on the same one. */
+  private readonly layerRequests = new Map<number, Promise<TextLayer | null>>();
   /** Bumped when the pages' text may have changed: answers asked for before are dropped. */
   private layerGeneration = 0;
   private selection: Selection | null = null;
@@ -1889,28 +1890,37 @@ export class ViewerController {
     if (slot) this.paintOverlay(slot);
   }
 
-  /** Selects all text on the current page. */
-  selectAllOnPage(): void {
+  /**
+   * Selects all text on the current page: at once when its text is here,
+   * else once it arrives (the promise settles then).
+   */
+  selectAllOnPage(): Promise<void> {
     const page = this.currentPage;
     const layer = this.layers.get(page);
-    if (!layer) {
-      void this.loadLayer(page).then((loaded) => {
-        if (loaded && this.currentPage === page) this.setSelection(pageSelection(loaded, page));
-      });
-      return;
+    if (layer) {
+      this.setSelection(pageSelection(layer, page));
+      return Promise.resolve();
     }
-    this.setSelection(pageSelection(layer, page));
+    return this.loadLayer(page).then((loaded) => {
+      if (loaded && this.currentPage === page) this.setSelection(pageSelection(loaded, page));
+    });
   }
 
   private readonly layerLookup = (page: number) => this.layers.get(page);
 
+  /**
+   * The page's text, from the cache or the backend. A request already out for
+   * the page is shared, not answered with null: select all, pressed while the
+   * text the view asked for (for screen readers) is on its way, would
+   * otherwise select nothing.
+   */
   private loadLayer(page: number): Promise<TextLayer | null> {
     const cached = this.layers.get(page);
     if (cached) return Promise.resolve(cached);
-    if (this.layerRequests.has(page)) return Promise.resolve(null);
-    this.layerRequests.add(page);
+    const pending = this.layerRequests.get(page);
+    if (pending) return pending;
     const generation = this.layerGeneration;
-    return this.backend.pageText(this.documentId, page).then(
+    const request = this.backend.pageText(this.documentId, page).then(
       (layer) => {
         if (generation !== this.layerGeneration) return null;
         this.layerRequests.delete(page);
@@ -1926,6 +1936,8 @@ export class ViewerController {
         return null;
       },
     );
+    this.layerRequests.set(page, request);
+    return request;
   }
 
   private trimLayers(): void {
