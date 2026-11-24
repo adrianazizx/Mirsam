@@ -36,7 +36,8 @@ Mirsam was called Safha (صفحة) while it had a working name. Code identifiers
 ## Download
 
 Installers for macOS, Windows and Linux are on
-[GitHub Releases](https://github.com/adrianazizx/Mirsam/releases/latest).
+[GitHub Releases](https://github.com/adrianazizx/Mirsam/releases/latest) and on the website,
+[mirsam-pdf.vercel.app](https://mirsam-pdf.vercel.app) (its source is in [website/](website/README.md)).
 
 - **[Code signing policy](docs/CODE_SIGNING_POLICY.md):** Windows releases are signed through the
   SignPath Foundation's free programme for open-source projects (free code signing provided by

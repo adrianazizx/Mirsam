@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (applied to the SignPath Foundation for Windows signing, owner item 17; before it, **v0.1.0 released**: published at 18:42 UTC from `b399709`, the Mac app and disk image signed with the Developer ID and notarized, Windows unsigned until SignPath; branch `pomidor/v0.1.0-released`; before it, the macOS menu bar: File holds New window, Open, Close, Save, Save as and Print, in English and Arabic, ADR 0074; branch `pomidor/file-menu-save-print-c669f3`; before it, v0.1.0 readiness: the version set to 0.1.0 after the first `v0.1.0` tag's release run refused 0.0.1; the tag is to be pushed again once this merges; branch `pomidor/release-readiness-90d90f`; before it, moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (the website: a bilingual landing page in `website/` for Vercel, in the logo's colours, with real screenshots and download links; branch `pomidor/mirsam-landing-page-364b7b`; before it, applied to the SignPath Foundation for Windows signing, owner item 17; before it, **v0.1.0 released**: published at 18:42 UTC from `b399709`, the Mac app and disk image signed with the Developer ID and notarized, Windows unsigned until SignPath; branch `pomidor/v0.1.0-released`; before it, the macOS menu bar: File holds New window, Open, Close, Save, Save as and Print, in English and Arabic, ADR 0074; branch `pomidor/file-menu-save-print-c669f3`; before it, v0.1.0 readiness: the version set to 0.1.0 after the first `v0.1.0` tag's release run refused 0.0.1; the tag is to be pushed again once this merges; branch `pomidor/release-readiness-90d90f`; before it, moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -253,6 +253,12 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
       - (c) build our own Windows `tesseract.exe` with only permissive libraries. Tesseract, Leptonica
         and libpng/zlib/libjpeg-turbo/libtiff/libwebp/giflib/openjpeg are all permissive. The work is
         a CI job and a pinned archive in the catalog.
+
+27. **Put the website on Vercel** (`website/`, see its README). Import `adrianazizx/Mirsam` as a
+    Vercel project named `mirsam-pdf` with **Root Directory `website`** (framework Astro, detected; the
+    build and the "skip unless `website/` or the app version changed" rule are in
+    `website/vercel.json`). Every merge to `main` then redeploys https://mirsam-pdf.vercel.app (`mirsam.vercel.app` belongs to someone else). A custom
+    domain can be added in the project's settings later.
 
 Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the stated assumptions.
 
@@ -1001,6 +1007,33 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### The website — 2026-11-24 (branch `pomidor/mirsam-landing-page-364b7b`)
+
+- **`website/`**: a static Astro site, English at `/` and Arabic (right to left) at `/ar/`, with
+  the same sections: hero with the logo drawing itself, a feature story whose screenshot changes as
+  you scroll through Read, Search, Annotate, Organize, Edit, Forms & signing, Protect and Convert;
+  the full feature list; Arabic demos (reading-order copy, hamza-tolerant search, digits) and an
+  English/Arabic interface compare slider; a large section on OCR with the on-device AI model
+  (pipeline, "your documents never leave your laptop", the 0.89% CER on our test set); privacy;
+  downloads for every installer; footer. Strings in `src/i18n/{en,ar}.json` with a parity test.
+- **Brand:** the owner's logo (`website/brand/`): indigo ink #29265E, lavender #D4D1FC, pale
+  lavender #F7F6FF, one derived violet #4B43CF; Readex Pro headings (it matches the wordmark), IBM
+  Plex body. A first "night ink" teal draft was dropped at the owner's request.
+- **Screenshots are real:** v0.1.0 from `/Applications`, run with a throwaway `HOME` (so the
+  owner's settings, recents and session were untouched; OCR models linked in), on a fictional
+  bilingual sample (`website/screenshots/showcase.html`) and a scan from `ocr-eval/`. 17 shots,
+  English and Arabic UI; OCR review mode after a real Nuqta run. Encoded to WebP (1.8 MB in all).
+- **Downloads** use `releases/latest/download/<asset>` (all seven answer 302 to v0.1.0); the
+  version label comes from `apps/desktop/package.json`, sizes from the GitHub release when it is
+  that version.
+- **No third-party requests:** fonts self-hosted, no analytics; a strict CSP in `vercel.json`.
+- **Checked:** `pnpm test` and `pnpm build` (astro check: 0 errors); axe in Chrome on both pages:
+  no violations once animations finish; no horizontal scroll at 375 px; both directions looked at.
+- **CI:** `ci.yml` and `bundle.yml` ignore `website/**`; `website.yml` runs the parity test and
+  the build. `scripts/dev-setup.sh` also moves the website's pnpm store out of OneDrive.
+- **Open:** the Vercel project itself (owner item 27). Not every chapter has an Arabic-UI shot
+  (search, annotate, organize, OCR and the hero do; the rest fall back to the English UI).
 
 ### v0.1.0 released — 2026-11-24 (branch `pomidor/v0.1.0-released`)
 

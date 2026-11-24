@@ -1,0 +1,268 @@
+---
+import { ArrowDown, Download } from "@lucide/astro";
+import { fill, type Lang, strings } from "../lib/i18n";
+import { downloadUrl, release } from "../lib/release";
+import BrandMark from "./BrandMark.astro";
+import Shot from "./Shot.astro";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+const version = release.version;
+---
+
+<section class="hero" data-hero>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="hero-rings" aria-hidden="true"></div>
+  <div class="container hero-inner">
+    <div class="hero-copy">
+    <p class="eyebrow" data-reveal style="--d: 0">
+      <span class="eyebrow-dot" aria-hidden="true"></span>
+      <span set:html={fill(t.hero.eyebrow, { version: `<bdi dir="ltr">${version}</bdi>` })} />
+    </p>
+    <h1 class="hero-title" data-reveal style="--d: 3">{t.hero.title}</h1>
+    <p class="hero-lede" data-reveal style="--d: 4">{t.hero.lede}</p>
+    <div class="hero-actions" data-reveal style="--d: 5">
+      <a
+        class="button button-primary button-lg"
+        href="#download"
+        data-os-cta
+        data-template={t.hero.cta}
+        data-os-mac={t.os.mac}
+        data-os-windows={t.os.windows}
+        data-os-linux={t.os.linux}
+        data-href-mac={downloadUrl("Mirsam-macOS.dmg")}
+        data-href-windows={downloadUrl("Mirsam-Windows-Setup.exe")}
+      >
+        <Download aria-hidden="true" />
+        <span data-os-cta-label>{t.hero.ctaGeneric}</span>
+      </a>
+      <a class="button button-ghost button-lg" href="#features">
+        <span>{t.hero.secondary}</span>
+        <ArrowDown aria-hidden="true" />
+      </a>
+    </div>
+    <p class="hero-meta" data-reveal style="--d: 6">{t.hero.meta}</p>
+    </div>
+    <div class="hero-mark">
+      <BrandMark label={t.hero.logoLabel} />
+    </div>
+  </div>
+  <div class="container hero-stage" data-hero-stage>
+    <div class="hero-shot" data-hero-shot>
+      <Shot id="hero" lang={lang} alt={t.hero.shotAlt} eager />
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    padding-block-start: calc(var(--header-h) + clamp(28px, 5vw, 64px));
+    overflow: clip;
+    isolation: isolate;
+  }
+
+  /* Light that follows the pointer (main.ts sets --mx, --my). */
+  .hero-glow {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(520px 380px at var(--mx, 50%) var(--my, 30%), rgb(75 67 207 / 0.14), transparent 70%),
+      radial-gradient(800px 520px at 85% 5%, rgb(212 209 252 / 0.9), transparent 70%),
+      radial-gradient(760px 560px at 8% 45%, rgb(212 209 252 / 0.75), transparent 70%);
+  }
+
+  .hero-rings {
+    position: absolute;
+    inset-block-start: -30vw;
+    inset-inline-start: 50%;
+    z-index: -1;
+    inline-size: 120vw;
+    aspect-ratio: 1;
+    translate: -50% 0;
+    border-radius: 50%;
+    background: repeating-radial-gradient(circle, transparent 0 79px, rgb(41 38 94 / 0.06) 79px 80px);
+    mask-image: radial-gradient(circle, black 30%, transparent 70%);
+    animation: breathe 14s var(--ease-in-out) infinite alternate;
+  }
+
+  :global([dir="rtl"]) .hero-rings {
+    translate: 50% 0;
+  }
+
+  @keyframes breathe {
+    to {
+      scale: 1.08;
+      opacity: 0.6;
+    }
+  }
+
+  .hero-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(32px, 5vw, 80px);
+  }
+
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  @media (max-width: 900px) {
+    .hero-inner {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+      text-align: center;
+    }
+
+    .hero-copy {
+      align-items: center;
+    }
+
+    .hero-mark {
+      order: -1;
+      inline-size: clamp(120px, 34vw, 170px);
+    }
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    background: rgb(255 255 255 / 0.7);
+    backdrop-filter: blur(8px);
+    color: var(--fg-muted);
+    font-size: var(--step--1);
+  }
+
+  .eyebrow-dot {
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.5);
+    animation: ping 2.4s var(--ease-out) infinite;
+  }
+
+  @keyframes ping {
+    70%,
+    100% {
+      box-shadow: 0 0 0 10px rgb(var(--accent-rgb) / 0);
+    }
+  }
+
+  .hero-mark {
+    position: relative;
+    justify-self: center;
+    inline-size: clamp(150px, 20vw, 280px);
+    filter: drop-shadow(0 40px 50px rgb(41 38 94 / 0.22));
+  }
+
+  .hero-title {
+    max-inline-size: 14ch;
+    margin-block-start: 28px;
+    font-size: clamp(2.6rem, 1.4rem + 4vw, 5.6rem);
+    background: linear-gradient(180deg, var(--brand-ink) 35%, var(--brand-violet));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  :global(:lang(ar)) .hero-title {
+    font-size: clamp(2.3rem, 1.5rem + 3.6vw, 5.2rem);
+    max-inline-size: 18ch;
+  }
+
+  .hero-lede {
+    max-inline-size: 62ch;
+    margin-block-start: 24px;
+    color: var(--fg-muted);
+    font-size: var(--step-1);
+    line-height: 1.55;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-block-start: 36px;
+  }
+
+  .button-lg {
+    min-block-size: 58px;
+    padding-inline: 30px;
+    font-size: var(--step-0);
+  }
+
+  .hero-meta {
+    margin-block-start: 20px;
+    color: var(--fg-dim);
+    font-size: var(--step--1);
+  }
+
+  /* The window starts tilted back and flattens as it scrolls into view
+     (main.ts sets --p from 0 to 1). */
+  .hero-stage {
+    margin-block-start: clamp(48px, 8vw, 96px);
+    perspective: 1800px;
+  }
+
+  .hero-shot {
+    --p: 1;
+    position: relative;
+    max-inline-size: 1180px;
+    margin-inline: auto;
+    transform-origin: 50% 0;
+    transform: rotateX(calc((1 - var(--p)) * 26deg)) scale(calc(0.9 + var(--p) * 0.1));
+    will-change: transform;
+  }
+
+  :global(.js) .hero-shot {
+    --p: 0;
+  }
+
+  .hero-shot::before {
+    content: "";
+    position: absolute;
+    inset: -8% -6% 20%;
+    z-index: -1;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgb(var(--accent-rgb) / 0.3), transparent);
+    filter: blur(40px);
+    opacity: calc(0.4 + var(--p) * 0.6);
+  }
+
+  .hero-shot::after {
+    content: "";
+    position: absolute;
+    inset-block-end: -1px;
+    inset-inline: -10%;
+    block-size: 30%;
+    background: linear-gradient(180deg, transparent, var(--bg));
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-shot,
+    :global(.js) .hero-shot {
+      --p: 1;
+      transform: none;
+    }
+
+    .hero-rings,
+    .eyebrow-dot {
+      animation: none;
+    }
+
+  }
+</style>

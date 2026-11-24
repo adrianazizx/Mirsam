@@ -1,0 +1,116 @@
+---
+import brand from "../generated/brand.json";
+
+interface Props {
+  label: string;
+}
+
+const { label } = Astro.props;
+// Roughly the centre line of the nib's stroke, tail first: a mask drawn along it
+// reveals the stroke as if the nib were writing it.
+const STROKE_PATH =
+  "M466 548 C505 478 555 405 603 376 C632 362 634 398 616 428 C596 462 557 516 590 524 C626 532 650 470 688 461 C704 458 712 480 726 472 L792 398";
+---
+
+<svg class="brand-mark" viewBox={brand.viewBox} role="img" aria-label={label}>
+  <defs>
+    <mask id="nib-reveal" maskUnits="userSpaceOnUse" x="423" y="165" width="410" height="804">
+      <path class="nib-mask" d={STROKE_PATH} pathLength="1" />
+    </mask>
+  </defs>
+  <path class="page" d={brand.page} pathLength="1" />
+  <path class="fold" d={brand.fold} />
+  <path class="nib" d={brand.nib} fill-rule="evenodd" mask="url(#nib-reveal)" />
+  <path class="wordmark" d={brand.wordmark} fill-rule="evenodd" />
+</svg>
+
+<style>
+  .brand-mark {
+    inline-size: 100%;
+    block-size: auto;
+    overflow: visible;
+  }
+
+  .page,
+  .fold {
+    stroke: var(--brand-ink);
+    stroke-width: 14.5;
+    stroke-linejoin: round;
+  }
+
+  .page {
+    fill: var(--brand-lavender);
+    fill-opacity: 0;
+    stroke-dasharray: 1 1;
+    stroke-dashoffset: 1;
+    animation:
+      draw var(--dur-draw) var(--ease-in-out) 150ms forwards,
+      fill-in 700ms var(--ease-out) 1100ms forwards;
+  }
+
+  .fold {
+    fill: var(--brand-paper);
+    opacity: 0;
+    animation: fade 500ms var(--ease-out) 1300ms forwards;
+  }
+
+  .nib {
+    fill: var(--brand-ink);
+  }
+
+  .nib-mask {
+    fill: none;
+    stroke: white;
+    stroke-width: 64;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1 1;
+    stroke-dashoffset: 1;
+    animation: draw 1500ms cubic-bezier(0.55, 0.1, 0.35, 1) 1500ms forwards;
+  }
+
+  .wordmark {
+    fill: var(--brand-ink);
+    opacity: 0;
+    transform: translateY(24px);
+    animation: rise 900ms var(--ease-out) 2700ms forwards;
+  }
+
+  @keyframes draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes fill-in {
+    to {
+      fill-opacity: 1;
+    }
+  }
+
+  @keyframes fade {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes rise {
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .page,
+    .fold,
+    .nib-mask,
+    .wordmark {
+      animation: none;
+      opacity: 1;
+      transform: none;
+      fill-opacity: 1;
+      stroke-dashoffset: 0;
+    }
+  }
+</style>

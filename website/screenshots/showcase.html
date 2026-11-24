@@ -1,0 +1,233 @@
+<!doctype html>
+<!--
+  The sample document shown in the website's screenshots: a fictional company's
+  bilingual paperwork. Everything here is invented. Print to PDF with
+  website/screenshots/make-showcase.sh (Chrome headless). Fonts are the
+  repository's OFL fonts (assets/fonts/).
+-->
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>Nakhla Trading — شركة نخلة للتجارة</title>
+<style>
+  @font-face { font-family: "Plex Arabic"; src: url("../../assets/fonts/IBMPlexSansArabic-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex Arabic"; src: url("../../assets/fonts/IBMPlexSansArabic-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex"; src: url("../../assets/fonts/IBMPlexSans-VF.ttf"); font-weight: 100 700; }
+  @font-face { font-family: "Amiri"; src: url("../../assets/fonts/Amiri-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Amiri"; src: url("../../assets/fonts/Amiri-Bold.ttf"); font-weight: 700; }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Plex Arabic", "Plex", sans-serif; color: #1f2333; font-size: 10.5pt; line-height: 1.7; }
+  .page { width: 210mm; height: 297mm; padding: 16mm 18mm; position: relative; page-break-after: always; overflow: hidden; }
+  .en { font-family: "Plex", sans-serif; direction: ltr; text-align: left; }
+  .band { position: absolute; inset: 0 0 auto 0; height: 9mm; background: #1f5f5b; }
+  .band::after { content: ""; position: absolute; inset: 9mm 0 auto 0; height: 1.2mm; background: #c8a45a; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-top: 6mm; padding-bottom: 5mm; border-bottom: 0.4mm solid #d8d2c2; }
+  .logo { display: flex; align-items: center; gap: 4mm; }
+  .logo svg { width: 13mm; height: 13mm; }
+  .logo b { display: block; font-size: 14pt; font-weight: 600; color: #1f5f5b; }
+  .logo span { display: block; font-size: 8.5pt; color: #6b6f7d; font-family: "Plex", sans-serif; }
+  .meta { font-size: 8.5pt; color: #6b6f7d; text-align: left; direction: ltr; font-family: "Plex", sans-serif; }
+  h1 { font-family: "Amiri", serif; font-weight: 700; font-size: 26pt; margin: 9mm 0 1mm; color: #1f5f5b; line-height: 1.3; }
+  h1 + .en.sub { font-size: 13pt; color: #6b6f7d; margin-bottom: 7mm; }
+  h2 { font-size: 13pt; font-weight: 600; margin: 7mm 0 2mm; color: #1f5f5b; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; }
+  .cols > div { min-width: 0; }
+  .cols .en h2 { font-family: "Plex", sans-serif; }
+  ol { padding-inline-start: 5mm; margin: 0; }
+  ol li { margin-bottom: 2.5mm; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4mm; font-size: 10pt; }
+  th { background: #1f5f5b; color: white; font-weight: 600; padding: 2.5mm 3mm; text-align: start; }
+  td { padding: 2.4mm 3mm; border-bottom: 0.3mm solid #e4dfd2; }
+  tr:nth-child(even) td { background: #f7f4ec; }
+  .num { font-family: "Plex", sans-serif; direction: ltr; text-align: left; white-space: nowrap; }
+  .total td { font-weight: 600; background: #efe7d4 !important; }
+  .box { border: 0.4mm solid #d8d2c2; border-radius: 2mm; padding: 5mm 6mm; margin-top: 6mm; background: #fbfaf6; }
+  .sig { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin-top: 14mm; }
+  .sig div { border-top: 0.4mm solid #9a9480; padding-top: 2mm; font-size: 9pt; color: #6b6f7d; }
+  .field { display: grid; grid-template-columns: 38mm 1fr; align-items: end; gap: 4mm; margin-top: 5mm; }
+  .field label { font-weight: 600; }
+  .field .line { border-bottom: 0.4mm solid #9a9480; height: 8mm; }
+  .field .en-label { font-family: "Plex", sans-serif; font-size: 8.5pt; color: #6b6f7d; display: block; font-weight: 400; }
+  .checks { display: flex; gap: 8mm; margin-top: 4mm; }
+  .checks span::before { content: ""; display: inline-block; width: 4mm; height: 4mm; border: 0.4mm solid #6b6f7d; border-radius: 0.8mm; margin-inline-end: 2mm; vertical-align: -0.6mm; }
+  .chart { display: flex; align-items: flex-end; gap: 5mm; height: 52mm; margin-top: 6mm; padding: 0 4mm; border-bottom: 0.4mm solid #9a9480; direction: ltr; }
+  .chart div { flex: 1; background: linear-gradient(#2d7c76, #1f5f5b); border-radius: 1.5mm 1.5mm 0 0; position: relative; }
+  .chart div:nth-child(even) { background: linear-gradient(#d8b66b, #c8a45a); }
+  .chart span { position: absolute; bottom: -6mm; left: 0; right: 0; text-align: center; font-size: 8pt; color: #6b6f7d; font-family: "Plex", sans-serif; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; margin-top: 12mm; }
+  .kpis div { background: #f3efe3; border-radius: 2mm; padding: 4mm; }
+  .kpis b { display: block; font-size: 18pt; color: #1f5f5b; font-family: "Plex", sans-serif; direction: ltr; text-align: right; }
+  footer { position: absolute; bottom: 9mm; left: 18mm; right: 18mm; display: flex; justify-content: space-between; font-size: 8pt; color: #9a9480; font-family: "Plex", sans-serif; direction: ltr; }
+  .stamp { position: absolute; left: 24mm; bottom: 40mm; width: 34mm; height: 34mm; border: 0.8mm solid rgb(31 95 91 / 0.55); border-radius: 50%; color: rgb(31 95 91 / 0.6); display: grid; place-items: center; text-align: center; font-size: 8pt; transform: rotate(-12deg); font-weight: 600; line-height: 1.3; }
+</style>
+</head>
+<body>
+<template id="head">
+  <div class="band"></div>
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="19" fill="#1f5f5b"/><path d="M20 31V15M20 15c-5-5-10-4-12-2 4 0 8 1 12 2zm0 0c5-5 10-4 12-2-4 0-8 1-12 2zm0 0c-3-6-1-9 0-10 1 1 3 4 0 10z" stroke="#c8a45a" stroke-width="1.8" fill="#c8a45a" stroke-linejoin="round"/></svg>
+      <div><b>شركة نخلة للتجارة</b><span>Nakhla Trading Co. · Riyadh</span></div>
+    </div>
+    <div class="meta">CR 1010 000 000<br>nakhla.example</div>
+  </header>
+</template>
+
+<!-- 1. Lease agreement -->
+<section class="page">
+  <div data-head></div>
+  <h1>عقد إيجار مكتب</h1>
+  <div class="en sub">Office Lease Agreement</div>
+  <div class="cols">
+    <div>
+      <p>أُبرم هذا العقد بتاريخ ١٢ مارس ٢٠٢٦ بين <b>شركة نخلة للتجارة</b> (المؤجِّر) و<b>مؤسسة الأفق للاستشارات</b> (المستأجِر)، واتفق الطرفان على ما يلي:</p>
+      <ol>
+        <li><b>المدة.</b> مدة الإيجار ١٢ شهرًا تبدأ في ١ أبريل ٢٠٢٦.</li>
+        <li><b>الأجرة.</b> يدفع المستأجر 4,500 ريال شهريًا، تُستحق في اليوم الأول من كل شهر.</li>
+        <li><b>التأمين.</b> يُدفع عند التوقيع مبلغ تأمين مسترد قدره 9,000 ريال.</li>
+        <li><b>الصيانة.</b> يتحمل المؤجِّر الصيانة الأساسية للمبنى، ويتحمل المستأجر صيانة المكتب من الداخل.</li>
+        <li><b>التجديد.</b> يُجدَّد العقد تلقائيًا لمدة مماثلة ما لم يُخطر أحد الطرفين الآخر قبل ٦٠ يومًا.</li>
+      </ol>
+    </div>
+    <div class="en">
+      <p>This agreement is made on 12 March 2026 between <b>Nakhla Trading Co.</b> (the Landlord) and <b>Al-Ufuq Consulting</b> (the Tenant), who agree as follows:</p>
+      <ol>
+        <li><b>Term.</b> The lease runs for 12 months starting 1 April 2026.</li>
+        <li><b>Rent.</b> The Tenant pays SAR 4,500 per month, due on the first day of each month.</li>
+        <li><b>Deposit.</b> A refundable deposit of SAR 9,000 is payable on signing.</li>
+        <li><b>Maintenance.</b> The Landlord maintains the building; the Tenant maintains the office interior.</li>
+        <li><b>Renewal.</b> The lease renews for the same term unless either party gives 60 days' notice.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="sig">
+    <div>توقيع المؤجِّر · Landlord</div>
+    <div>توقيع المستأجِر · Tenant</div>
+  </div>
+  <footer><span>Nakhla Trading Co.</span><span>1 / 6</span></footer>
+</section>
+
+<!-- 2. Invoice -->
+<section class="page">
+  <div data-head></div>
+  <h1>فاتورة ضريبية</h1>
+  <div class="en sub">Tax Invoice · INV-2026-00417 · 12/03/2026</div>
+  <div class="cols">
+    <div class="box"><b>إلى:</b> مؤسسة الأفق للاستشارات<br>طريق الملك فهد، الرياض</div>
+    <div class="box en"><b>Bill to:</b> Al-Ufuq Consulting<br>King Fahd Road, Riyadh</div>
+  </div>
+  <table>
+    <thead><tr><th>البند · Item</th><th>الكمية</th><th class="num">Unit (SAR)</th><th class="num">Total (SAR)</th></tr></thead>
+    <tbody>
+      <tr><td>إيجار مكتب — أبريل · Office rent, April</td><td>1</td><td class="num">4,500.00</td><td class="num">4,500.00</td></tr>
+      <tr><td>تأمين مسترد · Refundable deposit</td><td>1</td><td class="num">9,000.00</td><td class="num">9,000.00</td></tr>
+      <tr><td>بطاقات دخول · Access cards</td><td>4</td><td class="num">25.00</td><td class="num">100.00</td></tr>
+      <tr><td>موقف سيارة · Parking bay</td><td>2</td><td class="num">150.00</td><td class="num">300.00</td></tr>
+      <tr><td>ضريبة القيمة المضافة ١٥٪ · VAT 15%</td><td></td><td></td><td class="num">735.75</td></tr>
+      <tr class="total"><td>الإجمالي · Total</td><td></td><td></td><td class="num">14,635.75</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:8mm">يُرجى السداد خلال ١٤ يومًا إلى الحساب المذكور أدناه. شكرًا لتعاملكم معنا.</p>
+  <p class="en">Please pay within 14 days to the account below. Thank you for your business.</p>
+  <div class="stamp">نخلة للتجارة<br>NAKHLA<br>مدفوع · PAID</div>
+  <footer><span>Nakhla Trading Co.</span><span>2 / 6</span></footer>
+</section>
+
+<!-- 3. Report -->
+<section class="page">
+  <div data-head></div>
+  <h1>التقرير الربعي</h1>
+  <div class="en sub">Quarterly Report · Q1 2026</div>
+  <p>نمت إيرادات الشركة في الربع الأول بنسبة ١٨٪ مقارنة بالربع نفسه من العام الماضي، مدفوعةً بعقود الإيجار الجديدة في الرياض وجدة وافتتاح مستودع الدمام.</p>
+  <p class="en">Revenue grew 18% year on year in Q1, driven by new leases in Riyadh and Jeddah and the opening of the Dammam warehouse.</p>
+  <div class="chart">
+    <div style="height:48%"><span>Jan</span></div>
+    <div style="height:55%"><span>Feb</span></div>
+    <div style="height:63%"><span>Mar</span></div>
+    <div style="height:70%"><span>Apr</span></div>
+    <div style="height:78%"><span>May</span></div>
+    <div style="height:92%"><span>Jun</span></div>
+  </div>
+  <div class="kpis">
+    <div>الإيرادات · Revenue<b>SAR 2.4M</b></div>
+    <div>النمو · Growth<b>+18%</b></div>
+    <div>العملاء · Clients<b>146</b></div>
+  </div>
+  <h2>أبرز ما تحقق</h2>
+  <ol>
+    <li>توقيع ٢٣ عقد إيجار جديدًا في ثلاث مدن.</li>
+    <li>رقمنة الأرشيف الورقي بالكامل وجعله قابلًا للبحث.</li>
+    <li>خفض زمن إصدار الفواتير من ثلاثة أيام إلى يوم واحد.</li>
+  </ol>
+  <footer><span>Nakhla Trading Co.</span><span>3 / 6</span></footer>
+</section>
+
+<!-- 4. Form -->
+<section class="page">
+  <div data-head></div>
+  <h1>طلب إجازة</h1>
+  <div class="en sub">Leave Request Form</div>
+  <div class="field"><label>اسم الموظف<span class="en-label">Employee name</span></label><div class="line"></div></div>
+  <div class="field"><label>الرقم الوظيفي<span class="en-label">Employee no.</span></label><div class="line"></div></div>
+  <div class="field"><label>القسم<span class="en-label">Department</span></label><div class="line"></div></div>
+  <div class="field"><label>من تاريخ<span class="en-label">From</span></label><div class="line"></div></div>
+  <div class="field"><label>إلى تاريخ<span class="en-label">To</span></label><div class="line"></div></div>
+  <h2>نوع الإجازة · Leave type</h2>
+  <div class="checks"><span>سنوية · Annual</span><span>مرضية · Sick</span><span>اضطرارية · Emergency</span></div>
+  <div class="field"><label>ملاحظات<span class="en-label">Notes</span></label><div class="line"></div></div>
+  <div class="sig">
+    <div>توقيع الموظف · Employee signature</div>
+    <div>اعتماد المدير · Manager approval</div>
+  </div>
+  <footer><span>Nakhla Trading Co. · HR-07</span><span>4 / 6</span></footer>
+</section>
+
+<!-- 5. Personal data -->
+<section class="page">
+  <div data-head></div>
+  <h1>بيانات الموظف</h1>
+  <div class="en sub">Employee Record — Confidential</div>
+  <table>
+    <tbody>
+      <tr><td>الاسم · Name</td><td>سارة عبدالله القحطاني · Sara Al-Qahtani</td></tr>
+      <tr><td>رقم الهوية · National ID</td><td class="num">1098765432</td></tr>
+      <tr><td>تاريخ الميلاد · Date of birth</td><td class="num">14/07/1992</td></tr>
+      <tr><td>الجوال · Mobile</td><td class="num">+966 55 012 3456</td></tr>
+      <tr><td>البريد · Email</td><td class="num">sara.q@nakhla.example</td></tr>
+      <tr><td>الآيبان · IBAN</td><td class="num">SA00 0000 0000 0000 0000 0000</td></tr>
+      <tr><td>العنوان · Address</td><td>حي الياسمين، الرياض · Al-Yasmin, Riyadh</td></tr>
+      <tr><td>الراتب · Salary</td><td class="num">SAR 18,500</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:8mm">هذه البيانات سرية، ولا تُشارك خارج إدارة الموارد البشرية إلا بعد تنقيح المعلومات الشخصية.</p>
+  <p class="en">This record is confidential and must not leave HR without redacting personal information.</p>
+  <footer><span>Nakhla Trading Co. · Confidential</span><span>5 / 6</span></footer>
+</section>
+
+<!-- 6. Notice -->
+<section class="page">
+  <div data-head></div>
+  <h1>تعميم إداري</h1>
+  <div class="en sub">Staff Notice</div>
+  <div class="cols">
+    <div>
+      <p>إلى جميع الموظفين،</p>
+      <p>يسرّنا الإعلان عن انتقال مكتب جدة إلى مقره الجديد في حي الروضة اعتبارًا من ١ مايو ٢٠٢٦. ستبقى أرقام الهاتف والبريد الإلكتروني كما هي.</p>
+      <p>نشكر لكم تعاونكم خلال فترة الانتقال، ونرحب بأسئلتكم عبر قسم الموارد البشرية.</p>
+    </div>
+    <div class="en">
+      <p>To all staff,</p>
+      <p>We are pleased to announce that the Jeddah office moves to its new premises in Al-Rawdah from 1 May 2026. Phone numbers and email addresses stay the same.</p>
+      <p>Thank you for your patience during the move. Questions are welcome through HR.</p>
+    </div>
+  </div>
+  <footer><span>Nakhla Trading Co.</span><span>6 / 6</span></footer>
+</section>
+
+<script>
+  const head = document.getElementById("head").content;
+  for (const slot of document.querySelectorAll("[data-head]")) slot.replaceWith(head.cloneNode(true));
+</script>
+</body>
+</html>

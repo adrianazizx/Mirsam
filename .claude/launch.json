@@ -24,6 +24,20 @@
         "--strictPort"
       ],
       "port": 1421
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "website",
+        "exec",
+        "astro",
+        "dev",
+        "--port",
+        "4321"
+      ],
+      "port": 4321
     }
   ]
 }

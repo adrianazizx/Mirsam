@@ -8,7 +8,7 @@
 #      - Cargo's target/ and the fuzzing outputs (fuzz/target, corpus, artifacts)
 #        become symlinks into the user cache directory.
 #      - pnpm's virtual store (the bulk of node_modules) goes to the same cache
-#        via a generated, git-ignored apps/desktop/.npmrc.
+#        via generated, git-ignored apps/desktop/.npmrc and website/.npmrc.
 #    Normal checkouts and CI are left untouched.
 set -euo pipefail
 
@@ -44,6 +44,9 @@ case "$ROOT" in
     done
 
     printf 'virtual-store-dir=%s\n' "$CACHE/pnpm-virtual-store" > apps/desktop/.npmrc
+    # The website (website/, deployed to Vercel) gets its own store beside it.
+    mkdir -p "$CACHE/website-pnpm-virtual-store"
+    printf 'virtual-store-dir=%s\n' "$CACHE/website-pnpm-virtual-store" > website/.npmrc
     echo "Cloud-synced checkout detected: build outputs redirected to $CACHE"
     ;;
 esac

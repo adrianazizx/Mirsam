@@ -1,0 +1,126 @@
+---
+import { homePath, type Lang, strings } from "../lib/i18n";
+import { DOCS_URL, REPO_URL } from "../lib/release";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+const other: Lang = lang === "ar" ? "en" : "ar";
+const links = [
+  { href: REPO_URL, label: t.footer.source },
+  { href: `${REPO_URL}/blob/main/LICENSE`, label: t.footer.license },
+  { href: `${DOCS_URL}/PRIVACY.md`, label: t.footer.privacy },
+  { href: `${DOCS_URL}/CODE_SIGNING_POLICY.md`, label: t.footer.signing },
+  { href: `${REPO_URL}/issues`, label: t.footer.issues },
+];
+---
+
+<footer class="footer">
+  <div class="footer-word" aria-hidden="true">
+    <span lang="ar">مرسام</span>
+    <span lang="en">Mirsam</span>
+  </div>
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <img src="/favicon.svg" alt="" width="40" height="40" loading="lazy" />
+      <p>{t.footer.tagline}</p>
+    </div>
+    <ul class="footer-links">
+      {
+        links.map((link) => (
+          <li>
+            <a href={link.href}>{link.label}</a>
+          </li>
+        ))
+      }
+      <li>
+        <a href={homePath(other)} hreflang={other} lang={other}>{t.nav.switchText}</a>
+      </li>
+    </ul>
+    <p class="footer-made">{t.footer.made}</p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    position: relative;
+    padding-block: 0 48px;
+    overflow: clip;
+    border-block-start: 1px solid var(--border);
+  }
+
+  .footer-word {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.25em;
+    margin-block: clamp(32px, 6vw, 72px) clamp(24px, 4vw, 48px);
+    font-size: clamp(4rem, 16vw, 15rem);
+    line-height: 1.1;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .footer-word span {
+    background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.2), rgb(var(--accent-rgb) / 0));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .footer-word span:lang(ar) {
+    font-family: var(--font-display);
+    font-weight: 600;
+  }
+
+  .footer-word span:lang(en) {
+    font-family: var(--font-display);
+    font-weight: 600;
+  }
+
+  .footer-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px 48px;
+    align-items: center;
+  }
+
+  .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: var(--fg-muted);
+  }
+
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+  }
+
+  .footer-links a {
+    color: var(--fg-muted);
+    font-size: var(--step--1);
+    text-decoration: none;
+  }
+
+  .footer-links a:hover {
+    color: var(--fg);
+    text-decoration: underline;
+  }
+
+  .footer-made {
+    grid-column: 1 / -1;
+    color: var(--fg-dim);
+    font-size: var(--step--1);
+  }
+
+  @media (max-width: 800px) {
+    .footer-inner {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
