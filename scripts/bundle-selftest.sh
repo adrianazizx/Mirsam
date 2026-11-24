@@ -23,6 +23,16 @@ INSTALLER="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 mkdir -p "$2"
 OUT="$(cd "$2" && pwd)"
 ARCH="${MIRSAM_SELFTEST_ARCH:-}"
+# The documents of the two runs, checked before anything is installed.
+LTR_PDF=chrome/mixed-inline.pdf
+# Three pages, so the self-test also drives the page organizer.
+RTL_PDF=derived/page-labels.pdf
+for fixture in "$LTR_PDF" "$RTL_PDF"; do
+  [[ -f "$ROOT/fixtures/out/$fixture" ]] || {
+    echo "missing fixtures/out/$fixture: run node fixtures/generate.mjs (derived/ fixtures need qpdf)" >&2
+    exit 2
+  }
+done
 INSTALL="$OUT/install"
 rm -rf "$INSTALL"
 mkdir -p "$INSTALL"
@@ -128,7 +138,6 @@ console.log(`bundle self-test: PDFium loaded from ${library} (${report.arch})`);
 EOF
 }
 
-run chrome/mixed-inline.pdf en en light ltr
-# Three pages, so the self-test also drives the page organizer.
-run derived/page-labels.pdf ar ar dark rtl
+run "$LTR_PDF" en en light ltr
+run "$RTL_PDF" ar ar dark rtl
 echo "bundle self-test passed: $INSTALLER"

@@ -3614,9 +3614,10 @@ const DECLARED: Command[] = [
     id: "edit.selectAll",
     shortcut: { key: "a", mod: true, notInFields: true },
     isEnabled: (state) => hasDocument(state) && state.activeTool === "select",
-    run() {
+    // Settles once the page's text is here and selected.
+    async run() {
       const active = selectActiveDocument(store());
-      if (active) getViewer(active.id)?.selectAllOnPage();
+      if (active) await getViewer(active.id)?.selectAllOnPage();
     },
   },
   {
