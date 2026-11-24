@@ -1216,6 +1216,70 @@ pub fn insert_image_update(
     Ok((apply(&read, bytes, plan)?, group))
 }
 
+/// The bytes to append to `bytes` to move the text drawn inside `region`
+/// (on the displayed page) by `matrix` (a map of the displayed page, as
+/// [`ObjectEdit::Transform`] takes it): a paragraph of the page's text or
+/// text this app wrote there (ADR 0021, ADR 0023), moved as the Edit tool's
+/// Text mode drags it (ADR 0051's amendment).
+///
+/// Every visible text-showing piece whose box has its centre in `region`
+/// is moved, and nothing else: unlike an object, a paragraph is cut out of
+/// a larger block (a title beside it, a column next to it) by where it is.
+/// The pieces are wrapped as [`object_update`] wraps a text block, so the
+/// text keeps its bytes, fonts, clip and z-order, and moved again its
+/// wrappers' `cm` is rewritten.
+pub fn text_region_update(
+    bytes: &[u8],
+    password: Option<&str>,
+    view: &ViewTransform,
+    page_area: f64,
+    page: usize,
+    region: ViewRect,
+    matrix: [f64; 6],
+) -> Result<Vec<u8>> {
+    if matrix.iter().any(|v| !v.is_finite())
+        || ![region.x, region.y, region.width, region.height].iter().all(|v| v.is_finite())
+    {
+        return Err(Error::InvalidEdit("text is moved by finite amounts"));
+    }
+    let read = read_page(bytes, password, page, page_area)?;
+    let (a, b) = (
+        view.page_point(region.x, region.y),
+        view.page_point(region.x + region.width, region.y + region.height),
+    );
+    let (x0, y0, x1, y1) =
+        (f64::from(a.0.min(b.0)), f64::from(a.1.min(b.1)), f64::from(a.0.max(b.0)), f64::from(a.1.max(b.1)));
+    let pieces: Vec<usize> = read
+        .traced
+        .pieces
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.kind == PieceKind::Text && !p.text.as_ref().is_some_and(|t| t.invisible))
+        .filter(|(_, p)| {
+            p.bounds.is_some_and(|[l, b, r, t]| {
+                let (cx, cy) = ((l + r) / 2.0, (b + t) / 2.0);
+                cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1
+            })
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let bounds = pieces
+        .iter()
+        .filter_map(|&i| read.traced.pieces[i].bounds)
+        .reduce(union)
+        .ok_or(Error::InvalidEdit("no text there to move"))?;
+    let object = Obj { kind: ObjectKind::Text, pieces, bounds };
+    let group = read.group_of(&object);
+    let units = read.units(&object)?;
+    let t = page_map(view, matrix_of(matrix))?;
+    inverse(&t)?;
+    let mut plan = Plan::default();
+    for unit in &units {
+        plan.splices.extend(read.wrap(unit, group, &t, None)?);
+    }
+    apply(&read, bytes, plan)
+}
+
 /// The index of the object whose wrappers have group `group`.
 pub fn object_with_group(
     bytes: &[u8],

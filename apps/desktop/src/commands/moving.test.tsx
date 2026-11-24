@@ -5,6 +5,7 @@ import { type AnnotationKind, backend, type ViewRect } from "../backend";
 import { NoteEditor } from "../components/comments/NoteEditor";
 import { applyLocale, i18n } from "../i18n";
 import { selectActiveDocument, useAppStore } from "../state/appStore";
+import { ALL_PERMISSIONS } from "../state/security";
 import { isCommandEnabled, runCommand } from "./registry";
 
 /**
@@ -197,5 +198,88 @@ describe.each(["en", "ar"] as const)("moving placed items in %s", (locale) => {
     // A press elsewhere saves the (unchanged) text: no edit.
     fireEvent.pointerDown(document.body);
     expect(toPage).not.toHaveBeenCalled();
+  });
+
+  it("moves a paragraph of page text where it is dragged and by the arrow keys (Edit tool)", async () => {
+    const [block] = await backend.pageTextBlocks(1, 0);
+    if (!block) throw new Error("the mock has a paragraph");
+    const from = { x: block.x, y: block.y, width: block.width, height: block.height };
+    const move = vi.spyOn(backend, "movePageText");
+
+    // Dragged: one move by the difference, the paragraph selected where it went.
+    await runCommand("text.move", { page: 0, block, rect: { ...from, x: 150, y: 400 } });
+    expect(move).toHaveBeenLastCalledWith(1, 0, from, 150 - from.x, 400 - from.y);
+    const [moved] = await backend.pageTextBlocks(1, 0);
+    expect(moved).toMatchObject({ x: 150, y: 400 });
+    expect(active()?.canUndo).toBe(true);
+
+    // The arrow keys move the selected paragraph, in the page's own directions in either
+    // language, and pressed faster than each move is written they add up.
+    useAppStore.getState().updateDocument(1, {
+      selectedBlock: { page: 0, rect: { ...from, x: 150, y: 400 } },
+    });
+    expect(isCommandEnabled("fill.moveRight")).toBe(true);
+    await Promise.all([runCommand("fill.moveRightMore"), runCommand("fill.moveRightMore")]);
+    await runCommand("fill.moveUp");
+    expect((await backend.pageTextBlocks(1, 0))[0]).toMatchObject({ x: 170, y: 399 });
+    expect(active()?.selectedBlock?.rect).toMatchObject({ x: 170, y: 399 });
+
+    // Escape lets it go.
+    expect(isCommandEnabled("edit.deselect")).toBe(true);
+  });
+
+  it("leaves a paragraph's editor for the page on Escape, the paragraph selected to move", async () => {
+    const [block] = await backend.pageTextBlocks(1, 0);
+    if (!block) throw new Error("the mock has a paragraph");
+    useAppStore.getState().setActiveTool("edit");
+    await act(() => runCommand("text.editBlock", { page: 0, block }));
+    render(
+      <I18nextProvider i18n={i18n}>
+        <NoteEditor documentId={1} />
+      </I18nextProvider>,
+    );
+    const field = screen.getByTestId("block-field");
+    const edit = vi.spyOn(backend, "editTextBlock");
+    // The window's shortcuts never see the editor's Escape: the field is gone by then, and
+    // they would take it for a second one that deselects the paragraph again.
+    const windowKeys = vi.fn();
+    window.addEventListener("keydown", windowKeys);
+    await act(async () => {
+      fireEvent.keyDown(field, { key: "Escape" });
+    });
+    window.removeEventListener("keydown", windowKeys);
+    expect(windowKeys).not.toHaveBeenCalled();
+    expect(useAppStore.getState().pendingNote).toBeNull();
+    expect(edit).not.toHaveBeenCalled();
+    expect(active()?.selectedBlock).toEqual({
+      page: 0,
+      rect: { x: block.x, y: block.y, width: block.width, height: block.height },
+    });
+    // The app gives the page view the focus (`focusPage`); there is none here, so the
+    // keys go to the document, which the arrow-key commands accept as the page's.
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(isCommandEnabled("fill.moveLeft")).toBe(true);
+  });
+
+  it("refuses to move page text when the file forbids changing it", async () => {
+    const [block] = await backend.pageTextBlocks(1, 0);
+    if (!block) throw new Error("the mock has a paragraph");
+    const security = {
+      encrypted: true,
+      cipher: "aes256" as const,
+      revision: 6,
+      owner: false,
+      permissions: { ...ALL_PERMISSIONS, modify: false },
+    };
+    useAppStore.getState().removeDocument(1);
+    useAppStore.getState().addDocument({ id: 1, name: "a.pdf", pageCount: 3, security });
+    useAppStore.getState().updateDocument(1, {
+      selectedBlock: {
+        page: 0,
+        rect: { x: block.x, y: block.y, width: block.width, height: block.height },
+      },
+    });
+    expect(isCommandEnabled("text.move")).toBe(false);
+    expect(isCommandEnabled("fill.moveRight")).toBe(false);
   });
 });

@@ -212,6 +212,8 @@ export function DocumentView({ documentId: id }: { documentId: number }) {
           void runCommand("fill.move", { annotation, rect, page }),
         onPlaceText: (page, x, y, width) => void runCommand("text.place", { page, x, y, width }),
         onEditBlock: (page, block) => void runCommand("text.editBlock", { page, block }),
+        onMoveBlock: (page, block, rect) => void runCommand("text.move", { page, block, rect }),
+        onBlockSelect: (selected) => update(id, { selectedBlock: selected }),
         onBlockRefused: (block) =>
           useAppStore
             .getState()

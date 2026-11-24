@@ -136,6 +136,7 @@
       "place": "Place a text box"
     },
     "text": {
+      "move": "Move a paragraph of page text",
       "editBlock": "Edit a paragraph of page text",
       "bold": "Bold",
       "italic": "Italic"

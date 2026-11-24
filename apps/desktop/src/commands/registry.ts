@@ -472,6 +472,7 @@ export type CommandId =
   | "comments.setAuthor"
   | "text.place"
   | "text.editBlock"
+  | "text.move"
   | "text.bold"
   | "text.italic"
   | "text.setStyle"
@@ -726,6 +727,8 @@ function chosenTargets(active: OpenDocument) {
 }
 const hasAnnotationSelected = (state: AppState) =>
   Boolean(selectActiveDocument(state)?.selectedAnnotation);
+/** A paragraph of page text is selected for the arrow keys to move (ADR 0051's amendment). */
+const hasBlockSelected = (state: AppState) => Boolean(selectActiveDocument(state)?.selectedBlock);
 /** A note is being written: a new one, or the selected one. */
 /** A paragraph of page text is open in the editor (ADR 0023). */
 const isEditingBlock = (state: AppState) =>
@@ -962,6 +965,16 @@ async function resizeFill(factor: number): Promise<void> {
  */
 async function nudgeFill(dx: number, dy: number): Promise<void> {
   const active = selectActiveDocument(store());
+  const block = active?.selectedBlock;
+  if (active && block && !active.selectedAnnotation) {
+    // A paragraph of page text (the Edit tool's Text mode), kept on its page.
+    const size = getViewer(active.id)?.pageSize(block.page) ?? null;
+    const { rect } = block;
+    const x = Math.max(0, size ? Math.min(size.width - rect.width, rect.x + dx) : rect.x + dx);
+    const y = Math.max(0, size ? Math.min(size.height - rect.height, rect.y + dy) : rect.y + dy);
+    await moveBlock(block.page, rect, { ...rect, x, y });
+    return;
+  }
   const selected = active?.selectedAnnotation;
   if (!active || !selected) return;
   const { rect } = selected;
@@ -973,6 +986,30 @@ async function nudgeFill(dx: number, dy: number): Promise<void> {
     x: clamp(rect.x + dx, size ? size.width - rect.width : undefined),
     y: clamp(rect.y + dy, size ? size.height - rect.height : undefined),
   });
+}
+
+/**
+ * Moves the page text inside `from` (a paragraph's box) to `to` on page
+ * `page` (ADR 0051's amendment) as one undo step; the paragraph stays
+ * selected for the arrow keys. The selection takes its new box at once, so
+ * a held arrow key adds up.
+ */
+async function moveBlock(page: number, from: ViewRect, to: ViewRect): Promise<void> {
+  const active = selectActiveDocument(store());
+  if (!active || (to.x === from.x && to.y === from.y)) return;
+  const selected = { page, rect: to };
+  store().updateDocument(active.id, { selectedBlock: selected });
+  let outcome: EditOutcome;
+  try {
+    outcome = await backend.movePageText(active.id, page, from, to.x - from.x, to.y - from.y);
+  } catch (error) {
+    store().updateDocument(active.id, { selectedBlock: { page, rect: from } });
+    throw error;
+  }
+  getViewer(active.id)?.reselectBlockAfterRefresh(selected);
+  store().applyEdit(active.id, outcome);
+  if (!selectActiveDocument(store())?.selectedBlock)
+    store().updateDocument(active.id, { selectedBlock: selected });
 }
 
 /**
@@ -1061,7 +1098,8 @@ async function stepFillPage(step: -1 | 1): Promise<void> {
  * toolbar, a list, the note editor) they keep their own meaning.
  */
 const nudgesFill = (state: AppState) =>
-  hasMovableSelected(state) &&
+  ((hasMovableSelected(state) && permits(state, "annotate")) ||
+    (hasBlockSelected(state) && permits(state, "modify"))) &&
   (typeof document === "undefined" ||
     document.activeElement === null ||
     document.activeElement === document.body ||
@@ -3377,6 +3415,18 @@ const DECLARED: Command[] = [
     },
   },
   {
+    // A paragraph of page text dragged in the Edit tool's Text mode (ADR 0051's amendment).
+    id: "text.move",
+    paletteHidden: true,
+    isEnabled: hasDocument,
+    async run(arg) {
+      const block = arg?.block;
+      if (arg?.page === undefined || !block || !arg.rect) return;
+      const from = { x: block.x, y: block.y, width: block.width, height: block.height };
+      await moveBlock(arg.page, from, arg.rect);
+    },
+  },
+  {
     // The Edit tool pressed a paragraph of the page's own text (ADR 0023).
     id: "text.editBlock",
     paletteHidden: true,
@@ -3497,10 +3547,27 @@ const DECLARED: Command[] = [
     // selected, so the arrow keys move it (ADR 0045's amendment).
     id: "note.toPage",
     paletteHidden: true,
-    isEnabled: (state) => isWritingNote(state) && hasMovableSelected(state),
+    isEnabled: (state) =>
+      (isWritingNote(state) && hasMovableSelected(state)) ||
+      (state.pendingNote?.kind === "block" &&
+        state.pendingNote.documentId === state.activeDocumentId),
     run() {
       const active = selectActiveDocument(store());
-      if (active) getViewer(active.id)?.focusPage();
+      if (!active) return;
+      const pending = store().pendingNote;
+      const viewer = getViewer(active.id);
+      if (pending?.kind === "block" && pending.block) {
+        // A paragraph: its editor closes unsaved, and the paragraph stays selected to move.
+        const { block } = pending;
+        const selected = {
+          page: pending.page,
+          rect: { x: block.x, y: block.y, width: block.width, height: block.height },
+        };
+        store().setPendingNote(null);
+        store().updateDocument(active.id, { selectedBlock: selected });
+        viewer?.selectBlock(selected);
+      }
+      viewer?.focusPage();
     },
   },
   {
@@ -3555,7 +3622,8 @@ const DECLARED: Command[] = [
   {
     id: "edit.deselect",
     shortcut: { key: "Escape", notInFields: true },
-    isEnabled: (state) => hasSelection(state) || hasAnnotationSelected(state),
+    isEnabled: (state) =>
+      hasSelection(state) || hasAnnotationSelected(state) || hasBlockSelected(state),
     run() {
       const active = selectActiveDocument(store());
       if (active) getViewer(active.id)?.clearSelection();
@@ -4798,6 +4866,7 @@ const PERMISSION_GATES: Partial<Record<CommandId, keyof Permissions>> = {
   "pages.extract": "assemble",
   "text.place": "modify",
   "text.editBlock": "modify",
+  "text.move": "modify",
   // Find and replace sets paragraphs again (ADR 0052).
   "search.replace": "modify",
   "search.replaceAll": "modify",

@@ -471,6 +471,9 @@ async function addedTextChecks(documentId: number) {
     await runCommand("edit.undo");
   }
   const blockFound = block !== undefined && block.text.replace(/\s+/gu, " ") === text && block.rtl;
+  // Moving it (ADR 0051's amendment): dragged down through `text.move` and the shell, read
+  // back there with its text, then undone (one step).
+  const moved = block ? await moveTextChecks(documentId, text) : null;
   await runCommand("edit.undo");
   const undone = !(await pageText()).includes(text) && !(await pageText()).includes(edited);
   useAppStore.getState().setActiveTool("select");
@@ -482,6 +485,7 @@ async function addedTextChecks(documentId: number) {
     replace,
     undone,
     blockFound,
+    moved,
     blockEdited,
     blockReadBack,
     boldApplied: bold.applied,
@@ -490,6 +494,28 @@ async function addedTextChecks(documentId: number) {
     typingMedianMs: bold.typingMedianMs,
     typingP95Ms: bold.typingP95Ms,
     typingWithoutFrames: bold.typingWithoutFrames,
+  };
+}
+
+/** The added paragraph dragged 90 pt down and read back there, then undone. */
+async function moveTextChecks(documentId: number, text: string) {
+  const holds = (candidate: { text: string }) =>
+    candidate.text.replace(/\s+/gu, " ").includes(text);
+  const from = (await backend.pageTextBlocks(documentId, 0)).find(holds);
+  if (!from) return null;
+  const rect = { x: from.x, y: from.y + 90, width: from.width, height: from.height };
+  await runCommand("text.move", { page: 0, block: from, rect });
+  const there = (await backend.pageTextBlocks(documentId, 0)).find(holds);
+  const selected = useAppStore.getState().documents.find((o) => o.id === documentId)?.selectedBlock;
+  getViewer(documentId)?.clearSelection();
+  await runCommand("edit.undo");
+  const back = (await backend.pageTextBlocks(documentId, 0)).find(holds);
+  const near = (a: number | undefined, b: number) => a !== undefined && Math.abs(a - b) < 1.5;
+  return {
+    dragged: near(there?.y, from.y + 90) && near(there?.x, from.x),
+    textKept: there !== undefined,
+    selected: near(selected?.rect.y, from.y + 90),
+    undone: near(back?.y, from.y),
   };
 }
 
