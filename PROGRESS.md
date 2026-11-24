@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -434,7 +434,11 @@ Plan, in order: every later slice edits documents, so the editing model and savi
         pages, Arabic note text, edit and delete.
       - Text boxes are done (ADR 0019): Arabic, English and mixed text shaped with embedded
         font subsets; they read back exactly once flattened; encrypted files work.
-      - Not yet: callouts, choosing fonts, sizes and colours, and moving annotations.
+      - Moving (ADR 0045's amendment, 2026-11-24): text boxes, notes and drawings are dragged
+        with the Select tool (or their own Comment tool mode) and nudged with the arrow keys, on
+        their page; a text box's handles change its width (its text re-flows), a drawing's scale
+        it. Markup stays on its text.
+      - Not yet: callouts, choosing fonts, sizes and colours.
 - [~] Comments panel (ADR 0041):
       - lists markup, notes, text boxes and drawings with author, date, the marked text,
         replies, and whether resolved; threads written by other viewers are followed;
@@ -500,8 +504,8 @@ M2 adds no budgets of its own; the check is that M1's did not regress.
 
 M2 closed in session 8 at the owner's go-ahead, with these items carried forward:
 
-- **Annotations:** callouts (P0), choosing fonts, sizes and colours, and moving annotations.
-  These come with the inspector.
+- **Annotations:** callouts (P0), choosing fonts, sizes and colours. These come with the
+  inspector. ~~Moving annotations~~ done 2026-11-24 (ADR 0045's amendment).
 - **Comments:** shapes, stamps and other kinds from other tools are not listed; a single reply
   cannot be edited or deleted from the panel; XFDF import and export, summaries and
   flattening (P1).
@@ -810,6 +814,8 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   - Moved to another page by dragging it there (the view scrolls on near the edge) or with
     "previous page" and "next page"; upright on pages turned otherwise.
   - **Gaps:** fixed starting sizes.
+  - Text boxes, notes and drawings move the same way since 2026-11-24 (ADR 0045's amendment),
+    on their own page only.
 - [~] Drawn/typed/image signatures and initials (ADR 0045):
   - **Making them:** a pad with pressure; typed in Naskh (Amiri) or Sans; or a PNG (transparency
     kept as a soft mask) or JPEG, picked through the native dialog.
@@ -982,6 +988,37 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### Moving what was placed — 2026-11-24 (branch `pomidor/exciting-wing-769f6a`; ADR 0045's amendment)
+
+The owner's request: "I just want the ability to move the signature and the text when I edit the
+doc."
+
+- **Already there:** signatures and Fill & Sign items (text, dates, ticks, crosses, dots) were
+  dragged, nudged with the arrow keys, resized by their handles and moved to another page (M5,
+  ADR 0045). The engine reads them back by `/Name` after a reopen, and the new
+  `tests/moving.rs` confirms they move after save → reopen too.
+- **New: text boxes, notes and drawings move.** `AnnotationEdit::SetRect` takes them. A move
+  keeps the box's size exactly and moves `/InkList`, `/CL` and the pop-up with it; a text box
+  given a new width is set again at that width (height fitted, top kept); a drawing given a new
+  size is scaled; a note's resize, markup and page changes for comments are refused.
+- **UI:** the same drag, handles and commands as Fill & Sign (`dragsIn`, `MOVABLE_KINDS`,
+  `RESIZABLE_KINDS`, `fill.move`, `fill.move*`). The Select tool drags all of them; the Comment
+  tool's note and text box modes their own kind; comments stay on their page. A text box shows
+  width handles (`widenedRect`), a drawing proportional ones, a note none.
+- **Keyboard:** Escape in a placed note's or text box's editor returns to the page with it still
+  selected (`note.toPage`, "Back to the page" / "العودة إلى الصفحة"), so the arrow keys move it.
+- **Fixed:** pressing the handle of a selected text box (and of Fill & Sign text, before this) did
+  not resize it: the note editor's save deselected it before the viewer saw the press. It now
+  keeps the selection when the press grabs the item or a handle (`grabsSelected`,
+  `note.save`'s `keepSelected`).
+- **Tests:** `crates/mirsam-core/tests/moving.rs` (6 tests: every kind on English and Arabic
+  pages before and after save → reopen → save, turned pages, re-flow and scaling, refusals, undo,
+  an AES-256 file); `viewer/controller.test.ts` (3 new); `commands/moving.test.tsx` (12, English
+  and Arabic). The shell self-test drags and nudges a text box and drags a stroke (English/light
+  and Arabic/dark pass); checked by hand in the real app in Arabic, including after a save.
+- **Also fixed:** arrow keys pressed faster than each move was written were lost (the store let go
+  of the selection until the viewer's refresh); nudges now add up, Fill & Sign items included.
 
 ### M7 Windows signing — 2026-11-24 (branch `pomidor/free-digicert-alternative-ae3cfa`; ADR 0073)
 

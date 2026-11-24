@@ -69,6 +69,17 @@ impl AnnotationKind {
         matches!(self, AnnotationKind::FillText | AnnotationKind::Mark | AnnotationKind::Signature)
     }
 
+    /// Whether it is a comment that `AnnotationEdit::SetRect` moves on its
+    /// page: a text box, a note, or a drawing. Markup stays on its text.
+    pub fn is_comment_movable(self) -> bool {
+        matches!(self, AnnotationKind::TextBox | AnnotationKind::Note | AnnotationKind::Ink)
+    }
+
+    /// Whether `AnnotationEdit::SetRect` moves it.
+    pub fn is_movable(self) -> bool {
+        self.is_fill() || self.is_comment_movable()
+    }
+
     fn from_subtype(name: &[u8]) -> Option<Self> {
         match name {
             b"Ink" => Some(AnnotationKind::Ink),
@@ -141,7 +152,11 @@ pub enum AnnotationEdit {
     },
     /// Moves or resizes the Fill & Sign item at `index` of the page's
     /// `/Annots`: its appearance is fitted to the new `/Rect`. Fill text
-    /// keeps its new size for later changes (`/DA`).
+    /// keeps its new size for later changes (`/DA`). A note is only moved
+    /// (`rect` keeps its size); a text box given another size is laid out
+    /// again at the new width, its height fitted to its text and its
+    /// displayed top kept; a drawing (ink) is scaled. Strokes, a callout
+    /// line and a pop-up go along.
     SetRect {
         page: usize,
         index: usize,
@@ -268,7 +283,6 @@ pub fn annotation_update(
         }
         AnnotationEdit::SetRect { page, index, rect } => {
             let leaf = leaf(*page)?;
-            check_item_rect(*rect)?;
             let [_, bottom, _, top] = *rect;
             let annots = Annots::read(&file, leaf)?;
             let target = annots.items.get(*index).ok_or(Error::InvalidEdit("no such annotation"))?;
@@ -278,8 +292,63 @@ pub fn annotation_update(
             let mut dict = resolve_dict(&file, target)
                 .ok_or(Error::EditUnsupported("this annotation cannot be read"))?;
             let kind = kind_of(&dict);
-            if !kind.is_some_and(AnnotationKind::is_fill) {
-                return Err(Error::InvalidEdit("only Fill & Sign items are moved or resized"));
+            let mut rect = *rect;
+            if kind.is_some_and(AnnotationKind::is_comment_movable) {
+                // A note is moved, never resized; a text box takes a new
+                // width and its text is set again; a drawing is scaled.
+                // What else places it (strokes, a callout, its pop-up) goes along.
+                let old =
+                    rect_of(&file, &dict).ok_or(Error::EditUnsupported("this annotation has no box"))?;
+                if !in_range((rect[0], rect[1])) || !in_range((rect[2], rect[3])) {
+                    return Err(Error::InvalidEdit("an annotation needs a place on the page"));
+                }
+                let resized = |a: f32, b: f32| (a - b).abs() > MOVE_TOLERANCE;
+                let same_size = !resized(rect[2] - rect[0], old[2] - old[0])
+                    && !resized(rect[3] - rect[1], old[3] - old[1]);
+                if same_size {
+                    // Exactly its old size, so a move never stretches it.
+                    let (dx, dy) = (rect[0] - old[0], rect[1] - old[1]);
+                    rect = [old[0] + dx, old[1] + dy, old[2] + dx, old[3] + dy];
+                } else if kind == Some(AnnotationKind::Note) {
+                    return Err(Error::InvalidEdit("a note's icon is moved, not resized"));
+                } else if kind == Some(AnnotationKind::Ink) {
+                    check_item_rect(rect)?;
+                } else {
+                    // A text box: laid out again at the new width, as tall as its text.
+                    let da = decrypted_da(&mut writer, &dict, number, generation)?;
+                    let (size, color) = text_box::parse_da(&da);
+                    let contents = decrypted_string(&mut writer, &dict, b"Contents", number, generation)?
+                        .map(|bytes| crate::forms::decode_text(&bytes))
+                        .ok_or(Error::EditUnsupported("this text box has lost its text"))?;
+                    let width =
+                        if leaf.rotate.rem_euclid(180) == 90 { rect[3] - rect[1] } else { rect[2] - rect[0] };
+                    let height = TextBox::height_for(&contents, width, size)?;
+                    let text_box =
+                        TextBox { rect: text_box::resized(rect, leaf.rotate, height), contents, size, color };
+                    let stream = writer.write_appearance(&text_box.appearance(leaf.rotate)?)?;
+                    set(&mut dict, b"AP", Object::Dict(Dict(vec![(b"N".to_vec(), Object::Ref(stream, 0))])));
+                    rect = text_box.rect;
+                }
+                let map = Fit::between(old, rect);
+                map_geometry(&file, &mut dict, map);
+                if let Some(Object::Ref(popup_number, popup_generation)) = popup(&dict)
+                    && let Some(mut popup_dict) =
+                        resolve_dict(&file, &Object::Ref(popup_number, popup_generation))
+                    && let Some([l, b, r, t]) = rect_of(&file, &popup_dict)
+                {
+                    // The pop-up keeps its size; it moves with its annotation's top-left corner.
+                    let (dx, dy) = (rect[0] - old[0], rect[3] - old[3]);
+                    let real = |value: f32| Object::Real(f64::from(value));
+                    let moved = [l + dx, b + dy, r + dx, t + dy];
+                    set(&mut popup_dict, b"Rect", Object::Array(moved.iter().map(|v| real(*v)).collect()));
+                    writer.update.object(popup_number, popup_generation, &Object::Dict(popup_dict));
+                }
+            } else if kind.is_some_and(AnnotationKind::is_fill) {
+                check_item_rect(rect)?;
+            } else {
+                return Err(Error::InvalidEdit(
+                    "only Fill & Sign items, text boxes, notes and drawings are moved",
+                ));
             }
             if kind == Some(AnnotationKind::FillText) {
                 // Text keeps the size it is shown at, for when it is changed.
@@ -625,6 +694,73 @@ fn kind_of(dict: &Dict) -> Option<AnnotationKind> {
         return fill::kind_of_stamp(dict.get(b"Name").and_then(Object::as_name)?);
     }
     AnnotationKind::from_subtype(subtype)
+}
+
+/// How far a moved annotation's new box may differ in size from its old
+/// one (in points) and still be a move: the displayed rectangle is taken to
+/// page space and back in floating point.
+const MOVE_TOLERANCE: f32 = 0.5;
+/// The map taking one box onto another: `x' = x0' + (x - x0) * sx`, and
+/// so for y.
+#[derive(Debug, Clone, Copy)]
+struct Fit {
+    from: (f32, f32),
+    to: (f32, f32),
+    scale: (f32, f32),
+}
+
+impl Fit {
+    fn between(old: [f32; 4], new: [f32; 4]) -> Self {
+        let ratio = |a: f32, b: f32| if b.abs() < 0.01 { 1.0 } else { a / b };
+        Fit {
+            from: (old[0], old[1]),
+            to: (new[0], new[1]),
+            scale: (ratio(new[2] - new[0], old[2] - old[0]), ratio(new[3] - new[1], old[3] - old[1])),
+        }
+    }
+
+    fn x(&self, x: f32) -> f32 {
+        self.to.0 + (x - self.from.0) * self.scale.0
+    }
+
+    fn y(&self, y: f32) -> f32 {
+        self.to.1 + (y - self.from.1) * self.scale.1
+    }
+}
+
+/// Takes what places an annotation besides its `/Rect` through `map`: ink's
+/// `/InkList` and a callout's `/CL`. Arrays reached through references are
+/// written directly into the annotation.
+fn map_geometry(file: &File<'_>, dict: &mut Dict, map: Fit) {
+    let mapped = |values: &[Object]| -> Option<Object> {
+        let numbers: Vec<f32> =
+            values.iter().map(|v| file.resolve(v).as_ref().and_then(number)).collect::<Option<_>>()?;
+        let real = |value: f32| Object::Real(f64::from(value));
+        Some(Object::Array(
+            numbers
+                .iter()
+                .enumerate()
+                .map(|(i, v)| real(if i % 2 == 0 { map.x(*v) } else { map.y(*v) }))
+                .collect(),
+        ))
+    };
+    if let Some(Object::Array(strokes)) = dict.get(b"InkList").and_then(|list| file.resolve(list)) {
+        let moved: Option<Vec<Object>> = strokes
+            .iter()
+            .map(|stroke| match file.resolve(stroke)? {
+                Object::Array(points) => mapped(&points),
+                _ => None,
+            })
+            .collect();
+        if let Some(moved) = moved {
+            set(dict, b"InkList", Object::Array(moved));
+        }
+    }
+    if let Some(Object::Array(line)) = dict.get(b"CL").and_then(|line| file.resolve(line))
+        && let Some(moved) = mapped(&line)
+    {
+        set(dict, b"CL", moved);
+    }
 }
 
 /// A Fill & Sign item's new box: finite, and at least a point each way.

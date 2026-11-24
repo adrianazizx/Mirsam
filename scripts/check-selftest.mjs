@@ -123,6 +123,16 @@ if (nav) {
     check(comments?.resolved, "the note was not resolved");
     check(comments?.panelItems >= 3, `the comments panel showed ${comments?.panelItems} comments`);
     check(comments?.replyOnPage === 3, `replies and states counted as page annotations (${comments?.replyOnPage})`);
+    // Moving what was placed (ADR 0045's amendment), through the commands and the shell.
+    const moved = notes.moved;
+    check(moved !== undefined && moved !== null, "no moving results");
+    if (moved) {
+      check(moved.boxDragged, "the dragged text box did not read back where it went");
+      check(moved.boxNudged, "the arrow-key command did not move the text box 10 points right");
+      check(moved.boxText, "the moved text box lost its text");
+      check(moved.inkDragged, "the dragged stroke did not read back where it went");
+      check(moved.inkStrokes, "the stroke's points did not move with it");
+    }
     check(notes.cleared, "undo did not take the note, the text box, and the stroke away");
   }
   // New page text (ADR 0021): written into the page with the Edit tool.
@@ -233,6 +243,13 @@ if (nav) {
         `erased ${n.erased}, undone ${n.cleared}; comments ${JSON.stringify(n.comments?.kinds)}, ` +
         `reply ${n.comments?.replied}, resolved ${n.comments?.resolved}, ${n.comments?.panelItems} in the panel`,
     );
+    const m = n.moved;
+    if (m) {
+      console.log(
+        `  moved: text box dragged ${m.boxDragged}, nudged ${m.boxNudged}, text kept ${m.boxText}; ` +
+          `stroke dragged ${m.inkDragged}, points moved ${m.inkStrokes}`,
+      );
+    }
   }
   if (nav.addedText) {
     const a = nav.addedText;

@@ -42,6 +42,7 @@ import type {
   TileRequest,
   ViewRect,
 } from "./types";
+import { MOVABLE_KINDS } from "./types";
 
 /**
  * In-browser stand-in for the Rust shell, used when the UI runs outside Tauri
@@ -1439,10 +1440,31 @@ export const mockBackend: Backend = {
   setAnnotationRect: async (documentId, page, index, rect) => {
     const next = withMarkup(documentId, page, (list) => {
       const found = list[index];
-      if (!found || !["fillText", "mark", "signature"].includes(found.kind)) {
-        throw { code: "invalid_edit", detail: "only Fill & Sign items are moved or resized" };
+      const old = found?.rects[0];
+      if (!found || !old || !MOVABLE_KINDS.includes(found.kind)) {
+        throw {
+          code: "invalid_edit",
+          detail: "only Fill & Sign items, text boxes, notes and drawings are moved",
+        };
       }
-      return list.map((item, i) => (i === index ? { ...item, rects: [rect] } : item));
+      const resized =
+        Math.abs(rect.width - old.width) > 0.5 || Math.abs(rect.height - old.height) > 0.5;
+      if (resized && found.kind === "note") {
+        throw { code: "invalid_edit", detail: "a note's icon is moved, not resized" };
+      }
+      // A text box keeps its text's area, roughly: narrower is taller.
+      const box =
+        resized && found.kind === "textBox"
+          ? { ...rect, height: (old.height * old.width) / Math.max(rect.width, 1) }
+          : rect;
+      const sx = box.width / Math.max(old.width, 0.01);
+      const sy = box.height / Math.max(old.height, 0.01);
+      const strokes = found.strokes.map((stroke) =>
+        stroke.map(
+          ([x, y]) => [box.x + (x - old.x) * sx, box.y + (y - old.y) * sy] as [number, number],
+        ),
+      );
+      return list.map((item, i) => (i === index ? { ...item, rects: [box], strokes } : item));
     });
     return pushState(documentId, next);
   },

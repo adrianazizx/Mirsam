@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { runCommand, shortcutLabel } from "../../commands/registry";
 import { directionOf } from "../../i18n";
 import { useAppStore } from "../../state/appStore";
+import { getViewer } from "../../viewer/registry";
 import { Button } from "../ui/Button";
 import { CommandButton } from "../ui/CommandButton";
 import { Tooltip } from "../ui/Tooltip";
@@ -46,7 +47,9 @@ function useFormatState(active: boolean): { bold: boolean; italic: boolean } {
  * so Arabic and English notes each read correctly in either UI language.
  *
  * Pressing anywhere outside it keeps what was written, as other editors do
- * with notes; Escape cancels, Cmd/Ctrl+Enter saves.
+ * with notes; Escape cancels (on a placed one, it drops what was typed and
+ * returns to the page, the item still selected, so the arrow keys move it),
+ * Cmd/Ctrl+Enter saves.
  */
 export function NoteEditor({ documentId }: { documentId: number }) {
   const { t } = useTranslation();
@@ -104,15 +107,25 @@ export function NoteEditor({ documentId }: { documentId: number }) {
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && card.current?.contains(event.target)) return;
-      void runCommand("note.save", latest.current());
+      // A press on the item itself, or on its handle, moves or resizes it: it stays selected.
+      const keepSelected =
+        getViewer(documentId)?.grabsSelected(event.clientX, event.clientY) ?? false;
+      void runCommand("note.save", { ...latest.current(), keepSelected });
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, []);
+  }, [documentId]);
   const onKeys = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      void runCommand("note.cancel");
+      if (note && !pending) {
+        // A placed one: what was typed is dropped, and the page takes the keys, the
+        // item still selected, so the arrow keys move it; Escape again deselects it.
+        setText(initial);
+        void runCommand("note.toPage");
+      } else {
+        void runCommand("note.cancel");
+      }
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void runCommand("note.save", saved());

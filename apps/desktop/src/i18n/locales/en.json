@@ -129,7 +129,8 @@
     "note": {
       "place": "Place a note",
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "toPage": "Back to the page"
     },
     "textBox": {
       "place": "Place a text box"
@@ -234,7 +235,7 @@
       "place": "Place on the page",
       "larger": "Larger",
       "smaller": "Smaller",
-      "move": "Move a Fill & Sign item",
+      "move": "Move or resize a placed item",
       "moveLeft": "Move left",
       "moveRight": "Move right",
       "moveUp": "Move up",
