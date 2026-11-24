@@ -1023,6 +1023,27 @@ Follows "v0.1.0 readiness" below.
   and a clone outside OneDrive. Restarting OneDrive brought files back slowly (about 90 of 700 in
   an afternoon).
 
+### Startup past a launch document it cannot open — 2026-11-24 (branch `pomidor/confident-swanson-401740`)
+
+Found while diagnosing a CI self-test `io_error` (a missing fixture, PR #45): a launch document
+(command line, "Open with", `MIRSAM_OPEN`) that could not be opened failed the whole `startup`
+command. The UI showed only the error code; the restored tabs and windows were lost and the offer to
+recover unsaved changes (ADR 0040) never came.
+
+- **Shell:** the main window's first `startup` is now `commands::start_app` (`&AppState` and a
+  callback that opens the session's other windows, so tests reach it without a webview). A launch
+  document that fails is left out and logged; the others still open, and `Startup.error` carries
+  the first failure's code, as `DocumentsArrived.error` does for documents that arrive later.
+- **UI:** the startup effect shows that code's localized message in the error banner (and says it)
+  once the tabs are in. The first-run guide counts a shown error as busy and does not open over it
+  (before, the failed call skipped the guide too). No new strings: the open errors' own messages.
+- **Limits:** the message does not name the file; a session window that cannot be created still
+  fails the start (unchanged).
+- **Tests:** `commands.rs` (a two-window session plus a missing and an openable launch document:
+  both windows' tabs and the openable document open, `io_error` reported); `App.test.tsx` (English
+  and Arabic: the restored tab, the banner and its announcement, the recovery dialog); onboarding
+  (the guide waits). Not checked in the real app.
+
 ### macOS menu bar — 2026-11-24 (branch `pomidor/file-menu-save-print-c669f3`; ADR 0074)
 
 The owner's report: "under file I cant save, save as, print". The app built no menu of its own,
