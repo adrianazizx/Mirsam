@@ -44,7 +44,7 @@ jobs:
       SECONDS_PER_TARGET: ${{ inputs.seconds || '120' }}
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y qpdf
+      - run: scripts/ci-install-qpdf.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 24

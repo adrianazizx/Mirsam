@@ -31,7 +31,7 @@ rustup is keg-only: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 | Rust lint / format | `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --all` |
 | UI tests / types / lint | `cd apps/desktop && pnpm test` · `pnpm typecheck` · `pnpm lint` (`pnpm format` fixes) |
 | End-to-end shell check | `cargo build -p mirsam-desktop --features devtools && scripts/selftest.sh <pdf> <out> [en\|ar] [light\|dark]` then `node scripts/check-selftest.mjs <out> <ltr\|rtl>` |
-| Installers (PDFium inside, checked) | `node scripts/bundle.mjs [--target <triple>] [--features devtools]` (never bare `tauri build`; ADR 0060) |
+| Installers (PDFium inside, checked) | `node scripts/bundle.mjs [--target <triple>] [--features devtools]` (never bare `tauri build`; ADR 0060); `--no-bundle` then `--bundle-only` to sign the executable in between (ADR 0073) |
 | Crash reports end to end (ADR 0061) | `scripts/crash-selftest.sh <out> [panic\|abort\|thread-panic]` (debug devtools build, or `MIRSAM_SELFTEST_APP` + `MIRSAM_SELFTEST_UI=bundled`) |
 | Release (download links, signing; docs/RELEASING.md) | `node scripts/set-version.mjs <x.y.z>` → merge → `git tag v<x.y.z> origin/main && git push origin v<x.y.z>` → publish the draft |
 | Self-test an installer | `scripts/bundle-selftest.sh <dmg\|deb\|rpm\|AppImage\|setup.exe\|msi> <out>` (bundle built with `--features devtools`) |

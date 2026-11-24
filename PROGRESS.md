@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -116,9 +116,20 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
       certificate as `.p12`, and an App Store Connect API key). Then run Actions → Release → Run
       workflow once as a dry run. Not yet run with a real certificate: this Mac has no Developer ID
       identity, so the signing path is untested until that dry run.
-    - **Windows:** a code-signing certificate (the exe, the installers, and `pdfium.dll`, which ships
-      as a resource and needs its own signing step). Until then SmartScreen warns; the release notes
-      say how to get past it.
+    - **Windows: free through the SignPath Foundation (2026-11-24, ADR 0073), ready for your
+      steps.** The publisher Windows shows is "SignPath Foundation". `docs/RELEASING.md` →
+      "Setting up Windows signing through SignPath":
+      1. publish an unsigned `v0.1.0` (SignPath takes only projects that have released);
+      2. turn on two-factor authentication on GitHub;
+      3. apply at signpath.org/apply;
+      4. once accepted, set up the GitHub trusted build system, the `app` and `installers`
+         artifact configurations and an API token, then `SIGNPATH_API_TOKEN` and
+         `SIGNPATH_ORGANIZATION_ID` in the repository;
+      5. do a dry run, approving both signing requests.
+
+      Review `docs/CODE_SIGNING_POLICY.md` and `docs/PRIVACY.md` before applying: they are public
+      statements in your name. Until then SmartScreen warns, and the release notes say how to get
+      past it. `pdfium.dll` stays unsigned (a third party's build, allowed by SignPath).
     - **Auto-update:** Tauri's updater key; GitHub Releases now exist to serve updates from.
 18. **`libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`.** NCSA is LLVM's BSD-style licence, not on the
     spec's list by name. It is used only by the fuzz targets (`fuzz/`, their own workspace), never
@@ -962,8 +973,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       Release with the universal macOS DMG, Windows setup and MSI, Linux deb/rpm/AppImage under
       version-free names (`releases/latest/download/Mirsam-macOS.dmg`, …) and checksums;
       `scripts/set-version.mjs` keeps the version in step. macOS signed and notarized in CI when the
-      Apple secrets are set. **Open:** the secrets and a first dry run (owner item 17); Windows
-      signing; auto-update
+      Apple secrets are set; Windows signed through the SignPath Foundation once it accepts the
+      project and its settings are set (ADR 0073). **Open:** the Apple secrets, SignPath's
+      acceptance, and a first dry run of each (owner item 17); auto-update
 - [x] Fuzzing of the open/parse path (spec §11 testing): `fuzz/`, weekly in `fuzz.yml`
 - [~] Opt-in crash reporting (ADR 0061): Rust panics, native crashes (macOS and Windows, from the
       system's crash log) and UI errors become redacted reports kept on the computer, offered once
@@ -1007,6 +1019,38 @@ doc."
   and Arabic/dark pass); checked by hand in the real app in Arabic, including after a save.
 - **Also fixed:** arrow keys pressed faster than each move was written were lost (the store let go
   of the selection until the viewer's refresh); nudges now add up, Fill & Sign items included.
+
+### M7 Windows signing — 2026-11-24 (branch `pomidor/free-digicert-alternative-ae3cfa`; ADR 0073)
+
+Stacked on `pomidor/download-links-code-d0ea00` (the release workflow), which has no pull request yet.
+The owner asked for a free alternative to a DigiCert certificate. The project is open source, so the
+choice is the SignPath Foundation. Nothing was signed, and no settings were made.
+
+- **`release.yml`:** a SignPath step decides whether to sign: the token set, and not a pull request.
+  - **Signing:** the Windows job builds the executable, has SignPath sign it, checks the result,
+    builds the installers around it, and has SignPath sign them. The time limit is an hour per
+    approval.
+  - **Not signing:** the build is unchanged and the run shows a warning.
+  - **Release notes:** the release job picks the signed or unsigned Windows paragraph from
+    `windows-signed.txt`, like the Mac one.
+  - **Permissions:** the build job has `actions: read`, because SignPath's action reads the run.
+- **`scripts/bundle.mjs --no-bundle | --bundle-only`:** the two halves of `tauri build`, with the
+  same overlay, guard and checks. Checked on this Mac:
+  - `--no-bundle`, then `--bundle-only --bundles app`, made `Mirsam.app` with the pinned PDFium,
+    and every check passed;
+  - the packaged executable's SHA-256 equals the built one's, so a signed copy goes in as it is.
+- **`scripts/check-authenticode.sh`:** a valid signature, signer SignPath Foundation, and a
+  time-stamp (PowerShell, Windows only).
+- **Public pages:** `docs/CODE_SIGNING_POLICY.md` (what is signed, how, roles) and `docs/PRIVACY.md`
+  (every connection the app makes, each at the user's request). Both are linked from the README
+  (a new Download section) and from the release notes, in English and Arabic.
+- **Not run:**
+  - the SignPath steps, which need acceptance and a Windows runner;
+  - `check-authenticode.sh`, which needs PowerShell (none here);
+  - actionlint, which is not installed here.
+
+  The workflow's YAML parses, its `run:` blocks pass `bash -n`, and the release-notes filter was
+  run on the template for each signed/unsigned combination.
 
 ### M7 releases — 2026-11-24 (branch `pomidor/download-links-code-d0ea00`; ADR 0072)
 
