@@ -1,7 +1,7 @@
 import { defineConfig, passthroughImageService } from "astro/config";
 
 export default defineConfig({
-  site: "https://mirsam-pdf.vercel.app",
+  site: "https://mirsam.vercel.app",
   output: "static",
   // Screenshots are encoded ahead of time (scripts/encode-screens.sh), so no
   // image pipeline (and no sharp/libvips) runs at build time.

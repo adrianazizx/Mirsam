@@ -1,6 +1,6 @@
 # Mirsam website
 
-The landing page at <https://mirsam-pdf.vercel.app>, in English (`/`) and Arabic (`/ar/`). Static
+The landing page at <https://mirsam.vercel.app>, in English (`/`) and Arabic (`/ar/`). Static
 [Astro](https://astro.build) site, deployed by Vercel from `main` (project root directory:
 `website/`). Not part of the app and never shipped with it.
 

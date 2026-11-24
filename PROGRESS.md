@@ -255,10 +255,13 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
         a CI job and a pinned archive in the catalog.
 
 27. **Put the website on Vercel** (`website/`, see its README). Import `adrianazizx/Mirsam` as a
-    Vercel project named `mirsam-pdf` with **Root Directory `website`** (framework Astro, detected; the
-    build and the "skip unless `website/` or the app version changed" rule are in
-    `website/vercel.json`). Every merge to `main` then redeploys https://mirsam-pdf.vercel.app (`mirsam.vercel.app` belongs to someone else). A custom
-    domain can be added in the project's settings later.
+    Vercel project named `mirsam` with **Root Directory `website`** (Astro, set by
+    `website/vercel.json`, which also skips deploys unless `website/` or the app version changed).
+    The site is built for **https://mirsam.vercel.app**. That address currently belongs to the
+    owner's "Mirsam Social Studio" project in another Vercel account or team; remove it there
+    (Settings → Domains), then add it to this project the same way. A custom domain can be added
+    later (on 2026-11-24 `mirsam.io`, `.dev`, `.co`, `.pro` and `.page` were free; `.com`, `.app`,
+    `.org` and `.net` were taken).
 
 Spec §3 open decisions D1–D7: D2 is decided (MIT); the rest proceed on the stated assumptions.
 
@@ -1033,6 +1036,8 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
   no violations once animations finish; no horizontal scroll at 375 px; both directions looked at.
 - **CI:** `ci.yml` and `bundle.yml` ignore `website/**`; `website.yml` runs the parity test and
   the build. `scripts/dev-setup.sh` also moves the website's pnpm store out of OneDrive.
+- **Address:** `mirsam.vercel.app`, which the owner already holds in another Vercel account
+  (owner item 27).
 - **Open:** the Vercel project itself (owner item 27). Not every chapter has an Arabic-UI shot
   (search, annotate, organize, OCR and the hero do; the rest fall back to the English UI).
 
