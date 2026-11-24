@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (v0.1.0 readiness: the version set to 0.1.0 after the first `v0.1.0` tag's release run refused 0.0.1; the tag is to be pushed again once this merges; branch `pomidor/release-readiness-90d90f`; before it, moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -116,6 +116,10 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
       certificate as `.p12`, and an App Store Connect API key). Then run Actions → Release → Run
       workflow once as a dry run. Not yet run with a real certificate: this Mac has no Developer ID
       identity, so the signing path is untested until that dry run.
+      **Half set (2026-11-24):** `APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD` exist, but
+      `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_PRIVATE_KEY` do not. With only the
+      certificate the release run stops the macOS build (a signed app that is not notarized is
+      still blocked). Add the three, or delete the two to release v0.1.0 unsigned on the Mac.
     - **Windows: free through the SignPath Foundation (2026-11-24, ADR 0073), ready for your
       steps.** The publisher Windows shows is "SignPath Foundation". `docs/RELEASING.md` →
       "Setting up Windows signing through SignPath":
@@ -1019,8 +1023,26 @@ another platform and step. Two causes, one in the app and one in the harness:
   an Arabic line, select all while the view's request is out. It failed before the fix. All 467
   UI tests pass; typecheck and biome are clean.
 - **Not the cause:** the Linux cold-start warnings (26 to 32 s to a usable window) show on every
-  Linux package run, passing ones included. They come from the runner (WebKitGTK under Xvfb) and
-  are left as a follow-up.
+  Linux package run, passing ones included. They come from the runner (WebKitGTK under Xvfb);
+  PR #48 takes them on.
+
+### v0.1.0 readiness — 2026-11-24 (branch `pomidor/release-readiness-90d90f`)
+
+The owner asked whether the release was ready. It was not:
+
+- **The tag came before the version.** `v0.1.0` was pushed on PR #42's merge, where the app was
+  still 0.0.1. The Release run's first job refused it ("Tag v0.1.0 does not match the app's
+  version 0.0.1"), so no draft exists. This branch runs `node scripts/set-version.mjs 0.1.0`
+  (Tauri config, `package.json`, `Cargo.toml`, the workspace crates in `Cargo.lock`). After it
+  merges, delete the old tag and tag `main` again (`docs/RELEASING.md`, "To start over").
+- **Apple signing is half set** (owner item 17): the certificate secrets without the notarization
+  ones stop the macOS build in the release run.
+- **The installed-app self-test is flaky.** It failed in 3 of the last 6 completed Bundles runs on `main`,
+  each on another platform: select-all found nothing (Linux rtl, universal macOS ltr) and an
+  `io_error` on Windows rtl. It doesn't gate the release workflow; a separate session is on it.
+- **Checked:** `set-version.mjs --check` reads 0.1.0 everywhere; `cargo metadata --locked
+  --offline` accepts the lockfile; `third-party-licenses.mjs --check` is up to date. The other
+  `0.0.1`s in the tree are test data and the browser mock, not the app's version.
 
 ### Moving page text — 2026-11-24 (branch `pomidor/move-page-text`; ADR 0051's amendment)
 
