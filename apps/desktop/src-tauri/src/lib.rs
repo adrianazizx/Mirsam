@@ -86,6 +86,7 @@ macro_rules! product_commands {
             editing::add_text,
             editing::page_text_blocks,
             editing::edit_text_block,
+            editing::move_page_text,
             editing::set_annotation_contents,
             editing::remove_annotations,
             editing::page_annotations,

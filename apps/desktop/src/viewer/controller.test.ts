@@ -164,6 +164,8 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
     onPlaceText: vi.fn(),
     onEditBlock: vi.fn(),
     onBlockRefused: vi.fn(),
+    onMoveBlock: vi.fn(),
+    onBlockSelect: vi.fn(),
     onObjectSelect: vi.fn(),
     onObjectReshape: vi.fn(),
     onCropChange: vi.fn(),
@@ -974,6 +976,88 @@ describe("viewer controller", () => {
     await press(50, 300);
     expect(callbacks.onPlaceText).toHaveBeenCalledTimes(1);
     expect(callbacks.onEditBlock).toHaveBeenCalledTimes(1);
+    viewer.destroy();
+  });
+
+  it("drags a paragraph of page text in the Text mode, kept on its page; a press that stays edits it", async () => {
+    mode = "text";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    const content = container.firstElementChild as HTMLElement;
+    const at = (type: string, x: number, y: number) =>
+      content.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, clientX: 350 + x, clientY: 20 + y, button: 0 }),
+      );
+    // The page's paragraphs arrive when the pointer first goes over it.
+    at("pointermove", 300, 300);
+    await settle();
+
+    // The editable paragraph, grabbed at (50, 30) and let go 60 pt right and 200 pt down.
+    at("pointerdown", 50, 30);
+    at("pointermove", 70, 80);
+    at("pointermove", 110, 230);
+    expect(container.querySelectorAll(".fill-moving")).toHaveLength(1);
+    at("pointerup", 110, 230);
+    expect(callbacks.onMoveBlock).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 0 }),
+      { x: 80, y: 220, width: 200, height: 30 },
+    );
+    expect(callbacks.onEditBlock).not.toHaveBeenCalled();
+
+    // Text it cannot edit (its font) still moves: its bytes are kept. Past the
+    // page's bottom edge and onto the next page, it stops at its own page's edge.
+    at("pointerdown", 50, 110);
+    at("pointermove", 50, 300);
+    at("pointermove", 50, 410 + 50);
+    at("pointerup", 50, 410 + 50);
+    expect(callbacks.onMoveBlock).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 1 }),
+      { x: 20, y: 370, width: 200, height: 30 },
+    );
+
+    // A press that does not travel edits it, or says why it cannot.
+    at("pointerdown", 50, 30);
+    at("pointerup", 51, 31);
+    expect(callbacks.onEditBlock).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ index: 0 }),
+    );
+    at("pointerdown", 50, 110);
+    at("pointerup", 50, 110);
+    expect(callbacks.onBlockRefused).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: "font" }),
+    );
+    expect(callbacks.onPlaceText).not.toHaveBeenCalled();
+
+    // Selected (to move with the arrow keys), it is outlined; a press elsewhere lets it go.
+    viewer.selectBlock({ page: 0, rect: { x: 20, y: 20, width: 200, height: 30 } });
+    expect(container.querySelectorAll("[data-testid='block-selected']")).toHaveLength(1);
+    expect(callbacks.onBlockSelect).toHaveBeenLastCalledWith({
+      page: 0,
+      rect: { x: 20, y: 20, width: 200, height: 30 },
+    });
+    at("pointerdown", 250, 300);
+    at("pointerup", 250, 300);
+    await settle();
+    expect(container.querySelectorAll("[data-testid='block-selected']")).toHaveLength(0);
+    expect(callbacks.onBlockSelect).toHaveBeenLastCalledWith(null);
+    viewer.destroy();
+  });
+
+  it("selects a moved paragraph again once the pages are read again", async () => {
+    mode = "text";
+    const { viewer, container, callbacks } = setup();
+    await settle();
+    viewer.reselectBlockAfterRefresh({ page: 0, rect: { x: 80, y: 220, width: 200, height: 30 } });
+    viewer.refresh();
+    await settle();
+    expect(callbacks.onBlockSelect).toHaveBeenLastCalledWith({
+      page: 0,
+      rect: { x: 80, y: 220, width: 200, height: 30 },
+    });
+    expect(container.querySelectorAll("[data-testid='block-selected']")).toHaveLength(1);
     viewer.destroy();
   });
 

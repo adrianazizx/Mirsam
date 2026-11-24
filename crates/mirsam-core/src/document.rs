@@ -618,6 +618,34 @@ impl Document {
         Ok((self.revision(Arc::from(bytes))?, update, index))
     }
 
+    /// This document with the text drawn inside `region` of a page (on the
+    /// displayed page: a paragraph's box) moved by (`dx`, `dy`) displayed
+    /// points, and the update that does it (ADR 0051's amendment).
+    pub fn with_text_moved(
+        &self,
+        page: usize,
+        region: crate::view::ViewRect,
+        dx: f32,
+        dy: f32,
+    ) -> Result<(Document, Vec<u8>)> {
+        let view = self.view_transform(page)?;
+        let size = self.page_size(page)?;
+        let area = f64::from(size.width) * f64::from(size.height);
+        let matrix = [1.0, 0.0, 0.0, 1.0, f64::from(dx), f64::from(dy)];
+        let update = crate::objects::text_region_update(
+            &self.bytes,
+            self.password.as_deref(),
+            &view,
+            area,
+            page,
+            region,
+            matrix,
+        )?;
+        let mut bytes = self.bytes.to_vec();
+        bytes.extend_from_slice(&update);
+        Ok((self.revision(Arc::from(bytes))?, update))
+    }
+
     /// This document with a new image on a page (ADR 0051), the update, and
     /// the image's index among the page's objects.
     pub fn with_new_image(

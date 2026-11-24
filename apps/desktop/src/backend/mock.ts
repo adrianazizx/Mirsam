@@ -639,6 +639,8 @@ function applyDesign(
 /** Records the next revision; undone revisions are forgotten. */
 const MOCK_BLOCK_TEXT = "The mock page has one paragraph of text that the Edit tool can change.";
 const mockBlockTexts = new Map<number, string>();
+/** Where the mock paragraph was moved to (ADR 0051's amendment), by document. */
+const mockBlockPlaces = new Map<number, { x: number; y: number }>();
 
 /** The watermark image the mock last "picked". */
 let mockWatermarkImage: string | null = null;
@@ -1742,12 +1744,13 @@ export const mockBackend: Backend = {
     if (page !== 0) return [];
     const text = mockBlockTexts.get(documentId) ?? MOCK_BLOCK_TEXT;
     if (text.trim() === "") return [];
+    const at = mockBlockPlaces.get(documentId) ?? { x: 72, y: 120 };
     return [
       {
         index: 0,
         fingerprint: text.length + 1,
-        x: 72,
-        y: 120,
+        x: at.x,
+        y: at.y,
         width: 300,
         height: 36,
         text,
@@ -1774,6 +1777,24 @@ export const mockBackend: Backend = {
         reason: null,
       } satisfies ParagraphBlock,
     ];
+  },
+  movePageText: async (documentId, page, rect, dx, dy) => {
+    const state = stateOf(documentId);
+    if (state.pages[page] === undefined)
+      throw { code: "page_out_of_range", detail: "page out of range" };
+    const at = mockBlockPlaces.get(documentId) ?? { x: 72, y: 120 };
+    const text = mockBlockTexts.get(documentId) ?? MOCK_BLOCK_TEXT;
+    const inside = (x: number, y: number) =>
+      x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+    // The paragraph's middle in the box: it moves (its box is 300 × 36).
+    if (page !== 0 || text.trim() === "" || !inside(at.x + 150, at.y + 18)) {
+      throw { code: "invalid_edit", detail: "no text there to move" };
+    }
+    mockBlockPlaces.set(documentId, { x: at.x + dx, y: at.y + dy });
+    return {
+      ...pushState(documentId, { pages: state.pages, markup: state.markup, change: "annotations" }),
+      textChanged: true,
+    };
   },
   editTextBlock: async (documentId, edit) => {
     const state = stateOf(documentId);

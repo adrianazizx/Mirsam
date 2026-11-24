@@ -318,6 +318,8 @@ export const tauriBackend: Backend = {
   openLink: (url) => invoke<void>("open_link", { url }),
   pageTextBlocks: (documentId, page) =>
     invoke<ParagraphBlock[]>("page_text_blocks", { documentId, page }),
+  movePageText: (documentId, page, rect, dx, dy) =>
+    invoke<EditOutcome>("move_page_text", { documentId, page, rect, dx, dy }),
   editTextBlock: (documentId, edit) =>
     invoke<BlockEditOutcome>("edit_text_block", { documentId, edit }),
   documentComments: (documentId) => invoke<DocumentComment[]>("document_comments", { documentId }),

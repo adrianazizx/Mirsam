@@ -137,6 +137,14 @@ export interface ViewerCallbacks {
    * ADR 0045).
    */
   onMoveItem?(item: SelectedAnnotation, rect: ViewRect, page: number): void;
+  /**
+   * A paragraph of the page's text (the Edit tool's Text mode: text added
+   * with it, or the page's own) was dragged to `rect` on its page (ADR 0051's
+   * amendment).
+   */
+  onMoveBlock?(page: number, block: ParagraphBlock, rect: ViewRect): void;
+  /** The paragraph the arrow keys move was selected (its page and box), or none. */
+  onBlockSelect?(selected: { page: number; rect: ViewRect } | null): void;
   /** A drag marked an area (Protect tool): the box on the displayed page. */
   onMarkArea?(page: number, rect: ViewRect): void;
   /** A drag marked an area to read again (OCR tool, ADR 0038): the box on the displayed page. */
@@ -279,6 +287,11 @@ export function widenedRect(
   const reach = Math.max(MIN_TEXT_BOX_WIDTH, east ? x - anchor : anchor - x);
   const w = Math.min(reach, east ? width - anchor : anchor);
   return { x: east ? anchor : anchor - w, y: rect.y, width: w, height: rect.height };
+}
+
+/** A paragraph's box on the displayed page. */
+function blockRect(block: ParagraphBlock): ViewRect {
+  return { x: block.x, y: block.y, width: block.width, height: block.height };
 }
 
 /** The narrowest a text box's handles make it, in points. */
@@ -662,6 +675,15 @@ export class ViewerController {
   /** Answers about annotations from before the last refresh are dropped. */
   private annotationGeneration = 0;
   private selectedAnnotation: SelectedAnnotation | null = null;
+  /** Paragraphs of recently visited pages, for dragging them in the Edit tool's Text mode. */
+  private readonly textBlocks = new Map<number, ParagraphBlock[]>();
+  private readonly textBlockRequests = new Map<number, Promise<void>>();
+  /** Answers about paragraphs from before the last refresh are dropped. */
+  private textBlockGeneration = 0;
+  /** The paragraph the arrow keys move (Text mode): its page and box. */
+  private selectedBlock: { page: number; rect: ViewRect } | null = null;
+  /** What `refresh` selects again (`reselectBlockAfterRefresh`). */
+  private keepBlockAfterRefresh: { page: number; rect: ViewRect } | null = null;
   /** Where the last plain click pressed: an annotation there is selected if no text was. */
   private pressedPoint: PagePoint | null = null;
   /** Counts presses, so a late answer about annotations applies only to its own click. */
@@ -684,7 +706,12 @@ export class ViewerController {
   /** A Fill & Sign item being dragged (ADR 0045): where it was, and where it would go. */
   private moving: {
     pointerId: number;
-    item: SelectedAnnotation;
+    /** The annotation dragged, or none when it is a paragraph (`block`). */
+    item: SelectedAnnotation | null;
+    /** The paragraph dragged in the Edit tool's Text mode (ADR 0051's amendment). */
+    block: ParagraphBlock | null;
+    /** Its box when the press began. */
+    from: ViewRect;
     /** Where in the item it was pressed, from its top-left corner. */
     grab: { x: number; y: number };
     /** Where it was pressed, and where the pointer is now (client px). */
@@ -949,6 +976,15 @@ export class ViewerController {
     // The pages on screen read their annotations again at once, so an item
     // just placed can be pressed (dragged, ADR 0045) before the pointer moves.
     for (const page of this.slots.keys()) void this.loadAnnotations(page);
+    // Their paragraphs too, in the Text mode; a paragraph just moved stays selected.
+    this.textBlockGeneration += 1;
+    this.textBlocks.clear();
+    this.textBlockRequests.clear();
+    const keepBlock = this.keepBlockAfterRefresh;
+    this.keepBlockAfterRefresh = null;
+    this.setSelectedBlock(keepBlock);
+    if (this.mode() === "text")
+      for (const page of this.slots.keys()) void this.loadTextBlocks(page);
   }
 
   /** Selects an object of a page (by index), or none (ADR 0051); the caller already knows. */
@@ -1284,6 +1320,67 @@ export class ViewerController {
    */
   reselectAfterRefresh(annotation: SelectedAnnotation): void {
     this.keepAfterRefresh = annotation;
+  }
+
+  /** The paragraph moved to `rect` stays selected once the pages are read again (ADR 0051's amendment). */
+  reselectBlockAfterRefresh(selected: { page: number; rect: ViewRect }): void {
+    this.keepBlockAfterRefresh = selected;
+  }
+
+  /** Selects the paragraph at `rect` of `page` for the arrow keys to move (Text mode), or none. */
+  selectBlock(selected: { page: number; rect: ViewRect } | null): void {
+    this.setSelectedBlock(selected);
+  }
+
+  /** The paragraph under a press, from the page's paragraphs as last read (Text mode). */
+  private blockAt(point: PagePoint): ParagraphBlock | null {
+    const blocks = this.textBlocks.get(point.page) ?? [];
+    return (
+      blocks.find(
+        (b) =>
+          b.width > 0 &&
+          point.x >= b.x - 2 &&
+          point.x <= b.x + b.width + 2 &&
+          point.y >= b.y - 2 &&
+          point.y <= b.y + b.height + 2,
+      ) ?? null
+    );
+  }
+
+  /** The page's paragraphs, from the cache or asked for once; settles when they are known. */
+  private loadTextBlocks(page: number): Promise<void> {
+    if (this.textBlocks.has(page)) return Promise.resolve();
+    const pending = this.textBlockRequests.get(page);
+    if (pending) return pending;
+    const generation = this.textBlockGeneration;
+    const request = this.backend.pageTextBlocks(this.documentId, page).then(
+      (blocks) => {
+        if (this.destroyed || generation !== this.textBlockGeneration) return;
+        this.textBlockRequests.delete(page);
+        this.textBlocks.set(page, blocks);
+        if (this.textBlocks.size > TEXT_LAYER_PAGES) {
+          const oldest = this.textBlocks.keys().next().value;
+          if (oldest !== undefined) this.textBlocks.delete(oldest);
+        }
+      },
+      (error: unknown) => {
+        if (generation === this.textBlockGeneration) this.textBlockRequests.delete(page);
+        console.warn("page paragraphs unavailable", page, error);
+      },
+    );
+    this.textBlockRequests.set(page, request);
+    return request;
+  }
+
+  private setSelectedBlock(selected: { page: number; rect: ViewRect } | null): void {
+    const previous = this.selectedBlock;
+    if (previous === selected) return;
+    this.selectedBlock = selected;
+    for (const page of new Set([previous?.page, selected?.page])) {
+      const slot = page === undefined ? undefined : this.slots.get(page);
+      if (slot) this.paintOverlay(slot);
+    }
+    this.callbacks.onBlockSelect?.(selected);
   }
 
   /** Applies zoom and view-mode changes from the store. */
@@ -1714,6 +1811,7 @@ export class ViewerController {
     this.pendingAnchor = null;
     this.setSelection(null);
     this.setSelectedAnnotation(null);
+    this.setSelectedBlock(null);
   }
 
   /**
@@ -2172,6 +2270,8 @@ export class ViewerController {
         this.moving = {
           pointerId: event.pointerId,
           item,
+          block: null,
+          from: item.rect,
           grab: { x: point.x - item.rect.x, y: point.y - item.rect.y },
           clientX: event.clientX,
           clientY: event.clientY,
@@ -2183,6 +2283,31 @@ export class ViewerController {
         this.content.setPointerCapture?.(event.pointerId);
         return;
       }
+    }
+    if (mode === "text") {
+      // A press on a paragraph drags it; one that does not travel edits it (ADR 0051's amendment).
+      const block = this.blockAt(point);
+      if (block) {
+        this.setSelection(null);
+        this.setSelectedAnnotation(null);
+        const rect = blockRect(block);
+        this.moving = {
+          pointerId: event.pointerId,
+          item: null,
+          block,
+          from: rect,
+          grab: { x: point.x - rect.x, y: point.y - rect.y },
+          clientX: event.clientX,
+          clientY: event.clientY,
+          pointer: { clientX: event.clientX, clientY: event.clientY },
+          page: point.page,
+          rect,
+          moved: false,
+        };
+        this.content.setPointerCapture?.(event.pointerId);
+        return;
+      }
+      this.setSelectedBlock(null);
     }
     const clicks = this.countClick(event);
     // A plain click on an annotation selects it, unless the press turns into a text selection.
@@ -2317,15 +2442,22 @@ export class ViewerController {
       return;
     }
     if (this.moving && event.pointerId === this.moving.pointerId) {
-      const { item, rect, moved, page } = this.moving;
+      const { item, block, rect, moved, page } = this.moving;
       this.moving = null;
       this.stopAutoScroll();
       this.content.releasePointerCapture?.(event.pointerId);
-      for (const shown of new Set([item.page, page])) {
+      for (const shown of new Set([item?.page ?? page, page])) {
         const slot = this.slots.get(shown);
         if (slot) this.paintOverlay(slot);
       }
       if (event.type === "pointercancel") return;
+      if (block) {
+        if (moved) this.callbacks.onMoveBlock?.(page, block, rect);
+        else if (block.editable) this.callbacks.onEditBlock?.(page, block);
+        else this.callbacks.onBlockRefused?.(block);
+        return;
+      }
+      if (!item) return;
       if (moved) this.callbacks.onMoveItem?.(item, rect, page);
       else this.setSelectedAnnotation(item);
       return;
@@ -2517,13 +2649,13 @@ export class ViewerController {
     if (!moving) return;
     // Fill & Sign items go to the page under the pointer; comments, with
     // their replies on their page, stay on theirs.
-    const across = FILL_ITEMS.includes(moving.item.kind);
+    const across = moving.item !== null && FILL_ITEMS.includes(moving.item.kind);
     const over = across ? this.pointAt(clientX, clientY) : null;
     const page = over?.page ?? moving.page;
     const point = over ?? this.pointOnPage(page, clientX, clientY);
     const size = this.sizes?.[page];
     if (!point || !size) return;
-    const { width, height } = moving.item.rect;
+    const { width, height } = moving.from;
     const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
     const previous = moving.page;
     moving.page = page;
@@ -2667,7 +2799,9 @@ export class ViewerController {
       delete this.content.dataset.overText;
       const point = mode === "none" ? null : this.pointAt(event.clientX, event.clientY);
       if (point) void this.loadAnnotations(point.page);
-      if (this.overFillItem(point)) this.content.dataset.overItem = "";
+      if (point && mode === "text") void this.loadTextBlocks(point.page);
+      const overBlock = mode === "text" && point !== null && this.blockAt(point) !== null;
+      if (overBlock || this.overFillItem(point)) this.content.dataset.overItem = "";
       else delete this.content.dataset.overItem;
       this.showHandleCursor(point);
       return;
@@ -2807,6 +2941,14 @@ export class ViewerController {
       slot.overlay.append(element);
     }
     this.paintFieldBoxes(slot, place);
+    // The paragraph the arrow keys move (Text mode), unless it is being dragged.
+    if (this.selectedBlock?.page === slot.page && !this.moving?.moved) {
+      const element = document.createElement("div");
+      element.className = this.classNames.fillMoving ?? this.classNames.markupSelected;
+      element.dataset.testid = "block-selected";
+      place(element, this.selectedBlock.rect);
+      slot.overlay.append(element);
+    }
     const reshaped = [
       this.moving && { ...this.moving, page: this.moving.page },
       this.resizing && { ...this.resizing, page: this.resizing.item.page },
