@@ -1,0 +1,112 @@
+---
+import { ArrowUpRight } from "@lucide/astro";
+import { type Lang, strings } from "../lib/i18n";
+import { DOCS_URL } from "../lib/release";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang].privacy;
+---
+
+<section class="section privacy" id="privacy" data-privacy style={`--n: ${t.lines.length}`}>
+  <div class="container">
+    <p class="kicker" data-reveal>{t.kicker}</p>
+    <ul class="lines">
+      {t.lines.map((line, i) => <li style={`--i: ${i}`} class:list={[i === t.lines.length - 1 && "is-last"]}>{line}</li>)}
+    </ul>
+    <div class="privacy-foot" data-reveal>
+      <p>{t.body}</p>
+      <a href={`${DOCS_URL}/PRIVACY.md`} class="privacy-link">
+        <span>{t.link}</span>
+        <ArrowUpRight aria-hidden="true" />
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Each line lights up as the section scrolls past (main.ts sets --p). */
+  .privacy {
+    --p: 1;
+  }
+
+  :global(.js) .privacy {
+    --p: 0;
+  }
+
+  .lines {
+    display: grid;
+    gap: 0.05em;
+    font-family: var(--font-display);
+    font-size: var(--step-5);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+  }
+
+  :global(:lang(ar)) .lines {
+    font-size: var(--step-4);
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+
+  .lines li {
+    --on: clamp(0, calc(var(--p) * (var(--n) + 0.5) - var(--i)), 1);
+    color: rgb(var(--fg-rgb) / calc(0.1 + var(--on) * 0.9));
+    translate: calc((1 - var(--on)) * 24px) 0;
+  }
+
+  :global([dir="rtl"]) .lines li {
+    translate: calc((1 - var(--on)) * -24px) 0;
+  }
+
+  .lines li.is-last {
+    background: linear-gradient(90deg, var(--brand-ink), var(--brand-violet));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    opacity: calc(0.15 + var(--on) * 0.85);
+  }
+
+  :global([dir="rtl"]) .lines li.is-last {
+    background: linear-gradient(270deg, var(--brand-ink), var(--brand-violet));
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  .privacy-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-block-start: 56px;
+    padding-block-start: 32px;
+    border-block-start: 1px solid var(--border);
+  }
+
+  .privacy-foot p {
+    max-inline-size: 60ch;
+    color: var(--fg-muted);
+    font-size: var(--step-1);
+  }
+
+  .privacy-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+  }
+
+  .privacy-link :global(svg) {
+    inline-size: 18px;
+    block-size: 18px;
+  }
+
+  :global([dir="rtl"]) .privacy-link :global(svg) {
+    transform: scaleX(-1);
+  }
+</style>

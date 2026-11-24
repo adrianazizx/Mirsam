@@ -1,0 +1,417 @@
+{
+  "meta": {
+    "title": "Mirsam — the PDF editor fluent in Arabic and English",
+    "description": "Mirsam (مرسام) is a free, open-source desktop PDF viewer and editor for macOS, Windows and Linux. Read, annotate, edit, fill, sign and redact PDFs, with first-class Arabic and on-device AI OCR. Your documents never leave your computer.",
+    "ogAlt": "Mirsam, the PDF editor fluent in Arabic and English"
+  },
+  "nav": {
+    "skip": "Skip to content",
+    "features": "Features",
+    "arabic": "Arabic",
+    "ocr": "AI OCR",
+    "privacy": "Privacy",
+    "download": "Download",
+    "switchLabel": "اقرأ هذه الصفحة بالعربية",
+    "switchText": "العربية",
+    "menu": "Sections"
+  },
+  "hero": {
+    "eyebrow": "Version {version} is out · free for macOS, Windows and Linux",
+    "title": "A PDF editor fluent in Arabic and English.",
+    "lede": "Mirsam is a fast desktop app for reading, annotating, editing, filling, signing and OCR-ing PDFs. Right-to-left text is never an afterthought, and your documents never leave your computer.",
+    "cta": "Download for {os}",
+    "ctaGeneric": "Download Mirsam",
+    "secondary": "See what it can do",
+    "meta": "Free and open source (MIT) · No account · No telemetry",
+    "logoLabel": "The Mirsam logo: a pen nib writing on a page, with the name مرسام and Mirsam",
+    "shotAlt": "Mirsam with a bilingual contract open, page thumbnails in the side panel"
+  },
+  "marquee": [
+    "Fast on 1,000-page files",
+    "سريع",
+    "Arabic, first-class",
+    "عربي أولًا",
+    "On-device AI OCR",
+    "تعرّف ضوئي على جهازك",
+    "No account",
+    "بلا حساب",
+    "Fill & Sign",
+    "التعبئة والتوقيع",
+    "True redaction",
+    "تنقيح حقيقي",
+    "Open source",
+    "مفتوح المصدر"
+  ],
+  "features": {
+    "kicker": "Everything a PDF needs",
+    "title": "One app, from first read to final signature.",
+    "lede": "Mirsam covers the whole life of a document. Scroll through what version {version} can do.",
+    "chapters": [
+      {
+        "id": "read",
+        "kicker": "Read",
+        "title": "Open anything. Scroll through a thousand pages without a stutter.",
+        "body": "Pages appear at once and sharpen as you go. Find your way with thumbnails, the outline and tabs, and pick up exactly where you left off.",
+        "points": [
+          "Smooth scrolling and pinch-zoom, even on huge files",
+          "Thumbnails, outline, tabs and recent files",
+          "Single page, two pages or book layout, left-to-right or right-to-left",
+          "Sepia and night reading themes, password-protected files, printing"
+        ],
+        "shot": "read",
+        "alt": "A two-column Arabic and English contract with page thumbnails beside it"
+      },
+      {
+        "id": "search",
+        "kicker": "Search & copy",
+        "title": "Search that understands how Arabic is really typed.",
+        "body": "Type without the hamza and still find it. Copy a mixed Arabic-English line and paste it in the right order, with numbers and names intact.",
+        "points": [
+          "Finds الإيجار when you type الايجار",
+          "ة and ه, Arabic-Indic and Western digits match",
+          "Whole words, match case and regular expressions",
+          "Selection and copy in true reading order"
+        ],
+        "shot": "search",
+        "alt": "The search panel listing Arabic results, each highlighted on its page"
+      },
+      {
+        "id": "annotate",
+        "kicker": "Annotate",
+        "title": "Mark it up, talk it through.",
+        "body": "Highlight, underline and strike out, add notes and text boxes, draw by hand, and follow every remark in the comments panel.",
+        "points": [
+          "Highlights, underline, strike-through",
+          "Notes, text boxes and freehand drawing",
+          "A comments panel with replies",
+          "Move anything you place, to any page"
+        ],
+        "shot": "annotate",
+        "alt": "Highlights and notes on a page, with the comments panel open"
+      },
+      {
+        "id": "organize",
+        "kicker": "Organize",
+        "title": "Rearrange pages like cards on a table.",
+        "body": "Drag pages into order, rotate or delete them, merge several files into one, or split one into many.",
+        "points": [
+          "Reorder, rotate and delete pages",
+          "Merge files, split them, extract pages",
+          "Works the same in right-to-left documents"
+        ],
+        "shot": "organize",
+        "alt": "The page organizer showing a grid of pages"
+      },
+      {
+        "id": "edit",
+        "kicker": "Edit",
+        "title": "Change the words on the page. Yes, in Arabic too.",
+        "body": "Click a paragraph and edit it in place, with the original font, shaping and direction kept. Add your own text, images and links.",
+        "points": [
+          "Edit the page's own text in place, Arabic and English",
+          "Add text, images and links",
+          "Headers, footers, page numbers and watermarks",
+          "Find and replace across the document"
+        ],
+        "shot": "edit",
+        "alt": "An Arabic paragraph being edited in place on the page"
+      },
+      {
+        "id": "forms",
+        "kicker": "Forms & signing",
+        "title": "Fill it, sign it, send it.",
+        "body": "Fill in any form, or put text and a signature anywhere with Fill & Sign. Create fillable forms of your own, and sign with a certificate when it has to be official.",
+        "points": [
+          "Fill and create forms, with Arabic that shapes correctly",
+          "Fill & Sign with drawn or typed signatures",
+          "Certificate signatures (PAdES), checked when you open a file"
+        ],
+        "shot": "forms",
+        "alt": "Fill & Sign: a typed signature placed on a form"
+      },
+      {
+        "id": "protect",
+        "kicker": "Protect",
+        "title": "When it's gone, it's really gone.",
+        "body": "Redaction removes the text and images underneath, not just covers them. Find what to hide by pattern, then lock the file with a password.",
+        "points": [
+          "True redaction of text, images and patterns",
+          "Passwords and permissions",
+          "Remove hidden data before sharing"
+        ],
+        "shot": "redact",
+        "alt": "Redaction marks over personal data on a page"
+      },
+      {
+        "id": "convert",
+        "kicker": "Convert",
+        "title": "Take your pages anywhere.",
+        "body": "Export pages as images, or the text as plain text or Markdown, in correct reading order. Make big files small enough to email.",
+        "points": [
+          "Export pages as images",
+          "Export text or Markdown",
+          "Compress files"
+        ],
+        "shot": "convert",
+        "alt": "The export dialog with its format choices"
+      }
+    ],
+    "gridKicker": "In version {version}",
+    "gridTitle": "The full list, at a glance.",
+    "grid": [
+      {
+        "title": "Read",
+        "items": [
+          "Fast scrolling",
+          "Thumbnails & outline",
+          "Tabs & recent files",
+          "Reading themes",
+          "Encrypted files",
+          "Printing"
+        ]
+      },
+      {
+        "title": "Annotate & organize",
+        "items": [
+          "Highlights & markup",
+          "Notes & text boxes",
+          "Drawing",
+          "Comments panel",
+          "Reorder & rotate pages",
+          "Merge, split, extract"
+        ]
+      },
+      {
+        "title": "Edit",
+        "items": [
+          "Edit text in place",
+          "Add text, images, links",
+          "Headers & footers",
+          "Page numbers & watermarks",
+          "Find & replace"
+        ]
+      },
+      {
+        "title": "Forms & signing",
+        "items": [
+          "Fill forms",
+          "Create forms",
+          "Fill & Sign",
+          "Drawn & typed signatures",
+          "Certificate signatures (PAdES)",
+          "Passwords & permissions",
+          "True redaction"
+        ]
+      },
+      {
+        "title": "OCR",
+        "items": [
+          "Scans become searchable",
+          "Scans become editable",
+          "Review uncertain words",
+          "Re-read an area",
+          "Runs on your computer"
+        ]
+      },
+      {
+        "title": "Convert",
+        "items": [
+          "Export as images",
+          "Export text & Markdown",
+          "Compress"
+        ]
+      }
+    ]
+  },
+  "arabic": {
+    "kicker": "Arabic, first-class",
+    "title": "Built right to left from day one.",
+    "lede": "Most PDF tools treat Arabic as an edge case. In Mirsam every feature, from search to editing to OCR, works in Arabic and in mixed Arabic-English documents in its very first version.",
+    "selectTitle": "Copy keeps the reading order",
+    "selectBody": "Select across a line that mixes Arabic, English and numbers. What you paste reads exactly like the page.",
+    "selectLine": "اشتريت 3 أجهزة iPhone 15 Pro من المتجر.",
+    "selectCopied": "Pasted",
+    "searchTitle": "Search forgives spelling",
+    "searchBody": "Hamza or no hamza, ة or ه, ٢٠٢٦ or 2026: Mirsam finds what you meant.",
+    "searchQuery": "الايجار",
+    "searchResults": [
+      "عقد الإيجار",
+      "مدة الإيجار سنة واحدة",
+      "قيمة الإيجار الشهري"
+    ],
+    "searchCount": "3 results",
+    "digitsTitle": "Digits are digits",
+    "digitsBody": "Arabic-Indic and Western numerals are the same number to search, and the Arabic interface writes its own numbers in Arabic-Indic digits.",
+    "compareTitle": "Switch the whole app to Arabic",
+    "compareBody": "The entire interface mirrors, from the toolbar to the page order. Drag to compare.",
+    "compareLabel": "Compare the English and Arabic interface",
+    "compareStart": "English",
+    "compareEnd": "العربية",
+    "compareAltEn": "Mirsam's interface in English",
+    "compareAltAr": "Mirsam's interface in Arabic, laid out right to left"
+  },
+  "ocr": {
+    "kicker": "OCR with on-device AI",
+    "title": "Turn scans into text with an AI model that lives on your laptop.",
+    "lede": "Mirsam reads scanned Arabic and English pages with a vision AI model that runs entirely on your computer. Scans become searchable, copyable and even editable, and not a single page is uploaded anywhere.",
+    "demoLabel": "A scanned page being read by Mirsam's OCR",
+    "demoScan": "Scan",
+    "demoText": "Text",
+    "demoReview": "Flagged for review",
+    "howTitle": "How Mirsam reads a page",
+    "steps": [
+      {
+        "title": "Instant draft",
+        "body": "Your system's own OCR (Apple Vision on Mac, Tesseract elsewhere) gives you searchable text within seconds."
+      },
+      {
+        "title": "AI reads the page",
+        "body": "Nuqta, an AI model trained for Arabic documents, reads every page again, carefully, on your computer."
+      },
+      {
+        "title": "Second opinion",
+        "body": "A smaller model re-reads uncertain lines and every number, date and ID, so amounts and names come out right."
+      },
+      {
+        "title": "You stay in control",
+        "body": "Words the readers disagree on are flagged for you to review. The AI never invents a name or a number."
+      }
+    ],
+    "secureKicker": "Private by design",
+    "secureTitle": "Your documents never leave your laptop.",
+    "secureBody": "Cloud OCR services ask you to upload your contracts, IDs and bank statements to someone else's servers. Mirsam's AI runs locally, so there is nothing to upload and nobody to trust but your own computer.",
+    "securePoints": [
+      {
+        "title": "Runs offline",
+        "body": "After a one-time, optional model download, OCR works with the internet switched off."
+      },
+      {
+        "title": "Nothing is sent",
+        "body": "No page, word or file name leaves your computer. The download itself sends nothing about you or your documents."
+      },
+      {
+        "title": "No account, no cloud",
+        "body": "No sign-up, no API keys, no usage limits, no per-page fees."
+      },
+      {
+        "title": "Open for inspection",
+        "body": "Mirsam is open source, so anyone can check exactly what it does."
+      }
+    ],
+    "diagramLaptop": "Your computer",
+    "diagramModel": "AI model",
+    "diagramDoc": "Your PDF",
+    "diagramCloud": "The cloud",
+    "diagramZero": "0 bytes sent",
+    "diagramLabel": "Diagram: the document and the AI model both stay inside your computer; the connection to the cloud is cut.",
+    "stats": [
+      {
+        "value": "0.89%",
+        "label": "character error rate of the main model on our Arabic test set"
+      },
+      {
+        "value": "100%",
+        "label": "of the reading happens on your computer"
+      },
+      {
+        "value": "0",
+        "label": "pages uploaded, ever"
+      }
+    ],
+    "accuracyNote": "Built for accuracy over speed: the best model takes its time, and you can keep working while it reads in the background.",
+    "shotAlt": "Mirsam's OCR review mode, with uncertain words marked on a scanned page"
+  },
+  "privacy": {
+    "kicker": "Privacy",
+    "lines": [
+      "No accounts.",
+      "No telemetry.",
+      "No analytics.",
+      "No ads.",
+      "Your files stay yours."
+    ],
+    "body": "Mirsam connects to the internet only when you ask it to: to download OCR models, to add a trusted time-stamp to a signature, or to open a link.",
+    "link": "Read the privacy statement"
+  },
+  "download": {
+    "kicker": "Download",
+    "title": "Get Mirsam {version}.",
+    "lede": "Free and open source, for macOS, Windows and Linux. The links always fetch the latest release.",
+    "recommended": "For your computer",
+    "platforms": [
+      {
+        "id": "mac",
+        "name": "macOS",
+        "requirements": "macOS 13 or later · Apple silicon or Intel",
+        "files": [
+          {
+            "label": "Download for Mac",
+            "file": "Mirsam-macOS.dmg",
+            "kind": ".dmg"
+          }
+        ],
+        "install": "Open the disk image and drag Mirsam to Applications."
+      },
+      {
+        "id": "windows",
+        "name": "Windows",
+        "requirements": "Windows 10 or 11 · 64-bit",
+        "files": [
+          {
+            "label": "Download installer",
+            "file": "Mirsam-Windows-Setup.exe",
+            "kind": ".exe"
+          },
+          {
+            "label": "MSI for managed installs",
+            "file": "Mirsam-Windows.msi",
+            "kind": ".msi"
+          }
+        ],
+        "install": "Run the setup program. If Windows shows “Windows protected your PC”, choose More info, then Run anyway."
+      },
+      {
+        "id": "linux",
+        "name": "Linux",
+        "requirements": "64-bit (x86_64)",
+        "files": [
+          {
+            "label": "Ubuntu, Debian",
+            "file": "Mirsam-Linux-x86_64.deb",
+            "kind": ".deb"
+          },
+          {
+            "label": "Fedora, openSUSE",
+            "file": "Mirsam-Linux-x86_64.rpm",
+            "kind": ".rpm"
+          },
+          {
+            "label": "Any Linux",
+            "file": "Mirsam-Linux-x86_64.AppImage",
+            "kind": "AppImage"
+          }
+        ],
+        "install": "Install the package with your software installer, or make the AppImage executable and run it."
+      }
+    ],
+    "installLabel": "How to install",
+    "checksums": "SHA-256 checksums",
+    "signing": "Code signing policy",
+    "allReleases": "All releases on GitHub",
+    "ocrNote": "OCR models are an optional download from inside the app, so the installers stay small."
+  },
+  "footer": {
+    "tagline": "The PDF editor fluent in Arabic and English.",
+    "source": "Source code on GitHub",
+    "license": "MIT licence",
+    "privacy": "Privacy",
+    "signing": "Code signing policy",
+    "issues": "Report a problem",
+    "made": "Free and open source. Made with care for both directions of text."
+  },
+  "os": {
+    "mac": "Mac",
+    "windows": "Windows",
+    "linux": "Linux"
+  }
+}

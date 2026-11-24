@@ -1,0 +1,59 @@
+---
+import { type Lang } from "../lib/i18n";
+import { SHOT_HEIGHT, SHOT_WIDTH, shot } from "../lib/shots";
+
+interface Props {
+  id: string;
+  lang: Lang;
+  alt: string;
+  eager?: boolean;
+  class?: string;
+}
+
+const { id, lang, alt, eager = false, class: className } = Astro.props;
+const src = shot(id, lang);
+---
+
+<figure class:list={["window", className]}>
+  {
+    src ? (
+      <img
+        src={src}
+        alt={alt}
+        width={SHOT_WIDTH}
+        height={SHOT_HEIGHT}
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+        fetchpriority={eager ? "high" : "auto"}
+      />
+    ) : (
+      <div class="window-placeholder" role="img" aria-label={alt} />
+    )
+  }
+</figure>
+
+<style>
+  .window {
+    position: relative;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-window);
+  }
+
+  .window img,
+  .window-placeholder {
+    inline-size: 100%;
+    aspect-ratio: 64 / 41;
+    object-fit: cover;
+  }
+
+  .window-placeholder {
+    background:
+      linear-gradient(90deg, var(--surface-2) 0 16%, transparent 16%),
+      repeating-linear-gradient(180deg, transparent 0 22px, rgb(var(--accent-rgb) / 0.05) 22px 24px),
+      linear-gradient(180deg, var(--surface-2) 0 6%, var(--surface) 6%);
+  }
+</style>

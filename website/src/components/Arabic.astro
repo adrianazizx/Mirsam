@@ -1,0 +1,516 @@
+---
+import { Clipboard, MousePointer2, Search } from "@lucide/astro";
+import { type Lang, strings } from "../lib/i18n";
+import { SHOT_HEIGHT, SHOT_WIDTH, shot } from "../lib/shots";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang].arabic;
+const words = t.selectLine.split(" ");
+const isArabic = (w: string) => /[؀-ۿ]/.test(w);
+const needle = "الإيجار";
+const compareEn = shot("compare", "en");
+const compareAr = shot("compare", "ar");
+---
+
+<section class="section arabic" id="arabic">
+  <div class="arabic-bg" aria-hidden="true" lang="ar">ب ت ث ج ح خ د ذ ر ز س ش ص ض ط ظ ع غ ف ق ك ل م ن ه و ي</div>
+  <div class="container">
+    <header class="arabic-head">
+      <p class="kicker" data-reveal>{t.kicker}</p>
+      <h2 class="section-title" data-reveal style="--d: 1">{t.title}</h2>
+      <p class="section-lede" data-reveal style="--d: 2">{t.lede}</p>
+    </header>
+
+    <div class="demos">
+      <article class="demo demo-select" data-reveal data-demo="select">
+        <div class="demo-visual">
+          <p class="mixed-line" lang="ar" dir="rtl">
+            {
+              words.map((word, i) => (
+                <>
+                  <span class:list={["w", isArabic(word) ? "w-rtl" : "w-ltr"]} style={`--i: ${i}`}>
+                    {word}
+                  </span>{" "}
+                </>
+              ))
+            }
+          </p>
+          <span class="cursor" aria-hidden="true"><MousePointer2 /></span>
+          <div class="pasted">
+            <span class="pasted-label"><Clipboard aria-hidden="true" />{t.selectCopied}</span>
+            <span class="pasted-text" lang="ar" dir="rtl">{t.selectLine}</span>
+          </div>
+        </div>
+        <h3>{t.selectTitle}</h3>
+        <p>{t.selectBody}</p>
+      </article>
+
+      <article class="demo demo-search" data-reveal style="--d: 1" data-demo="search">
+        <div class="demo-visual">
+          <div class="search-field" lang="ar" dir="rtl">
+            <Search aria-hidden="true" />
+            <span class="typed" data-type={t.searchQuery}>{t.searchQuery}</span>
+            <span class="caret" aria-hidden="true"></span>
+            <span class="count">{t.searchCount}</span>
+          </div>
+          <ul class="results" lang="ar" dir="rtl">
+            {
+              t.searchResults.map((result, i) => {
+                const [before, after] = result.split(needle);
+                return (
+                  <li style={`--i: ${i}`}>
+                    {before}
+                    <mark>{needle}</mark>
+                    {after}
+                  </li>
+                );
+              })
+            }
+          </ul>
+        </div>
+        <h3>{t.searchTitle}</h3>
+        <p>{t.searchBody}</p>
+      </article>
+
+      <article class="demo demo-digits" data-reveal style="--d: 2">
+        <div class="demo-visual digits" aria-hidden="true">
+          <span class="digit-ar" lang="ar">٢٠٢٦</span>
+          <span class="digit-eq">=</span>
+          <span class="digit-en" lang="en">2026</span>
+        </div>
+        <h3>{t.digitsTitle}</h3>
+        <p>{t.digitsBody}</p>
+      </article>
+    </div>
+
+    <div class="compare-block">
+      <div class="compare-text">
+        <h3 data-reveal>{t.compareTitle}</h3>
+        <p data-reveal style="--d: 1">{t.compareBody}</p>
+      </div>
+      <div class="compare" dir="ltr" data-compare data-reveal="scale">
+        {
+          compareEn && compareAr ? (
+            <>
+              <img src={compareEn} alt={t.compareAltEn} width={SHOT_WIDTH} height={SHOT_HEIGHT} loading="lazy" decoding="async" />
+              <img class="compare-top" src={compareAr} alt={t.compareAltAr} width={SHOT_WIDTH} height={SHOT_HEIGHT} loading="lazy" decoding="async" />
+            </>
+          ) : (
+            <div class="compare-placeholder" />
+          )
+        }
+        <span class="compare-tag compare-tag-start" lang="en">{t.compareStart}</span>
+        <span class="compare-tag compare-tag-end" lang="ar">{t.compareEnd}</span>
+        <span class="compare-handle" aria-hidden="true"><span></span></span>
+        <input class="compare-range" type="range" min="0" max="100" value="50" aria-label={t.compareLabel} data-compare-range />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .arabic {
+    overflow: clip;
+  }
+
+  .arabic-bg {
+    position: absolute;
+    inset-block-start: 6%;
+    inset-inline: -10%;
+    color: rgb(var(--accent-rgb) / 0.04);
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+    font-size: clamp(6rem, 18vw, 18rem);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .arabic-head {
+    position: relative;
+    max-inline-size: 820px;
+  }
+
+  .demos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 20px;
+    margin-block-start: 64px;
+  }
+
+  .demo {
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+  }
+
+  .demo h3 {
+    margin-block-start: 24px;
+    font-size: var(--step-1);
+  }
+
+  .demo > p {
+    margin-block-start: 10px;
+    color: var(--fg-muted);
+  }
+
+  .demo-visual {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+    min-block-size: 220px;
+    padding: 22px;
+    border-radius: var(--radius-md);
+    background: var(--white);
+    color: var(--brand-ink);
+    overflow: hidden;
+  }
+
+  /* Selecting a mixed line: the highlight grows word by word in reading order. */
+  .mixed-line {
+    font-family: "IBM Plex Sans Arabic", "IBM Plex Sans", sans-serif;
+    font-size: 1.35rem;
+    line-height: 2;
+  }
+
+  .w {
+    --from: right;
+    padding-block: 2px;
+    background: linear-gradient(rgb(var(--accent-rgb) / 0.3), rgb(var(--accent-rgb) / 0.3)) no-repeat var(--from) / 0% 100%;
+    transition: background-size 380ms var(--ease-out);
+    transition-delay: calc(500ms + var(--i) * 260ms);
+  }
+
+  .w-ltr {
+    --from: left;
+  }
+
+  .demo-select.is-in .w {
+    background-size: 100% 100%;
+  }
+
+  .cursor {
+    position: absolute;
+    inset-block-start: 38%;
+    inset-inline-end: 14%;
+    color: var(--brand-ink);
+    opacity: 0;
+    transition:
+      opacity 300ms,
+      inset-inline-end 2200ms var(--ease-in-out) 500ms;
+  }
+
+  .cursor :global(svg) {
+    inline-size: 22px;
+    block-size: 22px;
+    fill: #fff;
+  }
+
+  .demo-select.is-in .cursor {
+    opacity: 1;
+    inset-inline-end: 80%;
+  }
+
+  .pasted {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--brand-ink);
+    color: var(--brand-paper);
+    opacity: 0;
+    transform: translateY(10px);
+    transition:
+      opacity 500ms var(--ease-out) 2900ms,
+      transform 500ms var(--ease-out) 2900ms;
+  }
+
+  .demo-select.is-in .pasted {
+    opacity: 1;
+    transform: none;
+  }
+
+  .pasted-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--brand-lavender);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .pasted-label :global(svg) {
+    inline-size: 14px;
+    block-size: 14px;
+  }
+
+  .pasted-text {
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+    font-size: 1.05rem;
+  }
+
+  /* Search */
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 2px solid var(--brand-violet);
+    border-radius: 10px;
+    background: #fff;
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+    font-size: 1.2rem;
+  }
+
+  .search-field :global(svg) {
+    inline-size: 18px;
+    block-size: 18px;
+    color: var(--brand-violet);
+    flex: none;
+  }
+
+  .caret {
+    inline-size: 2px;
+    block-size: 1.2em;
+    margin-inline-start: -8px;
+    background: var(--brand-violet);
+    animation: blink 1s steps(1) infinite;
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .count {
+    margin-inline-start: auto;
+    color: var(--fg-dim);
+    font-size: 0.85rem;
+    opacity: 0;
+    transition: opacity 400ms;
+  }
+
+  .results {
+    display: grid;
+    gap: 6px;
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+    font-size: 1.05rem;
+  }
+
+  .results li {
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgb(var(--accent-rgb) / 0.06);
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+      opacity 400ms var(--ease-out),
+      transform 400ms var(--ease-out);
+    transition-delay: calc(var(--i) * 120ms);
+  }
+
+  .results mark {
+    padding-inline: 2px;
+    border-radius: 3px;
+    background: var(--brand-lavender);
+    color: var(--brand-ink);
+  }
+
+  .demo-search.is-found .results li {
+    opacity: 1;
+    transform: none;
+  }
+
+  .demo-search.is-found .count {
+    opacity: 1;
+  }
+
+  /* Digits */
+  .digits {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: radial-gradient(circle at 50% 50%, #fff, var(--white));
+    font-size: clamp(2.4rem, 2rem + 2vw, 3.6rem);
+    font-weight: 700;
+  }
+
+  .digit-ar {
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+    color: var(--brand-violet);
+  }
+
+  .digit-en {
+    font-family: var(--font-display);
+    color: var(--brand-ink);
+  }
+
+  .digit-eq {
+    color: var(--fg-dim);
+    font-weight: 400;
+  }
+
+  .demo-digits.is-in .digit-ar,
+  .demo-digits.is-in .digit-en {
+    animation: swap 4s var(--ease-in-out) 800ms infinite;
+  }
+
+  .demo-digits.is-in .digit-en {
+    animation-delay: 1000ms;
+  }
+
+  @keyframes swap {
+    0%,
+    40%,
+    100% {
+      transform: none;
+    }
+
+    20% {
+      transform: translateY(-8px) scale(1.06);
+    }
+  }
+
+  /* Compare the two interfaces */
+  .compare-block {
+    display: grid;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    align-items: center;
+    gap: clamp(32px, 5vw, 72px);
+    margin-block-start: clamp(64px, 10vw, 140px);
+  }
+
+  .compare-text h3 {
+    font-size: var(--step-3);
+  }
+
+  .compare-text p {
+    margin-block-start: 16px;
+    color: var(--fg-muted);
+    font-size: var(--step-1);
+  }
+
+  .compare {
+    --pos: 50%;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-window);
+    aspect-ratio: 64 / 41;
+    background: var(--surface);
+  }
+
+  .compare img {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .compare-top {
+    clip-path: inset(0 0 0 var(--pos));
+  }
+
+  .compare-handle {
+    position: absolute;
+    inset-block: 0;
+    left: var(--pos);
+    inline-size: 2px;
+    translate: -1px 0;
+    background: var(--accent);
+    pointer-events: none;
+  }
+
+  .compare-handle span {
+    position: absolute;
+    inset-block-start: 50%;
+    left: 50%;
+    inline-size: 44px;
+    block-size: 44px;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .compare-handle span::before,
+  .compare-handle span::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    border: 7px solid transparent;
+    translate: 0 -50%;
+  }
+
+  .compare-handle span::before {
+    left: 4px;
+    border-right-color: var(--on-accent);
+  }
+
+  .compare-handle span::after {
+    right: 4px;
+    border-left-color: var(--on-accent);
+  }
+
+  .compare-range {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: ew-resize;
+  }
+
+  .compare:has(.compare-range:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  .compare-tag {
+    position: absolute;
+    inset-block-end: 16px;
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    background: rgb(41 38 94 / 0.85);
+    color: var(--brand-paper);
+    font-size: var(--step--1);
+    font-weight: 600;
+    pointer-events: none;
+  }
+
+  .compare-tag-start {
+    left: 16px;
+  }
+
+  .compare-tag-end {
+    right: 16px;
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+  }
+
+  .compare-placeholder {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--surface-2) 50%, var(--surface-3) 50%);
+  }
+
+  @media (max-width: 960px) {
+    .compare-block {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

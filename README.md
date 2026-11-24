@@ -184,7 +184,9 @@ What is still open is tracked in [PROGRESS.md](PROGRESS.md).
 | Other Linux | [Mirsam-Linux-x86_64.AppImage](https://github.com/adrianazizx/Mirsam/releases/latest/download/Mirsam-Linux-x86_64.AppImage) |
 
 Every release, with its notes and checksums, is on
-[GitHub Releases](https://github.com/adrianazizx/Mirsam/releases).
+[GitHub Releases](https://github.com/adrianazizx/Mirsam/releases). The website,
+[mirsam-pdf.vercel.app](https://mirsam-pdf.vercel.app), has the same downloads in English and
+Arabic (its source is in [website/](website/README.md)).
 
 - **[Code signing policy](docs/CODE_SIGNING_POLICY.md):** macOS releases are signed with the
   maintainer's Apple Developer ID and notarized. Windows releases are signed through the SignPath

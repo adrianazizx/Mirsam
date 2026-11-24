@@ -1,0 +1,126 @@
+---
+import { type Lang, strings } from "../lib/i18n";
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const words = strings[lang].marquee;
+// Each word is tagged with its own language so it is shaped and read correctly.
+const isArabic = (w: string) => /[؀-ۿ]/.test(w);
+const rows = [words, [...words.slice(5), ...words.slice(0, 5)]];
+---
+
+<section class="marquee" aria-label={words.filter((w) => isArabic(w) === (lang === "ar")).join(" · ")}>
+  {
+    rows.map((row, r) => (
+      <div class:list={["marquee-row", r === 1 && "is-reverse"]} aria-hidden="true">
+        <div class="marquee-track">
+          {[0, 1].map(() => (
+            <ul class="marquee-group">
+              {row.map((word) => (
+                <li lang={isArabic(word) ? "ar" : "en"}>
+                  <span dir="auto">{word}</span>
+                  <svg viewBox="0 0 24 24" class="star">
+                    <path d="M12 0l2.6 9.4L24 12l-9.4 2.6L12 24l-2.6-9.4L0 12l9.4-2.6z" />
+                  </svg>
+                </li>
+              ))}
+            </ul>
+          ))}
+        </div>
+      </div>
+    ))
+  }
+</section>
+
+<style>
+  .marquee {
+    --shift: -50%;
+    position: relative;
+    display: grid;
+    gap: 6px;
+    padding-block: 28px;
+    border-block: 1px solid var(--border);
+    background: linear-gradient(90deg, var(--bg), var(--surface) 50%, var(--bg));
+    overflow: hidden;
+    mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+  }
+
+  :global([dir="rtl"]) .marquee {
+    --shift: 50%;
+  }
+
+  .marquee-row {
+    display: flex;
+    overflow: hidden;
+  }
+
+  .marquee-track {
+    display: flex;
+    flex: none;
+    animation: slide var(--dur-marquee) linear infinite;
+  }
+
+  .is-reverse .marquee-track {
+    animation-direction: reverse;
+    animation-duration: calc(var(--dur-marquee) * 1.25);
+  }
+
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes slide {
+    to {
+      transform: translateX(var(--shift));
+    }
+  }
+
+  .marquee-group {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 28px;
+    padding-inline-end: 28px;
+  }
+
+  .marquee-group li {
+    display: inline-flex;
+    align-items: center;
+    gap: 28px;
+    color: var(--fg);
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 1rem + 2vw, 2.6rem);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .marquee-group li:lang(ar) {
+    color: var(--accent);
+  }
+
+  .is-reverse li {
+    color: transparent;
+    -webkit-text-stroke: 1px rgb(var(--accent-rgb) / 0.45);
+  }
+
+  .is-reverse li:lang(ar) {
+    color: rgb(var(--accent-rgb) / 0.35);
+    -webkit-text-stroke: 0;
+  }
+
+  .star {
+    inline-size: 18px;
+    block-size: 18px;
+    fill: var(--accent);
+    flex: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track {
+      animation: none;
+    }
+  }
+</style>

@@ -16,12 +16,14 @@ on:
       - "**"
       - "!docs/**"
       - "!**.md"
+      - "!website/**"
       - "THIRD_PARTY_LICENSES.md"
   pull_request:
     paths:
       - "**"
       - "!docs/**"
       - "!**.md"
+      - "!website/**"
       - "THIRD_PARTY_LICENSES.md"
   workflow_dispatch:
 

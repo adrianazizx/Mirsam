@@ -1,0 +1,129 @@
+/*
+ * Design tokens for the website. Colours come from the Mirsam logo
+ * (`docs/brand/`): indigo ink #29265E, lavender #D4D1FC, pale lavender
+ * #F7F6FF, plus one brighter violet derived from the ink for links and
+ * interactive states. Like the app, nothing here encodes left or right.
+ *
+ * Components use the semantic tokens (--bg, --fg, --accent, …). The page is
+ * light ("lavender paper"); a section with class .band-dark redefines the same
+ * tokens for an indigo band.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --brand-ink: #29265e;
+  --brand-ink-deep: #1d1a4a;
+  --brand-lavender: #d4d1fc;
+  --brand-paper: #f7f6ff;
+  --brand-violet: #4b43cf;
+  --white: #ffffff;
+
+  /* Semantic: light */
+  --bg: var(--brand-paper);
+  --bg-rgb: 247 246 255;
+  --surface: var(--white);
+  --surface-2: #efedff;
+  --surface-3: #e6e4fe;
+  --border: rgb(41 38 94 / 0.12);
+  --border-strong: rgb(41 38 94 / 0.24);
+  --fg: var(--brand-ink);
+  --fg-rgb: 41 38 94;
+  --fg-muted: #4e4a8a;
+  --fg-dim: #625ea0;
+  --accent: var(--brand-violet);
+  --accent-rgb: 75 67 207;
+  --accent-soft: var(--brand-lavender);
+  --on-accent: var(--white);
+  --button-bg: var(--brand-ink);
+  --button-bg-hover: var(--brand-violet);
+  --button-fg: var(--brand-paper);
+  --mark-bg: rgb(75 67 207 / 0.14);
+  --mark-line: var(--brand-violet);
+  --danger: #c63a56;
+  --danger-rgb: 198 58 86;
+
+  --glow: 0 24px 70px -24px rgb(75 67 207 / 0.45);
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 18px 40px -28px rgb(41 38 94 / 0.35);
+  --shadow-window: 0 0 0 1px rgb(41 38 94 / 0.1), 0 50px 120px -40px rgb(41 38 94 / 0.5),
+    0 24px 50px -30px rgb(75 67 207 / 0.35);
+
+  /* Type */
+  --font-sans: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-display: "Readex Pro Variable", "Readex Pro", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --step--1: clamp(0.84rem, 0.8rem + 0.15vw, 0.92rem);
+  --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.12rem);
+  --step-1: clamp(1.2rem, 1.1rem + 0.45vw, 1.45rem);
+  --step-2: clamp(1.5rem, 1.3rem + 0.9vw, 2.1rem);
+  --step-3: clamp(2rem, 1.6rem + 1.8vw, 3.2rem);
+  --step-4: clamp(2.5rem, 1.8rem + 3vw, 4.6rem);
+  --step-5: clamp(3rem, 1.9rem + 5vw, 6.8rem);
+  --leading-tight: 1.1;
+  --leading-body: 1.6;
+
+  /* Space */
+  --gutter: clamp(16px, 4vw, 48px);
+  --section: clamp(96px, 13vw, 190px);
+  --max: 1240px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-xl: 32px;
+  --radius-full: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 180ms;
+  --dur-med: 450ms;
+  --dur-slow: 900ms;
+  --dur-draw: 1600ms;
+  --dur-marquee: 48s;
+
+  --header-h: 68px;
+}
+
+/* An indigo band: the same tokens, inverted. */
+.band-dark {
+  color-scheme: dark;
+  --bg: var(--brand-ink);
+  --bg-rgb: 41 38 94;
+  --surface: #322e70;
+  --surface-2: #3a3680;
+  --surface-3: #45418e;
+  --border: rgb(212 209 252 / 0.16);
+  --border-strong: rgb(212 209 252 / 0.32);
+  --fg: var(--brand-paper);
+  --fg-rgb: 247 246 255;
+  --fg-muted: var(--brand-lavender);
+  --fg-dim: #b3aef0;
+  --accent: var(--brand-lavender);
+  --accent-rgb: 212 209 252;
+  --accent-soft: rgb(212 209 252 / 0.16);
+  --on-accent: var(--brand-ink);
+  --button-bg: var(--brand-lavender);
+  --button-bg-hover: var(--brand-paper);
+  --button-fg: var(--brand-ink);
+  --mark-bg: rgb(212 209 252 / 0.2);
+  --mark-line: var(--brand-lavender);
+  --danger: #ff9aae;
+  --danger-rgb: 255 154 174;
+  --glow: 0 24px 80px -24px rgb(212 209 252 / 0.45);
+  --shadow-card: 0 18px 40px -28px rgb(0 0 0 / 0.6);
+  --shadow-window: 0 0 0 1px rgb(212 209 252 / 0.14), 0 50px 120px -40px rgb(0 0 0 / 0.7),
+    0 24px 60px -30px rgb(212 209 252 / 0.25);
+  background:
+    radial-gradient(900px 500px at 15% 0%, rgb(75 67 207 / 0.55), transparent 70%),
+    radial-gradient(700px 500px at 90% 100%, rgb(212 209 252 / 0.12), transparent 70%),
+    linear-gradient(180deg, var(--brand-ink), var(--brand-ink-deep));
+  color: var(--fg);
+}
+
+/* The Arabic page: Plex Sans Arabic first for body text. */
+:root:lang(ar) {
+  --font-sans: "IBM Plex Sans Arabic", "IBM Plex Sans", system-ui, sans-serif;
+  --leading-tight: 1.3;
+  --leading-body: 1.85;
+}

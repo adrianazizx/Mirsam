@@ -16,6 +16,7 @@ on:
       - "**"
       - "!docs/**"
       - "!**.md"
+      - "!website/**"
   pull_request:
     paths:
       - ".github/workflows/bundle.yml"
