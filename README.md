@@ -19,6 +19,19 @@ for the text engine (Milestone 3) is in.
 Mirsam was called Safha (صفحة) while it had a working name. Code identifiers were renamed to
 `mirsam` on 2026-11-23; older ADRs and session notes still say `safha`.
 
+## Download
+
+Installers for macOS, Windows and Linux are on
+[GitHub Releases](https://github.com/adrianazizx/Mirsam/releases/latest).
+
+- **[Code signing policy](docs/CODE_SIGNING_POLICY.md):** Windows releases are signed through the
+  SignPath Foundation's free programme for open-source projects (free code signing provided by
+  [SignPath.io](https://about.signpath.io/), certificate by
+  [SignPath Foundation](https://signpath.org/)); macOS releases are signed with the maintainer's
+  Apple Developer ID. Each release's notes say if any of its installers are not yet signed.
+- **[Privacy](docs/PRIVACY.md):** no accounts and no telemetry. Mirsam connects to the internet
+  only when you ask it to.
+
 ## Licence
 
 Mirsam is released under the [MIT licence](LICENSE). Third-party components keep their own

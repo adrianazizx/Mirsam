@@ -10,12 +10,17 @@
 // - PDFium's licence notices travel with it;
 // - the installer is within the spec's 60 MB budget (section 11, no OCR models).
 //
-// Usage: node scripts/bundle.mjs [--target <triple>] [--no-build] [<tauri build args>…]
+// Usage: node scripts/bundle.mjs [--target <triple>] [--no-build | --no-bundle | --bundle-only]
+//                               [<tauri build args>…]
 //   --target    aarch64-apple-darwin | x86_64-apple-darwin | universal-apple-darwin |
 //               x86_64-pc-windows-msvc | aarch64-pc-windows-msvc |
 //               x86_64-unknown-linux-gnu | aarch64-unknown-linux-gnu
 //               (default: the host; the output then goes to target/release/bundle)
 //   --no-build  only check the installers already built for the target
+//   --no-bundle    build the app's executable only (`tauri build --no-bundle`), no
+//                  installers and no checks; prints the executable's path
+//   --bundle-only  make and check the installers from the executable already built
+//                  (`tauri build --no-bundle`, then signed: Windows releases, ADR 0073)
 //   anything else goes to `tauri build`, e.g. --features devtools, --bundles app,deb
 //
 // Writes <bundle dir>/bundle-report.json. Exits non-zero if a check fails.
@@ -81,11 +86,15 @@ if (process.argv[2] === "--guard") {
 const args = process.argv.slice(2);
 let target = null;
 let build = true;
+/** "all" (`tauri build`), "binary" (--no-bundle) or "installers" (--bundle-only). */
+let stage = "all";
 const tauriArgs = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--target") target = args[++i];
   else if (args[i].startsWith("--target=")) target = args[i].slice("--target=".length);
   else if (args[i] === "--no-build") build = false;
+  else if (args[i] === "--no-bundle") stage = "binary";
+  else if (args[i] === "--bundle-only") stage = "installers";
   else tauriArgs.push(args[i]);
 }
 const explicitTarget = target !== null;
@@ -125,11 +134,27 @@ if (build) {
   fs.rmSync(bundleDir, { recursive: true, force: true });
   const cli = path.join(APP_DIR, "node_modules/@tauri-apps/cli/tauri.js");
   if (!fs.existsSync(cli)) fail(`missing ${cli}: run pnpm install in apps/desktop`);
+  const command = stage === "installers" ? ["bundle"] : stage === "binary" ? ["build", "--no-bundle"] : ["build"];
   run(
     process.execPath,
-    [cli, "build", ...(explicitTarget ? ["--target", target] : []), "--config", overlayPath, ...tauriArgs],
+    [cli, ...command, ...(explicitTarget ? ["--target", target] : []), "--config", overlayPath, ...tauriArgs],
     { cwd: APP_DIR, env: { ...process.env, MIRSAM_BUNDLE_PDFIUM: library, MIRSAM_BUILD_COMMIT: buildCommit() } },
   );
+}
+if (stage === "binary") {
+  // Nothing to check yet: the executable goes to be signed, then --bundle-only.
+  const exe = path.join(path.dirname(bundleDir), `${binaryName()}${spec.os === "windows" ? ".exe" : ""}`);
+  if (!fs.existsSync(exe)) fail(`tauri build --no-bundle wrote no ${exe}`);
+  console.log(`bundle: executable ${path.relative(ROOT, exe)} (no installers: run again with --bundle-only)`);
+  process.exit(0);
+}
+
+/** The executable Cargo builds: the shell crate's package name. */
+function binaryName() {
+  const manifest = fs.readFileSync(path.join(TAURI_DIR, "Cargo.toml"), "utf8");
+  const name = manifest.match(/^\[package\][^[]*?^name\s*=\s*"([^"]+)"/m)?.[1];
+  if (!name) fail(`no package name in ${path.join(TAURI_DIR, "Cargo.toml")}`);
+  return name;
 }
 
 /** The commit being built, for crash reports (ADR 0061); the environment's when set. */

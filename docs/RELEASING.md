@@ -58,11 +58,11 @@ files run it the same way.
 | Platform | State | Without it |
 |---|---|---|
 | macOS | Signed with the Developer ID and notarized by Apple **when the secrets below are set** | Gatekeeper blocks the app; users need System Settings → Privacy & Security → Open Anyway |
-| Windows | Unsigned (needs a code-signing certificate, PROGRESS item 17) | SmartScreen: "More info" → "Run anyway" |
+| Windows | Signed through the SignPath Foundation (free for open source, ADR 0073) **once SignPath has accepted the project and the settings below are set**; each signing waits for your approval on signpath.io | SmartScreen: "More info" → "Run anyway" |
 | Linux | Packages are not signed by convention for direct downloads | Nothing |
 
-The release notes switch their Mac instructions to match: the run records whether the disk image
-was signed.
+The release notes switch their Mac and Windows instructions to match: the run records whether the
+disk image and the Windows installers were signed.
 
 ### Setting up Apple signing (once)
 
@@ -119,10 +119,88 @@ Mach-O UUIDs match and its signature verifies.
 for Developer ID signing, but changing it after people install the app moves where it keeps its
 recent files and settings. Settle it before the first public release.
 
+### Setting up Windows signing through SignPath (once)
+
+The SignPath Foundation signs open-source projects for free. Its certificate names **SignPath
+Foundation** as the publisher, not Mirsam. Its conditions are on
+[signpath.org/terms](https://signpath.org/terms); our side of them is
+[`docs/CODE_SIGNING_POLICY.md`](CODE_SIGNING_POLICY.md) and [`docs/PRIVACY.md`](PRIVACY.md),
+linked from the README and from every release's notes.
+
+1. **Release once unsigned.** SignPath takes only projects that have already released what they
+   want signed: cut `v0.1.0` as above and publish it with its unsigned Windows installers.
+2. **Turn on two-factor authentication** on your GitHub account (SignPath requires it of everyone
+   in a role, and on SignPath itself).
+3. **Apply** at [signpath.org/apply](https://signpath.org/apply) with the repository, the release,
+   and the code signing policy page.
+4. **Once accepted**, on [app.signpath.io](https://app.signpath.io):
+   - **Trusted build systems:** add the predefined **GitHub.com** one and link it to the project.
+   - **Project** slug `Mirsam` and **signing policy** slug `release-signing` (other names work if
+     you set the variables in step 5). Make yourself the policy's approver.
+   - **Two artifact configurations**, with these slugs and contents. GitHub hands every artifact
+     over as a zip, so each starts with `<zip-file>`:
+
+     `app` (the app's executable, signed before it goes into the installers):
+
+     ```xml
+     <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+       <zip-file>
+         <pe-file path="*.exe" product-name="Mirsam">
+           <authenticode-sign/>
+         </pe-file>
+       </zip-file>
+     </artifact-configuration>
+     ```
+
+     `installers` (the setup program and the MSI):
+
+     ```xml
+     <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+       <zip-file>
+         <pe-file path="Mirsam-Windows-Setup.exe" product-name="Mirsam">
+           <authenticode-sign/>
+         </pe-file>
+         <msi-file path="Mirsam-Windows.msi">
+           <authenticode-sign/>
+         </msi-file>
+       </zip-file>
+     </artifact-configuration>
+     ```
+
+     `product-name` is SignPath's metadata restriction: it refuses a file whose version resource
+     names another product. If the first dry run is refused over it, the message shows the name the
+     file carries. Add a `product-version` restriction too if SignPath asks for one: the dry run's
+     signing request shows the version string Tauri wrote.
+   - **An API token** for a CI user that may submit to the signing policy.
+5. **Store the settings in the repository:**
+
+   ```bash
+   gh secret set SIGNPATH_API_TOKEN
+   ```
+
+   ```bash
+   gh variable set SIGNPATH_ORGANIZATION_ID --body "<organization ID from app.signpath.io>"
+   ```
+
+   Only if you chose other slugs: `gh variable set SIGNPATH_PROJECT_SLUG --body "…"` and
+   `gh variable set SIGNPATH_SIGNING_POLICY_SLUG --body "…"`.
+6. **Dry run** (Actions → Release → Run workflow). The Windows job asks SignPath twice, first for
+   the executable and then for the installers, and waits up to an hour each time: approve both
+   requests on app.signpath.io. Its log then shows, for each file, `Valid`, the signer `CN=SignPath
+   Foundation, …` and `time-stamped` (`scripts/check-authenticode.sh`).
+
+What the workflow does: builds the executable (`scripts/bundle.mjs --no-bundle`), uploads it as a
+workflow artifact, has SignPath sign it, checks the signature, makes the installers around the
+signed copy (`--bundle-only`, with the same PDFium checks as always), and has SignPath sign those.
+Pull requests build unsigned and never ask. Without `SIGNPATH_API_TOKEN` the installers are built
+unsigned with a warning, as before.
+
 ## Not done yet
 
-- **Windows signing**: needs the certificate (DigiCert suggested, PROGRESS item 17); `pdfium.dll`
-  needs its own signature.
+- **Windows signing** is ready for SignPath's acceptance and settings (above; PROGRESS item 17).
+  `pdfium.dll` stays unsigned: SignPath signs only the project's own files, so it stays as
+  pdfium-binaries ships it. The uninstaller that NSIS writes inside the setup program is unsigned
+  too.
 - **Auto-update**: Tauri's updater can read the same GitHub Releases; needs an updater key pair
   and a check in the app.
 - The release installers carry no self-test harness, so they are not launched in CI; the Bundles
