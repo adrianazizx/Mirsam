@@ -11,10 +11,24 @@ be trusted. Offline by default.
 - **See it run:** [the viewer (Milestone 1)](docs/demos/m1.md) ·
   [foundations (Milestone 0)](docs/demos/m0.md)
 
-Status: Milestone 1, the viewer, is merged: tiled continuous scrolling, thumbnails and outline,
-search and copy that handle Arabic correctly, tabs, recent files, reading themes, and
-password-protected files. Milestone 2 (annotate and organize) is in progress, and the groundwork
-for the text engine (Milestone 3) is in.
+## What it does
+
+**[v0.1.0](https://github.com/adrianazizx/Mirsam/releases/tag/v0.1.0)** is the first release, for
+macOS, Windows and Linux, with its interface in English and in Arabic (right to left):
+
+- **Read:** fast scrolling through long documents, thumbnails, outline, tabs, recent files,
+  reading themes, password-protected files, printing; search and copy that get Arabic right.
+- **Annotate and organize:** highlights and other markup, notes, text boxes, drawing, a comments
+  panel; reorder, rotate, delete, merge, split and extract pages.
+- **Edit:** add text, and edit the page's own text in place, in Arabic and English; images, links,
+  headers, footers and page numbers; find and replace.
+- **Forms and signing:** fill and create forms, Fill & Sign, drawn or typed signatures, certificate
+  signatures (PAdES), passwords and permissions, true redaction.
+- **OCR on your computer:** makes scanned Arabic and English documents searchable or editable,
+  with a review of uncertain words. Its models are an optional download; nothing is sent anywhere.
+- **Convert:** export pages as images, text or Markdown; compress files.
+
+What is still open is in [PROGRESS.md](PROGRESS.md).
 
 Mirsam was called Safha (صفحة) while it had a working name. Code identifiers were renamed to
 `mirsam` on 2026-11-23; older ADRs and session notes still say `safha`.
