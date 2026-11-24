@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Backend, KeptRequest, Priority, RenderedPage, TileRequest } from "../backend";
+import type {
+  Backend,
+  KeptRequest,
+  Priority,
+  RenderedPage,
+  TextLayer,
+  TileRequest,
+} from "../backend";
 import {
   freelyResizedRect,
   resizedRect,
@@ -23,7 +30,7 @@ interface Call {
 /** What a press does in the viewer under test. */
 let mode: ViewerMode = "select";
 
-function setup(view: Partial<ViewState> = {}, pageCount = 10) {
+function setup(view: Partial<ViewState> = {}, pageCount = 10, overrides: Partial<Backend> = {}) {
   const calls: Call[] = [];
   const updates: KeptRequest[][] = [];
   const backend = {
@@ -144,6 +151,7 @@ function setup(view: Partial<ViewState> = {}, pageCount = 10) {
             },
           ]
         : [],
+    ...overrides,
   } as unknown as Backend;
 
   const container = document.createElement("div");
@@ -275,6 +283,58 @@ describe("viewer controller", () => {
     await settle();
     // The mock page has no text: the note says so (one paragraph).
     expect(readable?.childElementCount).toBe(1);
+  });
+
+  it("selects all of a page whose text is still on its way", async () => {
+    // Page 1 reads "مرحبا" right to left; its text arrives only when released.
+    const text = "مرحبا";
+    const spans = Array.from(text, (_, i) => ({
+      start: i,
+      end: i + 1,
+      rect: { x: 100 - 10 * i, y: 20, width: 10, height: 12 },
+    }));
+    const layer: TextLayer = {
+      direction: "rtl",
+      quality: "good",
+      blocks: [
+        {
+          direction: "rtl",
+          lines: [{ text, spans, bounds: { x: 60, y: 20, width: 50, height: 12 } }],
+        },
+      ],
+    };
+    const releases: (() => void)[] = [];
+    const asked: number[] = [];
+    const { viewer } = setup({}, 10, {
+      pageText: (_doc: number, page: number) => {
+        asked.push(page);
+        return new Promise<TextLayer>((resolve) => {
+          releases.push(() =>
+            resolve(page === 0 ? layer : { blocks: [], direction: "ltr", quality: "noText" }),
+          );
+        });
+      },
+    });
+    await settle();
+    // The view rests: the pages on screen ask for their text (for screen
+    // readers), and page 1's request is still out when the user selects all.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(asked).toContain(0);
+    const before = asked.length;
+    const selecting = viewer.selectAllOnPage();
+    expect(viewer.hasSelection()).toBe(false);
+    // The request already out serves the selection; none is sent twice.
+    expect(asked.length).toBe(before);
+    for (const release of releases) release();
+    // Select all settles once the text is here and selected.
+    await selecting;
+    expect(viewer.hasSelection()).toBe(true);
+    expect(viewer.selectedText()).toBe(text);
+    // With the text here, it selects at once.
+    viewer.clearSelection();
+    const again = viewer.selectAllOnPage();
+    expect(viewer.selectedText()).toBe(text);
+    await again;
   });
 
   it("mounts only the pages near the viewport and asks for their previews first", async () => {
