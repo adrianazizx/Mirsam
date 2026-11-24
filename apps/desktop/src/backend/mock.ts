@@ -1140,6 +1140,7 @@ export const mockBackend: Backend = {
     active: null,
     recoveries: [...mockRecoveries],
     first: true,
+    error: null,
   }),
   // A restored recovery file reopens with unsaved changes; the locked sample's asks first.
   restoreRecovery: async (token) => {

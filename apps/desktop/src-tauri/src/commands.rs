@@ -119,6 +119,9 @@ pub struct Startup {
     /// runs the UI's startup twice in development): those must not decide
     /// first-run things such as the onboarding guide from a partial list.
     first: bool,
+    /// The error code of the first launch document that could not be opened.
+    /// It is left out; the session and the other documents still open.
+    error: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -180,9 +183,20 @@ pub async fn startup(
             active: state.window_tabs(label).active,
             recoveries: Vec::new(),
             first: false,
+            error: None,
         });
     }
+    start_app(&state, |label| create_window(&app, label))
+}
 
+/// The app's start in the main window: the previous session's tabs (each
+/// other window it had is opened with `open_window`), then the launch
+/// documents. A file that cannot be opened is left out and the rest still
+/// open; a launch document's failure is reported in `Startup::error`.
+fn start_app(
+    state: &AppState,
+    mut open_window: impl FnMut(&str) -> CommandResult<()>,
+) -> CommandResult<Startup> {
     let mut documents = Vec::new();
     let mut active = None;
     let restore = state.store().and_then(|store| store.setting("session.restore").ok().flatten());
@@ -194,7 +208,7 @@ pub async fn startup(
             let mut tabs = WindowTabs::default();
             for (position, path) in saved.files.iter().enumerate() {
                 // A file that can no longer be read is left out; the rest still open.
-                let Ok(outcome) = open_path(&state, path, None, &target) else { continue };
+                let Ok(outcome) = open_path(state, path, None, &target) else { continue };
                 let id = opened_id(&outcome);
                 if let Some(id) = id {
                     tabs.ids.push(id);
@@ -212,12 +226,20 @@ pub async fn startup(
             let opened_any = !tabs.ids.is_empty();
             state.set_window_tabs(&target, tabs);
             if index > 0 && opened_any {
-                create_window(&app, &target)?;
+                open_window(&target)?;
             }
         }
     }
+    let mut error = None;
     for path in state.take_launch_documents() {
-        let outcome = open_path(&state, &path, None, MAIN_WINDOW)?;
+        let outcome = match open_path(state, &path, None, MAIN_WINDOW) {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                eprintln!("mirsam: could not open a launch document: {}", err.detail);
+                error = error.or(Some(err.code));
+                continue;
+            }
+        };
         active = opened_id(&outcome).or(active);
         if !documents
             .iter()
@@ -226,7 +248,7 @@ pub async fn startup(
             documents.push(outcome);
         }
     }
-    Ok(Startup { documents, active, recoveries: crate::recovery::list(&state), first: true })
+    Ok(Startup { documents, active, recoveries: crate::recovery::list(state), first: true, error })
 }
 
 /// Event sent to a window when documents arrive from elsewhere while the app
@@ -688,5 +710,55 @@ mod tests {
             panic!("opens");
         };
         assert_eq!(document.view_state, Some(left));
+    }
+
+    #[test]
+    fn a_launch_document_that_cannot_be_opened_leaves_the_session_and_the_others_open() {
+        let restored = fixture("chrome/en-paragraphs.pdf");
+        let elsewhere = fixture("chrome/ar-plain.pdf");
+        let launched = fixture("chrome/contract-two-column.pdf");
+        for path in [&restored, &elsewhere, &launched] {
+            assert!(path.is_file(), "fixture corpus missing: run `node fixtures/generate.mjs`");
+        }
+        let missing = fixture("no-such-launch-document.pdf");
+        let state = AppState::new(std::time::Instant::now(), [missing, launched]);
+        let store = mirsam_core::store::Store::in_memory().expect("store");
+        store
+            .save_session(&Session {
+                windows: vec![
+                    SessionWindow { files: vec![restored], active: Some(0) },
+                    SessionWindow { files: vec![elsewhere], active: Some(0) },
+                ],
+            })
+            .expect("saves the session");
+        state.set_store(store);
+
+        let mut windows = Vec::new();
+        let startup = start_app(&state, |label| {
+            windows.push(label.to_string());
+            Ok(())
+        })
+        .expect("starts despite the missing launch document");
+
+        let names: Vec<&str> = startup
+            .documents
+            .iter()
+            .map(|outcome| match outcome {
+                OpenOutcome::Opened { document } => document.name.as_str(),
+                OpenOutcome::NeedsPassword { name, .. } => name.as_str(),
+            })
+            .collect();
+        assert_eq!(names, ["en-paragraphs.pdf", "contract-two-column.pdf"]);
+        assert_eq!(
+            startup.active,
+            opened_id(&startup.documents[1]),
+            "the launch document that opened is shown"
+        );
+        assert_eq!(startup.error, Some("io_error"));
+        assert!(startup.first);
+        // The session's other window still opens, with its own tab.
+        assert_eq!(windows.len(), 1);
+        assert_eq!(state.open_documents(&windows[0]).len(), 1);
+        assert!(state.take_launch_documents().is_empty(), "the launch documents are handed out once");
     }
 }

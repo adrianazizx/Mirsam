@@ -992,6 +992,27 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ## Session log
 
+### Startup past a launch document it cannot open — 2026-11-24 (branch `pomidor/confident-swanson-401740`)
+
+Found while diagnosing a CI self-test `io_error` (a missing fixture, PR #45): a launch document
+(command line, "Open with", `MIRSAM_OPEN`) that could not be opened failed the whole `startup`
+command. The UI showed only the error code; the restored tabs and windows were lost and the offer to
+recover unsaved changes (ADR 0040) never came.
+
+- **Shell:** the main window's first `startup` is now `commands::start_app` (`&AppState` and a
+  callback that opens the session's other windows, so tests reach it without a webview). A launch
+  document that fails is left out and logged; the others still open, and `Startup.error` carries
+  the first failure's code, as `DocumentsArrived.error` does for documents that arrive later.
+- **UI:** the startup effect shows that code's localized message in the error banner (and says it)
+  once the tabs are in. The first-run guide counts a shown error as busy and does not open over it
+  (before, the failed call skipped the guide too). No new strings: the open errors' own messages.
+- **Limits:** the message does not name the file; a session window that cannot be created still
+  fails the start (unchanged).
+- **Tests:** `commands.rs` (a two-window session plus a missing and an openable launch document:
+  both windows' tabs and the openable document open, `io_error` reported); `App.test.tsx` (English
+  and Arabic: the restored tab, the banner and its announcement, the recovery dialog); onboarding
+  (the guide waits). Not checked in the real app.
+
 ### Moving page text — 2026-11-24 (branch `pomidor/move-page-text`; ADR 0051's amendment)
 
 The owner, after PR #42: "i cant move this text when i add it" — text added with the Edit tool

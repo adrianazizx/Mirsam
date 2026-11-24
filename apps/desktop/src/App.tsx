@@ -70,13 +70,15 @@ function offerNewCrashReports(): Promise<void> {
 
 /**
  * Opens the first-run guide on a first launch whose window starts empty, once
- * nothing else is asking (recovered changes, a crash report, a password). The
- * main window only: a window opened later is not a first run.
+ * nothing else is asking (recovered changes, a crash report, a password, an
+ * error such as a launch document that could not be opened). The main window
+ * only: a window opened later is not a first run.
  */
 function offerFirstRunGuide(): void {
   if (isTauri() && getCurrentWebviewWindow().label !== "main") return;
   const app = useAppStore.getState();
   const busy =
+    app.errorCode !== null ||
     app.recoveries.length > 0 ||
     app.unlocks.length > 0 ||
     app.galleryOpen ||
@@ -313,11 +315,13 @@ export function App() {
         (error: unknown) => console.warn("cannot receive documents from elsewhere", error),
       )
       .then(() => backend.startup())
-      .then(({ documents, active, recoveries, first: appStart }) => {
+      .then(({ documents, active, recoveries, first: appStart, error }) => {
         starting = false;
         for (const outcome of documents) acceptOutcome(outcome, { activate: false });
         // Unsaved changes an earlier session left (ADR 0040).
         if (recoveries?.length) useAppStore.getState().setRecoveries(recoveries);
+        // A launch document that could not be opened; the rest are open.
+        if (error) useAppStore.getState().setError(error);
         const store = useAppStore.getState();
         const first = store.documents[0];
         const target = active ?? (store.activeDocumentId === null ? first?.id : undefined);
