@@ -41,6 +41,10 @@ env:
   CARGO_TERM_COLOR: always
   CI: "true"
 
+# Least privilege: these jobs only read the repo and use artifacts and caches.
+permissions:
+  contents: read
+
 jobs:
   bundle:
     name: Bundle (${{ matrix.target }})
