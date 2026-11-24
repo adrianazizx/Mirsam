@@ -168,6 +168,7 @@
     },
     "window": {
       "new": "New window",
+      "close": "Close window",
       "closeDiscarding": "Close window without saving"
     },
     "pages": {
@@ -1635,5 +1636,27 @@
     "command": "Command",
     "keys": "Keys",
     "done": "Done"
+  },
+  "menu": {
+    "file": "File",
+    "edit": "Edit",
+    "view": "View",
+    "window": "Window",
+    "help": "Help",
+    "about": "About Mirsam",
+    "services": "Services",
+    "hide": "Hide Mirsam",
+    "hideOthers": "Hide others",
+    "showAll": "Show all",
+    "quit": "Quit Mirsam",
+    "undo": "Undo",
+    "redo": "Redo",
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select all",
+    "fullScreen": "Full screen",
+    "minimize": "Minimize",
+    "zoom": "Zoom"
   }
 }

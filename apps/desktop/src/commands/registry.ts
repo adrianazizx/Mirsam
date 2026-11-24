@@ -300,6 +300,7 @@ export type CommandId =
   | "tabs.move"
   | "tabs.moveToNewWindow"
   | "window.new"
+  | "window.close"
   | "edit.copy"
   | "markup.highlight"
   | "markup.underline"
@@ -2447,6 +2448,11 @@ const DECLARED: Command[] = [
     id: "window.new",
     shortcut: { key: "n", mod: true },
     run: () => backend.newWindow(),
+  },
+  {
+    // The menu bar's Close, once the window shows no document (ADR 0074).
+    id: "window.close",
+    run: () => backend.closeWindow(),
   },
   {
     id: "edit.copy",
