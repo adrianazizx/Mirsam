@@ -212,6 +212,21 @@ describe("the first-run guide", () => {
     expect(screen.queryByTestId("onboarding-guide")).toBeNull();
     expect(stored()[GUIDE_SETTING]).toBeUndefined();
   });
+
+  it("does not open over a launch document that could not be opened", async () => {
+    // The window starts empty only because the file the app was opened with failed.
+    vi.spyOn(backend, "startup").mockResolvedValue({
+      documents: [],
+      active: null,
+      first: true,
+      error: "invalid_pdf",
+    });
+    await startApp();
+    expect(useAppStore.getState().errorCode).toBe("invalid_pdf");
+    expect(screen.getByTestId("error-banner").textContent).toContain("could not be read");
+    expect(useOnboarding.getState().guideOpen).toBe(false);
+    expect(stored()[GUIDE_SETTING]).toBeUndefined();
+  });
 });
 
 describe("the tools' one-time hints", () => {

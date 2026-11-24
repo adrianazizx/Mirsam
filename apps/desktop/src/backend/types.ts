@@ -836,6 +836,11 @@ export interface Startup {
    * while the first was still opening files; those decide no first-run things.
    */
   first?: boolean;
+  /**
+   * The error code of the first launch document that could not be opened.
+   * It is left out; the restored tabs and the other documents still open.
+   */
+  error?: string | null;
 }
 
 export interface RecentFile {

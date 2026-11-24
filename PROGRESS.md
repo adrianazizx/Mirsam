@@ -1,7 +1,7 @@
 # Progress
 
 Mirrors the milestones in `docs/SPEC.md` §12. Update at the end of every session.
-Last updated: 2026-11-24 (the macOS menu bar: File holds New window, Open, Close, Save, Save as and Print, in English and Arabic, ADR 0074; branch `pomidor/file-menu-save-print-c669f3`; before it, v0.1.0 readiness: the version set to 0.1.0 after the first `v0.1.0` tag's release run refused 0.0.1; the tag is to be pushed again once this merges; branch `pomidor/release-readiness-90d90f`; before it, moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
+Last updated: 2026-11-24 (**v0.1.0 released**: published at 18:42 UTC from `b399709`, the Mac app and disk image signed with the Developer ID and notarized, Windows unsigned until SignPath; branch `pomidor/v0.1.0-released`; before it, the macOS menu bar: File holds New window, Open, Close, Save, Save as and Print, in English and Arabic, ADR 0074; branch `pomidor/file-menu-save-print-c669f3`; before it, v0.1.0 readiness: the version set to 0.1.0 after the first `v0.1.0` tag's release run refused 0.0.1; the tag is to be pushed again once this merges; branch `pomidor/release-readiness-90d90f`; before it, moving page text: the Edit tool's Text mode drags text added with it and the page's own paragraphs, and the arrow keys move them, ADR 0051's amendment; branch `pomidor/move-page-text`; before it, moving what was placed: text boxes, notes and drawings move, and text boxes and drawings resize, like Fill & Sign items and signatures, ADR 0045's amendment; branch `pomidor/exciting-wing-769f6a`; before it, M7 Windows signing through the SignPath Foundation, free for open source: two approved signing passes in the release workflow, code signing policy and privacy pages, ADR 0073; branch `pomidor/free-digicert-alternative-ae3cfa`, stacked on the releases branch; before it, M7 releases: a version tag drafts a GitHub Release with every installer under permanent download links, macOS signed and notarized in CI once the Apple secrets are set, ADR 0072, `docs/RELEASING.md`; branch `pomidor/download-links-code-d0ea00`; before it, code identifiers renamed safha → mirsam: crates, Rust paths, `MIRSAM_*` variables, the `mirsam:` URI scheme, localStorage keys, scripts and CI; branch `pomidor/rename-safha-to-mirsam-5a225d`; before it, M7 accessibility, second pass: the OCR UI, Settings' later sections, the time-stamp field, the first pass's deferred items; branch `pomidor/m7-a11y-followup-e8a31a`; before it, M7 onboarding: first-run guide, one-time tool hints, start-screen first steps, ADR 0071; branch `pomidor/m7-onboarding-306aea`; before it, owner decisions 3: Tesseract draft models, DigiCert suggested, neutral oblique names, no crash server, bundle id kept; branch `pomidor/owner-decisions-3-69ac27`; before them, Session M6-d: OCR review mode, reading an area again, replacing poor text layers, scan to editable text; branch `pomidor/m6-ocr-review-7b22b7`; before it, Session M6-c, find and replace, ADR 0052, branch `pomidor/m6-find-replace-7f3816`; M7: opt-in crash reports, ADR 0061, and every spec §11 budget measured on a release build; branch `pomidor/m7-crash-perf-dded88`; before them, the M7 accessibility pass, ADR 0070, branch `pomidor/m7-accessibility-fb6cd3`; before it, M4's remaining items and exit test: background OCR jobs, the searchable-PDF text layer, the review list, the CI benchmark gate; branch `pomidor/m4-jobs-searchable-fe4973`; after Session M5-e certificate signatures, M6 images, links and page objects, the owner decisions and Session M5-d, form creation).
 
 Legend: `[x]` done and verified · `[~]` done but with a stated gap · `[ ]` not started.
 
@@ -13,6 +13,8 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
    keeps Cargo's `target/` and pnpm's package store out of it, but `.git` is still synced, and
    sync clients are known to corrupt git repositories under concurrent writes. A plain folder
    (e.g. `~/Developer/mirsam`) with a git remote for backup is safer.
+   **It happened (2026-11-24):** OneDrive made about 700 `.git` files online-only, and `git fetch`
+   and `git push` failed or hung in every worktree (session log, "v0.1.0 released").
 2. ~~Which licence for the public repository?~~ **Decided (2026-11-23): MIT** (`LICENSE`, spec D2).
    The repository `adrianazizx/Mirsam` is public; the workspace crates and the UI package say
    `MIT`.
@@ -110,20 +112,18 @@ Nothing here blocks Milestone 1, but each is a decision or an action only you ca
     (`node scripts/bundle.mjs --features devtools --bundles app && scripts/scroll-benchmark.sh <out> release`).
 
 17. **Code signing and auto-update (M7) need your certificates and accounts:**
-    - **macOS: ready for your secrets (2026-11-24).** You have an Apple Developer account. The
-      release workflow signs, notarizes and staples the app and the disk image once five repository
-      secrets exist: `docs/RELEASING.md` → "Setting up Apple signing" (a Developer ID Application
-      certificate as `.p12`, and an App Store Connect API key). Then run Actions → Release → Run
-      workflow once as a dry run. Not yet run with a real certificate: this Mac has no Developer ID
-      identity, so the signing path is untested until that dry run.
-      **Half set (2026-11-24):** `APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD` exist, but
-      `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_PRIVATE_KEY` do not. With only the
-      certificate the release run stops the macOS build (a signed app that is not notarized is
-      still blocked). Add the three, or delete the two to release v0.1.0 unsigned on the Mac.
+    - **macOS: done (2026-11-24).** All five secrets are set (`APPLE_CERTIFICATE`,
+      `APPLE_CERTIFICATE_PASSWORD`, and an App Store Connect team key as `APPLE_API_KEY`,
+      `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY`). The dry run and v0.1.0's release run signed as
+      "Developer ID Application: Adrian Aziz (4C7ADDWDMV)"; Apple accepted the app and the disk
+      image for notarization, both are stapled, and `spctl` reports `source=Notarized Developer ID`.
+      The key's `.p8` should live only in your password manager.
     - **Windows: free through the SignPath Foundation (2026-11-24, ADR 0073), ready for your
       steps.** The publisher Windows shows is "SignPath Foundation". `docs/RELEASING.md` →
       "Setting up Windows signing through SignPath":
-      1. publish an unsigned `v0.1.0` (SignPath takes only projects that have released);
+      1. ~~publish an unsigned `v0.1.0`~~ **done (2026-11-24):**
+         https://github.com/adrianazizx/Mirsam/releases/tag/v0.1.0 (SignPath takes only projects
+         that have released);
       2. turn on two-factor authentication on GitHub;
       3. apply at signpath.org/apply;
       4. once accepted, set up the GitHub trusted build system, the `app` and `installers`
@@ -981,8 +981,9 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       version-free names (`releases/latest/download/Mirsam-macOS.dmg`, …) and checksums;
       `scripts/set-version.mjs` keeps the version in step. macOS signed and notarized in CI when the
       Apple secrets are set; Windows signed through the SignPath Foundation once it accepts the
-      project and its settings are set (ADR 0073). **Open:** the Apple secrets, SignPath's
-      acceptance, and a first dry run of each (owner item 17); auto-update
+      project and its settings are set (ADR 0073). **v0.1.0 released (2026-11-24)**, the Mac build
+      signed and notarized. **Open:** SignPath's acceptance and its first dry run (owner item 17);
+      auto-update
 - [x] Fuzzing of the open/parse path (spec §11 testing): `fuzz/`, weekly in `fuzz.yml`
 - [~] Opt-in crash reporting (ADR 0061): Rust panics, native crashes (macOS and Windows, from the
       system's crash log) and UI errors become redacted reports kept on the computer, offered once
@@ -995,6 +996,53 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
       load from other sessions and are to be re-taken on an idle machine (owner item 16)
 
 ## Session log
+
+### v0.1.0 released — 2026-11-24 (branch `pomidor/v0.1.0-released`)
+
+Follows "v0.1.0 readiness" below.
+
+- **Apple signing finished.** The owner added the App Store Connect key as the three
+  `APPLE_API_*` secrets. A dry run (Actions → Release → Run workflow, run 45374935391) and both tag
+  runs signed with the Developer ID, notarized and stapled the app and the disk image; Gatekeeper
+  accepts the disk image (`source=Notarized Developer ID`).
+- **The first tag's build was replaced.** `v0.1.0` was first tagged on #44's merge (`4c21dde`,
+  run 45383839870). Before publishing, the owner chose to take #45 (select all right after opening
+  or scrolling) and #46 (the Mac File menu's Save, Save as and Print). The draft and tag were
+  deleted, and `v0.1.0` was tagged again on #46's merge, `b399709` (run 45455417129).
+- **Published 18:42 UTC**, latest release: https://github.com/adrianazizx/Mirsam/releases/tag/v0.1.0.
+  Every `releases/latest/download/…` link answers with its file (six installers and
+  `SHA256SUMS.txt`). Windows is unsigned; SignPath can be applied to now (owner item 17).
+- **Not in v0.1.0:** #47 (keep starting when a launch document cannot be opened; password-protected
+  files are not affected) and #48 (CI only). They go into 0.1.1. #49 (CI tokens) merged after the
+  tag and ships nothing.
+- **A draft has no `v0.1.0` links.** `releases/download/v0.1.0/…` answers 404 until the release is
+  published; a draft's files are under `releases/download/untagged-…/…` (its own page lists them).
+- **OneDrive (owner item 1) bit.** It made about 700 files in the main checkout's `.git` online-only
+  (`ls -lO` shows `dataless`) while its app wasn't running: `git fetch` reported a packfile "far
+  too short", and a push hung. Nothing was lost; the tags and this entry were made through `gh api`
+  and a clone outside OneDrive. Restarting OneDrive brought files back slowly (about 90 of 700 in
+  an afternoon).
+
+### Startup past a launch document it cannot open — 2026-11-24 (branch `pomidor/confident-swanson-401740`)
+
+Found while diagnosing a CI self-test `io_error` (a missing fixture, PR #45): a launch document
+(command line, "Open with", `MIRSAM_OPEN`) that could not be opened failed the whole `startup`
+command. The UI showed only the error code; the restored tabs and windows were lost and the offer to
+recover unsaved changes (ADR 0040) never came.
+
+- **Shell:** the main window's first `startup` is now `commands::start_app` (`&AppState` and a
+  callback that opens the session's other windows, so tests reach it without a webview). A launch
+  document that fails is left out and logged; the others still open, and `Startup.error` carries
+  the first failure's code, as `DocumentsArrived.error` does for documents that arrive later.
+- **UI:** the startup effect shows that code's localized message in the error banner (and says it)
+  once the tabs are in. The first-run guide counts a shown error as busy and does not open over it
+  (before, the failed call skipped the guide too). No new strings: the open errors' own messages.
+- **Limits:** the message does not name the file; a session window that cannot be created still
+  fails the start (unchanged).
+- **Tests:** `commands.rs` (a two-window session plus a missing and an openable launch document:
+  both windows' tabs and the openable document open, `io_error` reported); `App.test.tsx` (English
+  and Arabic: the restored tab, the banner and its announcement, the recovery dialog); onboarding
+  (the guide waits). Not checked in the real app.
 
 ### Linux cold start on CI — 2026-11-24 (branch `pomidor/reverent-engelbart-1f199c`; ADR 0060's amendment)
 
