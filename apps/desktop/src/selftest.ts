@@ -102,9 +102,10 @@ async function navigationChecks(documentId: number) {
     .map((block) => block.lines.map((line) => line.text).join("\n"))
     .join("\n\n");
 
-  // Select all of page 1 through the command, as a user would.
+  // Select all of page 1 through the command, as a user would. The command
+  // settles once the page's text is here and selected, even when the view's
+  // own request for that text is still out (it is shared, not dropped).
   await runCommand("edit.selectAll");
-  await waitFor(() => viewer?.hasSelection() ?? false, 3_000);
   const selection = viewer?.selectedText() ?? "";
   const overlay = document.querySelector('[data-page="0"] [class*="overlay"]');
   const selectionRects = overlay?.childElementCount ?? 0;
@@ -318,7 +319,6 @@ async function objectsAndLinksChecks(documentId: number) {
 async function markupChecks(documentId: number) {
   const viewer = getViewer(documentId);
   await runCommand("edit.selectAll");
-  await waitFor(() => viewer?.hasSelection() ?? false, 3_000);
   const runs = viewer?.selectionMarks().reduce((sum, page) => sum + page.rects.length, 0) ?? 0;
   const started = performance.now();
   await runCommand("markup.highlight");

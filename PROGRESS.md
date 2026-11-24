@@ -996,6 +996,36 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ## Session log
 
+### Bundles self-test flakes — 2026-11-24 (branch `pomidor/wizardly-maxwell-3b1cd3`)
+
+The Bundles workflow's installed-app self-test failed on 3 of the last 6 runs on `main`, each on
+another platform and step. Two causes, one in the app and one in the harness:
+
+- **Select all selected nothing** (runs 45351294845, Linux AppImage in Arabic; 45244862003,
+  universal macOS app in English): an app bug, not a slow start. The macOS run started in 2.6 s.
+  400 ms after the view rests the viewer asks for the text of the pages on screen, for screen
+  readers. `loadLayer` answered any second caller for a page whose text was still on its way
+  with `null`, so `selectAllOnPage` (Ctrl/Cmd+A, `edit.selectAll`) did nothing when it came in
+  that window. The self-test hits that window now and then, because it asks for the same text
+  just before. A user pressing Ctrl/Cmd+A right after opening a document or scrolling could hit
+  it too. **Fix:** a request already out is shared (`layerRequests` keeps its promise).
+  `selectAllOnPage` returns a promise that settles once the text is here and selected, and
+  `edit.selectAll` awaits it. The self-test waits on that, not a 3 s poll.
+- **`io_error`, then no page** (run 45344538502, Windows `setup.exe` in Arabic): the file was
+  missing. community.chocolatey.org answered 503, `choco install qpdf` exited 0, and
+  `fixtures/generate.mjs` skipped `derived/`. `selftest.sh` then built the path
+  `/page-labels.pdf` (a failed `cd` inside `$(…)` does not trip `set -e`), and the startup
+  command's `std::fs::read` failed. `scripts/ci-install-qpdf.sh` (5e9e033, merged after that run)
+  now fails the step when qpdf is missing. **Fix here:** `selftest.sh` refuses a PDF that is not
+  there, and `bundle-selftest.sh` checks both of its fixtures before it installs anything, each
+  with instructions.
+- **Tests:** `viewer/controller.test.ts` "selects all of a page whose text is still on its way":
+  an Arabic line, select all while the view's request is out. It failed before the fix. All 467
+  UI tests pass; typecheck and biome are clean.
+- **Not the cause:** the Linux cold-start warnings (26 to 32 s to a usable window) show on every
+  Linux package run, passing ones included. They come from the runner (WebKitGTK under Xvfb);
+  PR #48 takes them on.
+
 ### v0.1.0 readiness — 2026-11-24 (branch `pomidor/release-readiness-90d90f`)
 
 The owner asked whether the release was ready. It was not:
