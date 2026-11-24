@@ -992,6 +992,28 @@ M3 closed in session 16 at the owner's go-ahead, with these items carried forwar
 
 ## Session log
 
+### Linux cold start on CI — 2026-11-24 (branch `pomidor/reverent-engelbart-1f199c`; ADR 0060's amendment)
+
+Every Linux bundle self-test took 25–32 s from `run()` to a usable window (macOS 2.6 s, Windows 1 s),
+and so did the required Ubuntu shell self-test in `ci.yml` (31.5 s per launch).
+
+- **Cause (the runner, not the app):** `ubuntu-latest` can start `xdg-desktop-portal` on demand, but
+  its systemd user session has no `DISPLAY`, so the portal's GTK backend exits ("cannot open
+  display") and the portal never answers. Before showing its window the app waits for it twice on the
+  main thread: GTK 3's `GtkApplication` (Inhibit portal, no session manager) 25 s, then tao (colour
+  scheme) 5 s. Shown with `dbus-monitor`, `strace` (main thread blocked 25.0 s, then 5.0 s) and
+  GTK's own debug log, in a throwaway workflow on the runner with a built deb.
+- **Fix:** `scripts/ci-virtual-display.sh` starts Xvfb and hands the display to the session bus and
+  the systemd user manager (`dbus-update-activation-environment --systemd`), as a desktop session
+  does. `bundle.yml` and `ci.yml` use it. Same deb, same runner: 30.8 s → 0.89–1.0 s (deb, rpm,
+  AppImage).
+- **Users:** with a working portal, or none, the app starts in under a second (measured: 0.95 s and
+  0.81 s). Only a session with a portal that never got the display waits, and there every
+  `GtkApplication` waits the same 25 s; the ADR amendment says how to recognise it.
+- **Aside:** this checkout's `.git` is partly evicted by OneDrive Files On-Demand (493 of 1,139
+  object files "dataless"); commits needed a local object mirror as an alternate, and pushes went
+  from that mirror.
+
 ### Moving page text — 2026-11-24 (branch `pomidor/move-page-text`; ADR 0051's amendment)
 
 The owner, after PR #42: "i cant move this text when i add it" — text added with the Edit tool
