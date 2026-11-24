@@ -140,3 +140,43 @@ round, with the fixes in, found nothing.
   development tool in its own workspace and never ships.
 - Fork-mode fuzzing (`-fork=N`) breaks on paths with spaces, such as this OneDrive checkout; run the
   built binaries from the cache directory (fuzz/README.md).
+
+## Amendment (2026-11-24): the Linux self-tests' 30 s start was the runner's portal
+
+Every Linux bundle self-test reported 25–32 s from `run()` to a usable window (`startup.sinceRunMs.uiReady`),
+passing runs included, against about 2.6 s on macOS and 1 s on Windows. The required "Desktop shell
+self-test (ubuntu-latest)" job in `ci.yml` showed the same 31.5 s on every launch. Measured on
+`ubuntu-latest` (image `ubuntu26`, 20261116) with the deb of Bundles run 45351294845, a throwaway
+workflow running `dbus-monitor`, `strace` and `G_MESSAGES_DEBUG=all`:
+
+- The image installs `xdg-desktop-portal` and `xdg-desktop-portal-gtk`. Both can be started on demand
+  by the runner's systemd user session bus, but that session has no `DISPLAY`: the job's `Xvfb :99` is
+  known only to the job's own steps. Started on demand, the GTK backend exits ("cannot open display:"),
+  and the portal waits 25 s for it at each step of its own start-up, so it never answers in time.
+- The app asks the portal twice on its main thread before its window shows. GTK 3's `GtkApplication`
+  finds no GNOME or Xfce session manager and asks for the portal's Inhibit interface; GTK logs
+  "Failed to get an inhibit portal proxy: … timed out" 25 s later. Then tao reads the colour scheme
+  (`org.freedesktop.portal.Settings.Read`, 5 s timeout) and gets no answer either. `strace` shows the
+  main thread blocked 25.0 s, then 5.0 s; the bus log shows both calls at 0.08 s and 25.12 s.
+- Not involved: the accessibility bus (`org.a11y.Bus` is answered "ServiceUnknown" in under 1 ms) and
+  one-time caches (the second launch was as slow as the first).
+
+| Same deb, same runner | `uiReady` after `run()` |
+|---|---|
+| As in the job (portal can start but has no display) | 30.8–31.5 s |
+| No session bus at all | 0.81 s |
+| A private bus with nothing to start (no portal installed) | 0.81 s |
+| A private bus that starts the portal with the display (`dbus-run-session`) | 0.95 s; the colour scheme is answered in 7 ms |
+| The job's bus after `dbus-update-activation-environment --systemd DISPLAY=:99` | deb 1.00 s, rpm 0.89 s, AppImage 0.89 s |
+
+**Decision:** the fix is in CI. `scripts/ci-virtual-display.sh` starts Xvfb and hands the display to
+the session bus and the systemd user manager, as a desktop session does when it starts. Both Linux
+jobs that launch the app use it (`bundle.yml`, `ci.yml`).
+
+**Users are not affected.** With a working portal (any desktop session: portals need the display to
+work at all) the answer comes in milliseconds, and without a portal the bus refuses at once. Only a
+session whose portal is installed but never got the display (a window manager started without
+importing `DISPLAY` into the systemd user session, say) waits 30 s. There every `GtkApplication`
+waits the same 25 s in GTK's own code, so the session needs the fix, not the app; tao's 5 s on top
+was not worth giving up following the system's colour scheme for. A user who reports a 30 s start on
+Linux: look for "cannot open display" in `journalctl --user -u xdg-desktop-portal-gtk`.
